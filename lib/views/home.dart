@@ -31,6 +31,8 @@ import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
+import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/drawer.dart';
@@ -79,10 +81,10 @@ class HomePageState extends State<HomePage> {
     // show recently created notes first
     List<SafeNote> tmpNotes;
     if (isNewFirst) {
-      tmpNotes = await NotesDatabase.instance.decryptReadAllNotes()
+      tmpNotes = await NotesDatabase.instance.readAllNotes()
         ..sort((a, b) => b.createdTime.compareTo(a.createdTime));
     } else {
-      tmpNotes = await NotesDatabase.instance.decryptReadAllNotes()
+      tmpNotes = await NotesDatabase.instance.readAllNotes()
         ..sort((a, b) => a.createdTime.compareTo(b.createdTime));
     }
     setState(() {
@@ -109,6 +111,7 @@ class HomePageState extends State<HomePage> {
               ? null
               : [
                   //_DevSessionListner(),
+                  _syncStatusButton(),
                   _gridListView(),
                   _shortNotes(),
                 ],
@@ -122,6 +125,70 @@ class HomePageState extends State<HomePage> {
         floatingActionButton: _addANewNoteButton(context),
       ),
     );
+  }
+
+  /// AppBar 同步状态按钮
+  ///
+  /// 仅在启用同步时显示，点击跳转同步设置页。
+  /// 图标根据同步状态变化：
+  ///   - 未初始化/空闲：cloud_outlined
+  ///   - 同步中：sync（旋转动画）
+  ///   - 成功：cloud_done_outlined
+  ///   - 失败：cloud_off_outlined（红色）
+  Widget _syncStatusButton() {
+    if (!SyncConfig.isSyncEnabled) return const SizedBox.shrink();
+
+    return StreamBuilder<SyncServiceState>(
+      stream: SyncService.instance.stateStream,
+      initialData: SyncService.instance.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? SyncService.instance.state;
+        final isSyncing = state.isSyncing;
+        return IconButton(
+          icon: isSyncing
+              ? const _RotatingSyncIcon()
+              : Icon(_syncIconData(state.status),
+                  color: state.status == SyncStatus.error
+                      ? Colors.red
+                      : null),
+          tooltip: _syncTooltip(state.status),
+          onPressed: () async {
+            await Navigator.pushNamed(context, '/syncSettings');
+            if (mounted) refreshNotes();
+          },
+        );
+      },
+    );
+  }
+
+  IconData _syncIconData(SyncStatus status) {
+    switch (status) {
+      case SyncStatus.uninitialized:
+        return Icons.cloud_off_outlined;
+      case SyncStatus.idle:
+        return Icons.cloud_outlined;
+      case SyncStatus.syncing:
+        return Icons.sync;
+      case SyncStatus.success:
+        return Icons.cloud_done_outlined;
+      case SyncStatus.error:
+        return Icons.cloud_off_outlined;
+    }
+  }
+
+  String _syncTooltip(SyncStatus status) {
+    switch (status) {
+      case SyncStatus.uninitialized:
+        return '同步未初始化';
+      case SyncStatus.idle:
+        return '同步就绪';
+      case SyncStatus.syncing:
+        return '同步中…';
+      case SyncStatus.success:
+        return '同步成功';
+      case SyncStatus.error:
+        return '同步失败';
+    }
   }
 
   Widget _gridListView() {
@@ -252,6 +319,12 @@ class HomePageState extends State<HomePage> {
         );
         navigator.pop();
       },
+      onDeletedNotesCallback: () async {
+        var navigator = Navigator.of(context);
+        await Navigator.pushNamed(context, '/deletedNotes');
+        navigator.pop();
+        refreshNotes();
+      },
     );
   }
 
@@ -339,5 +412,41 @@ class HomePageState extends State<HomePage> {
     if (!currentScope.hasPrimaryFocus && currentScope.hasFocus) {
       FocusManager.instance.primaryFocus?.unfocus();
     }
+  }
+}
+
+/// 同步中旋转图标（AppBar 用）
+class _RotatingSyncIcon extends StatefulWidget {
+  const _RotatingSyncIcon();
+
+  @override
+  State<_RotatingSyncIcon> createState() => _RotatingSyncIconState();
+}
+
+class _RotatingSyncIconState extends State<_RotatingSyncIcon>
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _controller,
+      child: const Icon(Icons.sync),
+    );
   }
 }

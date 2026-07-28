@@ -29,6 +29,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
@@ -214,20 +215,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: const Icon(Icons.logout),
               title: Text('Logout'.tr()),
               onPressed: (context) async {
-                await Session.logout();
-                widget.sessionStateStream.add(SessionState.stopListening);
+              await Session.logout();
+              widget.sessionStateStream.add(SessionState.stopListening);
 
-                if (context.mounted) {
-                  await Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/login',
-                    (Route<dynamic> route) => false,
-                    arguments: SessionArguments(
-                      sessionStream: widget.sessionStateStream,
-                      isKeyboardFocused: false,
-                    ),
-                  );
-                }
+              if (context.mounted) {
+                await Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/login',
+                  (Route<dynamic> route) => false,
+                  arguments: SessionArguments(
+                    sessionStream: widget.sessionStateStream,
+                    isKeyboardFocused: false,
+                  ),
+                );
+              }
+            },
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: const Text('同步'),
+          tiles: <SettingsTile>[
+            SettingsTile.navigation(
+              leading: const Icon(Icons.cloud_sync_outlined),
+              title: const Text('同步设置'),
+              value: Text(_syncStatusValue()),
+              onPressed: (context) async {
+                await Navigator.pushNamed(context, '/syncSettings');
+                setState(() {});
               },
             ),
           ],
@@ -300,5 +315,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     List<int> values = [30, 1, 2, 3, 5, 10, 15];
     if (index < 1) return '${values[index]} sec';
     return '${values[index]} min';
+  }
+
+  /// 同步状态显示值
+  String _syncStatusValue() {
+    return SyncConfig.isSyncEnabled ? SyncConfig.backendDisplayName : '未配置';
   }
 }

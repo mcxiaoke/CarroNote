@@ -53,7 +53,7 @@ class NoteDetailPageState extends State<NoteDetailPage> {
 
   Future refreshNote() async {
     setState(() => isLoading = true);
-    note = await NotesDatabase.instance.decryptReadNote(widget.noteId);
+    note = await NotesDatabase.instance.readNote(widget.noteId);
     setState(() => isLoading = false);
   }
 
@@ -141,7 +141,7 @@ class NoteDetailPageState extends State<NoteDetailPage> {
           callback: () async {
             var childNavigator = Navigator.of(contextChild);
             var navigator = Navigator.of(context);
-            await NotesDatabase.instance.delete(widget.noteId);
+            await NotesDatabase.instance.softDelete(widget.noteId);
             childNavigator.pop();
             navigator.pop();
           },

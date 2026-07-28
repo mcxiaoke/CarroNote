@@ -28,10 +28,13 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
+import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
@@ -387,6 +390,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // start listening for session inactivity on successful login
       widget.sessionStream.add(SessionState.startListening);
 
+      // 初始化 Vault：解锁 dataKey 并注入 database（本地解密需要）
+      // 这是 B1 方案的核心——登录后必须解锁 dataKey 才能读写笔记
+      await _initVault(passphrase);
+
       await Navigator.pushReplacementNamed(
         context,
         '/home',
@@ -394,6 +401,40 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       );
     } else {
       showSnackBarMessage(context, snackMsgWrongEncryptionPhrase);
+    }
+  }
+
+  /// 登录后初始化 Vault：解锁 dataKey + 注入 database
+  ///
+  /// PBKDF2 600k 迭代会耗时 1-2 秒，这里 await 等待完成
+  /// （登录页已显示 "Decrypting your notes!" 提示）。
+  /// 失败时仍进入 home 页（用户可查看明文残留数据），但提示错误。
+  Future<void> _initVault(String passphrase) async {
+    final result = await SyncService.instance.initVaultFromPassword(
+      password: passphrase,
+      database: NotesDatabase.instance,
+    );
+
+    if (!result.success && mounted) {
+      showSnackBarMessage(
+        context,
+        '加密初始化失败：${result.error ?? "未知错误"}',
+      );
+      return;
+    }
+
+    // 如果已配置同步后端，顺带初始化后端
+    await SyncConfig.init();
+    if (SyncConfig.isSyncEnabled) {
+      final backendResult = await SyncService.instance.initBackend(
+        database: NotesDatabase.instance,
+      );
+      if (!backendResult.success && mounted) {
+        showSnackBarMessage(
+          context,
+          '同步初始化失败：${backendResult.error ?? "未知错误"}',
+        );
+      }
     }
   }
 
@@ -448,7 +489,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       try {
         authenticated = await auth.authenticate(
           localizedReason: 'Login using your biometric credential',
-          options: const AuthenticationOptions(stickyAuth: true),
+          persistAcrossBackgrounding: true,
         );
       } catch (_) {}
       if (authenticated) await _login(await BiometricAuth.authKey);

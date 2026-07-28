@@ -23,9 +23,12 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
+import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -308,6 +311,10 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // start listening for session inactivity on successful login
         widget.sessionStream.add(SessionState.startListening);
 
+        // 初始化 Vault：生成 dataKey 并注入 database（本地加密存储）
+        // 这是 B1 方案的核心——无论是否启用同步，都要初始化 dataKey
+        await _initVault(enteredPassphrase);
+
         TextInput.finishAutofillContext();
         await Navigator.pushReplacementNamed(
           context,
@@ -316,6 +323,38 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         );
       } else {
         showSnackBarMessage(context, 'Passphrase mismatch!'.tr());
+      }
+    }
+  }
+
+  /// 初始化 Vault：生成 dataKey + encryptedDataKey，注入 database
+  ///
+  /// 首次设置密码时调用。PBKDF2 600k 迭代会耗时 1-2 秒，
+  /// 显示 loading 不阻塞 UI。失败时提示用户（极罕见，只有系统异常才会失败）。
+  Future<void> _initVault(String passphrase) async {
+    final result = await SyncService.instance.initVaultFromPassword(
+      password: passphrase,
+      database: NotesDatabase.instance,
+    );
+
+    if (!result.success && mounted) {
+      showSnackBarMessage(
+        context,
+        '加密初始化失败：${result.error ?? "未知错误"}',
+      );
+    }
+
+    // 如果已配置同步后端，顺带初始化后端
+    await SyncConfig.init();
+    if (SyncConfig.isSyncEnabled) {
+      final backendResult = await SyncService.instance.initBackend(
+        database: NotesDatabase.instance,
+      );
+      if (!backendResult.success && mounted) {
+        showSnackBarMessage(
+          context,
+          '同步初始化失败：${backendResult.error ?? "未知错误"}',
+        );
       }
     }
   }

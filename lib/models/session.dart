@@ -20,8 +20,10 @@ import 'package:crypto/crypto.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
+import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 
 class Session {
@@ -32,6 +34,14 @@ class Session {
   static logout() async {
     // Take care of backup if enabled
     await ScheduledTask.backup();
+
+    // 清除同步相关敏感数据（与 UI 的"先导航、再清状态"顺序配合：
+    // 导航走 /authwall 后 HomePage 已卸载，此时清 key 不会再打到挂载中的页面，
+    // 也不会让在途的 refreshNotes 因 dataKey 被清空而抛异常）。
+    await SyncService.instance.logout();
+    NotesDatabase.instance.clearDataKey();
+
+    // 清除明文密码（与原版一致）
     PhraseHandler.destroy();
   }
 

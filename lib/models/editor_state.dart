@@ -70,20 +70,22 @@ class NoteEditorState {
   }
 
   Future addNote() async {
-    final note = SafeNote(
+    final note = SafeNote.create(
       title: title,
       description: description,
-      createdTime: DateTime.now(),
     );
-    await NotesDatabase.instance.encryptAndStore(note);
+    await NotesDatabase.instance.storeNote(note);
   }
 
   Future updateNote() async {
-    final note = original!.copy(
+    final now = DateTime.now();
+    final note = original!.copyWith(
       title: title,
       description: description,
-      createdTime: DateTime.now(),
+      contentHash: SafeNote.computeHash(title, description),
+      updatedAt: now.millisecondsSinceEpoch,
+      synced: false,
     );
-    await NotesDatabase.instance.encryptAndUpdate(note);
+    await NotesDatabase.instance.updateNote(note);
   }
 }

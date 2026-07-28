@@ -13,14 +13,17 @@
 
 // Dart imports:
 import 'dart:async';
+import 'dart:io' show Platform;
 
 // Flutter imports:
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Project imports:
 import 'package:safenotes/app.dart';
@@ -35,6 +38,13 @@ import 'package:safenotes/views/settings/backup_setting.dart';
 
 Future main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 桌面平台（Windows/macOS/Linux）初始化 sqflite_ffi
+  // sqflite 原生只支持 Android/iOS，桌面端必须用 sqflite_common_ffi
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
 
   WidgetsBinding.instance.addObserver(AppLifecycleEventHandler(
     inactiveCallBack: ScheduledTask.backup,

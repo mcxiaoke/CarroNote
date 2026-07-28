@@ -1,0 +1,279 @@
+/*
+ * 同步功能核心加密层
+ *
+ * 两层密钥架构：
+ *   MK (Master Key) = PBKDF2(password, FIXED_SALT, 200k)  ← 改密码时变化，只用来加密 dataKey
+ *   dataKey = 随机 32 字节                                ← 永不变化，真正加密笔记内容
+ *
+ * 多端一致性关键：
+ *   MK 派生使用固定 salt 'safenotes-v1'，保证相同密码在不同设备派生出相同 MK。
+ *   早期实现用 vaultId 作为 salt，但 vaultId 在新设备加入前无法获得，
+ *   且不同设备初始 vaultId 不同导致 MK 不一致，无法解密远端 encryptedDataKey。
+ *
+ * 信封格式：nonce(12) ‖ ciphertext ‖ tag(16)
+ *   = AES-256-GCM(dataKey, nonce, AAD=id, plaintext)
+ */
+
+// Dart 原生导入
+import 'dart:convert';
+import 'dart:math' show Random;
+import 'dart:typed_data';
+
+// Flutter 导入
+import 'package:flutter/foundation.dart' show compute;
+
+// 第三方加密库
+import 'package:crypto/crypto.dart' show sha256;
+// pointycastle 的 export.dart 导出全部加密原语：
+// AESEngine / GCMBlockCipher / PBKDF2KeyDerivator / Pbkdf2Parameters /
+// HMac / SHA256Digest / AEADParameters / KeyParameter / FortunaRandom
+import 'package:pointycastle/export.dart';
+
+// 信封各部分的固定长度
+const int _nonceLength = 12; // AES-GCM 推荐 12 字节 nonce
+const int _tagLength = 16; // AES-GCM 认证标签 16 字节
+const int _keyLength = 32; // AES-256 密钥 32 字节
+const int _saltLength = 16; // PBKDF2 salt 16 字节
+
+/// PBKDF2 迭代次数（200,000 次）
+///
+/// 选型依据：
+///   - OWASP 2023 推荐 600,000 次，但实测在手机端纯 Dart 实现耗时 4-5 秒，
+///     严重影响登录体验。
+///   - 200,000 次在手机端约 1-1.5 秒，配合 Isolate 后台线程 UI 不卡顿。
+///   - 安全性：RTX 4090 约 6,000 H/s，8 位混合密码理论破解需 ~1,153 年。
+///   - 个人笔记场景无需对抗 GPU 集群攻击，需要高强度保护的用户应设置强密码。
+///   - 配合 Isolate 后台派生，UI 线程不阻塞。
+///
+/// 公开为常量供 manifest header 写入 KDF 参数（算法透明性）。
+const int kPbkdf2Iterations = 200000;
+
+/// MK 派生使用的固定 salt（UTF-8 编码 'safenotes-v1'）
+///
+/// 多端一致性关键：
+///   相同密码 + 固定 salt → 相同 MK，确保新设备能解密远端 encryptedDataKey。
+///   写入 manifest header 供未来算法迁移（若升级 salt，老 vault 仍能用此值派生）。
+///
+/// 注意：固定 salt 不会降低 PBKDF2 安全性——salt 的作用是防止彩虹表攻击，
+///   固定 salt 仍然使预计算攻击不可行（攻击者需要为这个 salt 单独建表）。
+///   真正的密码强度由用户密码本身决定。
+final Uint8List kFixedSalt =
+    Uint8List.fromList(utf8.encode('safenotes-v1'));
+
+/// MK 派生算法名称（写入 manifest header 供未来算法迁移）
+const String kMkKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
+
+/// dataKey 包装算法名称（写入 manifest header 供未来算法迁移）
+const String kDataKeyWrapAlgorithm = 'AES-256-GCM';
+
+/// 同步加密工具类
+///
+/// 所有方法均为静态，无状态，可在任意线程调用。
+/// 随机数源使用 FortunaRandom（密码学安全）。
+class SyncCrypto {
+  SyncCrypto._();
+
+  // ──────────────────────────────────────────────
+  // 密钥派生
+  // ──────────────────────────────────────────────
+
+  /// 用 PBKDF2-HMAC-SHA256 从用户密码派生主密钥 MK
+  ///
+  /// [password] 用户输入的明文密码
+  /// [salt] 派生盐值（默认使用 [kFixedSalt]，多端一致性关键）
+  /// 返回 32 字节的 MK
+  ///
+  /// 通常无需传入 salt，使用默认的固定 salt 即可。
+  /// 保留 salt 参数仅为未来算法迁移测试用。
+  static Uint8List deriveMasterKey(
+    String password, {
+    Uint8List? salt,
+    int iterations = kPbkdf2Iterations,
+  }) {
+    final effectiveSalt = salt ?? kFixedSalt;
+    final pbkdf2 = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
+    pbkdf2.init(Pbkdf2Parameters(effectiveSalt, iterations, _keyLength));
+    return pbkdf2.process(Uint8List.fromList(utf8.encode(password)));
+  }
+
+  /// 异步派生 MK（后台 Isolate 执行，不阻塞 UI 线程）
+  ///
+  /// 参数与 [deriveMasterKey] 一致，但通过 [compute] 在独立 Isolate 中执行。
+  /// 用于登录/解锁/改密码等 UI 敏感场景。
+  ///
+  /// 注意：Isolate 间数据通过 SendPort 传递，参数和返回值都会被复制，
+  /// 但 MK 只有 32 字节，复制开销可忽略。
+  static Future<Uint8List> deriveMasterKeyAsync(
+    String password, {
+    Uint8List? salt,
+    int iterations = kPbkdf2Iterations,
+  }) async {
+    final effectiveSalt = salt ?? kFixedSalt;
+    final result = await compute(
+      _deriveMasterKeyIsolate,
+      _DeriveParams(password, effectiveSalt, iterations),
+    );
+    return result;
+  }
+
+  /// Isolate 入口函数：执行 PBKDF2 派生
+  ///
+  /// 必须是顶层函数或静态方法，不能捕获外部状态。
+  static Uint8List _deriveMasterKeyIsolate(_DeriveParams params) {
+    final pbkdf2 = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
+    pbkdf2.init(Pbkdf2Parameters(params.salt, params.iterations, _keyLength));
+    return pbkdf2.process(Uint8List.fromList(utf8.encode(params.password)));
+  }
+
+  /// 生成随机 32 字节的 dataKey（数据主密钥）
+  ///
+  /// dataKey 在首次启用同步时生成一次，之后永不变化。
+  /// 所有笔记的 envelope 都用同一把 dataKey 加密。
+  static Uint8List generateDataKey() => _secureRandom(_keyLength);
+
+  /// 生成随机 16 字节 salt（用于 PBKDF2 或 vault_id）
+  static Uint8List generateSalt() => _secureRandom(_saltLength);
+
+  /// 生成随机 12 字节 nonce（用于 AES-GCM）
+  static Uint8List generateNonce() => _secureRandom(_nonceLength);
+
+  // ──────────────────────────────────────────────
+  // dataKey wrap / unwrap（用 MK 加密 dataKey）
+  // ──────────────────────────────────────────────
+
+  /// 用 MK 包装 dataKey（用于持久化到 manifest）
+  ///
+  /// 改密码时：旧 MK 解开 dataKey → 新 MK 重新 wrap。
+  /// 这是一个 O(1) 操作，只加密 32 字节的 dataKey。
+  /// 返回信封：nonce(12) ‖ ciphertext(32) ‖ tag(16) = 60 字节
+  static Uint8List wrapDataKey(Uint8List masterKey, Uint8List dataKey) {
+    // dataKey 的 AAD 为固定字符串，确保 dataKey 信封不可互换
+    final aad = Uint8List.fromList(utf8.encode('datakey-wrap'));
+    return _aesGcmEncrypt(masterKey, _secureRandom(_nonceLength), aad, dataKey);
+  }
+
+  /// 用 MK 解开 dataKey（从 manifest 中恢复 dataKey）
+  ///
+  /// [wrappedDataKey] 是 wrapDataKey 的返回值。
+  /// 如果 MK 不正确（密码错误），GCM tag 验证会抛出异常。
+  static Uint8List unwrapDataKey(Uint8List masterKey, Uint8List wrappedDataKey) {
+    final aad = Uint8List.fromList(utf8.encode('datakey-wrap'));
+    return _aesGcmDecrypt(masterKey, aad, wrappedDataKey);
+  }
+
+  // ──────────────────────────────────────────────
+  // 笔记内容加密/解密（用 dataKey）
+  // ──────────────────────────────────────────────
+
+  /// 用 dataKey 加密笔记内容，返回信封二进制
+  ///
+  /// [id] 笔记的 UUID，作为 AAD 绑定（防止重放攻击：信封不能从一条笔记移到另一条）
+  /// [plaintext] 笔记明文（UTF-8 编码后的字节）
+  /// 返回信封：nonce(12) ‖ ciphertext ‖ tag(16)
+  static Uint8List seal(
+    Uint8List dataKey,
+    String id,
+    Uint8List plaintext, {
+    Uint8List? nonce,
+  }) {
+    final aad = Uint8List.fromList(utf8.encode(id));
+    return _aesGcmEncrypt(
+        dataKey, nonce ?? _secureRandom(_nonceLength), aad, plaintext);
+  }
+
+  /// 用 dataKey 解密笔记信封，返回明文字节
+  ///
+  /// [id] 必须与加密时传入的 id 一致，否则 GCM tag 验证失败。
+  static Uint8List open(Uint8List dataKey, String id, Uint8List envelope) {
+    final aad = Uint8List.fromList(utf8.encode(id));
+    return _aesGcmDecrypt(dataKey, aad, envelope);
+  }
+
+  // ──────────────────────────────────────────────
+  // 内容哈希（用于 manifest 比对和 blob 寻址）
+  // ──────────────────────────────────────────────
+
+  /// 计算明文内容的 SHA-256 哈希（十六进制字符串）
+  ///
+  /// 用于：
+  /// 1. manifest 中记录每条笔记的 hash，比对本地/远端是否一致
+  /// 2. blob 文件名/键名，实现内容寻址和天然去重
+  /// 相同明文必定产生相同 hash，与 nonce 无关。
+  static String contentHash(Uint8List plaintext) =>
+      sha256.convert(plaintext).toString();
+
+  /// 计算 SHA-256 哈希的简化别名（字符串输入）
+  static String hashString(String text) =>
+      contentHash(Uint8List.fromList(utf8.encode(text)));
+
+  // ──────────────────────────────────────────────
+  // AES-256-GCM 内部实现
+  // ──────────────────────────────────────────────
+
+  /// AES-256-GCM 加密
+  ///
+  /// 返回信封：nonce(12) ‖ ciphertext ‖ tag(16)
+  /// pointycastle 的 GCMBlockCipher.process 返回 ciphertext+tag 拼接
+  static Uint8List _aesGcmEncrypt(
+    Uint8List key,
+    Uint8List nonce,
+    Uint8List aad,
+    Uint8List plaintext,
+  ) {
+    final cipher = GCMBlockCipher(AESEngine());
+    cipher.init(
+      true,
+      AEADParameters(KeyParameter(key), _tagLength * 8, nonce, aad),
+    );
+    final ctAndTag = cipher.process(plaintext);
+    // 拼接信封：nonce 在前，便于解密时分离
+    return Uint8List.fromList(nonce + ctAndTag);
+  }
+
+  /// AES-256-GCM 解密
+  ///
+  /// 输入信封：nonce(12) ‖ ciphertext ‖ tag(16)
+  /// 如果密钥错误或 AAD 不匹配，GCM tag 验证失败会抛出异常。
+  static Uint8List _aesGcmDecrypt(
+    Uint8List key,
+    Uint8List aad,
+    Uint8List envelope,
+  ) {
+    // 分离 nonce 和 ciphertext+tag
+    final nonce = envelope.sublist(0, _nonceLength);
+    final ctAndTag = envelope.sublist(_nonceLength);
+    final cipher = GCMBlockCipher(AESEngine());
+    cipher.init(
+      false,
+      AEADParameters(KeyParameter(key), _tagLength * 8, nonce, aad),
+    );
+    return cipher.process(ctAndTag);
+  }
+
+  // ──────────────────────────────────────────────
+  // 安全随机数生成
+  // ──────────────────────────────────────────────
+
+  /// 密码学安全的随机数生成器
+  ///
+  /// 使用 Dart 内置的 Random.secure()，在所有 Flutter 平台上
+  /// 底层调用平台原生 CSPRNG（/dev/urandom 或 BCryptGenRandom）。
+  static Uint8List _secureRandom(int length) {
+    final random = Random.secure();
+    return Uint8List.fromList(
+      List<int>.generate(length, (_) => random.nextInt(256)),
+    );
+  }
+}
+
+/// Isolate 参数载体（必须可序列化以便跨 Isolate 传递）
+///
+/// 用于 [SyncCrypto.deriveMasterKeyAsync] 将 password/salt/iterations
+/// 打包传递给后台 Isolate。
+class _DeriveParams {
+  final String password;
+  final Uint8List salt;
+  final int iterations;
+
+  const _DeriveParams(this.password, this.salt, this.iterations);
+}

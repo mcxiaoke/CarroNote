@@ -1,73 +1,296 @@
 /*
-* Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
-*
-* SPDX-License-Identifier: GPL-3.0-or-later
-* You may use, distribute and modify this code under the
-* terms of the GPL-3.0+ license.
-*
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
-*
-* See https://safenotes.dev for support or download.
-*/
+ * 数据库处理器
+ *
+ * 改造说明（fork 同步版）：
+ *   - schema version 2，新表结构（uuid / content_hash / deleted / updated_at / synced）
+ *   - 本地用 dataKey 加密存储（title/description 字段级 AES-256-GCM 加密）
+ *   - 软删除（deleted=1 为墓碑，不真正删除行）
+ *   - 新增 sync_meta 表（vault_id / mk_salt / manifest_version 等）
+ *   - 不迁移旧数据（onUpgrade drop + create）
+ *
+ * 本地加密说明（B1 方案）：
+ *   - dataKey 在首次设置密码时生成，存于 Vault，登录时注入到 NotesDatabase
+ *   - title/description 写入前用 SyncCrypto.seal(dataKey, uuid, plaintext) 加密
+ *   - 读取时用 SyncCrypto.open(dataKey, uuid, envelope) 解密
+ *   - contentHash 为明文 hash，不加密（用于同步比对）
+ *   - dataKey 为必填项：未设置时读写笔记会抛 DataKeyNotSetException
+ *     （测试中也必须通过 setDataKey 设置，保证测试与生产逻辑一致）
+ */
 
-// Dart imports:
+// Dart 导入
 import 'dart:convert';
+import 'dart:typed_data';
 
-// Package imports:
+// Package 导入
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
-// Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+// Project 导入
 import 'package:safenotes/models/safenote.dart';
+import 'package:safenotes/sync/crypto.dart';
+
+const String tableMeta = 'sync_meta';
+
+/// dataKey 未设置异常
+///
+/// 在未调用 setDataKey 前读写笔记会抛此异常。
+/// 生产环境由登录流程保证 dataKey 已设置；测试环境需在 setUp 中显式设置。
+class DataKeyNotSetException implements Exception {
+  final String message;
+  DataKeyNotSetException([
+    this.message = 'dataKey 未设置：请先通过 setDataKey 注入 dataKey',
+  ]);
+
+  @override
+  String toString() => 'DataKeyNotSetException: $message';
+}
+
+class MetaFields {
+  static const String key = 'key';
+  static const String value = 'value';
+}
+
+// meta 表的已知键名
+class MetaKeys {
+  static const String vaultId = 'vault_id';
+  // mkSalt 已移除：改用固定 salt 'safenotes-v1'（见 crypto.dart kFixedSalt）
+  static const String encryptedDataKey = 'encrypted_data_key';
+  // manifest version 不再使用全局 key，改为按 providerKey 隔离：
+  // 'manifest_version:<providerKey>'（见 [_manifestVersionKey]）
+  static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
+}
 
 class NotesDatabase {
   static final NotesDatabase instance = NotesDatabase._init();
 
   static Database? _database;
 
+  /// 当前会话的 dataKey（登录时注入，登出时清除）
+  ///
+  /// 必填项：未设置时读写笔记会抛 DataKeyNotSetException。
+  /// 生产环境由登录流程保证已设置；测试环境需在 setUp 中显式设置。
+  Uint8List? _dataKey;
+
   NotesDatabase._init();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
+  /// 设置 dataKey（登录/解锁 vault 后调用）
+  void setDataKey(Uint8List key) => _dataKey = Uint8List.fromList(key);
 
-    _database = await _initDB('._my_system_note');
-    return _database!;
+  /// 清除 dataKey（登出时调用）
+  void clearDataKey() => _dataKey = null;
+
+  /// dataKey 是否已设置
+  bool get isEncryptionEnabled => _dataKey != null;
+
+  /// 获取当前 dataKey 的副本（仅供测试用，生产环境通过 _requireDataKey 内部访问）
+  ///
+  /// 用于测试中 SyncEngine 与 NotesDatabase 共享同一个 dataKey。
+  @visibleForTesting
+  Uint8List get dataKeyForTesting {
+    final key = _dataKey;
+    if (key == null) {
+      throw DataKeyNotSetException('dataKey 未设置，无法获取（测试用 getter）');
+    }
+    return Uint8List.fromList(key);
+  }
+
+  /// 获取 dataKey（未设置时抛异常）
+  Uint8List get _requireDataKey {
+    final key = _dataKey;
+    if (key == null) {
+      throw DataKeyNotSetException();
+    }
+    return key;
+  }
+
+  Future<Database> get database async {
+    final db = _database;
+    if (db != null) return db;
+
+    final newDb = await _initDB('safenotes_sync.db');
+    _database = newDb;
+    return newDb;
+  }
+
+  // ──────────────────────────────────────────────
+  // 字段级加密/解密辅助
+  // ──────────────────────────────────────────────
+
+  /// 加密单个字段值，返回 base64 字符串
+  ///
+  /// [uuid] 作为 AAD 绑定（防止信封从一条笔记移到另一条）
+  /// [plaintext] 明文文本
+  /// 返回 base64(nonce + ciphertext + tag)
+  String _encryptField(String uuid, String plaintext) {
+    if (plaintext.isEmpty) return plaintext;
+    final dataKey = _requireDataKey;
+    final bytes = Uint8List.fromList(utf8.encode(plaintext));
+    final envelope = SyncCrypto.seal(dataKey, uuid, bytes);
+    return base64.encode(envelope);
+  }
+
+  /// 解密单个字段值
+  ///
+  /// [uuid] 必须与加密时一致
+  /// [fieldValue] base64 编码的信封
+  /// 返回明文文本
+  String _decryptField(String uuid, String fieldValue) {
+    if (fieldValue.isEmpty) return fieldValue;
+    final dataKey = _requireDataKey;
+    try {
+      final envelope = base64.decode(fieldValue);
+      final bytes = SyncCrypto.open(dataKey, uuid, envelope);
+      return utf8.decode(bytes);
+    } catch (e) {
+      // 解密失败：dataKey 不匹配或数据损坏
+      // 抛异常而不是返回原始值，避免静默错误
+      throw DataKeyNotSetException(
+        '解密失败：dataKey 不匹配或数据损坏 - $e',
+      );
+    }
+  }
+
+  /// 将明文 SafeNote 转为加密的数据库行（用于 insert/update）
+  Map<String, dynamic> _toEncryptedRow(SafeNote note) {
+    final json = note.toJson();
+    json[NoteFields.title] = _encryptField(note.uuid, note.title);
+    json[NoteFields.description] = _encryptField(note.uuid, note.description);
+    return json;
+  }
+
+  /// 从加密的数据库行构造明文 SafeNote（用于 query 结果）
+  SafeNote _fromEncryptedRow(Map<String, dynamic> json) {
+    final uuid = json[NoteFields.uuid] as String? ?? '';
+    final encryptedTitle = json[NoteFields.title] as String? ?? '';
+    final encryptedDesc = json[NoteFields.description] as String? ?? '';
+    final decrypted = Map<String, dynamic>.from(json);
+    decrypted[NoteFields.title] = _decryptField(uuid, encryptedTitle);
+    decrypted[NoteFields.description] = _decryptField(uuid, encryptedDesc);
+    return SafeNote.fromJson(decrypted);
   }
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
-  Future _createDB(Database db, int version) async {
-    const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
-    const textType = 'TEXT NOT NULL';
+  /// 测试专用：注入 in-memory 数据库
+  ///
+  /// 用法（配合 sqflite_common_ffi）：
+  /// ```dart
+  /// setUp(() async {
+  ///   sqfliteFfiInit();
+  ///   databaseFactory = databaseFactoryFfi;
+  ///   final db = await openDatabase(':memory:', version: 2, onCreate: NotesDatabase.createDBForTesting);
+  ///   NotesDatabase.setDatabaseForTesting(db);
+  /// });
+  /// ```
+  @visibleForTesting
+  static void setDatabaseForTesting(Database db) {
+    _database = db;
+  }
+
+  /// 测试专用：createDB 回调（供 in-memory 数据库 onCreate 使用）
+  @visibleForTesting
+  static Future<void> createDBForTesting(Database db, int version) async {
+    await _createDBStatic(db, version);
+  }
+
+  /// createDB 的静态实现（测试用）
+  static Future<void> _createDBStatic(Database db, int version) async {
+    await db.execute('''
+    CREATE TABLE $tableNotes (
+      ${NoteFields.id} INTEGER PRIMARY KEY AUTOINCREMENT,
+      ${NoteFields.uuid} TEXT NOT NULL UNIQUE,
+      ${NoteFields.title} TEXT NOT NULL,
+      ${NoteFields.description} TEXT NOT NULL,
+      ${NoteFields.contentHash} TEXT NOT NULL,
+      ${NoteFields.deleted} INTEGER NOT NULL DEFAULT 0,
+      ${NoteFields.createdAt} TEXT NOT NULL,
+      ${NoteFields.updatedAt} INTEGER NOT NULL,
+      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0
+    )
+    ''');
 
     await db.execute('''
-  CREATE TABLE $tableNotes ( 
-  ${NoteFields.id} $idType, 
-  ${NoteFields.title} $textType,
-  ${NoteFields.description} $textType,
-  ${NoteFields.time} $textType
-  )
-  ''');
+    CREATE TABLE $tableMeta (
+      ${MetaFields.key} TEXT PRIMARY KEY,
+      ${MetaFields.value} TEXT NOT NULL
+    )
+    ''');
+
+    await db.execute(
+        'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})');
+    await db.execute(
+        'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})');
+    await db.execute(
+        'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
   }
 
-  Future<SafeNote> encryptAndStore(SafeNote note) async {
+  /// 创建新数据库（version 2 schema）
+  Future<void> _createDB(Database db, int version) async {
+    await db.execute('''
+    CREATE TABLE $tableNotes (
+      ${NoteFields.id} INTEGER PRIMARY KEY AUTOINCREMENT,
+      ${NoteFields.uuid} TEXT NOT NULL UNIQUE,
+      ${NoteFields.title} TEXT NOT NULL,
+      ${NoteFields.description} TEXT NOT NULL,
+      ${NoteFields.contentHash} TEXT NOT NULL,
+      ${NoteFields.deleted} INTEGER NOT NULL DEFAULT 0,
+      ${NoteFields.createdAt} TEXT NOT NULL,
+      ${NoteFields.updatedAt} INTEGER NOT NULL,
+      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0
+    )
+    ''');
+
+    await db.execute('''
+    CREATE TABLE $tableMeta (
+      ${MetaFields.key} TEXT PRIMARY KEY,
+      ${MetaFields.value} TEXT NOT NULL
+    )
+    ''');
+
+    // 索引：按 uuid 快速查找（同步用）
+    await db.execute(
+        'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})');
+    // 索引：按 deleted 过滤（最近删除视图用）
+    await db.execute(
+        'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})');
+    // 索引：按 synced 过滤（同步用，找未同步的笔记）
+    await db.execute(
+        'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
+  }
+
+  /// 数据库升级：不迁移旧数据，直接重建
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('DROP TABLE IF EXISTS $tableNotes');
+      await db.execute('DROP TABLE IF EXISTS $tableMeta');
+      await _createDB(db, newVersion);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // 笔记 CRUD（自动加解密 title/description）
+  // ──────────────────────────────────────────────
+
+  /// 新增笔记（title/description 加密后存储）
+  Future<SafeNote> storeNote(SafeNote note) async {
     final db = await instance.database;
-    final id = await db.insert(tableNotes, note.toJsonAndEncrypted());
-
-    // Update backup on new note addition.
-    await PreferencesStorage.setIsBackupNeeded(true);
-
-    return note.copy(id: id);
+    final id = await db.insert(tableNotes, _toEncryptedRow(note));
+    return note.copyWith(id: id);
   }
 
-  Future<SafeNote> decryptReadNote(int id) async {
+  /// 按 id 读取单条笔记（自动解密）
+  Future<SafeNote> readNote(int id) async {
     final db = await instance.database;
     final maps = await db.query(
       tableNotes,
@@ -77,57 +300,382 @@ class NotesDatabase {
     );
 
     if (maps.isNotEmpty) {
-      return SafeNote.fromJsonAndDecrypt(maps.first);
+      return _fromEncryptedRow(maps.first);
     } else {
       throw Exception('ID $id not found');
     }
   }
 
-  Future<List<SafeNote>> decryptReadAllNotes() async {
+  /// 按 uuid 读取单条笔记（同步用，自动解密）
+  Future<SafeNote?> readNoteByUuid(String uuid) async {
     final db = await instance.database;
-    const orderBy = '${NoteFields.time} ASC';
-    final result = await db.query(tableNotes, orderBy: orderBy);
-
-    return result.map((json) => SafeNote.fromJsonAndDecrypt(json)).toList();
+    final maps = await db.query(
+      tableNotes,
+      columns: NoteFields.values,
+      where: '${NoteFields.uuid} = ?',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      return _fromEncryptedRow(maps.first);
+    }
+    return null;
   }
 
-  Future<String> exportAllEncrypted() async {
+  /// 读取所有未删除的笔记（UI 列表用，自动解密）
+  Future<List<SafeNote>> readAllNotes() async {
     final db = await instance.database;
-    const orderBy = '${NoteFields.time} ASC';
-    final result = await db.query(tableNotes,
-        columns: ['title', 'description', 'time'], orderBy: orderBy);
-
-    return jsonEncode(result).toString();
+    final result = await db.query(
+      tableNotes,
+      columns: NoteFields.values,
+      where: '${NoteFields.deleted} = 0',
+      orderBy: '${NoteFields.createdAt} ASC',
+    );
+    return result.map((json) => _fromEncryptedRow(json)).toList();
   }
 
-  Future<int> encryptAndUpdate(SafeNote note) async {
+  /// 读取所有已删除的笔记（最近删除视图用，自动解密）
+  Future<List<SafeNote>> readDeletedNotes() async {
     final db = await instance.database;
+    final result = await db.query(
+      tableNotes,
+      columns: NoteFields.values,
+      where: '${NoteFields.deleted} = 1',
+      orderBy: '${NoteFields.updatedAt} DESC',
+    );
+    return result.map((json) => _fromEncryptedRow(json)).toList();
+  }
 
-    // Update backup on note update.
-    await PreferencesStorage.setIsBackupNeeded(true);
+  /// 读取所有未同步的笔记（同步引擎用，自动解密）
+  Future<List<SafeNote>> readUnsyncedNotes() async {
+    final db = await instance.database;
+    final result = await db.query(
+      tableNotes,
+      columns: NoteFields.values,
+      where: '${NoteFields.synced} = 0',
+    );
+    return result.map((json) => _fromEncryptedRow(json)).toList();
+  }
 
+  /// 读取所有笔记（含墓碑，同步引擎全量对账用，自动解密）
+  Future<List<SafeNote>> readAllNotesIncludingDeleted() async {
+    final db = await instance.database;
+    final result = await db.query(tableNotes, columns: NoteFields.values);
+    return result.map((json) => _fromEncryptedRow(json)).toList();
+  }
+
+  /// 更新笔记（title/description 加密后存储）
+  Future<int> updateNote(SafeNote note) async {
+    final db = await instance.database;
     return db.update(
       tableNotes,
-      note.toJsonAndEncrypted(),
+      _toEncryptedRow(note),
       where: '${NoteFields.id} = ?',
       whereArgs: [note.id],
     );
   }
 
-  Future<int> delete(int id) async {
+  /// 按 uuid 更新笔记（同步拉取时用，title/description 加密后存储）
+  Future<int> updateNoteByUuid(SafeNote note) async {
     final db = await instance.database;
-
-    // Update backup on note deletion.
-    await PreferencesStorage.setIsBackupNeeded(true);
-
-    return await db.delete(
+    return db.update(
       tableNotes,
+      _toEncryptedRow(note),
+      where: '${NoteFields.uuid} = ?',
+      whereArgs: [note.uuid],
+    );
+  }
+
+  /// 软删除笔记（标记为墓碑，不真正删除行）
+  Future<int> softDelete(int id) async {
+    final db = await instance.database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.update(
+      tableNotes,
+      {
+        NoteFields.deleted: 1,
+        NoteFields.updatedAt: now,
+        NoteFields.synced: 0,
+      },
       where: '${NoteFields.id} = ?',
       whereArgs: [id],
     );
   }
 
-  Future close() async {
+  /// 彻底删除笔记（从数据库移除，最近删除视图的"永久删除"用）
+  ///
+  /// M1 修复：硬删除时把 uuid 加入 meta 表的"待清理墓碑"列表，
+  /// 下次同步时 SyncEngine 会从远端 manifest 中移除这些 uuid。
+  /// 这样硬删除的笔记不会在下次同步时从远端复活。
+  ///
+  /// 流程：
+  ///   1. 读取笔记 uuid
+  ///   2. 从 notes 表删除行
+  ///   3. 把 uuid 追加到 meta 表的 'purged_uuids' 列表
+  ///   4. SyncEngine 同步后清理已上传的 uuid
+  Future<int> hardDelete(int id) async {
+    final db = await instance.database;
+
+    // 1. 读取 uuid
+    final maps = await db.query(
+      tableNotes,
+      columns: [NoteFields.uuid],
+      where: '${NoteFields.id} = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return 0;
+    final uuid = maps.first[NoteFields.uuid] as String;
+
+    // 2. 删除行
+    final deleted = await db.delete(
+      tableNotes,
+      where: '${NoteFields.id} = ?',
+      whereArgs: [id],
+    );
+
+    // 3. 追加到待清理列表
+    await _addPurgedUuid(uuid);
+
+    return deleted;
+  }
+
+  /// 添加待清理的 uuid 到 meta 表
+  Future<void> _addPurgedUuid(String uuid) async {
+    final existing = await getMeta(MetaKeys.purgedUuids);
+    final list = _parseUuidList(existing);
+    if (!list.contains(uuid)) {
+      list.add(uuid);
+      await setMeta(MetaKeys.purgedUuids, _serializeUuidList(list));
+    }
+  }
+
+  /// 读取待清理的 uuid 列表（SyncEngine 同步时调用）
+  Future<List<String>> getPurgedUuids() async {
+    final value = await getMeta(MetaKeys.purgedUuids);
+    return _parseUuidList(value);
+  }
+
+  /// 从待清理列表中移除指定 uuid（SyncEngine 同步成功后调用）
+  Future<void> removePurgedUuids(List<String> uuids) async {
+    if (uuids.isEmpty) return;
+    final existing = await getMeta(MetaKeys.purgedUuids);
+    final list = _parseUuidList(existing);
+    list.removeWhere((uuid) => uuids.contains(uuid));
+    await setMeta(MetaKeys.purgedUuids, _serializeUuidList(list));
+  }
+
+  /// 解析 JSON 格式的 uuid 列表
+  static List<String> _parseUuidList(String? value) {
+    if (value == null || value.isEmpty) return [];
+    try {
+      final decoded = json.decode(value);
+      if (decoded is List) {
+        return decoded.map((e) => e.toString()).toList();
+      }
+    } on Exception {
+      // 解析失败返回空列表
+    }
+    return [];
+  }
+
+  /// 序列化 uuid 列表为 JSON 字符串
+  static String _serializeUuidList(List<String> uuids) {
+    return json.encode(uuids);
+  }
+
+  /// 恢复软删除的笔记（撤回墓碑标记）
+  ///
+  /// 用于"最近删除"视图的"恢复"操作：
+  ///   - deleted 改回 0
+  ///   - updatedAt 设为当前时间（触发同步：本地新版本，远端会被覆盖）
+  ///   - synced 设为 0（标记为待同步）
+  Future<int> restoreNote(int id) async {
+    final db = await instance.database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.update(
+      tableNotes,
+      {
+        NoteFields.deleted: 0,
+        NoteFields.updatedAt: now,
+        NoteFields.synced: 0,
+      },
+      where: '${NoteFields.id} = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 重新加密所有笔记（dataKey 迁移时调用）
+  ///
+  /// 场景：本地 dataKey 与远端不一致，需要用新 dataKey 重新加密所有笔记。
+  /// 这是多端 join 的核心操作，必须保证 crash 安全：
+  ///
+  /// Crash 安全策略：
+  ///   1. 在 SQLite 事务中执行（atomic）：要么全部成功，要么全部回滚
+  ///   2. 内存中先用 oldKey 解密所有笔记 → 用 newKey 重新加密
+  ///      （不直接修改数据库，避免半加密状态）
+  ///   3. 全部加密完成后，在事务中一次性写入所有新密文
+  ///   4. 最后才更新 database 的 _dataKey 为 newKey
+  ///
+  /// 如果在步骤 2 crash：数据库仍为旧密文，_dataKey 仍为 oldKey，状态一致。
+  /// 如果在步骤 3 crash：SQLite 事务回滚，数据库仍为旧密文。
+  /// 如果在步骤 4 crash：数据库已更新为新密文，但 _dataKey 还是 oldKey，
+  ///   下次登录时 Vault.unlockLocal 会用密码重新派生 dataKey，状态恢复一致。
+  ///
+  /// [oldKey] 旧的 dataKey（用于解密当前数据库内容）
+  /// [newKey] 新的 dataKey（用于重新加密）
+  /// 返回重新加密的笔记数量
+  Future<int> reEncryptAllNotes({
+    required Uint8List oldKey,
+    required Uint8List newKey,
+  }) async {
+    final db = await instance.database;
+
+    // 1. 临时切换 dataKey 为 oldKey 读取所有笔记（自动解密为明文）
+    //    保存当前 _dataKey 以便失败时恢复
+    final originalDataKey = _dataKey;
+    _dataKey = Uint8List.fromList(oldKey);
+
+    try {
+      // 2. 读取所有笔记（含墓碑），此时返回的是明文 SafeNote 对象
+      final notes = await readAllNotesIncludingDeleted();
+
+      // 3. 临时切换 dataKey 为 newKey，准备加密
+      _dataKey = Uint8List.fromList(newKey);
+
+      // 4. 在内存中用 newKey 重新加密所有笔记
+      //    不直接修改数据库，先收集所有要写入的行
+      final encryptedRows = <Map<String, dynamic>>[];
+      for (final note in notes) {
+        final row = _toEncryptedRow(note);
+        // 保留 id 和 uuid 用于 UPDATE WHERE 条件
+        encryptedRows.add({
+          'where_uuid': note.uuid,
+          'row': row,
+        });
+      }
+
+      // 5. 在事务中一次性写入所有新密文（atomic）
+      await db.transaction((txn) async {
+        for (final entry in encryptedRows) {
+          final uuid = entry['where_uuid'] as String;
+          final row = entry['row'] as Map<String, dynamic>;
+          await txn.update(
+            tableNotes,
+            row,
+            where: '${NoteFields.uuid} = ?',
+            whereArgs: [uuid],
+          );
+        }
+      });
+
+      // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
+      _dataKey = Uint8List.fromList(newKey);
+
+      return notes.length;
+    } catch (e) {
+      // 失败时恢复 _dataKey 为原始值（可能是 oldKey 或 originalDataKey）
+      _dataKey = originalDataKey;
+      rethrow;
+    }
+  }
+
+  /// 标记笔记为已同步
+  Future<void> markSynced(String uuid) async {
+    final db = await instance.database;
+    await db.update(
+      tableNotes,
+      {NoteFields.synced: 1},
+      where: '${NoteFields.uuid} = ?',
+      whereArgs: [uuid],
+    );
+  }
+
+  /// 标记所有笔记为已同步（全量同步完成后用）
+  Future<void> markAllSynced() async {
+    final db = await instance.database;
+    await db.update(tableNotes, {NoteFields.synced: 1});
+  }
+
+  // ──────────────────────────────────────────────
+  // sync_meta 表 CRUD
+  // ──────────────────────────────────────────────
+
+  /// 读取 meta 值
+  Future<String?> getMeta(String key) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      tableMeta,
+      columns: [MetaFields.value],
+      where: '${MetaFields.key} = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      return maps.first[MetaFields.value] as String;
+    }
+    return null;
+  }
+
+  /// 写入 meta 值（upsert）
+  Future<void> setMeta(String key, String value) async {
+    final db = await instance.database;
+    await db.insert(
+      tableMeta,
+      {MetaFields.key: key, MetaFields.value: value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// 读取 manifest 版本号（按 providerKey 隔离存储）
+  ///
+  /// [providerKey] 后端实例的唯一标识（见 SyncBackend.providerKey）。
+  /// 不同后端类型、不同 URL 的 manifest version 互不影响：
+  /// 切换后端时新后端读不到旧 version（默认 0，走首次同步），
+  /// 切回原后端时旧 version 仍在（继续增量同步）。
+  Future<int> getManifestVersion(String providerKey) async {
+    final value = await getMeta(_manifestVersionKey(providerKey));
+    return value != null ? int.parse(value) : 0;
+  }
+
+  /// 写入 manifest 版本号（按 providerKey 隔离存储）
+  Future<void> setManifestVersion(
+    String providerKey,
+    int version,
+  ) async {
+    await setMeta(_manifestVersionKey(providerKey), version.toString());
+  }
+
+  /// 生成 manifest version 的 meta key
+  static String _manifestVersionKey(String providerKey) =>
+      'manifest_version:$providerKey';
+
+  // ──────────────────────────────────────────────
+  // 旧接口兼容（backup/import 功能用，后续重构为加密备份）
+  // ──────────────────────────────────────────────
+
+  /// 导出所有笔记为 JSON 字符串（明文，已解密）
+  ///
+  /// 返回完整字段（含 uuid/contentHash 等），导入时可直接通过 SafeNote.fromJson 解析。
+  /// 注意：导出内容为明文 JSON，备份加密由上层 FileHandler 负责。
+  Future<String> exportAll() async {
+    // 复用 readAllNotes（自动解密）
+    final notes = await readAllNotes();
+    final jsonList = notes.map((note) => note.toJson()).toList();
+    return jsonEncode(jsonList).toString();
+  }
+
+  /// 兼容旧调用：导出所有笔记（同 exportAll）
+  ///
+  /// TODO: backup 功能后续重构为用 passPhrase 加密导出内容
+  Future<String> exportAllEncrypted() => exportAll();
+
+  /// 兼容旧调用：存储笔记（同 storeNote）
+  ///
+  /// TODO: import 功能后续重构为补全 uuid/hash 后调用 storeNote
+  Future<SafeNote> encryptAndStore(SafeNote note) => storeNote(note);
+
+  Future<void> close() async {
     final db = await instance.database;
     db.close();
   }

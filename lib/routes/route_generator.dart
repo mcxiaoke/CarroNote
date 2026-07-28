@@ -31,6 +31,7 @@ import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/authentication/login.dart';
 import 'package:safenotes/views/authentication/set_passphrase.dart';
 import 'package:safenotes/views/change_passphrase.dart';
+import 'package:safenotes/views/deleted_notes.dart';
 import 'package:safenotes/views/home.dart';
 import 'package:safenotes/views/note_view.dart';
 import 'package:safenotes/views/settings/autorotate_settings.dart';
@@ -41,6 +42,7 @@ import 'package:safenotes/views/settings/language_setting.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
 import 'package:safenotes/views/settings/secure_display_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
+import 'package:safenotes/views/settings/sync_settings.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -159,6 +161,20 @@ class RouteGenerator {
       case '/changepassphrase':
         return PageTransition(
           child: const ChangePassphrase(),
+          duration: const Duration(milliseconds: transitionDuration),
+          type: transitionType,
+        );
+
+      case '/syncSettings':
+        return PageTransition(
+          child: const SyncSettingsPage(),
+          duration: const Duration(milliseconds: transitionDuration),
+          type: transitionType,
+        );
+
+      case '/deletedNotes':
+        return PageTransition(
+          child: const DeletedNotesPage(),
           duration: const Duration(milliseconds: transitionDuration),
           type: transitionType,
         );

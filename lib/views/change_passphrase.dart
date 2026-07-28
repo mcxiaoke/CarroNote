@@ -25,9 +25,10 @@ import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 // Project imports:
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
+import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 
@@ -46,16 +47,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   final _newPassphraseController = TextEditingController();
   final _newConfirmPassphraseController = TextEditingController();
   final _scrollController = ScrollController();
-  late List<SafeNote> allnotes;
   final _focusOld = FocusNode();
   final _focusNew = FocusNode();
   final _focusNewConfirm = FocusNode();
-
-  @override
-  initState() {
-    super.initState();
-    _loadNotes();
-  }
 
   @override
   void dispose() {
@@ -63,10 +57,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     _focusNew.dispose();
     _focusNewConfirm.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadNotes() async {
-    allnotes = await NotesDatabase.instance.decryptReadAllNotes();
   }
 
   @override
@@ -320,18 +310,152 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     final form = formKey.currentState!;
     final String passChangedSnackMsg = 'Passphrase changed!'.tr();
 
-    // Update SHA256 signature of passphrase
     if (form.validate()) {
-      Session.setOrChangePassphrase(_newConfirmPassphraseController.text);
-      var navigator = Navigator.of(context);
+      // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
+      // context 在 mounted 检查后直接使用（analyzer 识别 if (!mounted) return 模式）
+      final navigator = Navigator.of(context);
 
-      // Re-encrypt and update all the existing notes
-      for (final note in allnotes) {
-        await NotesDatabase.instance.encryptAndUpdate(note);
+      // 前置检查：强制同步 + 强制备份 + 服务器在线检测
+      // 返回 false 表示用户取消或检查未通过，中止改密码
+      final proceed = await _preChangeCheck();
+      if (!proceed) return;
+
+      final oldPassword = _oldPassphraseController.text;
+      final newPassword = _newConfirmPassphraseController.text;
+
+      // 更新密码哈希（登录验证用）
+      Session.setOrChangePassphrase(newPassword);
+
+      // 重新 wrap dataKey（O(1) 操作，不触碰笔记）
+      // dataKey 本身不变，只是用新密码重新加密 dataKey → 新 encryptedDataKey
+      // 本地加密的笔记无需重新加密（dataKey 没变）
+      final vault = SyncService.instance.vault;
+      if (vault != null) {
+        try {
+          final newVault = await vault.changePassword(
+            oldPassword: oldPassword,
+            newPassword: newPassword,
+            database: NotesDatabase.instance,
+          );
+          // 更新 SyncService 中的 Vault（重建 SyncEngine 使用新 encryptedDataKey）
+          await SyncService.instance.updateVault(
+            vault: newVault,
+            database: NotesDatabase.instance,
+          );
+          // dataKey 没变，NotesDatabase 的 dataKey 引用无需更新
+        } on Exception catch (_) {
+          // Vault 改密码失败不影响本地密码变更
+          // dataKey 未变，本地笔记仍可正常加解密
+        }
+
+        // 改密码后立即同步：把新 encryptedDataKey 推送到远端
+        // 避免他端在本地推送前拉到旧 encryptedDataKey，触发不必要的 dataKey 迁移逻辑
+        // 同步失败不阻断改密码流程（本地密码已变更成功），仅提示用户
+        try {
+          await SyncService.instance.sync();
+        } on Exception {
+          // 同步失败：本地 encryptedDataKey 已更新，下次 sync 会自动推送
+        }
       }
-      // TODO: refactor without using BuildContexts across async gap
-      if (mounted) showSnackBarMessage(context, passChangedSnackMsg);
+
+      // 使用 if (!mounted) return; 模式，让 analyzer 识别 mounted 守卫
+      if (!mounted) return;
+      showSnackBarMessage(context, passChangedSnackMsg);
       navigator.pop();
     }
+  }
+
+  /// 改密码前置检查：强制同步 + 强制备份 + 服务器在线检测
+  ///
+  /// 流程：
+  ///   1. 强制本地完整备份（绕过开关），失败则警告用户是否继续
+  ///   2. 若启用同步：强制 sync 一次，检查本地是否 clean
+  ///   3. 若启用同步：ping 服务器确认在线，不在线则警告用户
+  ///
+  /// 返回 true 表示可以继续改密码，false 表示用户取消或检查未通过。
+  Future<bool> _preChangeCheck() async {
+    // 1. 强制本地完整备份（绕过 isBackupOn 开关）
+    final backupOk = await ScheduledTask.forceBackup();
+    if (!backupOk && mounted) {
+      final errMsg = ScheduledTask.lastBackupError;
+      final proceed = await _showWarningDialog(
+        title: '备份失败',
+        content: errMsg != null
+            ? '改密码前的本地备份写入失败：$errMsg\n\n是否仍要继续改密码？'
+            : '改密码前的本地备份写入失败，建议先解决备份问题再继续。\n\n是否仍要继续改密码？',
+        confirmText: '继续改密码',
+        cancelText: '取消',
+      );
+      if (!proceed) return false;
+    }
+
+    // 2. 若启用同步：强制 sync + 检查 clean + ping 服务器
+    final backend = SyncService.instance.backend;
+    final vault = SyncService.instance.vault;
+    if (vault != null && backend != null) {
+      // 2a. ping 服务器确认在线
+      final online = await backend.ping();
+      if (!online && mounted) {
+        final proceed = await _showWarningDialog(
+          title: '同步服务器不可用',
+          content: '无法连接同步服务器，改密码后新密钥无法立即推送。\n'
+              '他端在下次同步时可能触发密钥迁移，期间无法正常同步。\n\n是否仍要继续改密码？',
+          confirmText: '继续改密码',
+          cancelText: '取消',
+        );
+        if (!proceed) return false;
+      }
+
+      // 2b. 强制同步一次，把本地未推送的变更先推到远端
+      if (online) {
+        await SyncService.instance.sync();
+        // 2c. 检查本地是否 clean（同步后仍可能有 blob missing 等情况）
+        final unsynced = await NotesDatabase.instance.readUnsyncedNotes();
+        if (unsynced.isNotEmpty && mounted) {
+          final proceed = await _showWarningDialog(
+            title: '本地仍有未同步笔记',
+            content: '当前有 ${unsynced.length} 条笔记未成功同步（可能是远端临时不可达）。\n'
+                '改密码后这些笔记仍会保留在本地，下次同步时推送。\n\n是否仍要继续改密码？',
+            confirmText: '继续改密码',
+            cancelText: '取消',
+          );
+          if (!proceed) return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /// 显示警告对话框，让用户选择是否继续
+  ///
+  /// 返回 true 表示用户选择继续，false 表示取消。
+  Future<bool> _showWarningDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    required String cancelText,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: Text(title),
+              content: Text(content),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(cancelText),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(confirmText),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 }

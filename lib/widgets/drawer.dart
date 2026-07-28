@@ -32,6 +32,7 @@ class HomeDrawer extends StatefulWidget {
   final VoidCallback onLogoutCallback;
   final VoidCallback onSettingsCallback;
   final VoidCallback onBiometricsCallback;
+  final VoidCallback? onDeletedNotesCallback;
 
   const HomeDrawer({
     Key? key,
@@ -40,6 +41,7 @@ class HomeDrawer extends StatefulWidget {
     required this.onLogoutCallback,
     required this.onSettingsCallback,
     required this.onBiometricsCallback,
+    this.onDeletedNotesCallback,
   }) : super(key: key);
 
   @override
@@ -69,6 +71,7 @@ class HomeDrawerState extends State<HomeDrawer> {
     final String rateText = 'Rate App'.tr();
     final String logoutText = 'Logout'.tr();
     final String biometrics = 'Biometric'.tr();
+    const String deletedNotesText = '最近删除';
 
     return OrientationBuilder(
       builder: (context, orientation) {
@@ -124,6 +127,13 @@ class HomeDrawerState extends State<HomeDrawer> {
                     icon: Icons.settings_outlined,
                     onClicked: widget.onSettingsCallback,
                   ),
+                  if (widget.onDeletedNotesCallback != null)
+                    _buildMenuItem(
+                      topPadding: itemSpacing,
+                      text: deletedNotesText,
+                      icon: Icons.delete_outline,
+                      onClicked: widget.onDeletedNotesCallback!,
+                    ),
                   _divide(topPadding: dividerSpacing),
                   _buildMenuItem(
                     topPadding: dividerSpacing,

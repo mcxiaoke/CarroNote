@@ -1,105 +1,214 @@
 /*
-* Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
-*
-* SPDX-License-Identifier: GPL-3.0-or-later
-* You may use, distribute and modify this code under the
-* terms of the GPL-3.0+ license.
-*
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
-*
-* See https://safenotes.dev for support or download.
-*/
+ * 笔记数据模型
+ *
+ * 改造说明（fork 同步版）：
+ *   - 新增 uuid / contentHash / deleted / updatedAt / synced 字段
+ *   - 本地存储改为明文（同步时加密为 envelope 上传到后端）
+ *   - 软删除（deleted=1 表示墓碑，不真正删除行）
+ *   - contentHash 用于 manifest 比对和 blob 寻址
+ */
 
-// Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/encryption/aes_encryption.dart';
+// Dart 导入
+import 'dart:convert';
+import 'dart:math' show Random;
+import 'dart:typed_data';
+
+// 项目导入
+import 'package:safenotes/sync/crypto.dart';
 
 const String tableNotes = 'safe_notes';
 
 class NoteFields {
-  static final List<String> values = [id, title, description, time];
+  static final List<String> values = [
+    id,
+    uuid,
+    title,
+    description,
+    contentHash,
+    deleted,
+    createdAt,
+    updatedAt,
+    synced,
+  ];
 
   static const String id = '_id';
+  static const String uuid = 'uuid';
   static const String title = 'title';
   static const String description = 'description';
-  static const String time = 'time';
+  static const String contentHash = 'content_hash';
+  static const String deleted = 'deleted';
+  static const String createdAt = 'created_at';
+  static const String updatedAt = 'updated_at';
+  static const String synced = 'synced';
 }
 
 class SafeNote {
   final int? id;
+  final String uuid;
   final String title;
   final String description;
+  final String contentHash;
+  final bool deleted;
   final DateTime createdTime;
+  final int updatedAt; // Unix 毫秒，用于 LWW 冲突解决
+  final bool synced;
 
   const SafeNote({
     this.id,
+    required this.uuid,
     required this.title,
     required this.description,
+    required this.contentHash,
+    this.deleted = false,
     required this.createdTime,
+    required this.updatedAt,
+    this.synced = false,
   });
 
-  SafeNote copy({
+  /// 创建新笔记的工厂构造函数
+  ///
+  /// 自动生成 UUIDv4、计算 contentHash、设置 updatedAt 为当前时间。
+  /// synced=false（新建笔记需同步），deleted=false。
+  factory SafeNote.create({
+    required String title,
+    required String description,
+    DateTime? createdTime,
+  }) {
+    final now = DateTime.now();
+    return SafeNote(
+      uuid: generateUuid(),
+      title: title,
+      description: description,
+      contentHash: computeHash(title, description),
+      createdTime: createdTime ?? now,
+      updatedAt: now.millisecondsSinceEpoch,
+      synced: false,
+    );
+  }
+
+  /// 生成 UUIDv4（RFC 4122）
+  ///
+  /// 使用 Random.secure() 保证密码学安全。
+  /// 格式：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx（y ∈ {8,9,a,b}）
+  static String generateUuid() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    // 设置 version 和 variant 位
+    bytes[6] = (bytes[6] & 0x0F) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; // variant 10
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
+  }
+
+  SafeNote copyWith({
     int? id,
+    String? uuid,
     String? title,
     String? description,
+    String? contentHash,
+    bool? deleted,
     DateTime? createdTime,
+    int? updatedAt,
+    bool? synced,
   }) =>
       SafeNote(
         id: id ?? this.id,
+        uuid: uuid ?? this.uuid,
         title: title ?? this.title,
         description: description ?? this.description,
+        contentHash: contentHash ?? this.contentHash,
+        deleted: deleted ?? this.deleted,
         createdTime: createdTime ?? this.createdTime,
+        updatedAt: updatedAt ?? this.updatedAt,
+        synced: synced ?? this.synced,
       );
 
-  static SafeNote fromJsonAndDecrypt(Map<String, dynamic> json) {
+  /// 从数据库行构造（明文存储，无需解密）
+  ///
+  /// 兼容旧备份格式：如果缺少 uuid/contentHash/updatedAt/synced 等字段，
+  /// 自动补全（生成 uuid、计算 hash、设为当前时间/未同步）。
+  /// 这样导入旧版本导出的备份（只有 title/description/createdAt）也能正常工作。
+  static SafeNote fromJson(Map<String, dynamic> json) {
+    final title = json[NoteFields.title] as String? ?? '';
+    final description = json[NoteFields.description] as String? ?? '';
+    final createdAt = json[NoteFields.createdAt] as String?;
+
+    // 兼容旧格式：缺少的字段自动补全
+    final uuid = json[NoteFields.uuid] as String? ?? generateUuid();
+    final contentHash =
+        json[NoteFields.contentHash] as String? ?? computeHash(title, description);
+    final deleted = (json[NoteFields.deleted] as int?) == 1;
+    final updatedAt = (json[NoteFields.updatedAt] as int?) ??
+        DateTime.now().millisecondsSinceEpoch;
+    final synced = (json[NoteFields.synced] as int?) == 1;
+
     return SafeNote(
       id: json[NoteFields.id] as int?,
-      title:
-          decryptAES(json[NoteFields.title] as String, PhraseHandler.getPass),
-      description: decryptAES(
-          json[NoteFields.description] as String, PhraseHandler.getPass),
-      createdTime: DateTime.parse(json[NoteFields.time] as String),
+      uuid: uuid,
+      title: title,
+      description: description,
+      contentHash: contentHash,
+      deleted: deleted,
+      createdTime: createdAt != null
+          ? DateTime.parse(createdAt)
+          : DateTime.now(),
+      updatedAt: updatedAt,
+      synced: synced,
     );
   }
 
-  Map<String, dynamic> toJsonAndEncrypted() {
-    String passphrase = PhraseHandler.getPass;
-    return {
-      NoteFields.id: id,
-      NoteFields.title: encryptAES(title, passphrase), //title,
-      NoteFields.description:
-          encryptAES(description, passphrase), //description,
-      NoteFields.time: createdTime.toIso8601String(),
-    };
-  }
-
+  /// 转为数据库行（明文存储）
   Map<String, dynamic> toJson() {
     return {
-      //"${NoteFields.id}": this.id,
-      NoteFields.title: encryptAES(title, PhraseHandler.getPass),
-      NoteFields.description: encryptAES(description, PhraseHandler.getPass),
-      NoteFields.time: createdTime.toIso8601String(),
+      NoteFields.uuid: uuid,
+      NoteFields.title: title,
+      NoteFields.description: description,
+      NoteFields.contentHash: contentHash,
+      NoteFields.deleted: deleted ? 1 : 0,
+      NoteFields.createdAt: createdTime.toIso8601String(),
+      NoteFields.updatedAt: updatedAt,
+      NoteFields.synced: synced ? 1 : 0,
     };
   }
 
-  static SafeNote fromJson(Map<String, dynamic> json) {
-    /*
-    Attention: Starting v2.0 unencrypted export is removed, 
-    however user are allowed to import their unencrypted backup until v3.0 
-    */
-    final bool isImportEncrypted =
-        ImportEncryptionControl.getIsImportEncrypted();
-    return SafeNote(
-      title: isImportEncrypted
-          ? decryptAES(json[NoteFields.title] as String,
-              ImportPassPhraseHandler.getImportPassPhrase())
-          : json[NoteFields.title] as String,
-      description: isImportEncrypted
-          ? decryptAES(json[NoteFields.description] as String,
-              ImportPassPhraseHandler.getImportPassPhrase())
-          : json[NoteFields.description] as String,
-      createdTime: DateTime.parse(json[NoteFields.time] as String),
+  /// 计算笔记内容的 SHA-256 哈希
+  ///
+  /// hash = SHA-256(title + "\n" + description)
+  /// 用于 manifest 比对和 blob 寻址
+  static String computeHash(String title, String description) {
+    final content = '$title\n$description';
+    return SyncCrypto.hashString(content);
+  }
+
+  /// 将笔记内容序列化为明文字节（用于加密为 envelope）
+  ///
+  /// 格式：JSON {"title": "...", "description": "..."}
+  /// 同步时：envelope = SyncCrypto.seal(dataKey, uuid, toContentBytes())
+  Uint8List toContentBytes() {
+    final content = jsonEncode({
+      'title': title,
+      'description': description,
+    });
+    return Uint8List.fromList(utf8.encode(content));
+  }
+
+  /// 从加密信封的明文字节反序列化笔记内容
+  ///
+  /// [bytes] 是 SyncCrypto.open() 解密后的明文字节
+  /// 返回 (title, description)
+  static ({String title, String description}) fromContentBytes(
+      Uint8List bytes) {
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    return (
+      title: json['title'] as String,
+      description: json['description'] as String,
     );
   }
+
+  @override
+  String toString() =>
+      'SafeNote(id=$id, uuid=$uuid, title="$title", hash=$contentHash, '
+      'deleted=$deleted, updatedAt=$updatedAt, synced=$synced)';
 }
