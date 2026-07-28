@@ -215,11 +215,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: const Icon(Icons.logout),
               title: Text('Logout'.tr()),
               onPressed: (context) async {
-              await Session.logout();
+              // 顺序与 main.dart 超时退出 logout() 保持一致：
+              // 1. 先停会话监听；2. 导航离开（不 await——该 Future 要等
+              //    '/login' 被 pop 才完成，await 会把 logout 拖到下次登录后）；
+              // 3. 导航落地、HomePage 卸载后再清敏感状态（clearDataKey 等）。
+              // 若反过来先 logout 再导航，HomePage 仍挂载且 dataKey 已清，
+              // 在途的 notes 读取会抛 DataKeyNotSetException。
               widget.sessionStateStream.add(SessionState.stopListening);
 
               if (context.mounted) {
-                await Navigator.pushNamedAndRemoveUntil(
+                Navigator.pushNamedAndRemoveUntil(
                   context,
                   '/login',
                   (Route<dynamic> route) => false,
@@ -229,6 +234,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 );
               }
+
+              await Session.logout();
             },
             ),
           ],

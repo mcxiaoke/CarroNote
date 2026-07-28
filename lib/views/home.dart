@@ -281,9 +281,11 @@ class HomePageState extends State<HomePage> {
         widget.sessionStateStream.add(SessionState.startListening);
       },
       onChangePassCallback: () async {
-        var navigator = Navigator.of(context);
+        // 先关抽屉再跳转：不要 await 返回后再 pop。若目标页触发了
+        // pushNamedAndRemoveUntil 清栈（如退出登录），残留的 pop() 会把
+        // 栈中唯一剩余的路由弹掉，触发 Navigator _history.isNotEmpty 断言崩溃。
+        Navigator.of(context).pop();
         await Navigator.pushNamed(context, '/changepassphrase');
-        navigator.pop();
       },
       onLogoutCallback: () async {
         await Session.logout();
@@ -302,28 +304,38 @@ class HomePageState extends State<HomePage> {
         }
       },
       onSettingsCallback: () async {
-        var navigator = Navigator.of(context);
+        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+        Navigator.of(context).pop();
         await Navigator.pushNamed(
           context,
           '/settings',
           arguments: widget.sessionStateStream,
         );
-        navigator.pop();
-        refreshNotes();
+        // 设置页内退出登录时，'/settings' 是被 removeUntil 移除的（而非正常
+        // pop 返回），此 continuation 仍会被唤醒。此时 dataKey 已清、页面
+        // 即将销毁，必须跳过 refresh，否则 readAllNotes 抛
+        // DataKeyNotSetException。
+        if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+          refreshNotes();
+        }
       },
       onBiometricsCallback: () async {
-        var navigator = Navigator.of(context);
+        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+        Navigator.of(context).pop();
         await Navigator.pushNamed(
           context,
           '/biometricSetting',
         );
-        navigator.pop();
       },
       onDeletedNotesCallback: () async {
-        var navigator = Navigator.of(context);
+        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+        Navigator.of(context).pop();
         await Navigator.pushNamed(context, '/deletedNotes');
-        navigator.pop();
-        refreshNotes();
+        // 同 onSettingsCallback：路由若被清栈移除（如无操作超时登出），
+        // 需跳过 refresh。
+        if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+          refreshNotes();
+        }
       },
     );
   }
