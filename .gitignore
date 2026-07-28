@@ -51,6 +51,11 @@ app.*.map.json
 #Ignore Some local Devlopment File
 _local_temp/
 
+#Sync reference servers (not committed, for local testing only)
+/server/go/data/
+/server/nodejs/data/
+/server/
+
 #Ignore App Store Listing Assets
 app_store_listing_assets/
 

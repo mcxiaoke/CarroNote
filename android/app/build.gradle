@@ -30,7 +30,19 @@ if (keystorePropertiesFile.exists()) {
 
 
 android {
-    compileSdkVersion 34
+    namespace "com.trisven.safenotes"
+    compileSdkVersion 36
+
+    ndkVersion = "28.2.13676358"
+
+    // 统一 Java/Kotlin JVM target，避免 Inconsistent JVM Target 错误
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
@@ -40,7 +52,7 @@ android {
         
         applicationId "com.trisven.safenotes"
         minSdkVersion 25
-        targetSdkVersion 34
+        targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }

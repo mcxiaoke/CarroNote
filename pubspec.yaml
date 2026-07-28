@@ -7,7 +7,7 @@ publish_to: 'none'
 version: 2.3.0+10
 
 environment:
-  sdk: ">=2.12.0 <4.0.0"
+  sdk: ">=3.0.0 <4.0.0"
   flutter: 3.19.3
 
 dependencies:
@@ -24,8 +24,8 @@ dependencies:
   file_picker: ^8.0.0+1
   flutter_secure_storage: ^9.0.0
   flutter_staggered_grid_view: ^0.7.0
-  intl: ^0.18.1
-  local_auth: ^2.1.2
+  intl: ^0.20.2
+  local_auth: ^3.0.2
   local_session_timeout: ^2.1.1
   logger: ^2.1.0
   material_design_icons_flutter: ^7.0.7296
@@ -34,15 +34,20 @@ dependencies:
   page_transition: ^2.0.9
   path: ^1.9.0
   path_provider: ^2.0.2
-  permission_handler: ^11.3.0
+  permission_handler: ^12.0.3
   provider: ^6.0.3 
   rename: ^3.0.2
   settings_ui: ^2.0.2
   shared_preferences: ^2.0.6
   sqflite: ^2.1.0+1
+  sqflite_common_ffi: ^2.3.0  # 桌面端 SQLite（Windows/macOS/Linux 运行时 + 测试）
   timeago: ^3.3.0
   tuple: ^2.0.0
   url_launcher: ^6.1.5
+
+  # 同步功能依赖
+  http: ^1.1.0                # WebDAV HTTP 客户端
+  pointycastle: ^3.7.4        # AES-256-GCM + PBKDF2-SHA256 加密
 
   safenotes_nord_theme:
     git:
@@ -58,7 +63,7 @@ dev_dependencies:
   import_sorter: ^4.6.0
   dependency_validator: ^3.0.0
   flutter_lints: ^3.0.2
-  
+
 
 flutter_native_splash:
   color: "#ECEFF4"
