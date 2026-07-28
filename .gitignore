@@ -52,6 +52,10 @@ app.*.map.json
 _local_temp/
 
 #Sync reference servers (not committed, for local testing only)
+
+temp/
+tmp/
+
 /server/go/data/
 /server/nodejs/data/
 /server/
