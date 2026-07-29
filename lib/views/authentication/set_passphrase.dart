@@ -313,7 +313,15 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
         // 初始化 Vault：生成 dataKey 并注入 database（本地加密存储）
         // 这是 B1 方案的核心——无论是否启用同步，都要初始化 dataKey
-        await _initVault(enteredPassphrase);
+        //
+        // D1 修复（与 login.dart 一致）：_initVault 返回 bool，失败时停留
+        // 在设置密码页不导航到 /home。否则 database._dataKey 仍为 null，
+        // home 页 refreshNotes 会抛 DataKeyNotSetException，异常未捕获导致
+        // isLoading 永远为 true，UI 一直转圈。
+        // 触发场景：卸载/清除 SharedPreferences 但 db 文件还在，用户输入
+        // 新密码时 Vault.unlockLocal 用新密码解旧 encryptedDataKey 失败。
+        final ok = await _initVault(enteredPassphrase);
+        if (!ok) return;
 
         TextInput.finishAutofillContext();
         await Navigator.pushReplacementNamed(
@@ -330,18 +338,26 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   /// 初始化 Vault：生成 dataKey + encryptedDataKey，注入 database
   ///
   /// 首次设置密码时调用。PBKDF2 600k 迭代会耗时 1-2 秒，
-  /// 显示 loading 不阻塞 UI。失败时提示用户（极罕见，只有系统异常才会失败）。
-  Future<void> _initVault(String passphrase) async {
+  /// 显示 loading 不阻塞 UI。
+  ///
+  /// 返回 true 表示 vault 已就绪（可导航到 /home）；
+  /// 返回 false 表示 vault 初始化失败（dataKey 未注入 database），
+  /// 调用方不应导航到 /home，否则 home 页读取笔记会抛
+  /// DataKeyNotSetException 且 UI 一直转圈。
+  Future<bool> _initVault(String passphrase) async {
     final result = await SyncService.instance.initVaultFromPassword(
       password: passphrase,
       database: NotesDatabase.instance,
     );
 
-    if (!result.success && mounted) {
-      showSnackBarMessage(
-        context,
-        '加密初始化失败：${result.error ?? "未知错误"}',
-      );
+    if (!result.success) {
+      if (mounted) {
+        showSnackBarMessage(
+          context,
+          '加密初始化失败：${result.error ?? "未知错误"}',
+        );
+      }
+      return false;
     }
 
     // 如果已配置同步后端，顺带初始化后端
@@ -356,6 +372,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
           '同步初始化失败：${backendResult.error ?? "未知错误"}',
         );
       }
+      // 后端失败不阻断进入 home——vault 已就绪，用户可在设置页修复后端
     }
+    return true;
   }
 }
