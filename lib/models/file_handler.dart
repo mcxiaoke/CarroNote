@@ -19,14 +19,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:crypto/crypto.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 
 // Project imports:
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/dialogs/backup_passphrase.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/models/parse_import.dart';
 import 'package:safenotes/models/safenote.dart';
@@ -34,23 +32,29 @@ import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 
 class FileHandler {
+  /// 导出备份内容(明文 JSON)
+  ///
+  /// 简化方案:移除 passPhraseHash 后,backup 文件不再写密码指纹。
+  /// 当前 backup 实际是明文导出(exportAllEncrypted => exportAll 已解密),
+  /// recordHandlerHash 原本只是 owner 身份指纹,不用作加密密钥。
+  /// 本次最小化:写固定标记 "plaintext-v1",完整加密改造见 docs/登录验证简化方案-20260729.md 5.2 TODO。
   static Future<String> encryptedOutputBackupContent() async {
-    final String passHash = PreferencesStorage.passPhraseHash.toString();
     String record = await NotesDatabase.instance.exportAllEncrypted();
     int totalCountOfNotes = '{'.allMatches(record).length;
 
     String content =
-        '{ "records" : $record, "recordHandlerHash" : "$passHash", "total" : ${totalCountOfNotes.toString()} }';
+        '{ "records" : $record, "recordHandlerHash" : "plaintext-v1", "total" : ${totalCountOfNotes.toString()} }';
     return content;
   }
 
   Future<String?> selectFileAndImport(BuildContext context) async {
     /*
-    Attention: Starting v2.0 unencrypted export is removed, 
-    however user are allowed to import their old unencrypted backup.
+    简化方案:移除 passPhraseHash 后,import 不再校验密码。
+    当前 backup 实际是明文导出,密码校验只是形式门禁,不影响数据可读性。
+    本次最小化:直接解析并插入笔记,完整加密改造见
+    docs/登录验证简化方案-20260729.md 5.2 TODO。
     */
     String? dataFromFileAsString = await getFileAsString();
-    String? currentPassHash = PreferencesStorage.passPhraseHash;
 
     if (dataFromFileAsString == null) {
       return "File not picked!".tr();
@@ -60,37 +64,11 @@ class FileHandler {
 
     try {
       var jsonDecodedData = jsonDecode(dataFromFileAsString);
-      String importFileKeyHash = jsonDecodedData['recordHandlerHash'] as String;
-      ImportParser? parsedImportData;
-
-      if (importFileKeyHash == "null") {
-        ImportEncryptionControl.setIsImportEncrypted(false);
-      } else {
-        ImportEncryptionControl.setIsImportEncrypted(true);
-        if (importFileKeyHash != currentPassHash) {
-          // Set import passphrasehash to be used for validating user input passphrase
-          ImportPassPhraseHandler.setImportPassPhraseHash(importFileKeyHash);
-          try {
-            // TODO: refactor without using BuildContexts across async gap
-            if (context.mounted) await getImportPassphraseDialog(context);
-          } catch (e) {
-            return "Failed to get key for import data".tr();
-          }
-        } else {
-          ImportPassPhraseHandler.setImportPassPhrase(PhraseHandler.getPass);
-        }
-
-        String userInputPassHashForImportNotes = sha256
-            .convert(utf8.encode(ImportPassPhraseHandler.getImportPassPhrase()))
-            .toString();
-        if (userInputPassHashForImportNotes != importFileKeyHash) {
-          destroyImportCredentials();
-          return "Wrong passphrase!".tr();
-        }
-      }
-
-      parsedImportData = ImportParser.fromJson(jsonDecodedData);
+      // 明文 backup:不校验密码,直接解析
+      ImportEncryptionControl.setIsImportEncrypted(false);
       destroyImportCredentials();
+
+      final parsedImportData = ImportParser.fromJson(jsonDecodedData);
 
       bool importConfirmed = false;
       // TODO: refactor without using BuildContexts across async gap
@@ -112,14 +90,6 @@ class FileHandler {
   void destroyImportCredentials() {
     ImportPassPhraseHandler.setImportPassPhrase("null");
     ImportPassPhraseHandler.setImportPassPhraseHash(null);
-  }
-
-  getImportPassphraseDialog(BuildContext context) {
-    return showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const ImportPassPhraseDialog(),
-    );
   }
 
   Future<bool> confirmImportDialog(BuildContext context, int totalNotes) async {

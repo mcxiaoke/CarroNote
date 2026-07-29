@@ -27,12 +27,15 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Project imports:
 import 'package:safenotes/app.dart';
+import 'package:safenotes/authwall.dart';
+import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
@@ -57,6 +60,12 @@ Future main() async {
   ));
 
   await PreferencesStorage.init();
+
+  // 简化方案:预初始化 db + 一次性查询 Vault.isInitialized
+  // 避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁
+  await NotesDatabase.instance.database;
+  AppBootState.vaultInitialized =
+      await Vault.isInitialized(NotesDatabase.instance);
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -133,7 +142,8 @@ class SafeNotesApp extends StatelessWidget {
       {required BuildContext context, required bool showPreLogoffAlert}) async {
     // execute only if user is already logged
     // no need to logout and redirect to authwall if user is not loggedIN
-    if (PhraseHandler.getPass.isNotEmpty) {
+    // 简化方案:用 dataKey 是否注入判断登录状态(替代 PhraseHandler.getPass)
+    if (NotesDatabase.instance.isEncryptionEnabled) {
       bool? isUserActive;
       if (showPreLogoffAlert) {
         isUserActive = await preInactivityLogOffAlert(context);

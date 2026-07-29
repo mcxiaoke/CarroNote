@@ -753,7 +753,23 @@ class NotesDatabase {
   Future<SafeNote> encryptAndStore(SafeNote note) => storeNote(note);
 
   Future<void> close() async {
-    final db = await instance.database;
-    db.close();
+    final db = _database;
+    if (db != null) {
+      await db.close();
+      _database = null;
+    }
+  }
+
+  /// 删除 db 文件（忘记密码逃生通道使用）
+  ///
+  /// 必须先调用 [close] 关闭数据库连接,否则文件锁占用无法删除。
+  /// 删除后 _database 置为 null,下次访问 database getter 会重新创建空 db。
+  /// 同时清除 _dataKey,避免残留内存中的旧密钥。
+  Future<void> deleteDbFile() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'safenotes_sync.db');
+    await databaseFactory.deleteDatabase(path);
+    _database = null;
+    _dataKey = null;
   }
 }

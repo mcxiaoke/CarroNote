@@ -534,6 +534,25 @@ class Vault {
   /// [oldPassword] 旧密码（用于验证）
   /// [newPassword] 新密码（用于重新加密 dataKey）
   /// [database] 本地数据库（持久化新元数据）
+
+  /// 验证密码是否正确（不持久化，不改状态）
+  ///
+  /// 用于改密码前的旧密码前置验证：用密码派生 MK，尝试 unwrap dataKey。
+  /// 成功 = 密码正确，失败抛 WrongPasswordException。
+  ///
+  /// 与 [changePassword] 的区别：verifyPassword 只验证不持久化，
+  /// changePassword 验证 + 持久化一体。改密码流程先调 verifyPassword
+  /// 前置验证，通过后再做 _preChangeCheck，最后调 changePassword 持久化。
+  Future<void> verifyPassword(String password) async {
+    final mk = await _deriveMk(password, salt: kdf.saltBytes);
+    final encryptedBytes = base64.decode(encryptedDataKey);
+    try {
+      SyncCrypto.unwrapDataKey(mk, encryptedBytes);
+    } on Exception catch (e) {
+      throw WrongPasswordException('密码错误：$e');
+    }
+  }
+
   Future<Vault> changePassword({
     required String oldPassword,
     required String newPassword,

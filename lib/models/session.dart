@@ -13,10 +13,8 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:convert';
 
 // Package imports:
-import 'package:crypto/crypto.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
@@ -45,9 +43,16 @@ class Session {
     PhraseHandler.destroy();
   }
 
-  static setOrChangePassphrase(String passphrase) {
-    PreferencesStorage.setPassPhraseHash(
-        sha256.convert(utf8.encode(passphrase)).toString());
+  /// 密码设置/变更后的副作用处理（简化方案：不再写 passPhraseHash）
+  ///
+  /// 保留 PhraseHandler 和 biometric 更新：
+  ///   - PhraseHandler.getPass:biometric 登录需要原始 password 来解锁 vault
+  ///   - BiometricAuth.setAuthKey:secure storage 存新密码
+  ///
+  /// 调用时机：
+  ///   - set_passphrase 首次设置密码成功后
+  ///   - change_passphrase 改密码成功后
+  static onPasswordSet(String passphrase) {
     PhraseHandler.initPass(passphrase);
     if (PreferencesStorage.isBiometricAuthEnabled) BiometricAuth.setAuthKey();
   }

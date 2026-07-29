@@ -13,7 +13,6 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:convert';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -21,13 +20,13 @@ import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:after_layout/after_layout.dart';
-import 'package:crypto/crypto.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
+import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
@@ -75,10 +74,17 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   bool _isHidden = true;
   bool _isLocked = false;
 
+  // 简化方案:登录验证改为 async(vault 解密 1-2 秒),需要防重入
+  // _isLoggingIn=true 期间禁用登录按钮,避免 PBKDF2 期间连点触发并发验证
+  bool _isLoggingIn = false;
+
+  // 简化方案:限流计数从 validator(sync)迁移到 _login 失败分支(async)
+  // 原本 validator 里 hash 比对失败时递减,现在 validator 只做长度检查
+  int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
+
   @override
   void initState() {
     super.initState();
-    _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
     _isKeyboardFocused = widget.isKeyboardFocused ?? true;
 
     // BiometricAuth:
@@ -209,6 +215,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
               _isLocked = false;
               _isKeyboardFocused = true;
               _formKey = GlobalKey<FormState>();
+              // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
+              _noOfAllowedAttempts =
+                  PreferencesStorage.noOfLogginAttemptAllowed;
             },
           );
         },
@@ -257,6 +266,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
+  /// 简化方案:validator 只做长度检查 + 锁定判断
+  ///
+  /// 密码正确性不在 validator 里判断(vault 解密是 async,1-2 秒),
+  /// 改在 _login 里 async 处理,失败时在 _onLoginFailure 递减尝试次数。
   String? _passphraseValidator(String? passphrase) {
     final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
 
@@ -267,18 +280,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       return numberOfAttemptExceeded;
     }
 
-    if (sha256.convert(utf8.encode(passphrase!)).toString() !=
-        PreferencesStorage.passPhraseHash) {
-      _noOfAllowedAttempts--;
-      final wrongPhraseMsg =
-          'Wrong passphrase {noOfAllowedAttempts} attempts left!'.tr(
-              namedArgs: {
-            'noOfAllowedAttempts': _noOfAllowedAttempts.toString()
-          });
-
-      return _noOfAllowedAttempts == 0
-          ? numberOfAttemptExceeded
-          : wrongPhraseMsg;
+    if (passphrase == null || passphrase.isEmpty) {
+      return 'Enter Passphrase'.tr();
     }
 
     return null;
@@ -308,11 +311,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildLoginButton() {
-    final String loginText = 'Login'.tr();
+    // 简化方案:验证中(_isLoggingIn)或锁定(_isLocked)时禁用按钮防重入
+    final String loginText =
+        _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
     return ButtonWidget(
       text: loginText,
-      onClicked: _isLocked ? null : () async => _loginController(),
+      onClicked: (_isLocked || _isLoggingIn) ? null : () async => _loginController(),
     );
   }
 
@@ -377,40 +382,73 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     }
   }
 
+  /// 简化方案:统一 async 登录验证
+  ///
+  /// 流程:
+  ///   1. 本地 vault 解锁(优先):Vault.unlockLocal 成功 = 密码正确
+  ///   2. 远端验证(仅启用同步时):拉 manifest header 比对 keyFingerprint
+  ///      - verified: 密码正确(他端改密码后本端旧 MK 失效场景)
+  ///      - wrongPassword: fingerprint 不匹配,扣尝试次数
+  ///      - unreachable: 网络故障,不扣次数,提示用户检查网络
+  ///   3. 都失败 = 密码错误,递减 _noOfAllowedAttempts
+  ///
+  /// 防重入:_isLoggingIn 标志 + 按钮禁用,避免 PBKDF2 1-2 秒内连点
+  /// 限流:_noOfAllowedAttempts 从 validator(sync)迁移到 _onLoginFailure(async)
   Future<void> _login(String passphrase) async {
-    final snackMsgDecryptingNotes = 'Decrypting your notes!'.tr();
-    final snackMsgWrongEncryptionPhrase = 'Wrong passphrase!'.tr();
+    // 防重入:PBKDF2 1-2 秒内防止重复提交
+    if (_isLoggingIn) return;
+    setState(() => _isLoggingIn = true);
 
-    // B2 修复：本地 hash 不再是登录的唯一凭证。
-    // 他端改密码后，本端 PreferencesStorage.passPhraseHash 仍是旧值，
-    // 用户输入新密码时 hash 不匹配，但密码其实是正确的（远端已生效）。
-    // 流程：
-    //   1. 本地 hash 匹配 → 走原版快速路径
-    //   2. hash 不匹配 → 尝试 Vault 解锁（本地 vault 元数据 + 远端 manifest header）
-    //      - 本地 vault 已初始化 → Vault.unlockLocal（验证本地 encryptedDataKey）
-    //      - 本地 vault 未初始化 或 unlockLocal 失败 → 从远端拉 manifest header，
-    //        用输入密码派生 MK，比对 keyFingerprint，匹配则 unlockFromRemoteManifest
-    //   3. 上述都失败 → 密码真的错误
-    final isLocalHashMatch =
-        sha256.convert(utf8.encode(passphrase)).toString() ==
-            PreferencesStorage.passPhraseHash;
+    try {
+      final database = NotesDatabase.instance;
+      final isInitialized = await Vault.isInitialized(database);
 
-    if (!isLocalHashMatch) {
-      // 尝试用 vault 验证密码（B2 修复）
-      final verified = await _tryVerifyPassphraseViaVault(passphrase);
-      if (!verified) {
-        // vault 也解不开 → 密码错误
-        if (mounted) {
-          showSnackBarMessage(context, snackMsgWrongEncryptionPhrase);
+      // 1. 本地 vault 解锁(优先)
+      if (isInitialized) {
+        final result = await SyncService.instance.initVaultFromPassword(
+          password: passphrase,
+          database: database,
+        );
+        if (result.success) {
+          await _onLoginSuccess(passphrase);
+          return;
         }
-        return;
+        // result.success == false:密码错误或 vault 损坏,继续尝试远端
       }
-      // verified=true：密码正确但本地 hash 过时，下面走正常登录流程
-      // _initVault 会通过 Vault API 更新本地 hash
-    }
 
+      // 2. 仅在启用同步时尝试远端验证
+      //    避免无条件触发远端(隐私泄露 + 离线暴力放大,评审 kk27c P1)
+      await SyncConfig.init();
+      if (SyncConfig.isSyncEnabled) {
+        final remoteResult = await _tryVerifyPassphraseViaRemote(passphrase);
+        if (remoteResult == RemoteVerifyResult.verified) {
+          await _onLoginSuccess(passphrase);
+          return;
+        }
+        if (remoteResult == RemoteVerifyResult.unreachable) {
+          // 网络不可达:不算密码错误,不扣尝试次数
+          if (mounted) {
+            showSnackBarMessage(
+              context,
+              '无法验证密码(网络不可用),请检查网络后重试',
+            );
+          }
+          return;
+        }
+        // remoteResult == wrongPassword:继续走失败流程
+      }
+
+      // 3. 密码错误
+      _onLoginFailure();
+    } finally {
+      if (mounted) setState(() => _isLoggingIn = false);
+    }
+  }
+
+  /// 登录成功后的统一处理
+  Future<void> _onLoginSuccess(String passphrase) async {
     if (mounted) {
-      showSnackBarMessage(context, snackMsgDecryptingNotes);
+      showSnackBarMessage(context, 'Decrypting your notes!'.tr());
     }
     Session.login(passphrase);
 
@@ -422,9 +460,21 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     // start listening for session inactivity on successful login
     widget.sessionStream.add(SessionState.startListening);
 
-    // D1 修复：_initVault 返回 bool，失败时停留在登录页不导航到 /home
-    final ok = await _initVault(passphrase);
-    if (!ok) return;
+    // 初始化后端(如果已配置),失败不阻断进入 home
+    await SyncConfig.init();
+    if (SyncConfig.isSyncEnabled) {
+      final backendResult = await SyncService.instance.initBackend(
+        database: NotesDatabase.instance,
+      );
+      if (!backendResult.success && mounted) {
+        showSnackBarMessage(
+          context,
+          '同步初始化失败:${backendResult.error ?? "未知错误"}',
+        );
+      }
+      // 登录后执行一次初始同步,拉取远端最新数据
+      SyncService.instance.autoSync();
+    }
 
     if (!mounted) return;
     await Navigator.pushReplacementNamed(
@@ -434,84 +484,57 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  /// B2 修复：本地 hash 不匹配时，用 Vault 验证密码
+  /// 登录失败处理:递减尝试次数 + 锁定判断
   ///
-  /// 尝试顺序：
-  ///   1. 本地 vault 已初始化 → Vault.unlockLocal
-  ///      - 成功：密码与本地 encryptedDataKey 匹配（本端密码未变，仅 hash 过时）
-  ///      - 失败：本地密码可能已变（他端改密码并同步了新 encryptedDataKey 到远端）
-  ///   2. 本地 vault 未初始化 或 unlockLocal 失败 → 从远端拉 manifest header
-  ///      - 用输入密码 + header.kdf.salt 派生 MK
-  ///      - 比对 MK 的 fingerprint 与 header.keyFingerprint
-  ///      - 匹配 → 调用 Vault.unlockFromRemoteManifest 持久化并解锁
-  ///      - 不匹配 → 密码真的错误，返回 false
-  ///
-  /// 返回 true 表示密码已通过 vault 验证（本地或远端）。
-  /// 返回 false 表示密码错误，应提示用户。
-  /// 任何异常（网络故障、远端不可达）都视为验证失败，回退到密码错误提示。
-  Future<bool> _tryVerifyPassphraseViaVault(String passphrase) async {
-    final database = NotesDatabase.instance;
+  /// 简化方案:限流计数从 validator(sync)迁移到这里(async)
+  void _onLoginFailure() {
+    _noOfAllowedAttempts--;
+    final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
 
-    // 1. 尝试本地 vault 解锁
-    final isInitialized = await Vault.isInitialized(database);
-    if (isInitialized) {
-      try {
-        final vault = await Vault.unlockLocal(
-          password: passphrase,
-          database: database,
-        );
-        // 本地解锁成功：密码正确，与本地 encryptedDataKey 匹配
-        // 更新本地 hash（passPhraseHash 过时了），并注入 dataKey
-        await _updateLocalHashAndDataKey(passphrase, vault);
-        return true;
-      } on Exception {
-        // 本地解锁失败，继续尝试远端
+    if (_noOfAllowedAttempts <= 0) {
+      setState(() => _isLocked = true);
+      if (mounted) {
+        showSnackBarMessage(context, numberOfAttemptExceeded);
+      }
+    } else {
+      final wrongPhraseMsg =
+          'Wrong passphrase {noOfAllowedAttempts} attempts left!'.tr(
+              namedArgs: {
+            'noOfAllowedAttempts': _noOfAllowedAttempts.toString()
+          });
+      if (mounted) {
+        showSnackBarMessage(context, wrongPhraseMsg);
       }
     }
-
-    // 2. 从远端拉 manifest header 验证
-    return _tryVerifyPassphraseViaRemote(passphrase, database, isInitialized);
   }
 
-  /// 从远端 manifest header 验证密码（B2 子流程）
+  /// 远端验证三态结果(评审 hy3 A7)
   ///
-  /// 流程：
-  ///   - 创建后端实例（基于 SyncConfig），init + getManifest
-  ///   - 仅解析 header（明文），拿到 kdf.salt + keyFingerprint + encryptedDataKey
-  ///   - 用输入密码 + salt 派生 MK，计算 fingerprint 比对
-  ///   - 匹配 → Vault.unlockFromRemoteManifest 持久化并解锁
-  ///
-  /// [localVaultInitialized] 用于日志诊断，不影响流程
-  Future<bool> _tryVerifyPassphraseViaRemote(
+  ///   - verified: 密码正确,已通过远端 manifest header 验证并解锁
+  ///   - wrongPassword: fingerprint 不匹配,密码错误,扣尝试次数
+  ///   - unreachable: 网络故障/后端不可达,不扣尝试次数
+  Future<RemoteVerifyResult> _tryVerifyPassphraseViaRemote(
     String passphrase,
-    NotesDatabase database,
-    bool localVaultInitialized,
   ) async {
-    // 确保 SyncConfig 已加载
-    await SyncConfig.init();
-    if (!SyncConfig.isSyncEnabled) {
-      // 未配置同步后端：无法从远端验证，密码错误
-      return false;
-    }
-
     try {
-      // 创建后端实例（直接通过 SyncService 的公开工厂，避免污染单例状态）
+      final database = NotesDatabase.instance;
+      // 创建后端实例(直接通过 SyncService 的公开工厂,避免污染单例状态)
       final backend = SyncService.instance.createBackendForVerification();
-      if (backend == null) return false;
+      if (backend == null) return RemoteVerifyResult.unreachable;
 
       await backend.init();
       final remoteResponse = await backend.getManifest();
       if (remoteResponse.ciphertext.isEmpty) {
-        // 远端无 manifest：无法验证
+        // 远端无 manifest:无法验证,视为密码错误(本地也解不开)
         await backend.close();
-        return false;
+        return RemoteVerifyResult.wrongPassword;
       }
 
-      // 仅解析 header（不需要 dataKey）
+      // 仅解析 header(不需要 dataKey)
       final header =
           ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
 
-      // 用输入密码 + 远端 salt 派生 MK，比对 fingerprint
+      // 用输入密码 + 远端 salt 派生 MK,比对 fingerprint
       final mk = await SyncCrypto.deriveMasterKeyAsync(
         passphrase,
         salt: header.kdf.saltBytes,
@@ -520,10 +543,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       if (fp != header.keyFingerprint) {
         // fingerprint 不匹配 → 密码错误
         await backend.close();
-        return false;
+        return RemoteVerifyResult.wrongPassword;
       }
 
-      // fingerprint 匹配 → 密码正确，用远端 encryptedDataKey 解锁
+      // fingerprint 匹配 → 密码正确,用远端 encryptedDataKey 解锁
       await Vault.unlockFromRemoteManifest(
         password: passphrase,
         remoteVaultId: header.vaultId,
@@ -537,98 +560,20 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
       await backend.close();
 
-      // 更新本地 hash + 注入 dataKey
-      // 注意：unlockFromRemoteManifest 内部已持久化 vault 元数据，
-      // 但没有调用 database.setDataKey，需要补上
+      // unlockFromRemoteManifest 内部已持久化 vault 元数据,
+      // 但没有调用 database.setDataKey,需要补上
+      // (用刚持久化的远端元数据重新 unlockLocal 拿到 dataKey)
       final vault = await Vault.unlockLocal(
         password: passphrase,
         database: database,
       );
-      await _updateLocalHashAndDataKey(passphrase, vault);
-      return true;
+      NotesDatabase.instance.setDataKey(vault.dataKey);
+      await SyncService.instance.cacheVaultFromLogin(vault);
+      return RemoteVerifyResult.verified;
     } on Exception {
-      // 任何异常（网络故障、后端不可达、解析失败）都视为验证失败
-      return false;
+      // 网络故障、后端不可达、解析失败等 → unreachable(不扣次数)
+      return RemoteVerifyResult.unreachable;
     }
-  }
-
-  /// 更新本地 passPhraseHash 并注入 dataKey 到 database
-  ///
-  /// 在 _tryVerifyPassphraseViaVault 验证成功后调用：
-  ///   - 把 passPhraseHash 更新为当前密码的 hash（修复 hash 过时问题）
-  ///   - 把 dataKey 注入 database（启用本地加解密）
-  ///   - 缓存 vault 到 SyncService（供后续 SyncEngine 使用）
-  Future<void> _updateLocalHashAndDataKey(
-    String passphrase,
-    Vault vault,
-  ) async {
-    // 更新本地 hash 为当前密码（B2：他端改密码后本端 hash 过时）
-    await PreferencesStorage.setPassPhraseHash(
-      sha256.convert(utf8.encode(passphrase)).toString(),
-    );
-    // 注入 dataKey 到 database
-    NotesDatabase.instance.setDataKey(vault.dataKey);
-    // 缓存 vault 引用（SyncService._vault，供 initBackend 使用）
-    await SyncService.instance.cacheVaultFromLogin(vault);
-  }
-
-  /// 登录后初始化 Vault：解锁 dataKey + 注入 database
-  ///
-  /// D1 修复：返回 bool 表示是否成功。
-  ///   - true：vault 初始化成功（可能后端初始化失败，但 vault 已就绪）
-  ///   - false：vault 初始化失败，调用方不应导航到 /home
-  ///
-  /// 注意：如果 _tryVerifyPassphraseViaVault 已完成 vault 解锁（B2 路径），
-  /// 此方法会跳过重复解锁，直接初始化后端。
-  Future<bool> _initVault(String passphrase) async {
-    // B2 路径：vault 已在 _tryVerifyPassphraseViaVault 中解锁并缓存到 SyncService
-    // 此时直接走 initBackend 流程
-    if (SyncService.instance.vault != null) {
-      return _initBackendOnly();
-    }
-
-    // 标准路径：本地 hash 匹配，通过 SyncService.initVaultFromPassword 解锁
-    final result = await SyncService.instance.initVaultFromPassword(
-      password: passphrase,
-      database: NotesDatabase.instance,
-    );
-
-    if (!result.success) {
-      if (mounted) {
-        showSnackBarMessage(
-          context,
-          '加密初始化失败：${result.error ?? "未知错误"}',
-        );
-      }
-      return false;
-    }
-
-    return _initBackendOnly();
-  }
-
-  /// 初始化同步后端（如果已配置）
-  ///
-  /// 返回 true 表示 vault 已就绪（无论后端是否成功）。
-  /// 后端失败只提示不阻断进入 home 页——用户可在设置页修复后端配置。
-  Future<bool> _initBackendOnly() async {
-    await SyncConfig.init();
-    if (!SyncConfig.isSyncEnabled) {
-      return true;
-    }
-
-    final backendResult = await SyncService.instance.initBackend(
-      database: NotesDatabase.instance,
-    );
-    if (!backendResult.success && mounted) {
-      showSnackBarMessage(
-        context,
-        '同步初始化失败：${backendResult.error ?? "未知错误"}',
-      );
-    }
-    // 登录后执行一次初始同步，拉取远端最新数据
-    // autoSync 内部会判断 _engine 是否就绪，未就绪则直接返回
-    SyncService.instance.autoSync();
-    return true;
   }
 
   Widget _buildForgotPassphrase() {
@@ -645,17 +590,133 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             fontSize: fontSize,
           ),
         ),
-        onPressed: () {
-          showGenericDialog(
-            context: context,
-            icon: Icons.info_outline,
-            message:
-                'There is no way to decrypt these notes without the passphrase. With great security comes the great responsibility of remembering the passphrase!'
-                    .tr(),
-          );
-        },
+        onPressed: () => _showForgotPassphraseDialog(),
       ),
     );
+  }
+
+  /// 忘记密码逃生通道(评审 hy3 第6节)
+  ///
+  /// 简化后 Vault.isInitialized==true → 一律进登录页,以下场景用户会被困住:
+  ///   - 忘记密码
+  ///   - 清除 SharedPreferences/重装但 db 残留
+  ///
+  /// 提供"清空本地数据重新开始"入口:
+  ///   - 红色危险操作 + 二次确认
+  ///   - 明确告知数据不可恢复
+  ///   - 执行后删除 db 文件 + vault 元数据,重启走首次设置流程
+  void _showForgotPassphraseDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Forgot Passphrase'.tr()),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'There is no way to decrypt these notes without the passphrase. '
+              'With great security comes the great responsibility of '
+              'remembering the passphrase!'
+                  .tr(),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'If you have a backup, you can reset the local data and re-import '
+              'the backup after setting a new passphrase. This action cannot be '
+              'undone.'
+                  .tr(),
+              style: TextStyle(
+                color: NordColors.aurora.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('Cancel'.tr()),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: NordColors.aurora.red,
+            ),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _confirmResetLocalData();
+            },
+            child: Text('Reset Local Data'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 二次确认清空本地数据
+  void _confirmResetLocalData() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Confirm Reset'.tr()),
+        content: Text(
+          'This will permanently delete all local notes and vault data. '
+          'This action CANNOT be undone. Are you absolutely sure?'
+              .tr(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('Cancel'.tr()),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: NordColors.aurora.red,
+            ),
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await _performLocalDataReset();
+            },
+            child: Text('Delete Everything'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 执行本地数据清空
+  ///
+  /// 流程:
+  ///   1. 关闭数据库连接
+  ///   2. 删除 db 文件(包含 notes + sync_meta)
+  ///   3. 清除 PreferencesStorage 中的 vault 相关 key
+  ///   4. 重启应用(走首次设置流程)
+  Future<void> _performLocalDataReset() async {
+    try {
+      await NotesDatabase.instance.close();
+      await NotesDatabase.instance.deleteDbFile();
+
+      // 清除 vault 相关 SharedPreferences key
+      await PreferencesStorage.clearVaultRelatedKeys();
+
+      // 重启应用:替换路由到 /authwall,会自动走 SetEncryptionPhrasePage
+      if (mounted) {
+        AppBootState.vaultInitialized = false;
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/authwall',
+          (route) => false,
+          arguments: SessionArguments(
+            sessionStream: widget.sessionStream,
+            isKeyboardFocused: true,
+          ),
+        );
+      }
+    } on Exception catch (e) {
+      if (mounted) {
+        showSnackBarMessage(context, '重置失败:$e');
+      }
+    }
   }
 
   Future<bool> _authenticate() async {
@@ -695,7 +756,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 }
 
-int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
 int _lockoutTime = PreferencesStorage.bruteforceLockOutTime;
 int _counter = 0;
 
@@ -713,7 +773,6 @@ void _startTimer(VoidCallback callback) {
       (_counter > 0) ? _counter-- : _timer?.cancel();
       _controller.add(_counter.toString().padLeft(2, '0'));
       if (_counter <= 0) {
-        _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
         callback();
       }
     },
@@ -728,5 +787,12 @@ bool isPassphraseRememberChallenge() {
                   .noOfLoginsBeforeNextPassphraseRememberChallenge ==
           0;
 }
+
+/// 远端验证三态结果(简化方案,评审 hy3 A7)
+///
+///   - verified: 密码正确,已通过远端 manifest header 验证并解锁
+///   - wrongPassword: fingerprint 不匹配,密码错误,扣尝试次数
+///   - unreachable: 网络故障/后端不可达,不扣尝试次数
+enum RemoteVerifyResult { verified, wrongPassword, unreachable }
 
 enum _BiometricState { unknown, supported, unsupported }

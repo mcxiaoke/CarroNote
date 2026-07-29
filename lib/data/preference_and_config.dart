@@ -21,6 +21,8 @@ import 'package:timeago/timeago.dart' as timeago;
 class PreferencesStorage {
   static SharedPreferences? _preferences;
 
+  // 简化方案:passPhraseHash 已移除(以 vault 解密作为唯一凭证)
+  // 保留 _keyPassPhraseHash 常量用于 init() 时清理旧版残留 key(评审 mmm3 B6)
   static const _keyPassPhraseHash = 'passphrasehash';
   static const _keyIsThemeDark = 'isthemedark';
   static const _keyKeyboardIncognito = 'keyboardIcognito';
@@ -51,16 +53,26 @@ class PreferencesStorage {
   static const _keyIsSystemDarkLightSwitchEnabled =
       'isSystemDarkLightSwitchEnabled';
 
-  static Future init() async =>
-      _preferences = await SharedPreferences.getInstance();
+  static Future init() async {
+    _preferences = await SharedPreferences.getInstance();
+    // 简化方案:清理旧版 passPhraseHash 残留 key
+    // (开发阶段不做数据迁移,但残留 key 会引起歧义,这里清掉)
+    await _preferences?.remove(_keyPassPhraseHash);
+  }
 
   static reload() => _preferences?.reload();
 
-  static Future<void> setPassPhraseHash(String passphrasehash) async =>
-      await _preferences?.setString(_keyPassPhraseHash, passphrasehash);
-
-  static String get passPhraseHash =>
-      _preferences?.getString(_keyPassPhraseHash) ?? '';
+  /// 清除 vault 相关的 SharedPreferences key(忘记密码逃生通道使用)
+  ///
+  /// 与 NotesDatabase.deleteDbFile 配合使用:
+  ///   - db 文件包含 sync_meta 表(vaultId/encryptedDataKey/salt 等)
+  ///   - SharedPreferences 中 biometric 开关保留(用户偏好不变)
+  ///   - passPhraseHash 已在 init() 清理,这里再清一次保险
+  static Future<void> clearVaultRelatedKeys() async {
+    await _preferences?.remove(_keyPassPhraseHash);
+    // biometric 开关保留:用户偏好不变,只是 vault 数据被清空
+    // 其他 UI 偏好(gridView/sortOrder 等)也保留
+  }
 
 // appVersionCode controls the one time code execution on version change
   static int get appVersionCode =>

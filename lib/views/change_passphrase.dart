@@ -12,13 +12,11 @@
 */
 
 // Dart imports:
-import 'dart:convert';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:crypto/crypto.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
@@ -27,6 +25,7 @@ import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
@@ -140,8 +139,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   Widget _buildCurrentPassField() {
     const double inputBoxEdgeRadious = 10.0;
     final String inputHintOld = 'Current Passphrase'.tr();
-    final String validationErrorMsg = 'Wrong passphrase!'.tr();
 
+    // 简化方案:validator 只做长度检查
+    // 旧密码正确性在 _finalSublmitChange 里通过 vault.changePassword 内部验证
+    // (vault.changePassword 会用旧密码派生 MK 解 dataKey,失败抛 WrongPasswordException)
     return TextFormField(
       enableIMEPersonalizedLearning: false,
       controller: _oldPassphraseController,
@@ -162,10 +163,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       },
       textInputAction: TextInputAction.next,
       validator: (passphrase) {
-        return sha256.convert(utf8.encode(passphrase!)).toString() !=
-                PreferencesStorage.passPhraseHash
-            ? validationErrorMsg
-            : null;
+        if (passphrase == null || passphrase.isEmpty) {
+          return 'Enter Passphrase'.tr();
+        }
+        return null;
       },
     );
   }
@@ -309,56 +310,85 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   void _finalSublmitChange() async {
     final form = formKey.currentState!;
     final String passChangedSnackMsg = 'Passphrase changed!'.tr();
+    final String wrongOldPassMsg = 'Wrong passphrase!'.tr();
 
     if (form.validate()) {
       // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
-      // context 在 mounted 检查后直接使用（analyzer 识别 if (!mounted) return 模式）
       final navigator = Navigator.of(context);
-
-      // 前置检查：强制同步 + 强制备份 + 服务器在线检测
-      // 返回 false 表示用户取消或检查未通过，中止改密码
-      final proceed = await _preChangeCheck();
-      if (!proceed) return;
 
       final oldPassword = _oldPassphraseController.text;
       final newPassword = _newConfirmPassphraseController.text;
 
-      // 更新密码哈希（登录验证用）
-      Session.setOrChangePassphrase(newPassword);
-
-      // 重新 wrap dataKey（O(1) 操作，不触碰笔记）
-      // dataKey 本身不变，只是用新密码重新加密 dataKey → 新 encryptedDataKey
-      // 本地加密的笔记无需重新加密（dataKey 没变）
+      // 简化方案:旧密码验证前置(评审 kk27c P3)
+      // 用 vault.verifyPassword 只验证不持久化,避免先做备份/同步再发现旧密码错
+      // 验证通过后再做 _preChangeCheck(备份/同步/ping),最后调 vault.changePassword 持久化
       final vault = SyncService.instance.vault;
-      if (vault != null) {
-        try {
-          final newVault = await vault.changePassword(
-            oldPassword: oldPassword,
-            newPassword: newPassword,
-            database: NotesDatabase.instance,
-          );
-          // 更新 SyncService 中的 Vault（重建 SyncEngine 使用新 encryptedDataKey）
-          await SyncService.instance.updateVault(
-            vault: newVault,
-            database: NotesDatabase.instance,
-          );
-          // dataKey 没变，NotesDatabase 的 dataKey 引用无需更新
-        } on Exception catch (_) {
-          // Vault 改密码失败不影响本地密码变更
-          // dataKey 未变，本地笔记仍可正常加解密
+      if (vault == null) {
+        // vault 为 null 说明未登录或状态异常,中止
+        if (mounted) {
+          showSnackBarMessage(context, 'Vault 未初始化,请重新登录');
         }
-
-        // 改密码后立即同步：把新 encryptedDataKey 推送到远端
-        // 避免他端在本地推送前拉到旧 encryptedDataKey，触发不必要的 dataKey 迁移逻辑
-        // 同步失败不阻断改密码流程（本地密码已变更成功），仅提示用户
-        try {
-          await SyncService.instance.sync();
-        } on Exception {
-          // 同步失败：本地 encryptedDataKey 已更新，下次 sync 会自动推送
-        }
+        return;
       }
 
-      // 使用 if (!mounted) return; 模式，让 analyzer 识别 mounted 守卫
+      try {
+        await vault.verifyPassword(oldPassword);
+      } on WrongPasswordException {
+        // 旧密码错误(简化方案:vault 是唯一凭证,失败必须中止)
+        if (mounted) {
+          showSnackBarMessage(context, wrongOldPassMsg);
+        }
+        return;
+      } on Exception catch (e) {
+        // 其他异常(简化方案:失败必须中止)
+        if (mounted) {
+          showSnackBarMessage(context, '验证旧密码失败:$e');
+        }
+        return;
+      }
+
+      // 旧密码验证通过,继续前置检查(备份/同步/ping)
+      // 返回 false 表示用户取消或检查未通过,中止改密码
+      final proceed = await _preChangeCheck();
+      if (!proceed) return;
+
+      // 前置检查通过,执行改密码(验证+持久化)
+      // 注意:verifyPassword 已验证过旧密码,changePassword 内部会再次验证(幂等)
+      Vault newVault;
+      try {
+        newVault = await vault.changePassword(
+          oldPassword: oldPassword,
+          newPassword: newPassword,
+          database: NotesDatabase.instance,
+        );
+      } on Exception catch (e) {
+        // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
+        if (mounted) {
+          showSnackBarMessage(context, '改密码失败:$e');
+        }
+        return;
+      }
+
+      // 更新 SyncService 中的 Vault(重建 SyncEngine 使用新 encryptedDataKey)
+      await SyncService.instance.updateVault(
+        vault: newVault,
+        database: NotesDatabase.instance,
+      );
+
+      // 简化方案(评审 hy3/mmm3 A2):改密码成功后必须更新 PhraseHandler + biometric
+      // 否则 biometric secure storage 保留旧密码 → 指纹登录用旧密码解 vault 失败
+      Session.onPasswordSet(newPassword);
+
+      // 改密码后立即同步:把新 encryptedDataKey 推送到远端
+      // 避免他端在本地推送前拉到旧 encryptedDataKey,触发不必要的 dataKey 迁移逻辑
+      // 同步失败不阻断改密码流程(本地密码已变更成功),仅提示用户
+      try {
+        await SyncService.instance.sync();
+      } on Exception {
+        // 同步失败:本地 encryptedDataKey 已更新,下次 sync 会自动推送
+      }
+
+      // 使用 if (!mounted) return; 模式,让 analyzer 识别 mounted 守卫
       if (!mounted) return;
       showSnackBarMessage(context, passChangedSnackMsg);
       navigator.pop();

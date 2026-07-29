@@ -29,6 +29,7 @@ import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -306,8 +307,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       if (enteredPassphrase == enteredPassphraseConfirm) {
         showSnackBarMessage(context, 'Passphrase set!'.tr());
 
-        // Setting hash for PassPhrase in share prefrences
-        Session.setOrChangePassphrase(enteredPassphrase);
         // start listening for session inactivity on successful login
         widget.sessionStream.add(SessionState.startListening);
 
@@ -320,8 +319,14 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // isLoading 永远为 true，UI 一直转圈。
         // 触发场景：卸载/清除 SharedPreferences 但 db 文件还在，用户输入
         // 新密码时 Vault.unlockLocal 用新密码解旧 encryptedDataKey 失败。
+        //
+        // 简化方案：不再调 Session.setOrChangePassphrase（已删 hash 写入），
+        // 改为 _initVault 成功后调 Session.onPasswordSet（仅 PhraseHandler +
+        // biometric 副作用）。PhraseHandler.getPass 为空会导致 biometric 存空
+        // 字符串 → 指纹登录必失败（评审 hy3/mmm3 A1）。
         final ok = await _initVault(enteredPassphrase);
         if (!ok) return;
+        Session.onPasswordSet(enteredPassphrase);
 
         TextInput.finishAutofillContext();
         await Navigator.pushReplacementNamed(
@@ -337,14 +342,26 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
   /// 初始化 Vault：生成 dataKey + encryptedDataKey，注入 database
   ///
-  /// 首次设置密码时调用。PBKDF2 600k 迭代会耗时 1-2 秒，
+  /// 首次设置密码时调用。PBKDF2 200k 迭代会耗时 1-2 秒，
   /// 显示 loading 不阻塞 UI。
   ///
   /// 返回 true 表示 vault 已就绪（可导航到 /home）；
   /// 返回 false 表示 vault 初始化失败（dataKey 未注入 database），
   /// 调用方不应导航到 /home，否则 home 页读取笔记会抛
   /// DataKeyNotSetException 且 UI 一直转圈。
+  ///
+  /// 安全守卫（评审 ds4p P1）：若检测到 vault 已初始化，拒绝 createNew，
+  /// 防止异常路由下覆盖旧 vault → 静默数据丢失。
   Future<bool> _initVault(String passphrase) async {
+    // 守卫：vault 已初始化说明路由错误（应走 login 而非 set_passphrase），
+    // 直接拒绝 createNew，避免覆盖已有 vault 元数据导致数据丢失。
+    if (await Vault.isInitialized(NotesDatabase.instance)) {
+      if (mounted) {
+        showSnackBarMessage(context, '检测到已有加密数据,请返回登录');
+      }
+      return false;
+    }
+
     final result = await SyncService.instance.initVaultFromPassword(
       password: passphrase,
       database: NotesDatabase.instance,
