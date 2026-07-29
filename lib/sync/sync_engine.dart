@@ -187,8 +187,14 @@ class SyncEngine {
     Manifest? remoteManifest;
     // 密钥纪元不匹配标志：远端 keyVersion > 本地 → 他端改了密码
     bool epochMismatch = false;
-    // 纪元不匹配时，构建 manifest 使用远端的 encryptedDataKey（不回滚远端包裹）
+    // 纪元不匹配时，构建 manifest 整体使用远端的密钥纪元三元组
+    // （encryptedDataKey + keyFingerprint + keyVersion），不回滚远端新纪元。
+    // B1-2 修复：原实现只 override encryptedDataKey，keyVersion/fingerprint
+    // 仍取本地旧值，导致 B 第一次同步就把远端 keyVersion 回滚（守卫下次失效），
+    // 第二次同步把旧 encryptedDataKey 整体写回远端（翻转战争）。
     String? overrideEncryptedDataKey;
+    String? overrideKeyFingerprint;
+    int? overrideKeyVersion;
 
     if (remoteResponse.ciphertext.isNotEmpty) {
       // 1a. 仅解析 header（明文，不需要 dataKey）
@@ -240,9 +246,12 @@ class SyncEngine {
       //   - 远端 < 本地 → 本端改了密码还没推送（正常流程）
       //   - 相等 → 正常流程
       if (remoteHeader.keyVersion > vault.keyVersion) {
-        // 他端改了密码，本地旧密码设备不应回滚远端新包裹
+        // 他端改了密码，本地旧密码设备不应回滚远端新纪元。
+        // B1-2 修复：三元组整体采用远端值（不只是 encryptedDataKey）。
         epochMismatch = true;
         overrideEncryptedDataKey = remoteHeader.encryptedDataKey;
+        overrideKeyFingerprint = remoteHeader.keyFingerprint;
+        overrideKeyVersion = remoteHeader.keyVersion;
       }
 
       // 1c. 检查是否需要 dataKey 迁移
@@ -331,17 +340,35 @@ class SyncEngine {
           // MK 能解开远端 encryptedDataKey，且 remoteDataKey == 本地 dataKey
           // 场景：他端改密码后上传新 encryptedDataKey，本端用新密码登录
           //   dataKey 没变，只是 wrap dataKey 的 MK 变了
-          //   不需要 reEncryptAllNotes，只更新本地 encryptedDataKey
-          await database.setMeta(
-            MetaKeys.encryptedDataKey,
-            migrationResult.remoteEncryptedDataKey!,
-          );
-          await vault.updateEncryptedDataKey(
-            migrationResult.remoteEncryptedDataKey!,
-            database,
-          );
-          // 本地 encryptedDataKey 已更新为远端值，清除 override
-          overrideEncryptedDataKey = null;
+          //   不需要 reEncryptAllNotes
+          if (remoteHeader.keyVersion >= vault.keyVersion) {
+            // B3 修复：整体采用远端纪元（encryptedDataKey + fingerprint +
+            // keyVersion），而不是只回写 encryptedDataKey。
+            // 原实现只更新 encryptedDataKey，本地 keyVersion/fingerprint
+            // 停留在旧值 → 每次同步都误报 epochMismatch（纪元永不收敛），
+            // 且构建 header 时把远端 keyVersion/fingerprint 回滚。
+            await vault.adoptRemoteEpoch(
+              remoteEncryptedDataKey: migrationResult.remoteEncryptedDataKey!,
+              remoteKeyFingerprint: remoteHeader.keyFingerprint,
+              remoteKeyVersion: remoteHeader.keyVersion,
+              database: database,
+            );
+            // 本地纪元已与远端一致：本端持有的就是新密码派生的 MK，
+            // 不需要提示用户重新登录，清除纪元不匹配标志与 override
+            epochMismatch = false;
+            overrideEncryptedDataKey = null;
+            overrideKeyFingerprint = null;
+            overrideKeyVersion = null;
+          } else {
+            // 防御分支：远端纪元反而更旧（理论上不可达——本地 MK 能解开
+            // 远端包裹意味着远端包裹就是本地 MK 包的）。保守起见只回写
+            // encryptedDataKey，不动本地纪元。
+            await vault.updateEncryptedDataKey(
+              migrationResult.remoteEncryptedDataKey!,
+              database,
+            );
+            overrideEncryptedDataKey = null;
+          }
           remoteManifest = ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
@@ -373,9 +400,11 @@ class SyncEngine {
       }
     }
 
-    // Step 2: 构建本地 manifest（纪元不匹配时用远端 encryptedDataKey）
+    // Step 2: 构建本地 manifest（纪元不匹配时整体用远端密钥纪元）
     final localManifest = await _buildLocalManifest(
       overrideEncryptedDataKey: overrideEncryptedDataKey,
+      overrideKeyFingerprint: overrideKeyFingerprint,
+      overrideKeyVersion: overrideKeyVersion,
     );
 
     // Step 3: 比对 + 传输（上传/下载/删除）
@@ -385,6 +414,8 @@ class SyncEngine {
       remoteManifest,
       actions,
       overrideEncryptedDataKey: overrideEncryptedDataKey,
+      overrideKeyFingerprint: overrideKeyFingerprint,
+      overrideKeyVersion: overrideKeyVersion,
     );
 
     // D3 修复：判断是否需要 PUT manifest
@@ -524,10 +555,13 @@ class SyncEngine {
   /// 并加入 purgedUuids，让 _mergeAndTransfer 的 M1 逻辑阻止其从远端复活。
   /// PUT manifest 成功后远端墓碑也被清除，实现墓碑 GC。
   ///
-  /// [overrideEncryptedDataKey]：纪元不匹配时（他端改密码），传入远端的
-  /// encryptedDataKey 以避免回滚远端新包裹。null 时用本地 vault 的值。
+  /// [overrideEncryptedDataKey] / [overrideKeyFingerprint] /
+  /// [overrideKeyVersion]：纪元不匹配时（他端改密码），传入远端的密钥纪元
+  /// 三元组以避免回滚远端新纪元（B1-2 修复）。null 时用本地 vault 的值。
   Future<Manifest> _buildLocalManifest({
     String? overrideEncryptedDataKey,
+    String? overrideKeyFingerprint,
+    int? overrideKeyVersion,
   }) async {
     final notes = await database.readAllNotesIncludingDeleted();
     final items = <String, ManifestItem>{};
@@ -560,8 +594,9 @@ class SyncEngine {
         vaultId: _vaultId,
         createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        keyFingerprint: vault.keyFingerprint,
-        keyVersion: vault.keyVersion,
+        // B1-2 修复：纪元不匹配时三元组整体采用远端值，避免回滚远端新纪元
+        keyFingerprint: overrideKeyFingerprint ?? vault.keyFingerprint,
+        keyVersion: overrideKeyVersion ?? vault.keyVersion,
         encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
         kdf: vault.kdf,
         dataKeyWrap: kDataKeyWrapAlgorithm,
@@ -585,6 +620,8 @@ class SyncEngine {
     Manifest? remote,
     List<SyncAction> actions, {
     String? overrideEncryptedDataKey,
+    String? overrideKeyFingerprint,
+    int? overrideKeyVersion,
   }) async {
     // M1 修复：读取待清理的 uuid 列表（用户硬删除的笔记）
     final purgedUuids = await database.getPurgedUuids();
@@ -718,9 +755,10 @@ class SyncEngine {
         vaultId: _vaultId,
         createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        keyFingerprint: vault.keyFingerprint,
-        keyVersion: vault.keyVersion,
-        // B1 修复：纪元不匹配时用远端的 encryptedDataKey，避免回滚远端新包裹
+        // B1-2 修复：纪元不匹配时密钥纪元三元组整体采用远端值，
+        // 避免回滚远端新纪元（keyVersion 回滚会导致守卫下次失效 → 翻转战争）
+        keyFingerprint: overrideKeyFingerprint ?? vault.keyFingerprint,
+        keyVersion: overrideKeyVersion ?? vault.keyVersion,
         encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
         kdf: vault.kdf,
         dataKeyWrap: kDataKeyWrapAlgorithm,

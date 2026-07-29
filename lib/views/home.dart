@@ -63,11 +63,93 @@ class HomePageState extends State<HomePage> {
   bool isNewFirst = PreferencesStorage.isNewFirst;
   bool isGridView = PreferencesStorage.isGridView;
   final importPassphraseController = TextEditingController();
+
+  /// B4 修复：监听同步状态流，消费 SyncResult.passwordEpochMismatch。
+  /// 引擎检测到"他端改密码"（远端 keyVersion 更高）时弹窗提示用户，
+  /// 覆盖手动同步、autoSync、改密码后推送等所有同步路径。
+  StreamSubscription<SyncServiceState>? _syncStateSub;
+
+  /// 每个 HomePage 生命周期只弹一次，避免 autoSync 反复触发弹窗轰炸
+  bool _passwordChangedDialogShown = false;
+
   //bool isListner = false;
   @override
   void initState() {
     super.initState();
     refreshNotes();
+    _syncStateSub =
+        SyncService.instance.stateStream.listen(_onSyncStateChanged);
+  }
+
+  @override
+  void dispose() {
+    _syncStateSub?.cancel();
+    importPassphraseController.dispose();
+    super.dispose();
+  }
+
+  /// B4 修复：他端改密码提示
+  ///
+  /// 触发条件：最近一次同步结果 passwordEpochMismatch=true
+  /// （即远端 keyVersion 高于本端会话，本端还在用旧密码）。
+  /// 数据安全性说明：
+  ///   - 本地笔记由 dataKey 加密，dataKey 在改密码时不变，笔记不受影响；
+  ///   - 纪元不匹配的那次同步本身已正常完成（本地未同步笔记已推送）；
+  ///   - 退出登录只清内存密钥与会话，不删除本地数据库，
+  ///     用新密码重新登录后所有笔记完好且继续同步。
+  void _onSyncStateChanged(SyncServiceState state) {
+    if (!mounted) return;
+    if (_passwordChangedDialogShown) return;
+    if (state.lastResult?.passwordEpochMismatch != true) return;
+
+    _passwordChangedDialogShown = true;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('密码已在其他设备修改'.tr()),
+        content: Text(
+          '检测到同步密码已在其他设备上变更。\n\n'
+                  '本地笔记不会丢失，未同步的更改也已正常同步。'
+                  '请退出登录并使用新密码重新登录，'
+                  '否则旧密码将无法继续使用。'
+              .tr(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('稍后'.tr()),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await _logoutToLogin();
+            },
+            child: Text('退出并重新登录'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 安全登出并跳转登录页（与 drawer 的 onLogoutCallback 顺序一致）：
+  /// 1. 先停会话监听；2. 导航清栈到 /login（不 await）；
+  /// 3. 页面卸载后再清敏感状态。只清内存密钥，不动本地数据库。
+  Future<void> _logoutToLogin() async {
+    widget.sessionStateStream.add(SessionState.stopListening);
+
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/login',
+        (Route<dynamic> route) => false,
+        arguments: SessionArguments(
+          sessionStream: widget.sessionStateStream,
+          isKeyboardFocused: false,
+        ),
+      );
+    }
+
+    await Session.logout();
   }
 
   Future<void> refreshNotes() async {
@@ -308,27 +390,9 @@ class HomePageState extends State<HomePage> {
         await Navigator.pushNamed(context, '/changepassphrase');
       },
       onLogoutCallback: () async {
-        // F3 修复：顺序与 settings.dart / main.dart 超时退出保持一致：
-        // 1. 先停会话监听；2. 导航离开（不 await——该 Future 要等 '/login'
-        //    被 pop 才完成，await 会把 logout 拖到下次登录后）；
-        // 3. 导航落地、HomePage 卸载后再清敏感状态（clearDataKey 等）。
-        // 若反过来先 logout 再导航，HomePage 仍挂载且 dataKey 已清，
-        // 在途的 notes 读取会抛 DataKeyNotSetException。
-        widget.sessionStateStream.add(SessionState.stopListening);
-
-        if (context.mounted) {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-            (Route<dynamic> route) => false,
-            arguments: SessionArguments(
-              sessionStream: widget.sessionStateStream,
-              isKeyboardFocused: false,
-            ),
-          );
-        }
-
-        await Session.logout();
+        // F3 修复：顺序与 settings.dart / main.dart 超时退出保持一致，
+        // 具体顺序说明见 _logoutToLogin 注释。
+        await _logoutToLogin();
       },
       onSettingsCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。

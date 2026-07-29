@@ -139,13 +139,16 @@ class Vault {
   ///
   /// 用于 manifest header 明文存储，检测他端改密码。
   /// 改密码时更新（新 MK → 新 fingerprint）。
-  final String keyFingerprint;
+  /// 注意：非 final，因为 sync 时需要采用远端纪元（B1-2/H1 修复，
+  /// 见 adoptRemoteEpoch）。
+  String keyFingerprint;
 
   /// 密钥版本号（单调递增）
   ///
   /// createNew=1，changePassword +1。
   /// 用于防止旧密码设备回滚新密码包裹。
-  final int keyVersion;
+  /// 注意：非 final，理由同 keyFingerprint。
+  int keyVersion;
 
   /// MK 派生参数（含 per-vault salt）
   ///
@@ -719,6 +722,35 @@ class Vault {
 
     // 更新内存（encryptedDataKey 是非 final 字段）
     encryptedDataKey = newEncryptedDataKey;
+  }
+
+  /// 整体采用远端密钥纪元（B1-2/H1 修复：他端改密码 + 本端已持有新 MK）
+  ///
+  /// 场景：设备 A 改密码后上传新纪元（keyVersion+1 / 新 fingerprint / 新
+  /// encryptedDataKey），设备 B 用新密码登录但本地 meta 还是旧纪元。
+  /// B 同步时 MK 能解开远端 encryptedDataKey 且 dataKey 一致（H1 分支），
+  /// 说明本端密码就是新密码——此时必须把远端纪元三元组
+  /// （encryptedDataKey + keyFingerprint + keyVersion）整体采用，
+  /// 否则本地 keyVersion 永远落后，每次同步都误报"他端改密码"，
+  /// 且构建 header 时会把远端 keyVersion/fingerprint 回滚（BUG-3）。
+  ///
+  /// dataKey 不变，不触碰任何笔记。内存 + 本地 meta 同步更新，
+  /// 保持 SyncService 持有的同一 Vault 实例一致。
+  Future<void> adoptRemoteEpoch({
+    required String remoteEncryptedDataKey,
+    required String remoteKeyFingerprint,
+    required int remoteKeyVersion,
+    required NotesDatabase database,
+  }) async {
+    // 持久化到本地 meta
+    await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
+    await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
+    await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+
+    // 更新内存（三个字段均为非 final）
+    encryptedDataKey = remoteEncryptedDataKey;
+    keyFingerprint = remoteKeyFingerprint;
+    keyVersion = remoteKeyVersion;
   }
 
   // ──────────────────────────────────────────────
