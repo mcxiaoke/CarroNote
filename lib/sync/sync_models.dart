@@ -98,6 +98,19 @@ class ManifestItem {
   /// 用于 GC 优先级和统计。hash 已是更强的内容侧信道，不增加安全风险。
   final int contentSize;
 
+  /// blob 密钥纪元（Layer 3 显式标记）
+  ///
+  /// 记录加密该笔记 blob 时使用的 dataKey 纪元。
+  /// 与 [ManifestHeader] 中的当前 [Vault.dataKeyEpoch] 比较：
+  ///   - 相等 → blob 用当前 dataKey 加密，正常解密；
+  ///   - 不等且本机持有匹配的历史 dataKey → 旧密钥 blob，走显式修复路径（重传）；
+  ///   - 不等且本机无匹配密钥 → 内容已损坏/不可达，跳过并标记。
+  ///
+  /// 默认 0 表示「遗留 blob（Layer 3 之前的客户端上传）」，向后兼容：
+  /// 下载时按旧格式 AAD（contentHash / uuid）尝试解密，能解开即接受；
+  /// 仅当纪元确实不匹配时才触发修复（一次性重传代价，可接受）。
+  final int blobKeyEpoch;
+
   const ManifestItem({
     required this.hash,
     required this.deleted,
@@ -106,6 +119,7 @@ class ManifestItem {
     required this.createdAt,
     this.deletedAt,
     this.contentSize = 0,
+    this.blobKeyEpoch = 0,
   });
 
   ManifestItem copyWith({
@@ -116,6 +130,7 @@ class ManifestItem {
     int? createdAt,
     int? deletedAt,
     int? contentSize,
+    int? blobKeyEpoch,
   }) =>
       ManifestItem(
         hash: hash ?? this.hash,
@@ -125,6 +140,7 @@ class ManifestItem {
         createdAt: createdAt ?? this.createdAt,
         deletedAt: deletedAt ?? this.deletedAt,
         contentSize: contentSize ?? this.contentSize,
+        blobKeyEpoch: blobKeyEpoch ?? this.blobKeyEpoch,
       );
 
   /// 序列化为 JSON（用于 manifest 加密体存储）
@@ -136,6 +152,7 @@ class ManifestItem {
         'createdAt': createdAt,
         if (deletedAt != null) 'deletedAt': deletedAt,
         'contentSize': contentSize,
+        'blobKeyEpoch': blobKeyEpoch,
       };
 
   /// 从 JSON 反序列化
@@ -148,13 +165,14 @@ class ManifestItem {
       createdAt: json['createdAt'] as int? ?? json['updatedAt'] as int,
       deletedAt: json['deletedAt'] as int?,
       contentSize: json['contentSize'] as int? ?? 0,
+      blobKeyEpoch: (json['blobKeyEpoch'] as int?) ?? 0,
     );
   }
 
   @override
   String toString() =>
       'ManifestItem(hash=$hash, deleted=$deleted, updatedAt=$updatedAt, '
-      'updatedBy=$updatedBy, contentSize=$contentSize)';
+      'updatedBy=$updatedBy, contentSize=$contentSize, blobKeyEpoch=$blobKeyEpoch)';
 
   @override
   bool operator ==(Object other) =>
@@ -166,11 +184,20 @@ class ManifestItem {
           updatedBy == other.updatedBy &&
           createdAt == other.createdAt &&
           deletedAt == other.deletedAt &&
-          contentSize == other.contentSize;
+          contentSize == other.contentSize &&
+          blobKeyEpoch == other.blobKeyEpoch;
 
   @override
-  int get hashCode =>
-      Object.hash(hash, deleted, updatedAt, updatedBy, createdAt, deletedAt, contentSize);
+  int get hashCode => Object.hash(
+        hash,
+        deleted,
+        updatedAt,
+        updatedBy,
+        createdAt,
+        deletedAt,
+        contentSize,
+        blobKeyEpoch,
+      );
 }
 
 /// MK 派生参数（KDF parameters）
@@ -280,6 +307,16 @@ class ManifestHeader {
   /// dataKey 包装算法（如 'AES-256-GCM'）
   final String dataKeyWrap;
 
+  /// dataKey 纪元（Layer 3 显式标记，单调 int，独立于 keyVersion）
+  ///
+  /// 记录当前 dataKey 的纪元。下载 blob 时与 [ManifestItem.blobKeyEpoch] 比较：
+  ///   - 相等 → blob 用当前 dataKey 加密，正常解密；
+  ///   - 不等 → blob 由「非当前 dataKey」加密（旧密钥 blob），走显式修复路径。
+  ///
+  /// 新设备加入时从此 header 学习当前纪元；发布 manifest 时写入本机纪元。
+  /// 默认 1（遗留服务器不发送此字段时按 1 处理）。
+  final int dataKeyEpoch;
+
   /// 最后修改此 manifest 的设备 ID（如 'android-xxx'）
   ///
   /// 用于调试和并发冲突诊断。
@@ -296,6 +333,7 @@ class ManifestHeader {
     required this.encryptedDataKey,
     required this.kdf,
     required this.dataKeyWrap,
+    this.dataKeyEpoch = 1,
     required this.lastModifiedBy,
   });
 
@@ -310,6 +348,7 @@ class ManifestHeader {
     String? encryptedDataKey,
     KdfParams? kdf,
     String? dataKeyWrap,
+    int? dataKeyEpoch,
     String? lastModifiedBy,
   }) =>
       ManifestHeader(
@@ -323,6 +362,7 @@ class ManifestHeader {
         encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
         kdf: kdf ?? this.kdf,
         dataKeyWrap: dataKeyWrap ?? this.dataKeyWrap,
+        dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
         lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
       );
 
@@ -337,6 +377,7 @@ class ManifestHeader {
         'encryptedDataKey': encryptedDataKey,
         'kdf': kdf.toJson(),
         'dataKeyWrap': dataKeyWrap,
+        'dataKeyEpoch': dataKeyEpoch,
         'lastModifiedBy': lastModifiedBy,
       };
 
@@ -352,6 +393,7 @@ class ManifestHeader {
       encryptedDataKey: json['encryptedDataKey'] as String,
       kdf: KdfParams.fromJson(json['kdf'] as Map<String, dynamic>),
       dataKeyWrap: json['dataKeyWrap'] as String,
+      dataKeyEpoch: (json['dataKeyEpoch'] as int?) ?? 1,
       lastModifiedBy: json['lastModifiedBy'] as String,
     );
   }

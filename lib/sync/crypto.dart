@@ -175,27 +175,50 @@ class SyncCrypto {
   // 笔记内容加密/解密（用 dataKey）
   // ──────────────────────────────────────────────
 
+  /// 构造 blob 信封的 AAD
+  ///
+  /// Layer 3：当 [epoch] 给定（>0）时，AAD 携带 dataKey 纪元，
+  /// 格式为 `'$epoch|$id'`，使下载方能显式判断 blob 是否被非当前 dataKey 加密。
+  /// 使用单调 int 纪元而非 dataKey 哈希，避免把 dataKey 秘密泄露给半可信服务器。
+  ///
+  /// [epoch] 为 null 或 0 时回退到遗留格式（仅 id，用于向后兼容旧 blob）。
+  static Uint8List _blobAad(String id, int? epoch) {
+    if (epoch != null && epoch > 0) {
+      return Uint8List.fromList(utf8.encode('$epoch|$id'));
+    }
+    return Uint8List.fromList(utf8.encode(id));
+  }
+
   /// 用 dataKey 加密笔记内容，返回信封二进制
   ///
-  /// [id] 笔记的 UUID，作为 AAD 绑定（防止重放攻击：信封不能从一条笔记移到另一条）
+  /// [id] 笔记内容 hash（内容寻址，v2 起）或 UUID（v1 遗留），作为 AAD 的一部分。
   /// [plaintext] 笔记明文（UTF-8 编码后的字节）
+  /// [epoch] 可选 dataKey 纪元（Layer 3）：>0 时 AAD 携带纪元，显式标记加密所用 dataKey。
+  ///   不传或 0 时回退遗留 AAD（向后兼容旧 blob）。
   /// 返回信封：nonce(12) ‖ ciphertext ‖ tag(16)
   static Uint8List seal(
     Uint8List dataKey,
     String id,
     Uint8List plaintext, {
+    int? epoch,
     Uint8List? nonce,
   }) {
-    final aad = Uint8List.fromList(utf8.encode(id));
+    final aad = _blobAad(id, epoch);
     return _aesGcmEncrypt(
         dataKey, nonce ?? _secureRandom(_nonceLength), aad, plaintext);
   }
 
   /// 用 dataKey 解密笔记信封，返回明文字节
   ///
-  /// [id] 必须与加密时传入的 id 一致，否则 GCM tag 验证失败。
-  static Uint8List open(Uint8List dataKey, String id, Uint8List envelope) {
-    final aad = Uint8List.fromList(utf8.encode(id));
+  /// [id] 必须与加密时一致（内容 hash 或 UUID）。
+  /// [epoch] 必须与加密时的纪元一致才能通过 GCM tag 验证；不传或 0 时按遗留格式解密。
+  static Uint8List open(
+    Uint8List dataKey,
+    String id,
+    Uint8List envelope, {
+    int? epoch,
+  }) {
+    final aad = _blobAad(id, epoch);
     return _aesGcmDecrypt(dataKey, aad, envelope);
   }
 

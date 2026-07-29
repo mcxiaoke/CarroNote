@@ -65,6 +65,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               onPressed: (_) => _triggerSync(),
             ),
             SettingsTile.navigation(
+              leading: const Icon(Icons.build_outlined),
+              title: const Text('修复同步数据'),
+              description: const Text('扫描并修复远端无法解密的 blob'),
+              onPressed: (_) => _triggerRepair(),
+            ),
+            SettingsTile.navigation(
               leading: const Icon(Icons.info_outline),
               title: const Text('上次同步'),
               value: Text(_lastSyncText()),
@@ -415,6 +421,89 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         _showMessage('同步完成：↑${result.uploaded} ↓${result.downloaded}');
       }
     }
+  }
+
+  /// 「修复同步数据」按钮：扫描远端 blob 并尝试修复坏条目。
+  ///
+  /// 可选输入旧密码（用于恢复 scenario-d 合并产生的旧密钥 blob）；
+  /// 留空则仅用当前 dataKey + 本机明文尝试修复。
+  Future<void> _triggerRepair() async {
+    if (!SyncService.instance.state.isInitialized) {
+      if (SyncService.instance.vault == null) {
+        _showMessage('Vault 未初始化，请重新登录');
+        return;
+      }
+      final result = await SyncService.instance.initBackend(
+        database: NotesDatabase.instance,
+      );
+      if (!result.success) {
+        _showMessage(result.error ?? '后端初始化失败');
+        return;
+      }
+    }
+
+    // 询问旧密码（可选）
+    final oldPassword = await _promptOldPassword();
+    if (oldPassword == null) return; // 用户取消
+
+    _showMessage('正在校验并修复远端数据…');
+    final result = await SyncService.instance.repairRemote(
+      oldPassword: oldPassword.isEmpty ? null : oldPassword,
+    );
+
+    if (mounted) {
+      setState(() {});
+      if (result == null) {
+        _showMessage('修复未执行：正在同步中或无权限');
+      } else if (!result.success) {
+        _showMessage('修复失败：${result.errorMessage}');
+      } else if (result.failedNoteUuids.isNotEmpty) {
+        _showMessage('修复完成：治愈 ${result.uploaded} 条，'
+            '${result.failedNoteUuids.length} 条仍无法解密（无密钥/明文）');
+      } else {
+        _showMessage('修复完成：治愈 ${result.uploaded} 条，无残留损坏');
+      }
+    }
+  }
+
+  /// 弹出可选旧密码输入框
+  ///
+  /// 返回 null 表示取消；空字符串表示不提供旧密码；否则为输入的旧密码。
+  Future<String?> _promptOldPassword() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('修复同步数据'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('将扫描远端 blob 并尝试用当前密钥/本机明文修复。\n'
+                '若曾因多设备合并产生旧密钥 blob，可填写旧密码以恢复：'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: '旧密码（可选，留空跳过）',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => Navigator.of(dialogContext).pop(controller.text),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(null),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('开始修复'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showMessage(String message) {

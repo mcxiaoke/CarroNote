@@ -337,6 +337,68 @@ class SyncService {
     }
   }
 
+  /// 全面校验并修复远端同步数据（设置页「修复同步数据」按钮调用）。
+  ///
+  /// 委托给 [SyncEngine.repairRemote]。[oldPassword] 可选：提供旧密码以尝试用
+  /// 归档的历史 dataKey 恢复遗留坏 blob（scenario-d 合并产生的旧密钥 blob）。
+  /// 返回修复结果；未初始化 / 正在同步时返回 null。
+  Future<SyncResult?> repairRemote({String? oldPassword}) async {
+    final engine = _engine;
+    if (engine == null) {
+      _updateState(state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: '同步服务未初始化',
+      ));
+      return null;
+    }
+
+    // 惰性（重）初始化后端（与 sync 同逻辑，详见 sync() 注释）
+    if (!_backendReady) {
+      final backend = _backend;
+      if (backend == null) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: '同步服务未初始化',
+        ));
+        return null;
+      }
+      try {
+        await backend.init();
+        _backendReady = true;
+      } on BackendUnavailableException catch (e) {
+        return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+      } on Exception catch (e) {
+        return SyncResult.failure('后端初始化失败：$e');
+      }
+    }
+
+    // 与同步互斥（修复期间不应并发同步）
+    if (_syncInProgress) return null;
+
+    _syncInProgress = true;
+    _updateState(state.copyWith(
+      status: SyncStatus.syncing,
+      errorMessage: null,
+    ));
+
+    try {
+      final result = await engine.repairRemote(oldPassword: oldPassword);
+      _updateState(state.copyWith(
+        status: result.success ? SyncStatus.success : SyncStatus.error,
+        lastSyncTime: DateTime.now(),
+        lastResult: result,
+        errorMessage: result.success ? null : result.errorMessage,
+      ));
+      return result;
+    } on BackendUnavailableException catch (e) {
+      return SyncResult.failure('后端不可用：$e');
+    } on Exception catch (e) {
+      return SyncResult.failure('修复异常：$e');
+    } finally {
+      _syncInProgress = false;
+    }
+  }
+
   /// 笔记变更后自动同步（debounce 3 秒）
   ///
   /// 频繁调用（如打字时自动保存）只触发一次同步。

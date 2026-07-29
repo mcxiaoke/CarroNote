@@ -159,6 +159,20 @@ class Vault {
   /// 注意：非 final，理由同 keyFingerprint。
   int keyVersion;
 
+  /// dataKey 纪元（Layer 3 显式标记，单调 int，独立于 [keyVersion]）
+  ///
+  /// 与 [ManifestItem.blobKeyEpoch] 对应：blob 信封 AAD 携带该纪元，
+  /// 下载时据此显式判断 blob 是否被「非当前 dataKey」加密。
+  ///
+  /// 关键区别：
+  ///   - [keyVersion] 仅在【改密码】时 +1（dataKey 值不变）；
+  ///   - [dataKeyEpoch] 仅在【dataKey 值真正变化】时 +1
+  ///     （即 scenario-d / 未来重密钥迁移；改密码【不】加）。
+  ///
+  /// 默认 1（新建 vault 即为第 1 个纪元）；遗留 vault 未记录时按 1 处理。
+  /// 非 final：迁移导致 dataKey 值变化时递增并持久化。
+  int dataKeyEpoch;
+
   /// MK 派生参数（含 per-vault salt）
   ///
   /// salt 在 createNew 时随机生成，之后不变（包括改密码时）。
@@ -182,12 +196,13 @@ class Vault {
   /// 获取 MK（迁移场景需要，可能为 null 表示未缓存）
   Uint8List? get mk => _mk;
 
-  Vault({
+   Vault({
     required this.vaultId,
     required this.dataKey,
     required this.encryptedDataKey,
     required this.keyFingerprint,
     this.keyVersion = 1,
+    this.dataKeyEpoch = 1,
     required this.kdf,
     required this.createdAt,
     Uint8List? mk,
@@ -200,6 +215,7 @@ class Vault {
     String? encryptedDataKey,
     String? keyFingerprint,
     int? keyVersion,
+    int? dataKeyEpoch,
     KdfParams? kdf,
     int? createdAt,
     Uint8List? mk,
@@ -210,6 +226,7 @@ class Vault {
         encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
         keyFingerprint: keyFingerprint ?? this.keyFingerprint,
         keyVersion: keyVersion ?? this.keyVersion,
+        dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
         kdf: kdf ?? this.kdf,
         createdAt: createdAt ?? this.createdAt,
         mk: mk ?? _mk,
@@ -266,6 +283,7 @@ class Vault {
     await database.setMeta(MetaKeys.kdfSalt, base64.encode(salt));
     await database.setMeta(MetaKeys.keyFingerprint, keyFingerprint);
     await database.setMeta(MetaKeys.keyVersion, '1');
+    await database.setMeta(MetaKeys.dataKeyEpoch, '1');
     await database.setMeta(MetaKeys.vaultCreatedAt, createdAt.toString());
 
     return Vault(
@@ -274,6 +292,7 @@ class Vault {
       encryptedDataKey: encryptedDataKey,
       keyFingerprint: keyFingerprint,
       keyVersion: 1,
+      dataKeyEpoch: 1,
       kdf: kdf,
       createdAt: createdAt,
       mk: mk,
@@ -302,6 +321,7 @@ class Vault {
     final saltBase64 = await database.getMeta(MetaKeys.kdfSalt);
     final keyFingerprint = await database.getMeta(MetaKeys.keyFingerprint);
     final keyVersionStr = await database.getMeta(MetaKeys.keyVersion);
+    final dataKeyEpochStr = await database.getMeta(MetaKeys.dataKeyEpoch);
     final createdAtStr = await database.getMeta(MetaKeys.vaultCreatedAt);
 
     if (vaultId == null || encryptedDataKey == null || saltBase64 == null) {
@@ -316,6 +336,7 @@ class Vault {
     final salt = base64.decode(saltBase64);
     final kdf = KdfParams.create(salt: salt);
     final keyVersion = int.tryParse(keyVersionStr ?? '1') ?? 1;
+    final dataKeyEpoch = int.tryParse(dataKeyEpochStr ?? '1') ?? 1;
     final createdAt = int.tryParse(createdAtStr ?? '') ??
         DateTime.now().millisecondsSinceEpoch;
 
@@ -328,6 +349,7 @@ class Vault {
       kdf: kdf,
       keyFingerprint: keyFingerprint ?? '',
       keyVersion: keyVersion,
+      dataKeyEpoch: dataKeyEpoch,
       createdAt: createdAt,
       database: database,
     );
@@ -359,6 +381,7 @@ class Vault {
     required KdfParams remoteKdf,
     required String remoteKeyFingerprint,
     required int remoteKeyVersion,
+    int remoteDataKeyEpoch = 1,
     required int remoteCreatedAt,
     required NotesDatabase database,
   }) async {
@@ -367,62 +390,66 @@ class Vault {
     final vault = await _unlockWith(
       password: password,
       vaultId: remoteVaultId,
-      encryptedDataKey: remoteEncryptedDataKey,
-      salt: remoteKdf.saltBytes,
-      kdf: remoteKdf,
-      keyFingerprint: remoteKeyFingerprint,
-      keyVersion: remoteKeyVersion,
-      createdAt: remoteCreatedAt,
-      database: database,
-    );
+    encryptedDataKey: remoteEncryptedDataKey,
+    salt: remoteKdf.saltBytes,
+    kdf: remoteKdf,
+    keyFingerprint: remoteKeyFingerprint,
+    keyVersion: remoteKeyVersion,
+    dataKeyEpoch: remoteDataKeyEpoch,
+    createdAt: remoteCreatedAt,
+    database: database,
+  );
 
-    // 验证成功后才持久化远端 vault 元数据到本地
-    await database.setMeta(MetaKeys.vaultId, remoteVaultId);
-    await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
-    await database.setMeta(MetaKeys.kdfSalt, remoteKdf.salt);
-    await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
-    await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
-    await database.setMeta(MetaKeys.vaultCreatedAt, remoteCreatedAt.toString());
+  // 验证成功后才持久化远端 vault 元数据到本地
+  await database.setMeta(MetaKeys.vaultId, remoteVaultId);
+  await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
+  await database.setMeta(MetaKeys.kdfSalt, remoteKdf.salt);
+  await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
+  await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+  await database.setMeta(MetaKeys.dataKeyEpoch, remoteDataKeyEpoch.toString());
+  await database.setMeta(MetaKeys.vaultCreatedAt, remoteCreatedAt.toString());
 
-    return vault;
-  }
+  return vault;
+}
 
-  /// 内部解锁逻辑：派生 MK + unwrap dataKey
-  static Future<Vault> _unlockWith({
-    required String password,
-    required String vaultId,
-    required String encryptedDataKey,
-    required Uint8List salt,
-    required KdfParams kdf,
-    required String keyFingerprint,
-    required int keyVersion,
-    required int createdAt,
-    required NotesDatabase database,
-  }) async {
-    final mk = await _deriveMk(password, salt: salt);
-    final encryptedBytes = base64.decode(encryptedDataKey);
+/// 内部解锁逻辑：派生 MK + unwrap dataKey
+static Future<Vault> _unlockWith({
+  required String password,
+  required String vaultId,
+  required String encryptedDataKey,
+  required Uint8List salt,
+  required KdfParams kdf,
+  required String keyFingerprint,
+  required int keyVersion,
+  required int dataKeyEpoch,
+  required int createdAt,
+  required NotesDatabase database,
+}) async {
+  final mk = await _deriveMk(password, salt: salt);
+  final encryptedBytes = base64.decode(encryptedDataKey);
 
-    final Uint8List dataKey;
-    try {
-      dataKey = SyncCrypto.unwrapDataKey(mk, encryptedBytes);
-    } on Exception catch (e) {
-      // GCM tag 验证失败 = 密码错误
-      throw WrongPasswordException(
-        '无法解密 dataKey（GCM tag 验证失败）：$e',
-      );
-    }
-
-    return Vault(
-      vaultId: vaultId,
-      dataKey: dataKey,
-      encryptedDataKey: encryptedDataKey,
-      keyFingerprint: keyFingerprint,
-      keyVersion: keyVersion,
-      kdf: kdf,
-      createdAt: createdAt,
-      mk: mk,
+  final Uint8List dataKey;
+  try {
+    dataKey = SyncCrypto.unwrapDataKey(mk, encryptedBytes);
+  } on Exception catch (e) {
+    // GCM tag 验证失败 = 密码错误
+    throw WrongPasswordException(
+      '无法解密 dataKey（GCM tag 验证失败）：$e',
     );
   }
+
+  return Vault(
+    vaultId: vaultId,
+    dataKey: dataKey,
+    encryptedDataKey: encryptedDataKey,
+    keyFingerprint: keyFingerprint,
+    keyVersion: keyVersion,
+    dataKeyEpoch: dataKeyEpoch,
+    kdf: kdf,
+    createdAt: createdAt,
+    mk: mk,
+  );
+}
 
   // ──────────────────────────────────────────────
   // dataKey 迁移（本地 vault 与远端不一致时）
@@ -514,11 +541,23 @@ class Vault {
     // Layer 2a: dataKey 值真正变化时才标记 blob 重传。
     // 改密码场景（dataKey 不变）不标记，避免无谓的全量 blob 重传；
     // scenario-d（不同 dataKey）必然进入此分支，确保服务器旧密钥 blob 被覆盖。
+    int nextEpoch = dataKeyEpoch;
     if (!_sameKey(dataKey, remoteDataKey)) {
       await database.markAllForBlobReupload();
+      // Layer 3: dataKey 值真正变化 → dataKey 纪元 +1（独立于 keyVersion）。
+      nextEpoch = dataKeyEpoch + 1;
+      await database.setMeta(MetaKeys.dataKeyEpoch, nextEpoch.toString());
     }
 
     // 2. 更新本地 meta（P2-7 修复：vaultId 也更新为远端值）
+    // 归档被替换的本地 wrappedDataKey（scenario-d 下为旧 dataKey），供 repair 恢复。
+    if (!_sameKey(dataKey, remoteDataKey)) {
+      await database.appendDataKeyHistory(
+        keyVersion: keyVersion,
+        wrappedDataKey: encryptedDataKey,
+        keyFingerprint: keyFingerprint,
+      );
+    }
     await database.setMeta(MetaKeys.vaultId, remoteVaultId);
     await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
 
@@ -530,6 +569,7 @@ class Vault {
       vaultId: remoteVaultId,
       dataKey: remoteDataKey,
       encryptedDataKey: remoteEncryptedDataKey,
+      dataKeyEpoch: nextEpoch,
     );
   }
 
@@ -611,16 +651,29 @@ class Vault {
 
     // Layer 2a: dataKey 值真正变化时才标记 blob 重传（见 migrateToRemote 同名注释）。
     // scenario-d 两设备独立 dataKey，此处 remoteDataKey 必然 != 本地 dataKey。
+    int nextEpoch = dataKeyEpoch;
     if (!_sameKey(dataKey, remoteDataKey)) {
       await database.markAllForBlobReupload();
+      // Layer 3: dataKey 值真正变化 → dataKey 纪元 +1（独立于 keyVersion）。
+      nextEpoch = dataKeyEpoch + 1;
+      await database.setMeta(MetaKeys.dataKeyEpoch, nextEpoch.toString());
     }
 
     // 2. 持久化远端 vault 全部元数据到本地 meta
+    // 归档被替换的本地 wrappedDataKey（scenario-d 下为旧 dataKey），供 repair 恢复。
+    if (!_sameKey(dataKey, remoteDataKey)) {
+      await database.appendDataKeyHistory(
+        keyVersion: keyVersion,
+        wrappedDataKey: encryptedDataKey,
+        keyFingerprint: keyFingerprint,
+      );
+    }
     await database.setMeta(MetaKeys.vaultId, remoteVaultId);
     await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
     await database.setMeta(MetaKeys.kdfSalt, remoteKdf.salt);
     await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
     await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+    await database.setMeta(MetaKeys.dataKeyEpoch, nextEpoch.toString());
     await database.setMeta(MetaKeys.vaultCreatedAt, remoteCreatedAt.toString());
 
     // 3. 更新 database 的 dataKey
@@ -633,6 +686,7 @@ class Vault {
       encryptedDataKey: remoteEncryptedDataKey,
       keyFingerprint: remoteKeyFingerprint,
       keyVersion: remoteKeyVersion,
+      dataKeyEpoch: nextEpoch,
       kdf: remoteKdf,
       createdAt: remoteCreatedAt,
       mk: remoteMk,
@@ -708,6 +762,14 @@ class Vault {
     final newKeyVersion = keyVersion + 1;
 
     // 5. 持久化到本地 sync_meta 表
+    // 归档被替换的旧 wrappedDataKey（用旧 MK 包裹），供 repair 时由旧密码恢复。
+    // 注意：dataKey 本身不变，旧 wrappedDataKey 解开后仍是同一 dataKey；
+    // 此归档主要为"历史曾用不同 dataKey"的场景（如 scenario-d 迁移）保留恢复锚点。
+    await database.appendDataKeyHistory(
+      keyVersion: keyVersion,
+      wrappedDataKey: encryptedDataKey,
+      keyFingerprint: keyFingerprint,
+    );
     await database.setMeta(MetaKeys.encryptedDataKey, newEncryptedDataKey);
     await database.setMeta(MetaKeys.keyFingerprint, newKeyFingerprint);
     await database.setMeta(MetaKeys.keyVersion, newKeyVersion.toString());
@@ -762,17 +824,19 @@ class Vault {
     required String remoteEncryptedDataKey,
     required String remoteKeyFingerprint,
     required int remoteKeyVersion,
+    int remoteDataKeyEpoch = 1,
     required NotesDatabase database,
   }) async {
-    // 持久化到本地 meta
     await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
     await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
     await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+    // dataKey 不变（改密码场景），其纪元与远端一致，直接采用远端权威值。
+    await database.setMeta(MetaKeys.dataKeyEpoch, remoteDataKeyEpoch.toString());
 
-    // 更新内存（三个字段均为非 final）
     encryptedDataKey = remoteEncryptedDataKey;
     keyFingerprint = remoteKeyFingerprint;
     keyVersion = remoteKeyVersion;
+    dataKeyEpoch = remoteDataKeyEpoch;
   }
 
   // ──────────────────────────────────────────────

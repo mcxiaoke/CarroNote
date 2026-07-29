@@ -554,6 +554,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         remoteKdf: header.kdf,
         remoteKeyFingerprint: header.keyFingerprint,
         remoteKeyVersion: header.keyVersion,
+        remoteDataKeyEpoch: header.dataKeyEpoch,
         remoteCreatedAt: header.createdAt,
         database: database,
       );

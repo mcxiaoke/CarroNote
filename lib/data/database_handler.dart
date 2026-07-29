@@ -83,6 +83,12 @@ class MetaKeys {
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
   // Layer 2a: dataKey 变更后需强制重传 blob 的笔记 uuid 列表（JSON 数组）
   static const String blobReuploadPending = 'blob_reupload_pending';
+  // Layer 3: dataKey 纪元（单调 int，仅在 dataKey 值真正变化时 +1；独立于 keyVersion）
+  static const String dataKeyEpoch = 'data_key_epoch';
+  // Layer 3 + repair: 历史 wrapped dataKey 归档（JSON 数组）
+  // 元素: { "keyVersion": int, "wrappedDataKey": base64, "keyFingerprint": hex }
+  // 每个元素用其对应 MK 包裹，repair 时由用户提供的旧密码派生 MK 解开。
+  static const String dataKeyHistory = 'data_key_history';
 }
 
 class NotesDatabase {
@@ -746,6 +752,54 @@ class NotesDatabase {
       whereArgs: [MetaKeys.blobReuploadPending],
     );
   }
+
+  // ──────────────────────────────────────────────
+  // Layer 3 + repair: 历史 wrapped dataKey 归档
+  // ──────────────────────────────────────────────────
+  //
+  // 背景：修复（repair）需要尝试"非当前 dataKey"解密远端 blob。
+  // 这些历史 dataKey 以 wrapped 形式（AES-GCM(MK, dataKey)）归档，
+  // 仅持有对应密码（MK）的一方才能解开——服务器拿不到明文 dataKey。
+  //
+  // 归档元素 JSON 结构：
+  //   { "keyVersion": int, "wrappedDataKey": base64, "keyFingerprint": hex }
+  // 其中 wrappedDataKey 必须用"当时活跃密码派生出的 MK"包裹，
+  // 否则后续无法用任何已知密码解开。
+
+  /// 追加一条历史 wrapped dataKey 归档（去重：同 keyVersion 不重复）
+  Future<void> appendDataKeyHistory({
+    required int keyVersion,
+    required String wrappedDataKey,
+    required String keyFingerprint,
+  }) async {
+    final list = await getDataKeyHistory();
+    if (list.any((e) => e['keyVersion'] == keyVersion)) return;
+    list.add({
+      'keyVersion': keyVersion,
+      'wrappedDataKey': wrappedDataKey,
+      'keyFingerprint': keyFingerprint,
+    });
+    await setMeta(MetaKeys.dataKeyHistory, jsonEncode(list));
+  }
+
+  /// 读取历史 wrapped dataKey 归档列表（空列表表示无）
+  Future<List<Map<String, dynamic>>> getDataKeyHistory() async {
+    final raw = await getMeta(MetaKeys.dataKeyHistory);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } on Exception {
+      // 解析失败返回空列表
+    }
+    return [];
+  }
+
 
   // ──────────────────────────────────────────────
   // sync_meta 表 CRUD
