@@ -1182,13 +1182,14 @@ void main() {
           reason: '重传后不应再报告失败');
 
       // 断言：blob 现在用 dataKeyNew 加密（旧密钥打不开，新密钥能打开并还原内容）
+      // 协议 v2：重传后的 blob AAD = 内容 hash
       final blob = await backend.getBlob(hash);
       expect(blob, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, 'note-mig', blob!);
+      final opened = SyncCrypto.open(dataKeyNew, hash, blob!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, 'Mig');
       expect(
-        () => SyncCrypto.open(dataKeyOld, 'note-mig', blob),
+        () => SyncCrypto.open(dataKeyOld, hash, blob),
         throwsA(isA<Object>()),
         reason: '旧密钥应无法再解开已被重传覆盖的 blob',
       );
@@ -1302,9 +1303,10 @@ void main() {
       );
 
       // 修复后的 blob（localHash）现在用 dataKeyNew 加密且内容为本机明文
+      // （协议 v2：AAD = 内容 hash）
       final repaired = await backend.getBlob(localHash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, 'note-heal', repaired!);
+      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, localTitle);
 
@@ -1330,6 +1332,206 @@ void main() {
       final healed = await database.readNoteByUuid('note-heal');
       expect(healed, isNotNull);
       expect(healed!.title, localTitle);
+    });
+  });
+
+  group('容错与自愈 - 共享 blob（相同内容多条笔记）', () {
+    test('v2 协议：两条内容相同的笔记共享一个 blob，新设备两条都能下载', () async {
+      final dataKey = SyncCrypto.generateDataKey();
+      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      database.setDataKey(dataKey);
+
+      // 设备 A：两条内容完全相同的笔记（不同 uuid，contentHash 相同 → 共享 blob）
+      await database.storeNote(
+        _makeNote(uuid: 'twin-1', title: 'Same', description: 'content'),
+      );
+      await database.storeNote(
+        _makeNote(uuid: 'twin-2', title: 'Same', description: 'content'),
+      );
+      final engineA = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKey,
+        encryptedDataKey: encK,
+      );
+      final resultA = await engineA.sync();
+      expect(resultA.success, isTrue);
+
+      // 设备 B（空库）：两条都应正常下载（AAD=hash，任何 uuid 都能解开共享 blob）
+      await database.close();
+      final dbB = await openDatabase(
+        ':memory:',
+        version: 2,
+        onCreate: NotesDatabase.createDBForTesting,
+      );
+      NotesDatabase.setDatabaseForTesting(dbB);
+      database.setDataKey(dataKey);
+      final engineB = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKey,
+        encryptedDataKey: encK,
+      );
+      final resultB = await engineB.sync();
+
+      expect(resultB.success, isTrue);
+      expect(resultB.failedNoteUuids, isEmpty,
+          reason: 'v2 协议下共享 blob 不应导致任何一条解密失败');
+      expect(resultB.downloaded, 2, reason: '两条同内容笔记都应下载成功');
+      final n1 = await database.readNoteByUuid('twin-1');
+      final n2 = await database.readNoteByUuid('twin-2');
+      expect(n1?.title, 'Same');
+      expect(n2?.title, 'Same');
+    });
+
+    test('v1 存量：旧格式（AAD=uuid）blob 仍可正常下载（向后兼容）', () async {
+      final dataKey = SyncCrypto.generateDataKey();
+      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      database.setDataKey(dataKey);
+
+      final note = _makeNote(
+        uuid: 'legacy-1',
+        title: 'Legacy',
+        description: 'old aad',
+      );
+      final now = DateTime.now().millisecondsSinceEpoch;
+      // 远端 manifest + 旧格式 blob（AAD=uuid，模拟升级前客户端上传的存量数据）
+      await _uploadRemoteManifest(
+        backend: backend,
+        dataKey: dataKey,
+        items: {
+          'legacy-1': ManifestItem(
+            hash: note.contentHash,
+            deleted: false,
+            updatedAt: now,
+            updatedBy: 'old-client',
+            createdAt: now,
+            contentSize: note.toContentBytes().length,
+          ),
+        },
+        encryptedDataKey: encK,
+        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
+      );
+      await backend.putBlob(
+        note.contentHash,
+        SyncCrypto.seal(dataKey, 'legacy-1', note.toContentBytes()),
+      );
+
+      final engine = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKey,
+        encryptedDataKey: encK,
+      );
+      final result = await engine.sync();
+
+      expect(result.success, isTrue);
+      expect(result.failedNoteUuids, isEmpty,
+          reason: '旧格式 blob 应通过 AAD=uuid 回退路径解密成功');
+      expect(result.downloaded, 1);
+      final local = await database.readNoteByUuid('legacy-1');
+      expect(local?.title, 'Legacy');
+    });
+
+    test('v1 存量共享 blob（复现线上故障）：孪生笔记自愈修复且第三台设备可下载',
+        () async {
+      final dataKey = SyncCrypto.generateDataKey();
+      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      database.setDataKey(dataKey);
+
+      // 线上场景复刻：
+      //   Android 有两条内容相同的笔记 twin-a / twin-b，共享 blob（hash 相同），
+      //   旧协议下 blob 的 AAD 绑定的是 twin-a；
+      //   Windows（本机）只有 twin-a 的明文，下载 twin-b 必然解密失败。
+      const title = 'android note 1';
+      const desc = 'dup content';
+      final sharedHash = SafeNote.computeHash(title, desc);
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      // 本机持有 twin-a（明文），且已与远端一致（同 hash 同状态 → 无需传输）
+      await database.storeNote(_makeNote(
+        uuid: 'twin-a',
+        title: title,
+        description: desc,
+        updatedAt: now,
+      ));
+
+      // 远端 manifest：twin-a 与 twin-b 引用同一个 hash
+      ManifestItem item(String by) => ManifestItem(
+            hash: sharedHash,
+            deleted: false,
+            updatedAt: now,
+            updatedBy: by,
+            createdAt: now,
+            contentSize: title.length + desc.length,
+          );
+      await _uploadRemoteManifest(
+        backend: backend,
+        dataKey: dataKey,
+        items: {'twin-a': item('android'), 'twin-b': item('android')},
+        encryptedDataKey: encK,
+        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
+      );
+      // 共享 blob 用旧协议加密：AAD 绑定 twin-a（twin-b 解不开）
+      final noteContent = _makeNote(
+        uuid: 'twin-a',
+        title: title,
+        description: desc,
+      ).toContentBytes();
+      await backend.putBlob(
+        sharedHash,
+        SyncCrypto.seal(dataKey, 'twin-a', noteContent),
+      );
+
+      final engine = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKey,
+        encryptedDataKey: encK,
+      );
+      final result = await engine.sync();
+
+      expect(result.success, isTrue);
+      expect(result.failedNoteUuids, isEmpty,
+          reason: '本机持有同内容孪生笔记，应去重自愈而非报失败');
+      expect(
+        result.actions.any(
+            (a) => a.type == SyncActionType.heal && a.uuid == 'twin-b'),
+        isTrue,
+        reason: 'twin-b 应通过孪生笔记自愈',
+      );
+      // twin-b 已物化到本地
+      final twinB = await database.readNoteByUuid('twin-b');
+      expect(twinB, isNotNull);
+      expect(twinB!.title, title);
+
+      // 重传后的共享 blob 已是 v2 格式（AAD=hash），可直接解开
+      final repaired = await backend.getBlob(sharedHash);
+      expect(repaired, isNotNull);
+      final opened = SyncCrypto.open(dataKey, sharedHash, repaired!);
+      expect(SafeNote.fromContentBytes(opened).title, title);
+
+      // 端到端：第三台空设备两条都能正常下载
+      await database.close();
+      final dbC = await openDatabase(
+        ':memory:',
+        version: 2,
+        onCreate: NotesDatabase.createDBForTesting,
+      );
+      NotesDatabase.setDatabaseForTesting(dbC);
+      database.setDataKey(dataKey);
+      final engineC = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKey,
+        encryptedDataKey: encK,
+      );
+      final resultC = await engineC.sync();
+      expect(resultC.success, isTrue);
+      expect(resultC.failedNoteUuids, isEmpty);
+      expect(resultC.downloaded, 2);
+      expect((await database.readNoteByUuid('twin-a'))?.title, title);
+      expect((await database.readNoteByUuid('twin-b'))?.title, title);
     });
   });
 }

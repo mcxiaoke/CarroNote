@@ -372,6 +372,28 @@ class NotesDatabase {
     return null;
   }
 
+  /// 按内容 hash 读取一条未删除的笔记（同步去重自愈用，自动解密）
+  ///
+  /// 场景：blob 按内容 hash 寻址去重，两条内容相同的笔记共享同一 blob。
+  /// 当某个 uuid 的 blob 解不开、且本机没有该 uuid 的明文时，
+  /// 若本机存在内容相同（content_hash 相同）的"孪生笔记"，
+  /// 可用孪生明文物化该 uuid 并重传修复 blob。
+  Future<SafeNote?> readNoteByContentHash(String contentHash) async {
+    _checkNotMigrating();
+    final db = await instance.database;
+    final maps = await db.query(
+      tableNotes,
+      columns: NoteFields.values,
+      where: '${NoteFields.contentHash} = ? AND ${NoteFields.deleted} = 0',
+      whereArgs: [contentHash],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      return _fromEncryptedRow(maps.first);
+    }
+    return null;
+  }
+
   /// 读取所有未删除的笔记（UI 列表用，自动解密）
   Future<List<SafeNote>> readAllNotes() async {
     _checkNotMigrating();

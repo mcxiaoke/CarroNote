@@ -839,7 +839,8 @@ class SyncEngine {
           return;
         }
         // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
-        final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
+        // v1/v2 AAD 双重兼容解密
+        final plaintext = _openBlobEnvelope(uuid, loserItem.hash, envelope);
         final content = SafeNote.fromContentBytes(plaintext);
 
         // 生成新笔记（新 UUID + 新 hash），保留原始创建时间
@@ -937,10 +938,18 @@ class SyncEngine {
     }
 
     // 加密笔记内容为 envelope（Layer 1：单个 blob 上传失败不应中断整次同步）
+    //
+    // 协议 v2：AAD 使用内容 hash（与 blob 内容寻址一致）而非 uuid。
+    // 原因：blob 按内容 hash 去重，两条内容相同的笔记共享同一个 blob 文件；
+    // 若 AAD 绑定 uuid，则该 blob 只能被"上传者的 uuid"解开，
+    // 其他引用同一 hash 的笔记在别的设备上永远解密失败（GCM tag 不匹配）。
+    // AAD=hash 后任何引用该 hash 的笔记都能解开；防信封错位由下载侧的
+    // "解密内容 hash == manifest 记录 hash"校验保证（manifest items 本身
+    // 由 dataKey 加密认证，服务器无法伪造）。
     try {
       final envelope = SyncCrypto.seal(
         _dataKey,
-        note.uuid,
+        note.contentHash,
         note.toContentBytes(),
       );
       await backend.putBlob(note.contentHash, envelope);
@@ -959,6 +968,23 @@ class SyncEngine {
       uuid: note.uuid,
       hash: note.contentHash,
     ));
+  }
+
+  /// 解密 blob 信封（协议 v1/v2 双重兼容）
+  ///
+  /// - v2（当前）：AAD = 内容 hash —— 与 blob 内容寻址自洽，
+  ///   相同内容的多条笔记共享一个 blob 时任何 uuid 都能解开。
+  /// - v1（存量）：AAD = 笔记 uuid —— 兼容旧客户端上传的 blob，
+  ///   无需迁移远端数据。
+  ///
+  /// 两种 AAD 都失败则向上抛出（调用方进入 Layer 1/2b 容错自愈流程）。
+  Uint8List _openBlobEnvelope(String uuid, String hash, Uint8List envelope) {
+    try {
+      return SyncCrypto.open(_dataKey, hash, envelope);
+    } on Object {
+      // 回退旧格式（AAD=uuid）
+      return SyncCrypto.open(_dataKey, uuid, envelope);
+    }
   }
 
   /// 从远端下载单条笔记并写入本地数据库
@@ -1012,9 +1038,9 @@ class SyncEngine {
       return _DownloadFailed(uuid);
     }
 
-    // 解密（Layer 1 容错 + Layer 2b 自愈）
+    // 解密（Layer 1 容错 + Layer 2b 自愈；v1/v2 AAD 双重兼容）
     try {
-      final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
+      final plaintext = _openBlobEnvelope(uuid, item.hash, envelope);
       final content = SafeNote.fromContentBytes(plaintext);
 
       // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
@@ -1082,6 +1108,9 @@ class SyncEngine {
   ///     覆盖服务器上的坏 blob（自愈）。自愈成功后返回修复后的 [ManifestItem]
   ///     （hash 取本地明文 hash，使合并后的 manifest 指向修复后的 blob），
   ///     记为 [SyncActionType.heal]，不计入失败列表。
+  ///   - 若本机无该 uuid 的明文，但存在内容相同的孪生笔记
+  ///     （content_hash == remoteItem.hash，共享 blob 去重场景）→
+  ///     用孪生明文物化该 uuid 并按当前协议（AAD=hash）重传 blob（去重自愈）。
   ///   - 若本机无明文（该笔记从未在本机创建/下载过）→ 无法自愈，记为
   ///     [SyncActionType.corrupt] 并保留远端条目（mergedItems 中保留 remoteItem），
   ///     下次同步继续重试下载；该 uuid 进入 [SyncResult.failedNoteUuids]。
@@ -1117,6 +1146,54 @@ class SyncEngine {
         );
       } on Object {
         // 自愈上传也失败：退化为记录失败，不抛
+      }
+    }
+
+    // 去重自愈：本机没有该 uuid 的明文，但可能存在"内容相同"的孪生笔记。
+    //
+    // 场景：blob 按内容 hash 寻址去重，两条内容相同的笔记（不同 uuid）
+    // 共享同一个 blob；旧协议（AAD=uuid）下该 blob 只能被上传者的 uuid
+    // 解开，其他 uuid 在本机必然解密失败。若本机恰好持有内容相同的
+    // 孪生笔记（content_hash == remoteItem.hash），则：
+    //   1. 用孪生明文在本地物化该 uuid 的笔记（保留远端时间戳元数据）；
+    //   2. 用当前协议（AAD=hash）重传 blob，让所有设备都能解开。
+    if (!remoteItem.deleted) {
+      try {
+        final twin = await database.readNoteByContentHash(remoteItem.hash);
+        if (twin != null) {
+          // 1) 物化：以孪生内容 + 远端元数据落地该 uuid 的笔记
+          final existing = await database.readNoteByUuid(uuid);
+          final materialized = SafeNote(
+            id: existing?.id,
+            uuid: uuid,
+            title: twin.title,
+            description: twin.description,
+            contentHash: remoteItem.hash,
+            deleted: false,
+            createdTime: existing?.createdTime ??
+                DateTime.fromMillisecondsSinceEpoch(remoteItem.createdAt),
+            updatedAt: remoteItem.updatedAt,
+            synced: true,
+          );
+          if (existing == null) {
+            await database.storeNote(materialized);
+          } else {
+            await database.updateNoteByUuid(materialized);
+          }
+
+          // 2) 重传 blob（_uploadNote 现用 AAD=hash，重传后全网可解）
+          await _uploadNote(materialized, actions);
+          actions.add(SyncAction(
+            type: SyncActionType.heal,
+            uuid: uuid,
+            hash: remoteItem.hash,
+            message: '共享 blob 旧格式解密失败，已用本机同内容孪生笔记自愈',
+          ));
+          // hash 不变（内容相同），保留远端条目即可正确引用重传后的 blob
+          return remoteItem;
+        }
+      } on Object {
+        // 孪生自愈失败：退化为记录失败，不抛
       }
     }
 
