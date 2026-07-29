@@ -55,10 +55,8 @@ _local_temp/
 
 temp/
 tmp/
-
-/server/go/data/
-/server/nodejs/data/
-/server/
+server/nodejs/data/
+server/go/data/
 
 #Ignore App Store Listing Assets
 app_store_listing_assets/
