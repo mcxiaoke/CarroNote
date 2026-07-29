@@ -13,7 +13,17 @@
 
 include: package:flutter_lints/flutter.yaml
 
-linter:
+analyzer:
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.gr.dart'
+    - "third_party/**"
+    - "temp/**"
+    - "ios/**"
+    - "android/**"
+    - "lib/generated/**"
 
+
+linter:
   rules:
     avoid_print: true 
