@@ -131,6 +131,18 @@ class SyncService {
   /// 是否正在同步
   bool get isSyncing => _syncInProgress;
 
+  /// Bug A 修复：后端是否已成功初始化。
+  ///
+  /// 初始化时若离线，[initialize] 中的 [SyncBackend.init] 会失败并保持
+  /// 未就绪状态（[SyncBackend] 内部 _initialized == false）。此后 [sync]
+  /// 直接调用 backend.getManifest → _ensureInitialized 抛
+  /// "Call init() before using the backend"，且没有任何路径重新 init，
+  /// 导致联网后每次同步都报同样错、只能杀进程重进。
+  ///
+  /// 用这个标志配合 [sync] 的惰性（重）初始化：只要尚未就绪就重试 init，
+  /// 联网成功即自动恢复，失败则优雅返回"网络不可用"，不再抛 cryptic 错误。
+  bool _backendReady = false;
+
   // ──────────────────────────────────────────────
   // autoSync debounce
   // ──────────────────────────────────────────────
@@ -167,6 +179,7 @@ class SyncService {
     );
 
     await backend.init();
+    _backendReady = true;
 
     _updateState(state.copyWith(status: SyncStatus.idle));
   }
@@ -203,6 +216,7 @@ class SyncService {
     _backend = null;
     _engine = null;
     _deviceId = null;
+    _backendReady = false;
   }
 
   /// 用户登出时调用：清除敏感数据但保留 stream（供下次登录复用）
@@ -225,6 +239,7 @@ class SyncService {
     _vault = null;
     _backend = null;
     _engine = null;
+    _backendReady = false;
     _updateState(const SyncServiceState(status: SyncStatus.uninitialized));
   }
 
@@ -246,6 +261,41 @@ class SyncService {
         errorMessage: '同步服务未初始化',
       ));
       return null;
+    }
+
+    // Bug A 修复：惰性（重）初始化后端。
+    // 初始化时若离线，backend.init() 失败并保持未就绪状态，后续每次 sync
+    // 都会因 backend 未初始化而抛 "Call init() before using the backend"。
+    // 这里在每次 sync 开始时尝试（重）初始化：联网成功即自动恢复，
+    // 失败则优雅返回"网络不可用，请稍后重试"，不再抛出 cryptic 错误；
+    // 下次同步仍会重试，因此重连后无需杀进程即可恢复。
+    if (!_backendReady) {
+      final backend = _backend;
+      if (backend == null) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: '同步服务未初始化',
+        ));
+        return null;
+      }
+      try {
+        await backend.init();
+        _backendReady = true;
+      } on BackendUnavailableException catch (e) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          errorMessage: '网络不可用，请检查连接后重试：$e',
+        ));
+        return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+      } on Exception catch (e) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          errorMessage: '后端初始化失败：$e',
+        ));
+        return SyncResult.failure('后端初始化失败：$e');
+      }
     }
 
     // 互斥锁
@@ -323,6 +373,7 @@ class SyncService {
     await _backend?.close();
     _backend = backend;
     await backend.init();
+    _backendReady = true;
 
     final vault = _vault;
     final deviceId = _deviceId;

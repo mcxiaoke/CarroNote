@@ -99,6 +99,19 @@ class HomePageState extends State<HomePage> {
   ///     用新密码重新登录后所有笔记完好且继续同步。
   void _onSyncStateChanged(SyncServiceState state) {
     if (!mounted) return;
+
+    // Bug B 修复：同步完成（成功或失败且已有结果）后刷新主页列表，
+    // 让后台/手动同步拉取到的远端笔记立即显示，无需重启或返回设置页。
+    // 主页笔记列表是 StatefulWidget 维护的普通数组（非 MVVM/Provider 驱动），
+    // 引擎下载笔记只写本地数据库、不会通知 UI，故需在此主动重查。
+    // 仅对"完成态"刷新（syncing/idle 等中间态不刷新，避免无谓读库）。
+    if ((state.status == SyncStatus.success ||
+            state.status == SyncStatus.error) &&
+        state.lastResult != null) {
+      refreshNotes();
+    }
+
+    // B4 修复：他端改密码提示（保持不变）
     if (_passwordChangedDialogShown) return;
     if (state.lastResult?.passwordEpochMismatch != true) return;
 

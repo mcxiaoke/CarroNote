@@ -45,12 +45,15 @@ import 'dart:typed_data';
 // Package 导入
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safenotes/data/database_handler.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/utils/device_id.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // ──────────────────────────────────────────────
@@ -118,6 +121,23 @@ class FakeBackend implements SyncBackend {
 
   @override
   Future<bool> ping() async => true;
+}
+
+/// Bug A 测试专用：可切换离/在线状态的 FakeBackend。
+///
+/// 离线时 [init] 抛 [BackendUnavailableException]（模拟登录时断网导致后端
+/// 初始化失败），联网后 [init] 成功。存储仍委托给内部 [FakeBackend]，
+/// 因此联网后首次同步即可正常读写远端。
+class _FlakyBackend extends FakeBackend {
+  bool offline = true;
+
+  @override
+  Future<void> init() async {
+    if (offline) {
+      throw BackendUnavailableException('simulated offline');
+    }
+    await super.init();
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -602,6 +622,132 @@ void main() {
       expect(res2.success, isTrue);
       expect(res2.passwordEpochMismatch, isFalse,
           reason: '纪元已收敛，后续同步稳定');
+    });
+  });
+
+  // ────────────────────────────────────────────
+  // S6：用户报告 Bug B 的根因隔离——
+  //   A 改密码后保持打开；B 用新密码新建并同步；A 点同步
+  // 断言 A 的本地 DB 能拉到 B 的笔记，证明引擎 pull 正常，
+  // "没显示"是主页 UI 未在后台同步后重查列表（见 home.dart Bug B 修复）。
+  // ────────────────────────────────────────────
+  group('S6: A 改密码后保持打开，B 用新密码新建并同步，A 同步后本地 DB 含 B 的笔记', () {
+    test('A 同步把 B 新建的笔记拉入本地数据库（引擎 pull 正常，Bug B 是 UI 未刷新）',
+        () async {
+      // 1. A 改密码并推送（复用公共步骤：远端 kv=2，含 A 的 note-1）
+      final backend = await _deviceAChangesPasswordAndPushes();
+
+      // 2. B 用新密码重新登录：本地 meta 已是新纪元
+      final dbB = await _makeDatabase();
+      dbB.setDataKey(dataKey);
+      await _seedMeta(dbB,
+          encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
+      final engineB = _makeEngine(
+        backend: backend,
+        database: dbB,
+        vault: _makeVault(
+            keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
+            mk: mkNew),
+        deviceId: 'device-B',
+        passphrase: kNewPassword,
+      );
+      // B 新建笔记并同步（push 到远端）
+      await dbB.storeNote(_makeNote(uuid: 'note-B', title: 'Note from B'));
+      final resB = await engineB.sync();
+      expect(resB.success, isTrue, reason: 'B 用新密码同步应成功');
+      // 远端现在同时持有 note-1 与 note-B
+      final respB = await backend.getManifest();
+      final manifestB = ManifestCrypto.deserialize(dataKey, respB.ciphertext);
+      expect(manifestB.items.keys, containsAll(['note-1', 'note-B']),
+          reason: 'B 的笔记已 push 上远端（push 没坏）');
+
+      // 3. A 保持旧会话（kv=1，旧密码）点同步——用户报告的"没拉下来"路径
+      final dbA = await _makeDatabase();
+      dbA.setDataKey(dataKey);
+      await _seedMeta(dbA,
+          encryptedDataKey: edkOld, keyVersion: 1, keyFingerprint: fpOld);
+      final engineA = _makeEngine(
+        backend: backend,
+        database: dbA,
+        vault: _makeVault(
+            keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
+            mk: mkOld),
+        deviceId: 'device-A-old',
+        passphrase: kOldPassword,
+      );
+      final resA = await engineA.sync();
+
+      // —— 引擎检测到他端改密码（B4 修复后会在 UI 弹窗提示）——
+      expect(resA.passwordEpochMismatch, isTrue,
+          reason: 'A 旧会话应检测到远端 kv=2 > 本地 1');
+
+      // —— 关键断言：B 的笔记已被拉入 A 的本地数据库 ——
+      // 这说明 push 与 pull 都没坏；Bug B 的"没显示"纯粹是主页 UI
+      // 没有在后台同步完成后重查列表（主页用普通数组而非 MVVM/Provider 驱动）。
+      final notesOnA = await dbA.readAllNotesIncludingDeleted();
+      expect(notesOnA.map((n) => n.uuid), containsAll(['note-1', 'note-B']),
+          reason: 'A 同步后本地 DB 应已含 B 新建的 note-B'
+              '（引擎 pull 正常，Bug B 根因是 UI 未刷新而非同步失败）');
+    });
+  });
+
+  // ────────────────────────────────────────────
+  // Bug A：离线时后端初始化失败，联网后重新同步不应再报
+  //   "Call init() before using the backend"
+  // 验证 SyncService 的惰性（重）初始化：
+  //   离线首次 init 失败 → sync 优雅返回"网络不可用"；
+  //   联网后再次 sync 自动恢复，不再抛出 cryptic 的 init 错误。
+  // ────────────────────────────────────────────
+  group('Bug A: 离线初始化失败后联网重新同步能自动恢复', () {
+    test('sync() 惰性重初始化后端：离线优雅失败，联网后自动恢复', () async {
+      DeviceIdProvider.instance.overrideForTesting('test-device-bug-a');
+      final backend = _FlakyBackend();
+      final db = await _makeDatabase();
+      db.setDataKey(dataKey);
+      await _seedMeta(db,
+          encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
+      final vault = _makeVault(
+          keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
+          mk: mkNew);
+
+      final service = SyncService.instance;
+      // 登录时离线：initialize 内部的 backend.init() 会抛错，
+      // 与真实"进主界面就提示"同源。捕获后服务处于"引擎已建、后端未就绪"。
+      bool initThrew = false;
+      try {
+        await service.initialize(vault: vault, backend: backend, database: db);
+      } on BackendUnavailableException {
+        initThrew = true;
+      }
+      expect(initThrew, isTrue,
+          reason: '登录离线时 backend.init 应失败（复现 Bug A 触发条件）');
+
+      // —— 仍离线时点同步：应优雅失败，绝不能再抛
+      //    "Call init() before using the backend" 这类 cryptic 错误 ——
+      final offlineResult = await service.sync();
+      expect(offlineResult, isNotNull,
+          reason: '离线同步应返回结果而非抛未捕获异常');
+      expect(offlineResult!.success, isFalse,
+          reason: '离线同步应失败');
+      expect(offlineResult.errorMessage?.toLowerCase().contains('init()'),
+          isFalse,
+          reason: 'Bug A 修复：错误文案应为"网络不可用"等友好提示，'
+              '而非 cryptic 的 "Call init() before using the backend"');
+
+      // —— 联网后再次同步：自动重初始化并成功，无需杀进程重进 ——
+      // 引擎由 SyncService 单例以 PhraseHandler.getPass 作为 passphraseProvider
+      // 构建，因此需先注入密码（与真实登录一致）。
+      backend.offline = false;
+      PhraseHandler.initPass(kNewPassword);
+      final onlineResult = await service.sync();
+      expect(onlineResult, isNotNull);
+      expect(onlineResult!.success, isTrue,
+          reason: 'Bug A 修复：联网后 sync 应自动重初始化后端并成功');
+
+      // 清理：关闭服务（仅本文件使用 SyncService 单例）
+      await service.dispose();
+      PhraseHandler.destroy();
+      DeviceIdProvider.instance.clearTestingOverride();
     });
   });
 }
