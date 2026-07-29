@@ -459,6 +459,7 @@ class SyncEngine {
         actions: actions,
         attempts: attempt,
         passwordEpochMismatch: epochMismatch,
+        failedNoteUuids: _failedUuids(actions),
       );
     }
 
@@ -477,6 +478,10 @@ class SyncEngine {
     // GC 失败不阻断同步（try-catch），下次同步会重试。
     await _gcOrphanBlobs(merged);
 
+    // 密钥变更后的首次同步已将 pending 笔记的 blob 用新密钥重新上传，
+    // 成功后清除待重传标记（Layer 2a）。
+    await database.clearAllPendingReupload();
+
     // 统计结果
     return SyncResult.success(
       uploaded: _countActions(actions, SyncActionType.upload),
@@ -487,6 +492,7 @@ class SyncEngine {
       actions: actions,
       attempts: attempt,
       passwordEpochMismatch: epochMismatch,
+      failedNoteUuids: _failedUuids(actions),
     );
   }
 
@@ -627,6 +633,11 @@ class SyncEngine {
     final purgedUuids = await database.getPurgedUuids();
     final purgedSet = purgedUuids.toSet();
 
+    // Layer 2a: 读取密钥变更后需强制重传 blob 的 uuid 集合。
+    // 这些笔记的本地 DB 已用新 dataKey 重加密，但服务器 blob 可能仍是旧密钥，
+    // 必须强制用新密钥重新 PUT 覆盖（即使 manifest hash 相同）。
+    final pendingReupload = await database.getPendingReuploadUuids();
+
     // 远端无 manifest：首次上传，直接用本地 manifest（移除待清理的）
     if (remote == null) {
       final notes = await database.readAllNotesIncludingDeleted();
@@ -660,11 +671,18 @@ class SyncEngine {
           continue;
         }
         // 仅远端有：下载（失败时仍保留 remoteItem 进 merged，见 D3 修复）
-        await _downloadNote(uuid, remoteItem, actions);
-        // D3 修复：下载失败（blob missing）时也保留 remoteItem 进 merged，
-        // 避免下次 PUT manifest 后该条目从远端消失。
-        // 这样下次同步时仍能重试下载（远端其他设备可能还未上传 blob）。
-        mergedItems[uuid] = remoteItem;
+        final outcome = await _downloadNote(uuid, remoteItem, actions);
+        if (outcome is _DownloadHealed) {
+          // Layer 2b：自愈成功，manifest 改用本地修复后的 hash
+          mergedItems[uuid] = outcome.healedItem;
+        } else if (outcome is _DownloadSuccess && outcome.item != null) {
+          mergedItems[uuid] = outcome.item!;
+        } else {
+          // D3 修复：下载失败（blob missing / 坏 blob 无本地明文）时保留
+          // remoteItem 进 merged，避免下次 PUT manifest 后该条目从远端消失。
+          // 这样下次同步时仍能重试下载（远端其他设备可能还未上传 blob）。
+          mergedItems[uuid] = remoteItem;
+        }
       } else if (localItem != null && remoteItem == null) {
         // M1 修复：本地硬删除的笔记不要重新上传
         // 正常情况下 hardDelete 后 readNoteByUuid 返回 null 不会走到这里，
@@ -687,9 +705,19 @@ class SyncEngine {
       } else if (localItem != null && remoteItem != null) {
         // 双方都有：判断是否一致
         if (_itemsEqual(localItem, remoteItem)) {
-          // 完全一致：跳过
-          mergedItems[uuid] = localItem;
-          actions.add(SyncAction(type: SyncActionType.skip, uuid: uuid));
+          if (pendingReupload.contains(uuid)) {
+            // Layer 2a: 密钥已变更，即使 hash 相同也强制用新 dataKey 重传 blob，
+            // 覆盖服务器上可能用旧密钥加密的残留 blob。
+            final note = await database.readNoteByUuid(uuid);
+            if (note != null) {
+              await _uploadNote(note, actions);
+            }
+            mergedItems[uuid] = localItem;
+          } else {
+            // 完全一致：跳过
+            mergedItems[uuid] = localItem;
+            actions.add(SyncAction(type: SyncActionType.skip, uuid: uuid));
+          }
         } else {
           // 冲突：LWW 解决
           final winner = _resolveConflict(localItem, remoteItem);
@@ -718,10 +746,12 @@ class SyncEngine {
             }
           } else {
             // 远端胜：下载覆盖本地
-            final downloaded =
-                await _downloadNote(uuid, remoteItem, actions);
-            if (downloaded) {
-              mergedItems[uuid] = remoteItem;
+            final outcome = await _downloadNote(uuid, remoteItem, actions);
+            if (outcome is _DownloadHealed) {
+              // Layer 2b：远端 blob 损坏但本机有明文，自愈后 manifest 改用本地 hash
+              mergedItems[uuid] = outcome.healedItem;
+            } else if (outcome is _DownloadSuccess && outcome.item != null) {
+              mergedItems[uuid] = outcome.item!;
             } else {
               // D3 修复：下载失败时保留 remoteItem 进 merged，不回滚到本地旧版本。
               // 原实现用 localItem 覆盖远端会导致远端较新数据被回滚。
@@ -808,6 +838,7 @@ class SyncEngine {
           // blob 不存在：无法保留副本，跳过
           return;
         }
+        // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
         final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
         final content = SafeNote.fromContentBytes(plaintext);
 
@@ -905,13 +936,23 @@ class SyncEngine {
       return;
     }
 
-    // 加密笔记内容为 envelope
-    final envelope = SyncCrypto.seal(
-      _dataKey,
-      note.uuid,
-      note.toContentBytes(),
-    );
-    await backend.putBlob(note.contentHash, envelope);
+    // 加密笔记内容为 envelope（Layer 1：单个 blob 上传失败不应中断整次同步）
+    try {
+      final envelope = SyncCrypto.seal(
+        _dataKey,
+        note.uuid,
+        note.toContentBytes(),
+      );
+      await backend.putBlob(note.contentHash, envelope);
+    } on Object {
+      actions.add(SyncAction(
+        type: SyncActionType.uploadFailed,
+        uuid: note.uuid,
+        hash: note.contentHash,
+        message: 'blob 上传失败（网络/存储错误），将重试',
+      ));
+      return;
+    }
 
     actions.add(SyncAction(
       type: SyncActionType.upload,
@@ -922,9 +963,20 @@ class SyncEngine {
 
   /// 从远端下载单条笔记并写入本地数据库
   ///
-  /// 返回 true 表示下载成功，false 表示 blob 不存在（跳过）。
-  /// 墓碑：标记本地为软删除，不需要下载 blob。
-  Future<bool> _downloadNote(
+  /// 返回 [_DownloadOutcome]：
+  ///   - [_DownloadSuccess]：下载并写入成功（[item] 为被采用的 manifest 条目，
+  ///     墓碑场景为 null）
+  ///   - [_DownloadHealed]：远端 blob 损坏，但本机持有明文并自愈重传成功；
+  ///     此时 manifest 应改用本地明文对应的 hash，否则修复后的 blob 会成为孤儿
+  ///   - [_DownloadFailed]：blob 缺失或解密失败且无本地明文可自愈
+  ///     （保留远端条目供下次重试）
+  ///
+  /// 墓碑（item.deleted）：只标记本地为软删除，不需要下载 blob，视为成功。
+  ///
+  /// 设计要点（Layer 1 + Layer 2b）：
+  ///   cryptography 包的 InvalidTag 继承自 Error 而非 Exception，
+  ///   故解密处用 `on Object` 兜底，确保单个坏 blob 不中断整次同步。
+  Future<_DownloadOutcome> _downloadNote(
     String uuid,
     ManifestItem item,
     List<SyncAction> actions,
@@ -944,7 +996,7 @@ class SyncEngine {
         uuid: uuid,
         message: 'remote tombstone applied',
       ));
-      return true;
+      return const _DownloadSuccess();
     }
 
     // 下载 blob
@@ -957,59 +1009,130 @@ class SyncEngine {
         hash: item.hash,
         message: 'blob missing on remote (will retry next sync)',
       ));
-      return false;
+      return _DownloadFailed(uuid);
     }
 
-    // 解密
-    final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
-    final content = SafeNote.fromContentBytes(plaintext);
+    // 解密（Layer 1 容错 + Layer 2b 自愈）
+    try {
+      final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
+      final content = SafeNote.fromContentBytes(plaintext);
 
-    // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
-    // 防止服务端返回"对的上 uuid、但内容不同"的合法信封
-    // 注意：hash 计算使用 SafeNote.computeHash（title\ndescription 格式），
-    // 而不是 SyncCrypto.contentHash(plaintext)（JSON 字节格式），两者不一致。
-    final actualHash = SafeNote.computeHash(content.title, content.description);
-    if (actualHash != item.hash) {
+      // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
+      // 防止服务端返回"对的上 uuid、但内容不同"的合法信封
+      // 注意：hash 计算使用 SafeNote.computeHash（title\ndescription 格式），
+      // 而不是 SyncCrypto.contentHash(plaintext)（JSON 字节格式），两者不一致。
+      final actualHash = SafeNote.computeHash(content.title, content.description);
+      if (actualHash != item.hash) {
+        // 内容 hash 与 manifest 记录不符：blob 内容被篡改/错位（能解密但内容不对）。
+        // 这不是密钥问题，不走 _handleDownloadFailure 的自愈/失败流程；
+        // 按原 HEAD 行为记为 skip 并保留远端条目供下次重试（M7 回归契约）。
+        actions.add(SyncAction(
+          type: SyncActionType.skip,
+          uuid: uuid,
+          hash: item.hash,
+          message: 'blob 内容 hash 校验失败（内容被篡改），跳过',
+        ));
+        return _DownloadFailed(uuid);
+      }
+
+      // 写入本地数据库（upsert）
+      // R10 修复：用 remoteItem.createdAt 保留原始创建时间，
+      // 而非用下载时刻 DateTime.now()
+      final existing = await database.readNoteByUuid(uuid);
+      final note = SafeNote(
+        id: existing?.id,
+        uuid: uuid,
+        title: content.title,
+        description: content.description,
+        contentHash: item.hash,
+        deleted: false,
+        createdTime: existing?.createdTime ??
+            DateTime.fromMillisecondsSinceEpoch(item.createdAt),
+        updatedAt: item.updatedAt,
+        synced: true,
+      );
+      if (existing == null) {
+        await database.storeNote(note);
+      } else {
+        await database.updateNoteByUuid(note);
+      }
+
       actions.add(SyncAction(
-        type: SyncActionType.skip,
+        type: SyncActionType.download,
         uuid: uuid,
         hash: item.hash,
-        message: 'blob hash mismatch (expected ${item.hash}, got $actualHash)',
       ));
-      return false;
+      return _DownloadSuccess(item);
+    } on Object {
+      // Layer 1 容错：解密/解析/校验失败（坏 blob、错误 dataKey、数据损坏）
+      // 不应中断整次同步。转交自愈逻辑处理（本地有明文则重传覆盖，否则记录失败）。
+      final healed = await _handleDownloadFailure(uuid, item, actions);
+      return healed != null
+          ? _DownloadHealed(healed)
+          : _DownloadFailed(uuid);
     }
-
-    // 写入本地数据库（upsert）
-    // R10 修复：用 remoteItem.createdAt 保留原始创建时间，
-    // 而非用下载时刻 DateTime.now()
-    final existing = await database.readNoteByUuid(uuid);
-    final note = SafeNote(
-      id: existing?.id,
-      uuid: uuid,
-      title: content.title,
-      description: content.description,
-      contentHash: item.hash,
-      deleted: false,
-      createdTime:
-          existing?.createdTime ?? DateTime.fromMillisecondsSinceEpoch(
-        item.createdAt,
-      ),
-      updatedAt: item.updatedAt,
-      synced: true,
-    );
-    if (existing == null) {
-      await database.storeNote(note);
-    } else {
-      await database.updateNoteByUuid(note);
-    }
-
-    actions.add(SyncAction(
-      type: SyncActionType.download,
-      uuid: uuid,
-      hash: item.hash,
-    ));
-    return true;
   }
+
+  /// 下载失败的统一处理（Layer 1 容错 + Layer 2b 自愈）
+  ///
+  /// 触发场景：blob 解密失败（错误 dataKey / 数据损坏）或解密后 hash 校验不一致。
+  ///
+  /// 处理策略：
+  ///   - 若本机数据库持有该 uuid 的明文副本 → 用当前 _dataKey 重新加密并上传，
+  ///     覆盖服务器上的坏 blob（自愈）。自愈成功后返回修复后的 [ManifestItem]
+  ///     （hash 取本地明文 hash，使合并后的 manifest 指向修复后的 blob），
+  ///     记为 [SyncActionType.heal]，不计入失败列表。
+  ///   - 若本机无明文（该笔记从未在本机创建/下载过）→ 无法自愈，记为
+  ///     [SyncActionType.corrupt] 并保留远端条目（mergedItems 中保留 remoteItem），
+  ///     下次同步继续重试下载；该 uuid 进入 [SyncResult.failedNoteUuids]。
+  ///
+  /// 无论哪种情况都不抛异常，保证单个坏 blob 不中断整次同步。
+  ///
+  /// 返回：自愈成功时为修复后的 [ManifestItem]；否则为 null。
+  Future<ManifestItem?> _handleDownloadFailure(
+    String uuid,
+    ManifestItem remoteItem,
+    List<SyncAction> actions,
+  ) async {
+    // Layer 2b: 本机持有明文 → 自愈重传
+    final local = await database.readNoteByUuid(uuid);
+    if (local != null && !local.deleted) {
+      try {
+        await _uploadNote(local, actions);
+        actions.add(SyncAction(
+          type: SyncActionType.heal,
+          uuid: uuid,
+          hash: local.contentHash,
+          message: 'blob 密钥不匹配，已用本机明文自愈重传',
+        ));
+        // 返回修复后的 manifest 条目：hash 取本地明文 hash，
+        // 使合并后的 manifest 指向刚重传的（好）blob，避免修复后的 blob 成孤儿。
+        return ManifestItem(
+          hash: local.contentHash,
+          deleted: false,
+          updatedAt: local.updatedAt,
+          updatedBy: deviceId,
+          createdAt: local.createdTime.millisecondsSinceEpoch,
+          contentSize: local.toContentBytes().length,
+        );
+      } on Object {
+        // 自愈上传也失败：退化为记录失败，不抛
+      }
+    }
+
+    // 无本地明文可用：记录失败，保留远端条目供下次重试
+    actions.add(SyncAction(
+      type: SyncActionType.corrupt,
+      uuid: uuid,
+      hash: remoteItem.hash,
+      message: 'blob 下载失败（密钥不匹配且无本地明文，将重试）',
+    ));
+    return null;
+  }
+
+  /// 从操作记录中提取"未能同步且无本地明文可自愈"的笔记 uuid 列表
+  List<String> _failedUuids(List<SyncAction> actions) =>
+      actions.where((a) => a.type == SyncActionType.corrupt).map((a) => a.uuid).toList();
 
   /// 同步完成后更新本地状态
   ///
@@ -1172,4 +1295,33 @@ class _MigrationRequiredException implements Exception {
   @override
   String toString() =>
       '_MigrationRequiredException(migrated $migratedCount notes, retry sync)';
+}
+
+/// 单条笔记下载结果（Layer 1 故障隔离 + Layer 2b 自愈）
+///
+/// [_downloadNote] 用此类型表达一次下载尝试的三种结局，
+/// 以便 [_mergeAndTransfer] 据此决定合并后 manifest 应引用哪条条目：
+///   - [_DownloadSuccess]：下载并写入成功（[item] 为被采用的 manifest 条目，
+///     墓碑场景为 null）
+///   - [_DownloadHealed]：远端 blob 损坏，但本机持有明文并自愈重传成功，
+///     合并时应改用 [healedItem]（hash 取本地明文 hash），否则修复后的 blob 成孤儿
+///   - [_DownloadFailed]：blob 缺失或解密失败且无本地明文可自愈
+///     （保留远端条目供下次重试，该 uuid 进入 [SyncResult.failedNoteUuids]）
+abstract class _DownloadOutcome {
+  const _DownloadOutcome();
+}
+
+class _DownloadSuccess extends _DownloadOutcome {
+  final ManifestItem? item;
+  const _DownloadSuccess([this.item]);
+}
+
+class _DownloadHealed extends _DownloadOutcome {
+  final ManifestItem healedItem;
+  const _DownloadHealed(this.healedItem);
+}
+
+class _DownloadFailed extends _DownloadOutcome {
+  final String uuid;
+  const _DownloadFailed(this.uuid);
 }

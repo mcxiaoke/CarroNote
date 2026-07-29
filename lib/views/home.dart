@@ -109,6 +109,20 @@ class HomePageState extends State<HomePage> {
             state.status == SyncStatus.error) &&
         state.lastResult != null) {
       refreshNotes();
+
+      // Layer 1 提示：存在因密钥不匹配/数据损坏而未能同步（且无本机明文可自愈）
+      // 的笔记时，非致命提示用户，这些笔记会在后续同步中重试。
+      final failed = state.lastResult!.failedNoteUuids;
+      if (failed.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${failed.length} 条笔记因密钥不匹配未能同步，将在下次同步重试',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
 
     // B4 修复：他端改密码提示（保持不变）

@@ -81,6 +81,8 @@ class MetaKeys {
   // manifest version 不再使用全局 key，改为按 providerKey 隔离：
   // 'manifest_version:<providerKey>'（见 [_manifestVersionKey]）
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
+  // Layer 2a: dataKey 变更后需强制重传 blob 的笔记 uuid 列表（JSON 数组）
+  static const String blobReuploadPending = 'blob_reupload_pending';
 }
 
 class NotesDatabase {
@@ -672,6 +674,55 @@ class NotesDatabase {
   Future<void> markAllSynced() async {
     final db = await instance.database;
     await db.update(tableNotes, {NoteFields.synced: 1});
+  }
+
+  // ──────────────────────────────────────────────
+  // Layer 2a: dataKey 变更后强制重传 blob
+  // ──────────────────────────────────────────────────
+  //
+  // 背景：migrateToRemote / migrateToRemoteVault 重加密本地笔记后，本地 DB 已用新
+  // dataKey，但服务器上的 blob 可能仍是旧 dataKey 加密（密钥分歧残留）。由于 manifest
+  // hash 与密钥无关，合并时会判定"无变化"而不重传，导致坏 blob 永久残留。
+  //
+  // 解决：密钥变更时把所有本地笔记标记为"需重传 blob"，_mergeAndTransfer 对这些 uuid
+  // 即使 _itemsEqual 也强制 _uploadNote，用新密钥覆盖服务器 blob。同步成功后清除标记。
+
+  /// 标记全部未删除笔记需重传 blob（密钥变更后调用）
+  Future<void> markAllForBlobReupload() async {
+    final db = await instance.database;
+    final maps = await db.query(
+      tableNotes,
+      columns: [NoteFields.uuid],
+      where: '${NoteFields.deleted} = 0',
+    );
+    final uuids = maps.map((m) => m[NoteFields.uuid] as String).toList();
+    await setMeta(MetaKeys.blobReuploadPending, jsonEncode(uuids));
+  }
+
+  /// 读取待重传 blob 的 uuid 集合（空集合表示无）
+  Future<Set<String>> getPendingReuploadUuids() async {
+    final raw = await getMeta(MetaKeys.blobReuploadPending);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => e as String).toSet();
+    } on Exception {
+      return {};
+    }
+  }
+
+  /// 清除全部待重传标记（同步成功后调用）
+  ///
+  /// 密钥变更后的首次同步会把这些 uuid 的 blob 用新密钥重新上传，
+  /// 成功后即可清除标记；剩余未在本机处理的 uuid（如本机无明文的远程独享笔记）
+  /// 由其持有明文的设备自行重传，本机清除不影响。
+  Future<void> clearAllPendingReupload() async {
+    final db = await instance.database;
+    await db.delete(
+      tableMeta,
+      where: '${MetaFields.key} = ?',
+      whereArgs: [MetaKeys.blobReuploadPending],
+    );
   }
 
   // ──────────────────────────────────────────────

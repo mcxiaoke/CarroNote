@@ -44,6 +44,15 @@ import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_models.dart';
 
+/// 比较两个字节序列是否相等（dataKey 比较用，非安全敏感）
+bool _sameKey(Uint8List a, Uint8List b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// 密码错误异常（GCM tag 验证失败时抛出）
 class WrongPasswordException implements Exception {
   final String message;
@@ -502,6 +511,13 @@ class Vault {
       newKey: remoteDataKey,
     );
 
+    // Layer 2a: dataKey 值真正变化时才标记 blob 重传。
+    // 改密码场景（dataKey 不变）不标记，避免无谓的全量 blob 重传；
+    // scenario-d（不同 dataKey）必然进入此分支，确保服务器旧密钥 blob 被覆盖。
+    if (!_sameKey(dataKey, remoteDataKey)) {
+      await database.markAllForBlobReupload();
+    }
+
     // 2. 更新本地 meta（P2-7 修复：vaultId 也更新为远端值）
     await database.setMeta(MetaKeys.vaultId, remoteVaultId);
     await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
@@ -592,6 +608,12 @@ class Vault {
       oldKey: dataKey,
       newKey: remoteDataKey,
     );
+
+    // Layer 2a: dataKey 值真正变化时才标记 blob 重传（见 migrateToRemote 同名注释）。
+    // scenario-d 两设备独立 dataKey，此处 remoteDataKey 必然 != 本地 dataKey。
+    if (!_sameKey(dataKey, remoteDataKey)) {
+      await database.markAllForBlobReupload();
+    }
 
     // 2. 持久化远端 vault 全部元数据到本地 meta
     await database.setMeta(MetaKeys.vaultId, remoteVaultId);

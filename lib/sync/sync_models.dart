@@ -461,6 +461,9 @@ enum SyncActionType {
   skip,      // 跳过（已同步）
   conflict,  // 冲突（LWW 落败）
   migrate,   // dataKey 迁移（本地数据重新加密）
+  uploadFailed, // 单个 blob 上传失败（容错，不中断同步）
+  corrupt,   // blob 下载解密失败且无本地明文可自愈（记录为失败，重试）
+  heal,      // blob 下载失败时用本地明文自愈重传（覆盖服务器坏 blob）
 }
 
 /// 单条同步操作记录
@@ -499,6 +502,12 @@ class SyncResult {
   /// true 表示他端改了密码，UI 应提示用户输入新密码。
   final bool passwordEpochMismatch;
 
+  /// 因密钥不匹配 / 数据损坏等原因，本次同步未能获取（且无本地明文可自愈）的笔记 uuid 列表。
+  ///
+  /// 自愈（Layer 2b）成功的笔记不计入此列表；只有"下载解密失败 + 本地无明文"的笔记才计入，
+  /// 这类笔记会在后续同步中继续重试下载。
+  final List<String> failedNoteUuids;
+
   const SyncResult({
     required this.success,
     this.uploaded = 0,
@@ -511,6 +520,7 @@ class SyncResult {
     this.actions = const [],
     this.attempts = 1,
     this.passwordEpochMismatch = false,
+    this.failedNoteUuids = const [],
   });
 
   /// 同步成功
@@ -524,6 +534,7 @@ class SyncResult {
     List<SyncAction> actions = const [],
     int attempts = 1,
     bool passwordEpochMismatch = false,
+    List<String> failedNoteUuids = const [],
   }) =>
       SyncResult(
         success: true,
@@ -536,6 +547,7 @@ class SyncResult {
         actions: actions,
         attempts: attempts,
         passwordEpochMismatch: passwordEpochMismatch,
+        failedNoteUuids: failedNoteUuids,
       );
 
   /// 同步失败
@@ -547,6 +559,12 @@ class SyncResult {
 
   /// 是否有实际数据变更（用于判断是否需要触发 UI 刷新）
   bool get hasChanges => uploaded + downloaded + deleted + migrated > 0;
+
+  /// 未能同步（且无本地明文可自愈）的笔记数量
+  int get failed => failedNoteUuids.length;
+
+  /// 是否存在因密钥/损坏导致未能同步的笔记
+  bool get hasFailures => failedNoteUuids.isNotEmpty;
 
   /// H4 修复：是否有 LWW 冲突（供 UI 提示用户）
   bool get hasConflicts => conflicts > 0;
@@ -580,6 +598,7 @@ class SyncResult {
     List<SyncAction>? actions,
     int? attempts,
     bool? passwordEpochMismatch,
+    List<String>? failedNoteUuids,
   }) =>
       SyncResult(
         success: success ?? this.success,
@@ -593,6 +612,7 @@ class SyncResult {
         actions: actions ?? this.actions,
         attempts: attempts ?? this.attempts,
         passwordEpochMismatch: passwordEpochMismatch ?? this.passwordEpochMismatch,
+        failedNoteUuids: failedNoteUuids ?? this.failedNoteUuids,
       );
 
   @override
