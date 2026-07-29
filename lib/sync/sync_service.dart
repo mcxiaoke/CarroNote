@@ -24,6 +24,7 @@ import 'dart:async';
 
 // 项目导入
 import 'package:safenotes/data/database_handler.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/local_fs_backend.dart';
 import 'package:safenotes/sync/safe_server_backend.dart';
 import 'package:safenotes/sync/sync_backend.dart';
@@ -162,6 +163,7 @@ class SyncService {
       database: database,
       vault: vault,
       deviceId: _deviceId!,
+      passphraseProvider: () => PhraseHandler.getPass,
     );
 
     await backend.init();
@@ -187,6 +189,7 @@ class SyncService {
         database: database,
         vault: vault,
         deviceId: deviceId,
+        passphraseProvider: () => PhraseHandler.getPass,
       );
     }
   }
@@ -329,6 +332,7 @@ class SyncService {
         database: database,
         vault: vault,
         deviceId: deviceId,
+        passphraseProvider: () => PhraseHandler.getPass,
       );
     }
   }

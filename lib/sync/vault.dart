@@ -514,6 +514,106 @@ class Vault {
     );
   }
 
+  /// 场景 d：用远端 KDF 参数派生 MK，验证密码是否匹配远端 vault
+  ///
+  /// 场景：两设备独立 createNew → 不同 salt → 不同 MK → 本地 MK 解不开远端
+  /// encryptedDataKey。但密码其实相同——用远端 salt 重新派生 MK 即可验证。
+  ///
+  /// 判别原理：
+  ///   - keyFingerprint = H(MK) = H(PBKDF2(password, salt, iterations))
+  ///   - 用远端 salt + 用户密码派生 MK_remote
+  ///   - 若 H(MK_remote) == 远端 keyFingerprint → 密码相同（场景 d）
+  ///   - 若不匹配 → 密码真的不同（场景 c）
+  ///
+  /// [password] 用户当前输入的密码
+  /// [remoteKdf] 远端 manifest header 中的 KDF 参数（含远端 salt）
+  /// [remoteEncryptedDataKey] 远端 manifest header 中的 encryptedDataKey
+  /// [remoteKeyFingerprint] 远端 manifest header 中的 keyFingerprint
+  ///
+  /// 返回 (MK_remote, dataKey_remote)：
+  ///   - 密码匹配 → 返回远端 MK 和解开后的 dataKey
+  ///   - 密码不匹配 → 返回 null
+  static Future<({Uint8List mk, Uint8List dataKey})?> tryDeriveRemoteDataKey({
+    required String password,
+    required KdfParams remoteKdf,
+    required String remoteEncryptedDataKey,
+    required String remoteKeyFingerprint,
+  }) async {
+    // 1. 用远端 salt + 用户密码派生 MK_remote
+    final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
+
+    // 2. 比对 keyFingerprint
+    final fp = SyncCrypto.computeKeyFingerprint(mk);
+    if (fp != remoteKeyFingerprint) {
+      // 密码不匹配 → 场景 c
+      return null;
+    }
+
+    // 3. 密码匹配 → unwrap 远端 dataKey
+    try {
+      final encryptedBytes = base64.decode(remoteEncryptedDataKey);
+      final dataKey = SyncCrypto.unwrapDataKey(mk, encryptedBytes);
+      return (mk: mk, dataKey: dataKey);
+    } on Exception {
+      // fingerprint 匹配但 unwrap 失败（理论上不应发生，防御性处理）
+      return null;
+    }
+  }
+
+  /// 场景 d 迁移：本地 vault 完全切换到远端 vault 参数
+  ///
+  /// 与 [migrateToRemote] 的区别：
+  ///   - migrateToRemote：同 vault、dataKey 不同（他端改密码后本端用新密码登录）
+  ///     只更新 dataKey + encryptedDataKey + vaultId
+  ///   - migrateToRemoteVault：不同 vault、salt 不同（两设备独立初始化）
+  ///     更新 dataKey + encryptedDataKey + vaultId + kdf + keyFingerprint + keyVersion + createdAt
+  ///
+  /// 流程：
+  ///   1. 用 remoteDataKey 重新加密所有本地笔记（事务保护，crash 安全）
+  ///   2. 持久化远端 vault 全部元数据到本地 meta
+  ///   3. 更新 database 的 dataKey
+  ///   4. 返回新 Vault（所有字段用远端值，MK 缓存为 MK_remote）
+  Future<Vault> migrateToRemoteVault({
+    required Uint8List remoteDataKey,
+    required String remoteEncryptedDataKey,
+    required String remoteVaultId,
+    required KdfParams remoteKdf,
+    required String remoteKeyFingerprint,
+    required int remoteKeyVersion,
+    required int remoteCreatedAt,
+    required Uint8List remoteMk,
+    required NotesDatabase database,
+  }) async {
+    // 1. 重新加密所有本地笔记（事务保护，crash 安全）
+    await database.reEncryptAllNotes(
+      oldKey: dataKey,
+      newKey: remoteDataKey,
+    );
+
+    // 2. 持久化远端 vault 全部元数据到本地 meta
+    await database.setMeta(MetaKeys.vaultId, remoteVaultId);
+    await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
+    await database.setMeta(MetaKeys.kdfSalt, remoteKdf.salt);
+    await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
+    await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+    await database.setMeta(MetaKeys.vaultCreatedAt, remoteCreatedAt.toString());
+
+    // 3. 更新 database 的 dataKey
+    database.setDataKey(remoteDataKey);
+
+    // 4. 返回新 Vault（所有字段用远端值，MK 缓存为 MK_remote）
+    return Vault(
+      vaultId: remoteVaultId,
+      dataKey: remoteDataKey,
+      encryptedDataKey: remoteEncryptedDataKey,
+      keyFingerprint: remoteKeyFingerprint,
+      keyVersion: remoteKeyVersion,
+      kdf: remoteKdf,
+      createdAt: remoteCreatedAt,
+      mk: remoteMk,
+    );
+  }
+
   // ──────────────────────────────────────────────
   // 改密码
   // ──────────────────────────────────────────────

@@ -293,17 +293,22 @@ envelope / manifest 密文
    - remoteDataKey != 本地 dataKey → 执行 reEncryptAllNotes 迁移（新设备加入已存在同步组）
      事务保护，crash 安全；迁移后重新同步
 
-3. MK 解不开远端 encryptedDataKey（密码不匹配）：
+3. MK 解不开远端 encryptedDataKey（可能场景 b/c/d，需进一步判别）：
    - 尝试用本地 dataKey 解远端 manifest items
-   - 成功 → 本地改密码还没推送，继续同步会上传新 encryptedDataKey
-   - 失败 → 真正的密码不匹配，提示用户输入新密码
+   - 成功 → 场景 b：本地改密码还没推送，继续同步会上传新 encryptedDataKey
+   - 失败 → 场景 c 或 d，用 keyFingerprint 判别：
+     用远端 salt + 用户密码派生 MK_remote，比 H(MK_remote) 与远端 keyFingerprint
+     - 匹配 → 场景 d：两设备独立 createNew（相同密码、不同 salt）→ migrateToRemoteVault
+       重新加密本地笔记到远端 dataKey，更新本地 vault 全部元数据（kdf/salt/fingerprint/version）
+     - 不匹配 → 场景 c：真正的密码不匹配，同步失败
 ```
 
 **关键场景**：
 - **他端改密码，本端用新密码登录**：MK 匹配，dataKey 相同 → 只更新 encryptedDataKey，无需重加密笔记
 - **本端改密码，还没同步**：MK 不匹配（本地是新 MK，远端是旧 encryptedDataKey），但 dataKey 能解远端 manifest → 继续同步，PUT 时推送新 encryptedDataKey
-- **新设备加入同步组**：本地 dataKey 与远端不同 → reEncryptAllNotes 迁移所有本地笔记
-- **密码真正不匹配**：MK 不匹配 + dataKey 不匹配 → 同步失败，提示用户重新登录
+- **新设备加入已存在同步组**（场景 2b）：MK 匹配，dataKey 不同 → reEncryptAllNotes 迁移所有本地笔记
+- **两设备独立 createNew 后首次同步**（场景 d）：MK 不匹配（salt 不同），dataKey 不匹配，但密码相同 → 用 keyFingerprint 判别后 migrateToRemoteVault 完整迁移
+- **密码真正不匹配**（场景 c）：MK 不匹配 + dataKey 不匹配 + fingerprint 不匹配 → 同步失败，提示用户重新登录
 
 ---
 

@@ -67,6 +67,17 @@ class SyncEngine {
   /// 设备 ID（写入 manifest header.lastModifiedBy）
   final String deviceId;
 
+  /// 用户密码提供者（场景 d 判别用）
+  ///
+  /// 场景 d：两设备独立 createNew → 不同 salt → 本地 MK 解不开远端
+  /// encryptedDataKey。此时需要用远端 salt + 用户密码重新派生 MK 来验证
+  /// 密码是否相同（比对 keyFingerprint）。
+  ///
+  /// 生产环境由 SyncService 注入 `() => PhraseHandler.getPass`；
+  /// 测试时可直接传入密码字符串；
+  /// 为 null 时退回原逻辑（直接报 dataKey 迁移失败）。
+  final String? Function()? passphraseProvider;
+
   /// 最大重试次数（乐观锁冲突时）
   static const int maxRetries = 3;
 
@@ -88,6 +99,7 @@ class SyncEngine {
     required this.database,
     required this.vault,
     required this.deviceId,
+    this.passphraseProvider,
   });
 
   /// 当前 dataKey（便捷访问器，每次从 vault 获取最新值）
@@ -238,22 +250,72 @@ class SyncEngine {
           vault.checkMigrationNeeded(remoteHeader.encryptedDataKey);
       if (migrationResult.needsMigration) {
         if (!migrationResult.success) {
-          // MK 解不开远端 encryptedDataKey，可能是两种场景：
+          // MK 解不开远端 encryptedDataKey，可能是三种场景：
           //   a) 远端密码已变（他端改密码并上传）→ 本地密码过期，需用户重新输入
           //   b) 本地密码已变（本端改密码但还没推送）→ 本地 dataKey 仍有效，
           //      应继续同步把新 encryptedDataKey 推送到远端
-          // 区分方法：尝试用本地 dataKey 解析远端 manifest items
-          //   - 成功 → 场景 b（或纪元不匹配场景 a），继续同步
-          //   - 失败 → 真正的密码不匹配
+          //   c) 真正的密码不匹配
+          //   d) 两设备独立 createNew（相同密码、不同 salt）→ 本地 MK 解不开，
+          //      但密码其实相同，需用远端 salt 重新派生 MK 验证
+          // 区分方法：
+          //   1. 先尝试用本地 dataKey 解析远端 manifest items
+          //      - 成功 → 场景 b（或纪元不匹配场景 a），继续同步
+          //      - 失败 → 场景 c 或 d
+          //   2. 用 keyFingerprint 判别 c vs d：
+          //      用远端 salt + 用户密码派生 MK_remote，比 H(MK_remote) 与远端 fingerprint
+          //      - 匹配 → 场景 d（密码相同、salt 不同）→ 迁移
+          //      - 不匹配 → 场景 c（密码真的不同）→ 失败
           try {
             ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
-            // 本地 dataKey 能解远端 manifest → 继续同步
+            // 本地 dataKey 能解远端 manifest → 场景 b，继续同步
           } on Exception {
-            // 本地 dataKey 也解不开 → 真正的密码不匹配
-            return SyncResult.failure(
-              'dataKey 迁移失败：${migrationResult.error}',
-              attempts: attempt,
+            // 场景 c 或 d：用 keyFingerprint 判别
+            final password = passphraseProvider?.call();
+            if (password == null || password.isEmpty) {
+              // 无密码提供者（旧测试或未注入），退回原失败逻辑
+              return SyncResult.failure(
+                'dataKey 迁移失败：${migrationResult.error}',
+                attempts: attempt,
+              );
+            }
+
+            // 用远端 KDF 参数派生 MK_remote，比对 keyFingerprint
+            final remoteResult = await Vault.tryDeriveRemoteDataKey(
+              password: password,
+              remoteKdf: remoteHeader.kdf,
+              remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
+              remoteKeyFingerprint: remoteHeader.keyFingerprint,
             );
+
+            if (remoteResult == null) {
+              // 场景 c：密码真的不匹配
+              return SyncResult.failure(
+                '密码不匹配，无法同步：${migrationResult.error}',
+                attempts: attempt,
+              );
+            }
+
+            // 场景 d：密码相同、salt 不同 → 完整 vault 迁移
+            // 用远端 dataKey 重新加密所有本地笔记，更新本地 vault 元数据
+            final migratedCount = await _executeMigrationVault(
+              remoteDataKey: remoteResult.dataKey,
+              remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
+              remoteVaultId: remoteHeader.vaultId,
+              remoteKdf: remoteHeader.kdf,
+              remoteKeyFingerprint: remoteHeader.keyFingerprint,
+              remoteKeyVersion: remoteHeader.keyVersion,
+              remoteCreatedAt: remoteHeader.createdAt,
+              remoteMk: remoteResult.mk,
+            );
+
+            // 迁移后用新 dataKey 解析完整 manifest
+            remoteManifest = ManifestCrypto.deserialize(
+              _dataKey,
+              remoteResponse.ciphertext,
+            );
+
+            // 抛特殊异常，触发外层重试（用新 dataKey 重新同步）
+            throw _MigrationRequiredException(migratedCount);
           }
           // 继续走正常同步流程（不做迁移）
           // - 场景 b（本端改密码）：本地 encryptedDataKey 是新值，
@@ -410,6 +472,40 @@ class SyncEngine {
     // 否则后续 _syncOnce 重试时仍用旧 vault.dataKey 解密会失败
     vault = await vault.migrateToRemote(
       result: migrationResult,
+      database: database,
+    );
+
+    // 读取迁移的笔记数量（用于结果统计）
+    final notes = await database.readAllNotesIncludingDeleted();
+    return notes.length;
+  }
+
+  /// 场景 d 迁移：调用 vault.migrateToRemoteVault
+  ///
+  /// 与 [_executeMigration] 的区别：
+  ///   - _executeMigration：同 vault、dataKey 不同（他端改密码）
+  ///   - _executeMigrationVault：不同 vault、salt 不同（两设备独立 createNew）
+  ///     需要更新本地 vault 的全部元数据（kdf/keyFingerprint/keyVersion/createdAt）
+  Future<int> _executeMigrationVault({
+    required Uint8List remoteDataKey,
+    required String remoteEncryptedDataKey,
+    required String remoteVaultId,
+    required KdfParams remoteKdf,
+    required String remoteKeyFingerprint,
+    required int remoteKeyVersion,
+    required int remoteCreatedAt,
+    required Uint8List remoteMk,
+  }) async {
+    // migrateToRemoteVault 返回新 Vault，需要更新 self.vault
+    vault = await vault.migrateToRemoteVault(
+      remoteDataKey: remoteDataKey,
+      remoteEncryptedDataKey: remoteEncryptedDataKey,
+      remoteVaultId: remoteVaultId,
+      remoteKdf: remoteKdf,
+      remoteKeyFingerprint: remoteKeyFingerprint,
+      remoteKeyVersion: remoteKeyVersion,
+      remoteCreatedAt: remoteCreatedAt,
+      remoteMk: remoteMk,
       database: database,
     );
 

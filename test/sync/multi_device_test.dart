@@ -546,4 +546,162 @@ void main() {
       expect(note2A.title, equals('Title 2 Modified'));
     });
   });
+
+  // ──────────────────────────────────────────────────────────────
+  // 场景 d：两设备独立 createNew 后首次同步（相同密码、不同 salt/dataKey）
+  //
+  // 这是多端 join 的关键场景，之前测试未覆盖：
+  //   设备 A 独立 createNew → salt_A / dataKey_A / MK_A
+  //   设备 B 独立 createNew → salt_B / dataKey_B / MK_B（相同密码，但 salt 不同）
+  //   设备 B 同步时：
+  //     - MK_B 解不开远端 encryptedDataKey_A（salt 不同 → MK 不同）
+  //     - dataKey_B 解不开远端 manifest items（dataKey 不同）
+  //     - 用 keyFingerprint 判别：用远端 salt_A + 密码派生 MK_A，比 fingerprint
+  //       → 匹配 → 场景 d：迁移本地数据到远端 dataKey_A
+  // ──────────────────────────────────────────────────────────────
+  group('多设备交互 - 场景 d：两设备独立 vault 首次同步', () {
+    test('相同密码、不同 salt → 迁移本地数据到远端 dataKey 并同步', () async {
+      const password = 'test-password-123';
+      final backend = FakeBackend();
+
+      // ── 设备 A：独立创建 vault，加 2 条笔记，同步上传 ──
+      var db = await _makeDatabase();
+      final vaultA = await Vault.createNew(
+        password: password,
+        database: db,
+      );
+      db.setDataKey(vaultA.dataKey);
+
+      await db.storeNote(_makeNote(uuid: 'note-a-1', title: 'Note A1'));
+      await db.storeNote(_makeNote(uuid: 'note-a-2', title: 'Note A2'));
+
+      final engineA = SyncEngine(
+        backend: backend,
+        database: db,
+        vault: vaultA,
+        deviceId: 'device-A',
+        passphraseProvider: () => password,
+      );
+      final resultA = await engineA.sync();
+      expect(resultA.success, isTrue, reason: '设备 A 首次同步应成功');
+      expect(resultA.uploaded, 2);
+
+      // 保存设备 A 的 vault 参数用于后续验证
+      final vaultAVaultId = vaultA.vaultId;
+      final vaultASalt = vaultA.kdf.salt;
+      final vaultADataKey = vaultA.dataKey;
+      final vaultAFingerprint = vaultA.keyFingerprint;
+
+      // ── 设备 B：独立创建 vault（相同密码、不同 salt/dataKey），加 1 条笔记 ──
+      db = await _makeDatabase();
+      final vaultB = await Vault.createNew(
+        password: password,
+        database: db,
+      );
+      db.setDataKey(vaultB.dataKey);
+
+      // 验证前提：两设备 vault 参数确实不同
+      expect(vaultB.vaultId, isNot(equals(vaultAVaultId)),
+          reason: '独立 vault 应有不同 vaultId');
+      expect(vaultB.kdf.salt, isNot(equals(vaultASalt)),
+          reason: '独立 vault 应有不同 salt');
+      expect(vaultB.dataKey, isNot(equals(vaultADataKey)),
+          reason: '独立 vault 应有不同 dataKey');
+      expect(vaultB.keyFingerprint, isNot(equals(vaultAFingerprint)),
+          reason: '不同 salt → 不同 MK → 不同 fingerprint');
+
+      await db.storeNote(_makeNote(uuid: 'note-b-1', title: 'Note B1'));
+
+      // ── 设备 B 同步：应触发场景 d 迁移 ──
+      final engineB = SyncEngine(
+        backend: backend,
+        database: db,
+        vault: vaultB,
+        deviceId: 'device-B',
+        passphraseProvider: () => password,
+      );
+      final resultB = await engineB.sync();
+
+      // 验证：同步成功（不是失败）
+      expect(resultB.success, isTrue,
+          reason: '场景 d：相同密码应迁移成功，而非报 dataKey 迁移失败');
+      expect(resultB.migrated, greaterThan(0),
+          reason: '应有迁移操作（本地数据重新加密到远端 dataKey）');
+
+      // 验证：设备 B 本地现在有 3 条笔记（A 的 2 条 + B 的 1 条）
+      final allNotesB = await db.readAllNotesIncludingDeleted();
+      expect(allNotesB.length, 3,
+          reason: '迁移 + 同步后，设备 B 应有 A 和 B 的所有笔记');
+
+      // 验证：设备 B 的 vault 元数据已更新为远端（设备 A）的值
+      final vaultBAfter = engineB.vault;
+      expect(vaultBAfter.vaultId, equals(vaultAVaultId),
+          reason: '迁移后 vaultId 应为远端值');
+      expect(vaultBAfter.kdf.salt, equals(vaultASalt),
+          reason: '迁移后 salt 应为远端值');
+      expect(vaultBAfter.dataKey, equals(vaultADataKey),
+          reason: '迁移后 dataKey 应为远端值');
+      expect(vaultBAfter.keyFingerprint, equals(vaultAFingerprint),
+          reason: '迁移后 fingerprint 应为远端值');
+
+      // 验证：远端 manifest 现在包含 3 条笔记
+      final remoteManifest = await backend.getManifest();
+      final manifest = ManifestCrypto.deserialize(
+        vaultADataKey,
+        remoteManifest.ciphertext,
+      );
+      expect(manifest.items.length, 3,
+          reason: '远端 manifest 应有 3 条笔记');
+      expect(manifest.items.containsKey('note-a-1'), isTrue);
+      expect(manifest.items.containsKey('note-a-2'), isTrue);
+      expect(manifest.items.containsKey('note-b-1'), isTrue);
+    });
+
+    test('不同密码 → 同步失败，提示密码不匹配', () async {
+      const passwordA = 'password-A';
+      const passwordB = 'password-B';
+      final backend = FakeBackend();
+
+      // 设备 A 创建 vault 并同步
+      var db = await _makeDatabase();
+      final vaultA = await Vault.createNew(
+        password: passwordA,
+        database: db,
+      );
+      db.setDataKey(vaultA.dataKey);
+      await db.storeNote(_makeNote(uuid: 'note-a-1', title: 'Note A1'));
+
+      final engineA = SyncEngine(
+        backend: backend,
+        database: db,
+        vault: vaultA,
+        deviceId: 'device-A',
+        passphraseProvider: () => passwordA,
+      );
+      await engineA.sync();
+
+      // 设备 B 用不同密码创建 vault
+      db = await _makeDatabase();
+      final vaultB = await Vault.createNew(
+        password: passwordB,
+        database: db,
+      );
+      db.setDataKey(vaultB.dataKey);
+
+      final engineB = SyncEngine(
+        backend: backend,
+        database: db,
+        vault: vaultB,
+        deviceId: 'device-B',
+        passphraseProvider: () => passwordB,
+      );
+      final resultB = await engineB.sync();
+
+      // 验证：同步失败（密码不匹配）
+      expect(resultB.success, isFalse,
+          reason: '不同密码应同步失败');
+      expect(resultB.errorMessage, contains('密码'),
+          reason: '错误信息应提示密码不匹配');
+    });
+  });
 }
