@@ -1,0 +1,13 @@
+{
+  "_comment": "Node.js server 开发配置示例 — 用法: node server/nodejs/server.js --config server/nodejs/dev.config.json",
+  "port": 4080,
+  "dataDir": "./data",
+  "token": "change-me-to-a-strong-token",
+  "rateLimit": 10,
+  "maxBodyBytes": 67108864,
+  "readTimeoutMs": 60000,
+  "writeTimeoutMs": 60000,
+  "logLevel": "debug",
+  "logFile": "./temp/safeserver-node-debug.log",
+  "logJSON": false
+}

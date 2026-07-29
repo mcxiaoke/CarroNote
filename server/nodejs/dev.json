@@ -1,0 +1,5 @@
+{
+  "logLevel": "debug",
+  "logFile": "./temp/safeserver-node-debug.log",
+  "logJSON": false
+}

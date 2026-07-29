@@ -1,0 +1,13 @@
+{
+  "name": "safeserver",
+  "version": "2.1.0",
+  "description": "SafeNotes 同步服务端参考实现（Node.js）",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

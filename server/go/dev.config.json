@@ -1,0 +1,14 @@
+{
+  "_comment": "Go server 开发配置示例 — 用法: cd server/go && go run . -config dev.config.json",
+  "addr": ":4080",
+  "dataDir": "./data",
+  "token": "change-me-to-a-strong-token",
+  "rateLimit": 10,
+  "maxBodyBytes": 67108864,
+  "readTimeout": "60s",
+  "writeTimeout": "60s",
+  "idleTimeout": "120s",
+  "logLevel": "debug",
+  "logFile": "./temp/safeserver-debug.log",
+  "logJSON": false
+}

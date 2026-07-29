@@ -1,21 +1,30 @@
 // 集成测试：SafeServerBackend vs Go/Node.js 参考 server
 //
 // 测试策略：
-//   1. 启动 Go 或 Node.js server 作为子进程
-//   2. 轮询 /api/v2/health 等待 server 就绪
-//   3. 用真实的 SafeServerBackend + SyncEngine 跑完整同步流程
-//   4. 测试结束杀掉子进程
+//   1. setUpAll：调用 PS 清理脚本 → 构建 Go 二进制 → 生成配置文件 → 启动 server
+//   2. 启动 server（Go 二进制 / Node.js 脚本）作为子进程，用配置文件配置
+//   3. 轮询 /api/v2/health 等待 server 就绪
+//   4. 用真实的 SafeServerBackend + SyncEngine 跑完整同步流程
+//   5. 每个测试前清理 server 数据目录；tearDownAll 停 server + 调用 PS 清理脚本
+//
+// 清理脚本（test/scripts/test-cleanup.ps1）负责：
+//   - 杀残留 server 进程（safeserver.exe / safenotes-server.exe / node server.js）
+//   - 杀占用测试端口的进程
+//   - 清理临时数据目录（$TEMP\safenotes-test, $TEMP\sn-test-*）
+//   - 清理项目 temp/ 下的 server 日志文件
 //
 // 环境变量：
 //   SN_SERVER=node  → 使用 Node.js server（默认用 Go）
+//   SN_GO_DEBUG=1   → 启用 debug 日志
+//   SN_GO_BIN=path  → 使用指定的 Go 二进制（跳过构建）
 //
 // 运行：
 //   flutter test test/sync/safe_server_integration_test.dart
 //
 // 如果 go 和 node 都不在 PATH 中，测试自动跳过。
 
-// 库级注解：go run 首次编译需要较长时间，给足超时
-@Timeout(Duration(seconds: 120))
+// 库级注解：构建二进制 + 启动 server 可能需要时间
+@Timeout(Duration(seconds: 180))
 library;
 
 // Dart 原生导入
@@ -38,80 +47,114 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// 测试用固定 Token
 const String kTestToken = 'test-token-12345';
 
+/// 测试用固定端口（PS 清理脚本会杀掉占用此端口的进程）
+const int kTestPort = 8090;
+
+/// 测试基础设施根目录（所有临时文件放这里，便于统一清理）
+final String kTestRoot = '${Directory.systemTemp.path}\\safenotes-test';
+
+/// 清理脚本路径
+String get kCleanupScriptPath =>
+    '${Directory.current.path}\\test\\scripts\\test-cleanup.ps1';
+
+/// Go 二进制路径（setUpAll 时构建）
+String? _goBinaryPath;
+
+/// 临时配置文件路径（setUpAll 时生成）
+String? _configFilePath;
+
 /// server 子进程管理
 class ServerProcess {
   final Process process;
   final int port;
   final String dataDir;
+  final String logPath; // server 日志文件路径（调试用）
 
-  ServerProcess(this.process, this.port, this.dataDir);
+  ServerProcess(this.process, this.port, this.dataDir, this.logPath);
 
-  /// server 基地址（不含路径前缀，SafeServerBackend 会自动拼接 /api/v2/）
+  /// server 基地址
   String get baseUrl => 'http://localhost:$port';
 
-  /// 健康检查 URL（不需要认证）
+  /// 健康检查 URL
   String get healthUrl => 'http://localhost:$port/api/v2/health';
 
-  /// 停止 server
+  /// 停止 server（可靠地杀进程树）
+  ///
+  /// 三级降级策略：
+  ///   1. graceful shutdown（SIGTERM → Go/Node server 触发 graceful shutdown）
+  ///   2. taskkill /T /F（杀进程树，包括子进程）
+  ///   3. 兜底：PS 清理脚本会在 tearDownAll 中再清理一次
   Future<void> stop() async {
-    process.kill(ProcessSignal.sigterm);
-    await process.exitCode.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        process.kill(ProcessSignal.sigkill);
-        return -1;
-      },
-    );
-    // 清理数据目录
-    final dir = Directory(dataDir);
-    if (dir.existsSync()) {
-      try {
-        await dir.delete(recursive: true);
-      } catch (_) {
-        // Windows 偶发文件占用，忽略
+    // 1. 先尝试 graceful shutdown（SIGTERM）
+    try {
+      process.kill(ProcessSignal.sigterm);
+    } catch (_) {}
+
+    // 等待最多 3 秒让进程优雅退出
+    bool exited = false;
+    try {
+      await process.exitCode.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => -1,
+      );
+      exited = true;
+    } catch (_) {
+      exited = false;
+    }
+
+    // 2. 如果还没退出，用 taskkill /T /F 强杀进程树
+    if (!exited) {
+      if (Platform.isWindows) {
+        // taskkill /T /F：杀进程树（包括子进程），/F 强制
+        try {
+          await Process.run(
+            'taskkill',
+            ['/T', '/F', '/PID', process.pid.toString()],
+          );
+        } catch (_) {}
+      } else {
+        try {
+          process.kill(ProcessSignal.sigkill);
+        } catch (_) {}
       }
+      // 等待进程真正退出
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 2));
+      } catch (_) {}
     }
   }
 
   /// 等待 server 就绪（轮询 /api/v2/health）
   Future<bool> waitReady({
-    Duration timeout = const Duration(seconds: 60),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
         final res = await http.get(Uri.parse(healthUrl)).timeout(
-          const Duration(seconds: 2),
-        );
+              const Duration(seconds: 2),
+            );
         if (res.statusCode == 200 && res.body == 'ok') {
           return true;
         }
       } catch (_) {
         // server 还没起来，继续等
       }
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 300));
     }
     return false;
   }
 
-  /// 清理 server 数据目录（manifest + blobs），让每个测试从干净状态开始
+  /// 清理 server 数据目录（vaults/ 下所有内容），让每个测试从干净状态开始
   ///
-  /// 比 stop + 重启 server 快得多（避免 go run 重复编译）。
-  /// server 进程保持运行，只删除磁盘上的数据文件。
+  /// 新存储布局：<dataDir>/vaults/vault-default/{manifest, blobs/}
+  /// 清理整个 vaults/ 目录即可重置到干净状态。
   Future<void> clearData() async {
-    final manifestFile = File('$dataDir\\manifest');
-    final blobsDir = Directory('$dataDir\\blobs');
+    final vaultsDir = Directory('$dataDir\\vaults');
 
-    if (manifestFile.existsSync()) {
+    if (vaultsDir.existsSync()) {
       try {
-        await manifestFile.delete();
-      } catch (_) {
-        // Windows 偶发文件占用，忽略
-      }
-    }
-    if (blobsDir.existsSync()) {
-      try {
-        await blobsDir.delete(recursive: true);
+        await vaultsDir.delete(recursive: true);
       } catch (_) {
         // Windows 偶发文件占用，忽略
       }
@@ -119,8 +162,138 @@ class ServerProcess {
   }
 }
 
-/// 启动 Go server
-Future<ServerProcess?> startGoServer(int port, String dataDir) async {
+// ──────────────────────────────────────────────
+// 测试基础设施：清理脚本调用、构建、配置文件生成、进程管理
+// ──────────────────────────────────────────────
+
+/// 调用 PowerShell 清理脚本
+///
+/// 脚本负责：杀残留进程 + 端口清理 + 临时文件清理 + 日志清理。
+/// 清理失败不抛异常（不应阻塞测试），只输出警告。
+Future<void> runCleanupScript({
+  List<int> ports = const [kTestPort],
+  bool skipFileCleanup = false,
+  bool detailed = false,
+}) async {
+  if (!Platform.isWindows) return; // Unix 可扩展用 pkill
+
+  final args = <String>[
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', kCleanupScriptPath,
+    '-Ports', ports.join(','),
+    if (skipFileCleanup) '-SkipFileCleanup',
+    if (detailed) '-Detailed',
+  ];
+
+  try {
+    final result = await Process.run('pwsh', args);
+    if (result.exitCode != 0) {
+      print('Warning: cleanup script exited with ${result.exitCode}');
+      if (result.stderr.toString().isNotEmpty) {
+        print(result.stderr);
+      }
+    }
+  } catch (e) {
+    print('Warning: cleanup script failed to run: $e');
+  }
+}
+
+/// 生成 Go server 配置文件（JSON）
+///
+/// Go server 通过 `-config <path>` 加载，包含所有运行参数。
+/// 这样启动命令只需要 `safeserver.exe -config config.json`，整洁易调试。
+Future<String> generateGoConfig({
+  required int port,
+  required String dataDir,
+  required String token,
+  required String logFile,
+  String logLevel = 'info',
+}) async {
+  final config = <String, dynamic>{
+    'addr': ':$port',
+    'dataDir': dataDir,
+    'token': token,
+    'logLevel': logLevel,
+    'logFile': logFile,
+    'logJSON': false,
+  };
+  final configPath = '$kTestRoot\\go-config.json';
+  await File(configPath).writeAsString(
+    const JsonEncoder.withIndent('  ').convert(config),
+  );
+  return configPath;
+}
+
+/// 生成 Node.js server 配置文件（JSON）
+///
+/// Node server 通过 `--config <path>` 加载，字段名与 Go 不同（port vs addr）。
+Future<String> generateNodeConfig({
+  required int port,
+  required String dataDir,
+  required String token,
+  required String logFile,
+  String logLevel = 'info',
+}) async {
+  final config = <String, dynamic>{
+    'port': port,
+    'dataDir': dataDir,
+    'token': token,
+    'logLevel': logLevel,
+    'logFile': logFile,
+    'logJSON': false,
+  };
+  final configPath = '$kTestRoot\\node-config.json';
+  await File(configPath).writeAsString(
+    const JsonEncoder.withIndent('  ').convert(config),
+  );
+  return configPath;
+}
+
+/// 构建测试基础设施（setUpAll 调用一次）
+///
+/// 步骤：
+///   1. 调用 PS 清理脚本（杀残留进程 + 清理临时文件）
+///   2. 创建测试根目录
+///   3. 构建 Go 二进制（如果用 Go server）
+///   4. 返回是否就绪
+Future<bool> setupTestInfra({required bool useGo}) async {
+  // 1. 调用 PS 清理脚本：杀残留进程 + 清理临时文件 + 清理日志
+  //    详细模式输出进程命令行，便于排查
+  await runCleanupScript(detailed: true);
+
+  // 2. 创建测试根目录（清理脚本可能已删除它）
+  final testRoot = Directory(kTestRoot);
+  if (!testRoot.existsSync()) {
+    await testRoot.create(recursive: true);
+  }
+
+  // 3. 构建 Go 二进制
+  if (useGo) {
+    _goBinaryPath = await buildGoBinary();
+    if (_goBinaryPath == null) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/// 构建 Go server 二进制到测试目录
+///
+/// 返回二进制路径，构建失败返回 null。
+/// 如果环境变量 SN_GO_BIN 指定了二进制路径，直接使用（跳过构建）。
+Future<String?> buildGoBinary() async {
+  final repoRoot = Directory.current.path;
+  final goSrcDir = '$repoRoot\\server\\go';
+  final binPath = '$kTestRoot\\safeserver.exe';
+
+  // 如果环境变量指定了二进制，直接用
+  final envBin = Platform.environment['SN_GO_BIN'];
+  if (envBin != null && envBin.isNotEmpty && File(envBin).existsSync()) {
+    return envBin;
+  }
+
   // 检查 go 是否可用
   try {
     final result = await Process.run('go', ['version']);
@@ -129,23 +302,65 @@ Future<ServerProcess?> startGoServer(int port, String dataDir) async {
     return null;
   }
 
-  // 在 server/go/ 目录下运行 `go run .`，确保能找到 go.mod
-  final workingDir = '${Directory.current.path}\\server\\go';
-  final process = await Process.start(
+  // 构建二进制（构建前确保旧二进制已被清理，避免文件占用）
+  final oldBin = File(binPath);
+  if (oldBin.existsSync()) {
+    try {
+      await oldBin.delete();
+    } catch (_) {
+      // 文件被占用（旧 server 还在运行？）—— PS 清理脚本应该已经杀掉了
+    }
+  }
+
+  final result = await Process.run(
     'go',
-    [
-      'run', '.',
-      '-addr', ':$port',
-      '-data', dataDir,
-      '-token', kTestToken,
-    ],
-    workingDirectory: workingDir,
+    ['build', '-o', binPath, '.'],
+    workingDirectory: goSrcDir,
   );
 
-  return ServerProcess(process, port, dataDir);
+  if (result.exitCode != 0) {
+    print('Go build failed:');
+    print(result.stderr);
+    return null;
+  }
+
+  return binPath;
 }
 
-/// 启动 Node.js server
+/// 启动 Go server（使用配置文件）
+Future<ServerProcess?> startGoServer(int port, String dataDir) async {
+  if (_goBinaryPath == null || !File(_goBinaryPath!).existsSync()) {
+    return null;
+  }
+
+  // 调试模式：SN_GO_DEBUG=1 时启用 debug 日志
+  final debugMode = Platform.environment['SN_GO_DEBUG'] == '1';
+  final logFile = '$kTestRoot\\server-go-$port.log';
+  final logLevel = debugMode ? 'debug' : 'info';
+
+  // 生成配置文件
+  _configFilePath = await generateGoConfig(
+    port: port,
+    dataDir: dataDir,
+    token: kTestToken,
+    logFile: logFile,
+    logLevel: logLevel,
+  );
+
+  try {
+    // 用配置文件启动，无需其他 CLI 参数
+    final process = await Process.start(
+      _goBinaryPath!,
+      ['-config', _configFilePath!],
+    );
+    return ServerProcess(process, port, dataDir, logFile);
+  } catch (e) {
+    print('Failed to start Go server: $e');
+    return null;
+  }
+}
+
+/// 启动 Node.js server（使用配置文件）
 Future<ServerProcess?> startNodeServer(int port, String dataDir) async {
   // 检查 node 是否可用
   try {
@@ -155,18 +370,35 @@ Future<ServerProcess?> startNodeServer(int port, String dataDir) async {
     return null;
   }
 
-  final scriptPath = '${Directory.current.path}\\server\\nodejs\\server.js';
-  final process = await Process.start(
-    'node',
-    [
-      scriptPath,
-      '--port', port.toString(),
-      '--data', dataDir,
-      '--token', kTestToken,
-    ],
+  final repoRoot = Directory.current.path;
+  final scriptPath = '$repoRoot\\server\\nodejs\\server.js';
+  if (!File(scriptPath).existsSync()) return null;
+
+  // 调试模式：SN_GO_DEBUG=1 时启用 debug 日志
+  final debugMode = Platform.environment['SN_GO_DEBUG'] == '1';
+  final logFile = '$kTestRoot\\server-node-$port.log';
+  final logLevel = debugMode ? 'debug' : 'info';
+
+  // 生成配置文件
+  _configFilePath = await generateNodeConfig(
+    port: port,
+    dataDir: dataDir,
+    token: kTestToken,
+    logFile: logFile,
+    logLevel: logLevel,
   );
 
-  return ServerProcess(process, port, dataDir);
+  try {
+    // 用配置文件启动，无需其他 CLI 参数
+    final process = await Process.start(
+      'node',
+      [scriptPath, '--config', _configFilePath!],
+    );
+    return ServerProcess(process, port, dataDir, logFile);
+  } catch (e) {
+    print('Failed to start Node.js server: $e');
+    return null;
+  }
 }
 
 /// 根据 SN_SERVER 环境变量选择 server
@@ -176,6 +408,13 @@ Future<ServerProcess?> startServer(int port, String dataDir) async {
     return startNodeServer(port, dataDir);
   }
   return startGoServer(port, dataDir);
+}
+
+/// 创建唯一的测试数据目录
+String makeTestDataDir(String label) {
+  final dir = '$kTestRoot\\data-$label-${DateTime.now().millisecondsSinceEpoch}';
+  Directory(dir).createSync(recursive: true);
+  return dir;
 }
 
 /// 创建测试用笔记
@@ -238,27 +477,43 @@ void main() {
   late String testEncryptedDataKey;
   late SafeServerBackend backend;
 
-  // setUpAll 启动 server 一次，避免每个测试重复 go run 编译
+  // setUpAll：清理 → 构建二进制 → 生成配置 → 启动 server → 等待就绪
   setUpAll(() async {
-    final port = 8090 + (DateTime.now().millisecond % 100);
-    final dataDir =
-        '${Directory.systemTemp.path}\\sn-test-${DateTime.now().microsecondsSinceEpoch}';
-    final serverProc = await startServer(port, dataDir);
+    final serverType = Platform.environment['SN_SERVER'] ?? 'go';
+    final useGo = serverType != 'node';
+
+    // 1. 清理残留进程 + 临时文件 + 构建 Go 二进制
+    final infraReady = await setupTestInfra(useGo: useGo);
+    if (!infraReady) {
+      throw StateError(
+        useGo
+            ? '无法构建 Go server 二进制（go 不在 PATH 或编译失败）'
+            : '无法初始化 Node.js 测试环境',
+      );
+    }
+
+    // 2. 启动 server（固定端口，数据目录用时间戳唯一化）
+    final dataDir = makeTestDataDir('main');
+    final serverProc = await startServer(kTestPort, dataDir);
     if (serverProc == null) {
-      throw StateError('无法启动 server（go 和 node 都不可用）');
+      throw StateError('无法启动 server（$serverType 不可用）');
     }
     server = serverProc;
 
-    // go run 首次编译可能需要 60+ 秒，给足超时
-    final ready = await server.waitReady(timeout: const Duration(seconds: 120));
+    // 3. 等待 server 就绪（二进制启动很快，15 秒足够）
+    final ready = await server.waitReady(timeout: const Duration(seconds: 15));
     if (!ready) {
       await server.stop();
-      throw StateError('server 启动超时（120s）');
+      throw StateError('server 启动超时（15s），检查日志: ${server.logPath}');
     }
   });
 
   tearDownAll(() async {
+    // 1. 停止 server（graceful + force）
     await server.stop();
+    // 2. 最终清理：调用 PS 脚本确保没有进程泄漏
+    //    跳过文件清理（保留日志供调试），只杀进程
+    await runCleanupScript(skipFileCleanup: true);
   });
 
   setUp(() async {
