@@ -6,14 +6,17 @@
  *   - 比 WebDAV 更简单：纯 HTTP API，无目录概念，无 MKCOL，Bearer Token 认证
  *   - 单用户场景：一个 server 实例服务一个 vault，无需账号系统
  *
- * 协议规范：docs/server-api-spec.md v2
+ * 协议规范：docs/server-api-spec.md v2.1
  *
  * API 端点：
- *   GET  /api/v2/manifest           下载 manifest（带 ETag）
- *   PUT  /api/v2/manifest           上传 manifest（带 If-Match/If-None-Match 乐观锁）
- *   GET  /api/v2/blob/<hash>        下载 blob
- *   PUT  /api/v2/blob/<hash>        上传 blob（幂等）
- *   GET  /api/v2/health             健康检查（无需认证）
+ *   GET    /api/v2/manifest           下载 manifest（带 ETag）
+ *   PUT    /api/v2/manifest           上传 manifest（带 If-Match/If-None-Match 乐观锁）
+ *   DELETE /api/v2/manifest           清理损坏 manifest（backupCorruptManifest 用）
+ *   GET    /api/v2/blob/<hash>        下载 blob
+ *   PUT    /api/v2/blob/<hash>        上传 blob（幂等）
+ *   DELETE /api/v2/blob/<hash>        删除 blob（GC 用，幂等）
+ *   GET    /api/v2/blobs              列出所有 blob hash（GC 用，需认证）
+ *   GET    /api/v2/health             健康检查（无需认证）
  *
  * 与 WebDavBackend 的差异：
  *   - 无 MKCOL（服务端自动创建存储空间）
@@ -23,6 +26,7 @@
  */
 
 // Dart 原生导入
+import 'dart:convert';
 import 'dart:typed_data';
 
 // Package 导入
@@ -81,6 +85,9 @@ class SafeServerBackend implements SyncBackend {
 
   /// blob 端点 URL 前缀
   String get _blobUrlPrefix => '$baseUrl$kSafeServerApiPrefix/blob';
+
+  /// blobs 列表端点 URL（GC 用）
+  String get _blobsUrl => '$baseUrl$kSafeServerApiPrefix/blobs';
 
   /// health 端点 URL
   String get _healthUrl => '$baseUrl$kSafeServerApiPrefix/health';
@@ -248,6 +255,113 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
           'PUT blob failed: ${res.statusCode} for hash=$hash');
+    }
+  }
+
+  /// 删除 blob（GC 用，幂等）
+  ///
+  /// SafeServer v2.1 协议定义了 DELETE /api/v2/blob/<hash> 端点。
+  /// 客户端在 GC 流程中调用此端点清理孤儿 blob。
+  ///
+  /// 兼容性：若服务端为旧版 v2（未实现 DELETE 端点），返回 405 Method Not Allowed
+  /// 时静默跳过，不抛异常——GC 退化为"只标记不清理"。
+  @override
+  Future<void> deleteBlob(String hash) async {
+    _ensureInitialized();
+
+    http.Response res;
+    try {
+      res = await _client.delete(
+        Uri.parse('$_blobUrlPrefix/$hash'),
+        headers: _authHeaders(),
+      );
+    } on Exception {
+      // 网络错误：静默跳过，GC 不阻断同步
+      return;
+    }
+
+    // 204 No Content = 删除成功
+    // 405 Method Not Allowed = 旧版服务端未实现 DELETE（兼容 v2）
+    // 404 Not Found = blob 不存在（幂等删除，视为成功）
+    // 401 = 认证失败（仍抛异常，提示用户检查 token）
+    if (res.statusCode == 204 ||
+        res.statusCode == 405 ||
+        res.statusCode == 404) {
+      return;
+    }
+    if (res.statusCode == 401) {
+      throw BackendUnavailableException(
+          'SafeServer auth failed (401): check token');
+    }
+    // 其他非 2xx 状态：静默跳过（保守不抛，GC 失败不阻断同步）
+  }
+
+  /// 备份损坏的 manifest（清理损坏文件）
+  ///
+  /// SafeServer v2.1 协议定义了 DELETE /api/v2/manifest 端点。
+  /// 客户端在 manifest 解析失败时调用此端点清理损坏文件，
+  /// 然后用本地数据重建 manifest 上传。
+  ///
+  /// 兼容性：旧版 v2 服务端返回 405 时也视为成功（PUT 会覆盖旧文件）。
+  @override
+  Future<void> backupCorruptManifest(Uint8List ciphertext) async {
+    _ensureInitialized();
+    try {
+      final res = await _client.delete(
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
+      // 204 = 删除成功，404 = 不存在（已删除），405 = 旧版不支持，都视为成功
+      if (res.statusCode != 204 &&
+          res.statusCode != 200 &&
+          res.statusCode != 404 &&
+          res.statusCode != 405) {
+        // 删除失败：不抛异常，让 SyncEngine 的 PUT 覆盖
+      }
+    } on Exception {
+      // 网络错误：不抛异常，让 SyncEngine 的 PUT 覆盖
+    }
+  }
+
+  /// 列出所有 blob hash（GC 用）
+  ///
+  /// SafeServer v2.1 协议定义了 GET /api/v2/blobs 端点，返回 JSON 数组
+  /// 包含所有 blob 的 hash。客户端用此列表与 manifest 引用对比，识别孤儿 blob。
+  ///
+  /// 兼容性：旧版 v2 服务端未实现此端点，返回 404/405 时退化为空列表，
+  /// GC 退化为"只标记不清理"。
+  @override
+  Future<List<String>> listBlobs() async {
+    _ensureInitialized();
+
+    http.Response res;
+    try {
+      res = await _client.get(
+        Uri.parse(_blobsUrl),
+        headers: _authHeaders(),
+      );
+    } on Exception {
+      // 网络错误：返回空列表，GC 不阻断同步
+      return [];
+    }
+
+    // 404/405 = 旧版服务端未实现 list 端点，退化为空列表
+    if (res.statusCode == 404 || res.statusCode == 405) return [];
+    if (res.statusCode == 401) {
+      throw BackendUnavailableException(
+          'SafeServer auth failed (401): check token');
+    }
+    if (res.statusCode != 200) {
+      // 其他错误：返回空列表，GC 不阻断同步
+      return [];
+    }
+
+    try {
+      final List<dynamic> hashes = jsonDecode(res.body);
+      return hashes.cast<String>();
+    } on FormatException {
+      // JSON 解析失败：返回空列表，保守不抛
+      return [];
     }
   }
 

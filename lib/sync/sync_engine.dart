@@ -70,6 +70,19 @@ class SyncEngine {
   /// 最大重试次数（乐观锁冲突时）
   static const int maxRetries = 3;
 
+  /// E1 修复：冲突副本保留阈值（5 分钟，单位毫秒）
+  ///
+  /// 当冲突双方的 updatedAt 差值超过此阈值时，视为真冲突（非并发编辑），
+  /// 败方内容另存为新笔记保留，避免 LWW 覆盖导致数据丢失。
+  /// 差值小于此阈值视为并发编辑，走原 LWW 覆盖逻辑。
+  static const int kConflictPreserveThresholdMs = 5 * 60 * 1000;
+
+  /// F1 修复：墓碑 GC 阈值（30 天，单位毫秒）
+  ///
+  /// 软删除超过此阈值的墓碑将从 manifest 移除并硬删除本地数据库记录，
+  /// 防止墓碑无限累积。30 天保证离线设备重新上线后能同步到删除操作。
+  static const int kTombstoneGcThresholdMs = 30 * 24 * 60 * 60 * 1000;
+
   SyncEngine({
     required this.backend,
     required this.database,
@@ -91,9 +104,16 @@ class SyncEngine {
   /// 返回 [SyncResult]，包含上传/下载/删除/冲突/迁移统计。
   /// 如果远端不可用（网络错误），返回 failure 结果。
   /// 如果乐观锁冲突超过 maxRetries 次，返回 failure 结果。
+  ///
+  /// 密钥纪元守卫（B1 修复）：
+  ///   下载远端 header 后比对 keyVersion。如果远端更高（他端改了密码），
+  ///   本地旧密码设备不会把旧 encryptedDataKey 写回远端（避免翻转战争），
+  ///   同步仍然完成（拉取远端笔记），但 SyncResult.passwordEpochMismatch=true，
+  ///   UI 应提示用户输入新密码重新登录。
   Future<SyncResult> sync() async {
     final allActions = <SyncAction>[];
     int totalMigrated = 0;
+    bool epochMismatch = false;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -101,9 +121,13 @@ class SyncEngine {
         // 累积迁移计数（迁移可能发生在 _syncOnce 内部）
         totalMigrated += result.migrated;
         allActions.addAll(result.actions);
+        epochMismatch = epochMismatch || result.passwordEpochMismatch;
 
         // 迁移后需要重新同步一次（用新 dataKey），但 _syncOnce 已处理
-        return result.copyWith(migrated: totalMigrated);
+        return result.copyWith(
+          migrated: totalMigrated,
+          passwordEpochMismatch: epochMismatch,
+        );
       } on ConflictException catch (e) {
         // 乐观锁冲突：回到 Step 1 重试
         if (attempt == maxRetries) {
@@ -136,17 +160,80 @@ class SyncEngine {
   }
 
   /// 执行一次同步尝试（不含重试逻辑）
+  ///
+  /// [attempt] 当前重试次数（用于诊断）
+  /// 返回同步结果。远端不可用或密码不匹配时返回 failure。
+  ///
+  /// 密钥纪元守卫（B1 修复）：
+  ///   解析远端 header 后比对 keyVersion。如果远端更高（他端改了密码），
+  ///   本地旧密码设备不会把旧 encryptedDataKey 写回远端，
+  ///   而是保留远端的新 encryptedDataKey，SyncResult.passwordEpochMismatch=true。
   Future<SyncResult> _syncOnce(int attempt) async {
     // Step 1: GET 远端 manifest
     final remoteResponse = await backend.getManifest();
 
     Manifest? remoteManifest;
+    // 密钥纪元不匹配标志：远端 keyVersion > 本地 → 他端改了密码
+    bool epochMismatch = false;
+    // 纪元不匹配时，构建 manifest 使用远端的 encryptedDataKey（不回滚远端包裹）
+    String? overrideEncryptedDataKey;
+
     if (remoteResponse.ciphertext.isNotEmpty) {
       // 1a. 仅解析 header（明文，不需要 dataKey）
-      final remoteHeader =
-          ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
+      //
+      // D2 修复：header 解析失败（FormatException）时备份损坏文件，
+      // 跳过远端 manifest 处理，用本地数据重建 manifest 上传。
+      // 注意：GCM tag 验证失败不属于"损坏"，是密码不匹配，仍走迁移流程。
+      ManifestHeader remoteHeader;
+      try {
+        remoteHeader =
+            ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
+      } on FormatException catch (e) {
+        // 远端 manifest 格式损坏（数据截断、header 长度字段错误等）
+        // 备份损坏文件，用本地数据重建 manifest 上传覆盖
+        await backend.backupCorruptManifest(remoteResponse.ciphertext);
+        final localManifest = await _buildLocalManifest(
+          overrideEncryptedDataKey: null,
+        );
+        final actions = <SyncAction>[];
+        actions.add(SyncAction(
+          type: SyncActionType.skip,
+          uuid: '',
+          message: '远端 manifest 损坏已备份：$e',
+        ));
+        final merged = await _mergeAndTransfer(
+          localManifest,
+          null,
+          actions,
+          overrideEncryptedDataKey: null,
+        );
+        // PUT manifest：用原 etag 做乐观锁（覆盖损坏文件）
+        final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
+        await backend.putManifest(newCiphertext, remoteResponse.etag);
+        await _updateLocalState(merged);
+        return SyncResult.success(
+          uploaded: _countActions(actions, SyncActionType.upload),
+          downloaded: _countActions(actions, SyncActionType.download),
+          deleted: _countActions(actions, SyncActionType.delete),
+          skipped: _countActions(actions, SyncActionType.skip),
+          conflicts: _countActions(actions, SyncActionType.conflict),
+          actions: actions,
+          attempts: attempt,
+          passwordEpochMismatch: false,
+        );
+      }
 
-      // 1b. 检查是否需要 dataKey 迁移
+      // 1b. 密钥纪元守卫：比对 keyVersion
+      //   - 远端 > 本地 → 他端改了密码，本地密码过期
+      //   - 远端 < 本地 → 本端改了密码还没推送（正常流程）
+      //   - 相等 → 正常流程
+      if (remoteHeader.keyVersion > vault.keyVersion) {
+        // 他端改了密码，本地旧密码设备不应回滚远端新包裹
+        epochMismatch = true;
+        overrideEncryptedDataKey = remoteHeader.encryptedDataKey;
+      }
+
+      // 1c. 检查是否需要 dataKey 迁移
       final migrationResult =
           vault.checkMigrationNeeded(remoteHeader.encryptedDataKey);
       if (migrationResult.needsMigration) {
@@ -156,11 +243,11 @@ class SyncEngine {
           //   b) 本地密码已变（本端改密码但还没推送）→ 本地 dataKey 仍有效，
           //      应继续同步把新 encryptedDataKey 推送到远端
           // 区分方法：尝试用本地 dataKey 解析远端 manifest items
-          //   - 成功 → 场景 b，无需迁移，继续正常同步（会上传新 encryptedDataKey）
-          //   - 失败 → 场景 a，真正的密码不匹配
+          //   - 成功 → 场景 b（或纪元不匹配场景 a），继续同步
+          //   - 失败 → 真正的密码不匹配
           try {
             ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
-            // 本地 dataKey 能解远端 manifest → 场景 b，继续同步
+            // 本地 dataKey 能解远端 manifest → 继续同步
           } on Exception {
             // 本地 dataKey 也解不开 → 真正的密码不匹配
             return SyncResult.failure(
@@ -168,10 +255,11 @@ class SyncEngine {
               attempts: attempt,
             );
           }
-          // 场景 b：继续走正常同步流程（不做迁移）
-          // 本地 encryptedDataKey 是新值（改密码后），远端是旧值。
-          // 继续同步后 _buildLocalManifest 会用本地新值，
-          // PUT manifest 时把新 encryptedDataKey 推送到远端。
+          // 继续走正常同步流程（不做迁移）
+          // - 场景 b（本端改密码）：本地 encryptedDataKey 是新值，
+          //   _buildLocalManifest 会用本地新值推送
+          // - 纪元不匹配（他端改密码）：overrideEncryptedDataKey 已设置，
+          //   _buildLocalManifest 会用远端新值，不回滚远端包裹
           remoteManifest = ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
@@ -190,6 +278,8 @@ class SyncEngine {
             migrationResult.remoteEncryptedDataKey!,
             database,
           );
+          // 本地 encryptedDataKey 已更新为远端值，清除 override
+          overrideEncryptedDataKey = null;
           remoteManifest = ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
@@ -221,8 +311,10 @@ class SyncEngine {
       }
     }
 
-    // Step 2: 构建本地 manifest
-    final localManifest = await _buildLocalManifest();
+    // Step 2: 构建本地 manifest（纪元不匹配时用远端 encryptedDataKey）
+    final localManifest = await _buildLocalManifest(
+      overrideEncryptedDataKey: overrideEncryptedDataKey,
+    );
 
     // Step 3: 比对 + 传输（上传/下载/删除）
     final actions = <SyncAction>[];
@@ -230,7 +322,52 @@ class SyncEngine {
       localManifest,
       remoteManifest,
       actions,
+      overrideEncryptedDataKey: overrideEncryptedDataKey,
     );
+
+    // D3 修复：判断是否需要 PUT manifest
+    //
+    // 若 merged 与 remote 在语义上完全等价（items 一致 + header 关键字段一致），
+    // 且无纪元不匹配/encryptedDataKey override，则跳过 PUT——避免 blob 持续下载
+    // 失败时 manifest version 每次同步无意义 +1 攀升。
+    //
+    // 判定"有实际变更"的条件（任一满足即需要 PUT）：
+    //   1. actions 中存在 upload/download/delete 类型（有成功的传输或墓碑应用）
+    //   2. purgedUuids 非空（本地硬删除需要从远端 manifest 清除墓碑）
+    //   3. 纪元不匹配（需推送远端新 encryptedDataKey）
+    //   4. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
+    final hasEffectiveChange = _hasEffectiveChange(
+      actions: actions,
+      merged: merged,
+      remote: remoteManifest,
+      epochMismatch: epochMismatch,
+      overrideEncryptedDataKey: overrideEncryptedDataKey,
+    );
+
+    if (!hasEffectiveChange) {
+      // 无实际变更：跳过 PUT manifest，version 不递增
+      // 此时 remoteManifest 一定非空（_hasEffectiveChange 在 remote==null 时返回 true）
+      await _updateLocalState(merged.copyWithHeader(
+        version: remoteManifest!.header.version,
+        updatedAt: remoteManifest.header.updatedAt,
+      ));
+
+      // F1 修复：即使跳过 PUT，也执行孤儿 blob GC
+      // 场景：上次同步上传了 blob，本次同步无变更但远端有孤儿 blob 需清理
+      await _gcOrphanBlobs(merged);
+
+      return SyncResult.success(
+        uploaded: 0,
+        downloaded: 0,
+        deleted: 0,
+        skipped: _countActions(actions, SyncActionType.skip) +
+            _countActions(actions, SyncActionType.conflict),
+        conflicts: _countActions(actions, SyncActionType.conflict),
+        actions: actions,
+        attempts: attempt,
+        passwordEpochMismatch: epochMismatch,
+      );
+    }
 
     // Step 4: 加密 + PUT manifest（乐观锁）
     final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
@@ -242,6 +379,11 @@ class SyncEngine {
     // Step 5: 更新本地状态
     await _updateLocalState(merged);
 
+    // F1 修复：孤儿 blob GC（manifest PUT 成功后）
+    // listBlobs() - manifest 引用的 hash = 孤儿，删除。
+    // GC 失败不阻断同步（try-catch），下次同步会重试。
+    await _gcOrphanBlobs(merged);
+
     // 统计结果
     return SyncResult.success(
       uploaded: _countActions(actions, SyncActionType.upload),
@@ -251,6 +393,7 @@ class SyncEngine {
       conflicts: _countActions(actions, SyncActionType.conflict),
       actions: actions,
       attempts: attempt,
+      passwordEpochMismatch: epochMismatch,
     );
   }
 
@@ -278,25 +421,53 @@ class SyncEngine {
   /// 从本地数据库构建 manifest
   ///
   /// 包含所有笔记（含墓碑）。manifest 是全量的。
-  Future<Manifest> _buildLocalManifest() async {
+  /// 填充所有新增字段：keyFingerprint / keyVersion / schemaVersion / createdAt
+  /// 以及 ManifestItem 的 updatedBy / createdAt / deletedAt / contentSize。
+  ///
+  /// F1 修复：过期墓碑（软删除超 30 天）不放入 manifest，硬删除本地记录
+  /// 并加入 purgedUuids，让 _mergeAndTransfer 的 M1 逻辑阻止其从远端复活。
+  /// PUT manifest 成功后远端墓碑也被清除，实现墓碑 GC。
+  ///
+  /// [overrideEncryptedDataKey]：纪元不匹配时（他端改密码），传入远端的
+  /// encryptedDataKey 以避免回滚远端新包裹。null 时用本地 vault 的值。
+  Future<Manifest> _buildLocalManifest({
+    String? overrideEncryptedDataKey,
+  }) async {
     final notes = await database.readAllNotesIncludingDeleted();
     final items = <String, ManifestItem>{};
+    final now = DateTime.now().millisecondsSinceEpoch;
     for (final note in notes) {
+      // F1 修复：过期墓碑 GC
+      // 软删除超 30 天的墓碑不再放入 manifest，硬删除本地记录并加入 purgedUuids。
+      // 风险：若本次 PUT 失败重试，本地墓碑已删但 purgedUuids 阻止复活，
+      // 下次同步仍能正常清除远端墓碑。30 天阈值保证离线设备已同步到删除操作。
+      if (note.deleted && (now - note.updatedAt) > kTombstoneGcThresholdMs) {
+        await database.hardDeleteByUuid(note.uuid);
+        continue;
+      }
       items[note.uuid] = ManifestItem(
         hash: note.contentHash,
         deleted: note.deleted,
         updatedAt: note.updatedAt,
+        updatedBy: deviceId,
+        createdAt: note.createdTime.millisecondsSinceEpoch,
+        deletedAt: note.deleted ? note.updatedAt : null,
+        contentSize: note.toContentBytes().length,
       );
     }
     final localVersion = await database.getManifestVersion(backend.providerKey);
 
     return Manifest(
       header: ManifestHeader(
+        schemaVersion: 1,
         version: localVersion,
         vaultId: _vaultId,
+        createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        encryptedDataKey: _encryptedDataKey,
-        kdf: KdfParams.defaultParams(),
+        keyFingerprint: vault.keyFingerprint,
+        keyVersion: vault.keyVersion,
+        encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
+        kdf: vault.kdf,
         dataKeyWrap: kDataKeyWrapAlgorithm,
         lastModifiedBy: deviceId,
       ),
@@ -316,8 +487,9 @@ class SyncEngine {
   Future<Manifest> _mergeAndTransfer(
     Manifest local,
     Manifest? remote,
-    List<SyncAction> actions,
-  ) async {
+    List<SyncAction> actions, {
+    String? overrideEncryptedDataKey,
+  }) async {
     // M1 修复：读取待清理的 uuid 列表（用户硬删除的笔记）
     final purgedUuids = await database.getPurgedUuids();
     final purgedSet = purgedUuids.toSet();
@@ -354,12 +526,12 @@ class SyncEngine {
           ));
           continue;
         }
-        // 仅远端有：下载
-        final downloaded = await _downloadNote(uuid, remoteItem, actions);
-        if (downloaded) {
-          mergedItems[uuid] = remoteItem;
-        }
-        // 下载失败（blob missing）时不加入 mergedItems，下次再试
+        // 仅远端有：下载（失败时仍保留 remoteItem 进 merged，见 D3 修复）
+        await _downloadNote(uuid, remoteItem, actions);
+        // D3 修复：下载失败（blob missing）时也保留 remoteItem 进 merged，
+        // 避免下次 PUT manifest 后该条目从远端消失。
+        // 这样下次同步时仍能重试下载（远端其他设备可能还未上传 blob）。
+        mergedItems[uuid] = remoteItem;
       } else if (localItem != null && remoteItem == null) {
         // M1 修复：本地硬删除的笔记不要重新上传
         // 正常情况下 hardDelete 后 readNoteByUuid 返回 null 不会走到这里，
@@ -388,6 +560,22 @@ class SyncEngine {
         } else {
           // 冲突：LWW 解决
           final winner = _resolveConflict(localItem, remoteItem);
+          // E1 修复：冲突副本保留
+          // 当 updatedAt 差值 > 5 分钟且 hash 不同时，说明是真冲突（非并发编辑），
+          // 败方内容应作为新笔记保留，避免数据丢失。
+          // 差值 <= 5 分钟视为并发编辑，走原 LWW 覆盖逻辑。
+          final timeDiff = (localItem.updatedAt - remoteItem.updatedAt).abs();
+          final shouldPreserveCopy = timeDiff > kConflictPreserveThresholdMs;
+          if (shouldPreserveCopy) {
+            await _preserveConflictCopy(
+              uuid: uuid,
+              winner: winner,
+              localItem: localItem,
+              remoteItem: remoteItem,
+              actions: actions,
+              mergedItems: mergedItems,
+            );
+          }
           if (winner == localItem) {
             // 本地胜：上传覆盖远端
             final note = await database.readNoteByUuid(uuid);
@@ -402,20 +590,20 @@ class SyncEngine {
             if (downloaded) {
               mergedItems[uuid] = remoteItem;
             } else {
-              // 下载失败：保留本地版本，下次再试
-              final note = await database.readNoteByUuid(uuid);
-              if (note != null) {
-                await _uploadNote(note, actions);
-                mergedItems[uuid] = localItem;
-              }
+              // D3 修复：下载失败时保留 remoteItem 进 merged，不回滚到本地旧版本。
+              // 原实现用 localItem 覆盖远端会导致远端较新数据被回滚。
+              // 保留 remoteItem 让下次同步可重试下载，本地旧版本暂时保留不动。
+              mergedItems[uuid] = remoteItem;
             }
           }
           actions.add(SyncAction(
             type: SyncActionType.conflict,
             uuid: uuid,
             message: winner == localItem
-                ? 'local won (LWW: local newer)'
-                : 'remote won (LWW: remote newer)',
+                ? 'local won (LWW: local newer'
+                    '${shouldPreserveCopy ? ', remote preserved as copy' : ''})'
+                : 'remote won (LWW: remote newer'
+                    '${shouldPreserveCopy ? ', local preserved as copy' : ''})',
           ));
         }
       }
@@ -429,11 +617,16 @@ class SyncEngine {
 
     return Manifest(
       header: ManifestHeader(
+        schemaVersion: 1,
         version: remote.version + 1,
         vaultId: _vaultId,
+        createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        encryptedDataKey: _encryptedDataKey,
-        kdf: KdfParams.defaultParams(),
+        keyFingerprint: vault.keyFingerprint,
+        keyVersion: vault.keyVersion,
+        // B1 修复：纪元不匹配时用远端的 encryptedDataKey，避免回滚远端新包裹
+        encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
+        kdf: vault.kdf,
         dataKeyWrap: kDataKeyWrapAlgorithm,
         lastModifiedBy: deviceId,
       ),
@@ -446,6 +639,106 @@ class SyncEngine {
   /// 完全一致时跳过传输。注意：updatedAt 相同但 hash 不同不算一致（会走冲突流程）。
   bool _itemsEqual(ManifestItem a, ManifestItem b) {
     return a.hash == b.hash && a.deleted == b.deleted;
+  }
+
+  /// E1 修复：冲突副本保留
+  ///
+  /// 当冲突双方的 updatedAt 差值超过阈值（5 分钟）时，把败方内容另存为一条新笔记
+  /// （新 UUID），避免 LWW 覆盖导致数据丢失。
+  ///
+  /// 流程：
+  ///   - 败方是本地 → 读取本地笔记，生成新 UUID 存为新笔记，上传 blob，加入 merged
+  ///   - 败方是远端 → 下载远端 blob，生成新 UUID 存为新笔记，上传 blob（新 hash），加入 merged
+  ///
+  /// 注意：此方法只是"额外保留一份败方副本"，不影响胜方的正常 LWW 覆盖流程。
+  /// 调用方在调用此方法后仍需执行胜方的上传/下载逻辑。
+  Future<void> _preserveConflictCopy({
+    required String uuid,
+    required ManifestItem winner,
+    required ManifestItem localItem,
+    required ManifestItem remoteItem,
+    required List<SyncAction> actions,
+    required Map<String, ManifestItem> mergedItems,
+  }) async {
+    final localIsWinner = winner == localItem;
+    final loserItem = localIsWinner ? remoteItem : localItem;
+
+    // 败方是墓碑：不保留副本（删除冲突不需要保留删除版本）
+    if (loserItem.deleted) return;
+
+    try {
+      if (localIsWinner) {
+        // 败方是远端：下载远端内容，存为新笔记
+        final envelope = await backend.getBlob(loserItem.hash);
+        if (envelope == null) {
+          // blob 不存在：无法保留副本，跳过
+          return;
+        }
+        final plaintext = SyncCrypto.open(_dataKey, uuid, envelope);
+        final content = SafeNote.fromContentBytes(plaintext);
+
+        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间
+        final newNote = SafeNote(
+          uuid: SafeNote.generateUuid(),
+          title: content.title,
+          description: content.description,
+          contentHash: SafeNote.computeHash(content.title, content.description),
+          createdTime: DateTime.fromMillisecondsSinceEpoch(
+            loserItem.createdAt,
+          ),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          synced: false,
+        );
+
+        // 存入本地数据库
+        await database.storeNote(newNote);
+        // 上传 blob（新 hash）
+        await _uploadNote(newNote, actions);
+        // 加入 merged（新 UUID）
+        mergedItems[newNote.uuid] = ManifestItem(
+          hash: newNote.contentHash,
+          deleted: false,
+          updatedAt: newNote.updatedAt,
+          updatedBy: deviceId,
+          createdAt: newNote.createdTime.millisecondsSinceEpoch,
+          contentSize: newNote.toContentBytes().length,
+        );
+      } else {
+        // 败方是本地：读取本地笔记，生成新 UUID 存为新笔记
+        final localNote = await database.readNoteByUuid(uuid);
+        if (localNote == null) return;
+
+        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间和内容
+        final newNote = SafeNote(
+          uuid: SafeNote.generateUuid(),
+          title: localNote.title,
+          description: localNote.description,
+          contentHash: SafeNote.computeHash(
+            localNote.title,
+            localNote.description,
+          ),
+          createdTime: localNote.createdTime,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          synced: false,
+        );
+
+        // 更新本地数据库（新 UUID 的新笔记）
+        await database.storeNote(newNote);
+        // 上传 blob（新 hash）
+        await _uploadNote(newNote, actions);
+        // 加入 merged（新 UUID）
+        mergedItems[newNote.uuid] = ManifestItem(
+          hash: newNote.contentHash,
+          deleted: false,
+          updatedAt: newNote.updatedAt,
+          updatedBy: deviceId,
+          createdAt: newNote.createdTime.millisecondsSinceEpoch,
+          contentSize: newNote.toContentBytes().length,
+        );
+      }
+    } on Exception {
+      // 副本保留失败不阻断主同步流程，记录日志即可
+    }
   }
 
   /// LWW 冲突解决：返回胜出的 item
@@ -553,6 +846,8 @@ class SyncEngine {
     }
 
     // 写入本地数据库（upsert）
+    // R10 修复：用 remoteItem.createdAt 保留原始创建时间，
+    // 而非用下载时刻 DateTime.now()
     final existing = await database.readNoteByUuid(uuid);
     final note = SafeNote(
       id: existing?.id,
@@ -561,7 +856,10 @@ class SyncEngine {
       description: content.description,
       contentHash: item.hash,
       deleted: false,
-      createdTime: existing?.createdTime ?? DateTime.now(),
+      createdTime:
+          existing?.createdTime ?? DateTime.fromMillisecondsSinceEpoch(
+        item.createdAt,
+      ),
       updatedAt: item.updatedAt,
       synced: true,
     );
@@ -602,6 +900,50 @@ class SyncEngine {
     }
   }
 
+  /// F1 修复：孤儿 blob 垃圾回收
+  ///
+  /// manifest PUT 成功后调用。流程：
+  ///   1. listBlobs() 获取远端所有 blob hash
+  ///   2. merged.items 中的 hash 集合 = 当前引用的 blob
+  ///   3. 远端有但 manifest 不引用的 = 孤儿 blob，删除
+  ///
+  /// 安全性：
+  ///   - listBlobs 返回空（后端不支持枚举）时跳过 GC，保守不删
+  ///   - 单个 blob 删除失败不阻断整体 GC
+  ///   - 整体 GC 失败不阻断同步（下次同步重试）
+  ///
+  /// 注意：并发同步场景下，A 设备正在 GC 时 B 设备可能正在上传新 blob。
+  /// 此时 A 设备的 listBlobs 可能包含 B 刚上传但还未写入 manifest 的 blob，
+  /// 误判为孤儿删除。缓解：manifest 引用的 blob 一定不会被删（referenced 集合保护）。
+  /// 极端情况下删除了 B 正在上传的 blob，B 下次同步会重新上传（putBlob 幂等）。
+  Future<void> _gcOrphanBlobs(Manifest merged) async {
+    try {
+      final remoteBlobs = await backend.listBlobs();
+      if (remoteBlobs.isEmpty) return; // 后端不支持枚举，跳过 GC
+
+      // 当前 manifest 引用的所有 blob hash
+      final referenced = <String>{};
+      for (final item in merged.items.values) {
+        // 墓碑没有 blob（deleted=true 时不引用 blob）
+        if (!item.deleted) {
+          referenced.add(item.hash);
+        }
+      }
+
+      // 孤儿 = 远端有但 manifest 不引用的
+      final orphans = remoteBlobs.where((h) => !referenced.contains(h));
+      for (final hash in orphans) {
+        try {
+          await backend.deleteBlob(hash);
+        } on Exception {
+          // 单个 blob 删除失败不阻断整体 GC
+        }
+      }
+    } on Exception {
+      // GC 失败不阻断同步，下次同步重试
+    }
+  }
+
   /// 统计指定类型的操作数量
   int _countActions(List<SyncAction> actions, SyncActionType type) {
     int count = 0;
@@ -609,6 +951,67 @@ class SyncEngine {
       if (a.type == type) count++;
     }
     return count;
+  }
+
+  /// D3 修复：判断本次同步是否有实际变更需要 PUT manifest
+  ///
+  /// 返回 false 时跳过 PUT，避免 blob 持续下载失败等场景下 manifest version
+  /// 无意义 +1 攀升。判定"有实际变更"的条件（任一满足即需 PUT）：
+  ///   1. actions 中存在 upload/download/delete 类型（有成功的传输或墓碑应用）
+  ///   2. 纪元不匹配或需推送新 encryptedDataKey（overrideEncryptedDataKey != null）
+  ///   3. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
+  ///   4. header 关键字段变化（encryptedDataKey / keyFingerprint / keyVersion）
+  bool _hasEffectiveChange({
+    required List<SyncAction> actions,
+    required Manifest merged,
+    required Manifest? remote,
+    required bool epochMismatch,
+    String? overrideEncryptedDataKey,
+  }) {
+    // 纪元不匹配或需推送新 encryptedDataKey：必须 PUT
+    if (epochMismatch || overrideEncryptedDataKey != null) {
+      return true;
+    }
+
+    // 有成功的传输操作：必须 PUT
+    for (final a in actions) {
+      if (a.type == SyncActionType.upload ||
+          a.type == SyncActionType.download ||
+          a.type == SyncActionType.delete) {
+        return true;
+      }
+    }
+
+    // 远端无 manifest（首次同步）：必须 PUT
+    if (remote == null) {
+      return true;
+    }
+
+    // header 关键字段变化：必须 PUT
+    // 场景：改密码后 encryptedDataKey 变了，但 items 可能没变
+    if (merged.header.encryptedDataKey != remote.header.encryptedDataKey ||
+        merged.header.keyFingerprint != remote.header.keyFingerprint ||
+        merged.header.keyVersion != remote.header.keyVersion) {
+      return true;
+    }
+
+    // merged.items 与 remote.items 不一致：必须 PUT
+    // 比较 keys 集合
+    if (merged.items.length != remote.items.length) {
+      return true;
+    }
+    for (final key in merged.items.keys) {
+      final remoteItem = remote.items[key];
+      if (remoteItem == null) {
+        return true; // 本地新增的条目
+      }
+      if (merged.items[key] != remoteItem) {
+        return true; // 条目字段不同
+      }
+    }
+
+    // items 完全一致且无传输操作：无实际变更，跳过 PUT
+    return false;
   }
 
   /// 常数时间比较两个字节序列是否相等

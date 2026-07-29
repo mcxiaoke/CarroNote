@@ -92,6 +92,42 @@ abstract class SyncBackend {
   /// 相同 hash 多次上传结果一致（覆盖写或忽略均可）。
   Future<void> putBlob(String hash, Uint8List data);
 
+  /// F1 修复：删除 blob（GC 用）
+  ///
+  /// 删除远端指定 hash 的 blob。用于垃圾回收：manifest PUT 成功后，
+  /// listBlobs() - manifest 引用的 hash = 孤儿 blob，删除。
+  ///
+  /// 不存在时不应抛异常（幂等删除）。
+  /// 默认空实现：后端不支持删除时 no-op，GC 退化为"只标记不清理"。
+  Future<void> deleteBlob(String hash) async {}
+
+  /// F1 修复：列出远端所有 blob 的 hash（GC 用）
+  ///
+  /// 用于垃圾回收：与 manifest 引用的 hash 比对，找出孤儿 blob。
+  ///
+  /// 返回空列表表示后端不支持枚举（如 SafeServer 未实现 list 端点），
+  /// GC 将跳过孤儿清理（保守不删，避免误删）。
+  ///
+  /// 实现建议：
+  ///   - LocalFS：列 blobs/ 目录下的文件名
+  ///   - WebDAV：PROPFIND 深度 1 查询 blobs/ 目录
+  ///   - SafeServer：GET /api/v2/blobs（若服务端支持）
+  Future<List<String>> listBlobs() async => [];
+
+  /// D2 修复：备份损坏的 manifest 文件
+  ///
+  /// 当 SyncEngine 解析远端 manifest 失败（FormatException / GCM tag 验证失败）
+  /// 时调用，把损坏的密文备份到一边，然后用本地数据重建 manifest 上传。
+  ///
+  /// 实现建议：
+  ///   - LocalFS：重命名为 manifest.json.corrupt-{timestamp}
+  ///   - WebDAV / SafeServer：MOVE 或 DELETE（HTTP 服务器通常不支持重命名，
+  ///     退化为 DELETE，记录日志即可）
+  /// 默认空实现（no-op），子类按需覆盖。
+  ///
+  /// [ciphertext] 损坏的 manifest 密文（仅供备份，不解析）
+  Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
+
   /// 释放后端资源（如关闭 HTTP 连接）
   ///
   /// 通常在应用退出或切换后端时调用。可选实现。

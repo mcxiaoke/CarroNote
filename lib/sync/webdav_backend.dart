@@ -72,6 +72,19 @@ class WebDavBackend implements SyncBackend {
 
   bool _initialized = false;
 
+  /// E2 修复：ETag 支持探测结果
+  ///
+  /// init 时通过 GET manifest 探测服务器是否返回 ETag 头。
+  /// - true：服务器支持 ETag（主流 WebDAV 服务）
+  /// - false：服务器不返回 ETag，退化为内容 hash 作为 etag
+  /// 退化为内容 hash 时 If-Match 可能被服务器忽略，退化为"最后写入胜"。
+  bool _etagSupported = true;
+
+  /// E2 修复：是否已警告过 ETag 不支持
+  ///
+  /// 避免每次同步都打印警告，只在 init 时警告一次。
+  bool _etagWarningLogged = false;
+
   WebDavBackend({
     required String baseUrl,
     required this.username,
@@ -117,7 +130,83 @@ class WebDavBackend implements SyncBackend {
     // MKCOL 创建根目录和 blobs 子目录（幂等：已存在返回 405）
     await _mkcol(baseUrl);
     await _mkcol(_blobsUrl);
+    // E2 修复：探测服务器是否支持 ETag
+    await _probeEtagSupport();
     _initialized = true;
+  }
+
+  /// E2 修复：探测服务器是否返回 ETag 头
+  ///
+  /// 通过 GET manifest 探测：
+  ///   - 200 响应：检查 etag 头，有则支持，无则不支持
+  ///   - 404（首次同步）：用 PROPFIND 查询属性，检查是否返回 getetag
+  ///   - 其他状态：保守假设支持（主流服务都支持）
+  ///
+  /// 不支持时打印警告（仅一次），提示用户乐观锁可能失效。
+  Future<void> _probeEtagSupport() async {
+    try {
+      http.Response res;
+      try {
+        res = await _client.get(
+          Uri.parse(_manifestUrl),
+          headers: _authHeaders(),
+        );
+      } on Exception {
+        // 网络错误：保守假设支持，不阻断 init
+        return;
+      }
+
+      if (res.statusCode == 200) {
+        final etag = _normalizeEtag(res.headers['etag']);
+        _etagSupported = etag.isNotEmpty;
+      } else if (res.statusCode == 404) {
+        // 首次同步：用 PROPFIND 探测
+        _etagSupported = await _probeEtagViaPropfind();
+      }
+      // 其他状态码保守假设支持
+
+      if (!_etagSupported && !_etagWarningLogged) {
+        _etagWarningLogged = true;
+        // 注意：这里用 print 而非日志框架，避免引入新依赖
+        // 生产环境可接入 logger，当前开发阶段足够
+        print('[WebDAV] 警告：服务器不支持 ETag 头，'
+            '乐观锁将退化为内容 hash 比较，'
+            'If-Match 可能被服务器忽略，多端并发写入有覆盖风险。'
+            '建议升级 WebDAV 服务或使用 SafeServer 后端。');
+      }
+    } on Exception {
+      // 探测失败不阻断 init
+    }
+  }
+
+  /// 通过 PROPFIND 探测 ETag 支持
+  ///
+  /// 请求 getetag 属性，检查响应 XML 是否包含 etag 值。
+  Future<bool> _probeEtagViaPropfind() async {
+    try {
+      final req = http.Request('PROPFIND', Uri.parse(_manifestUrl));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '0';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>';
+
+      final streamedRes = await _client.send(req);
+      final res = await http.Response.fromStream(streamedRes);
+      if (res.statusCode != 207 && res.statusCode != 200) {
+        // PROPFIND 失败：保守假设支持
+        return true;
+      }
+      // 检查响应 XML 是否包含非空的 etag 值
+      final body = res.body;
+      // 简单字符串匹配（避免引入 XML 解析库）
+      // 成功响应格式：<D:getetag>"xxx"</D:getetag>
+      // 失败响应格式：<D:getetag/> 或 <D:status>HTTP/1.1 404 Not Found</D:status>
+      return body.contains('<D:getetag>') && !body.contains('<D:getetag/>');
+    } on Exception {
+      // 探测失败：保守假设支持
+      return true;
+    }
   }
 
   void _ensureInitialized() {
@@ -251,6 +340,103 @@ class WebDavBackend implements SyncBackend {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
           'PUT blob failed: ${res.statusCode} for hash=$hash');
+    }
+  }
+
+  /// F1 修复：删除 blob（GC 用）
+  ///
+  /// WebDAV DELETE 是标准方法（坚果云/Nextcloud 都支持）。
+  /// 幂等：404 视为已删除，不抛异常。
+  @override
+  Future<void> deleteBlob(String hash) async {
+    _ensureInitialized();
+
+    http.Response res;
+    try {
+      res = await _client.delete(
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: _authHeaders(),
+      );
+    } on Exception catch (e) {
+      throw BackendUnavailableException('DELETE blob network error: $e');
+    }
+
+    // 204 No Content / 200 OK = 删除成功
+    // 404 Not Found = 已删除（幂等，视为成功）
+    if (res.statusCode == 404) return;
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw BackendUnavailableException(
+          'DELETE blob failed: ${res.statusCode} for hash=$hash');
+    }
+  }
+
+  /// F1 修复：列出所有 blob 的 hash（GC 用）
+  ///
+  /// 用 PROPFIND 深度 1 查询 blobs/ 目录，解析响应 XML 提取 href 中的文件名。
+  /// 服务器不支持 PROPFIND 或查询失败时返回空列表（GC 退化为跳过孤儿清理）。
+  @override
+  Future<List<String>> listBlobs() async {
+    _ensureInitialized();
+
+    try {
+      final req = http.Request('PROPFIND', Uri.parse(_blobsUrl));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '1';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+
+      final streamedRes = await _client.send(req);
+      final res = await http.Response.fromStream(streamedRes);
+      // 207 Multi-Status = PROPFIND 成功
+      if (res.statusCode != 207 && res.statusCode != 200) {
+        return [];
+      }
+
+      // 解析响应 XML，提取 <D:href> 中的文件名
+      // 响应格式：<D:response><D:href>/path/blobs/<hash></D:href>...</D:response>
+      final body = res.body;
+      final result = <String>[];
+      final hashRegex = RegExp(r'^[a-f0-9]{64}$');
+      // 简单字符串匹配（避免引入 XML 解析库）
+      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      for (final match in hrefRegex.allMatches(body)) {
+        final href = match.group(1)!;
+        // 取 URL 路径最后一段作为文件名
+        final name = href.split('/').where((s) => s.isNotEmpty).last;
+        // URL 解码（部分服务器会编码特殊字符）
+        final decoded = Uri.decodeComponent(name);
+        if (hashRegex.hasMatch(decoded)) {
+          result.add(decoded);
+        }
+      }
+      return result;
+    } on Exception {
+      // 探测失败：保守返回空列表，GC 跳过孤儿清理
+      return [];
+    }
+  }
+
+  /// D2 修复：备份损坏的 manifest（WebDAV 退化实现）
+  ///
+  /// WebDAV 不支持原子重命名，退化为 DELETE 损坏文件，让 SyncEngine 用本地数据
+  /// 重建 manifest 上传。DELETE 失败不阻断重建（PUT 会覆盖）。
+  @override
+  Future<void> backupCorruptManifest(Uint8List ciphertext) async {
+    _ensureInitialized();
+    try {
+      final res = await _client.delete(
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
+      // 204/200 = 删除成功，404 = 不存在（已删除），都视为成功
+      if (res.statusCode != 204 &&
+          res.statusCode != 200 &&
+          res.statusCode != 404) {
+        // 删除失败：不抛异常，让 SyncEngine 的 PUT 覆盖
+      }
+    } on Exception {
+      // 网络错误：不抛异常，让 SyncEngine 的 PUT 覆盖
     }
   }
 

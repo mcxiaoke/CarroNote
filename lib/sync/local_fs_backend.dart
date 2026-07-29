@@ -112,9 +112,30 @@ class LocalFsBackend implements SyncBackend {
       }
     }
 
-    // 写入新 manifest（flush: true 立即落盘，避免崩溃导致半写）
-    await file.writeAsBytes(ciphertext, flush: true);
+    // D5 修复：原子写——先写 .tmp 文件，再 rename 为正式文件。
+    // 避免写入过程中崩溃导致 manifest 损坏（半写状态）。
+    // rename 在同一文件系统内是原子的（POSIX / Windows NTFS 均保证）。
+    final tmpPath = '$_manifestPath.tmp';
+    final tmpFile = File(tmpPath);
+    await tmpFile.writeAsBytes(ciphertext, flush: true);
+    await tmpFile.rename(_manifestPath);
     return _computeEtag(ciphertext);
+  }
+
+  @override
+  Future<void> backupCorruptManifest(Uint8List ciphertext) async {
+    // D2 修复：把损坏的 manifest 备份为 .corrupt-{timestamp} 文件
+    // 不删除原文件，由调用方（SyncEngine）用本地数据重建后覆盖。
+    try {
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final corruptPath = '$_manifestPath.corrupt-$ts';
+      final file = File(_manifestPath);
+      if (await file.exists()) {
+        await file.rename(corruptPath);
+      }
+    } on Exception {
+      // 备份失败不阻断重建流程
+    }
   }
 
   @override
@@ -131,6 +152,40 @@ class LocalFsBackend implements SyncBackend {
     final file = File(p.join(_blobsDirPath, hash));
     // 幂等：相同内容覆盖写，结果一致
     await file.writeAsBytes(data, flush: true);
+  }
+
+  /// F1 修复：删除 blob（GC 用）
+  ///
+  /// 幂等：文件不存在时不抛异常。
+  @override
+  Future<void> deleteBlob(String hash) async {
+    _ensureInitialized();
+    final file = File(p.join(_blobsDirPath, hash));
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
+  /// F1 修复：列出所有 blob 的 hash（GC 用）
+  ///
+  /// 扫描 blobs/ 目录下的文件名。.tmp / .corrupt 等非 hash 文件会被过滤。
+  @override
+  Future<List<String>> listBlobs() async {
+    _ensureInitialized();
+    final dir = Directory(_blobsDirPath);
+    if (!await dir.exists()) return [];
+    final result = <String>[];
+    // blob 文件名是 SHA-256 十六进制（64 字符），过滤非 hash 文件
+    final hashRegex = RegExp(r'^[a-f0-9]{64}$');
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        if (hashRegex.hasMatch(name)) {
+          result.add(name);
+        }
+      }
+    }
+    return result;
   }
 
   @override

@@ -1,32 +1,37 @@
 /*
  * Vault 密钥管理
  *
- * 两层密钥架构（参考 simplified-sync-design.md §4）：
- *   MK  = PBKDF2-HMAC-SHA256(password, FIXED_SALT='safenotes-v1', 200k)  ← 改密码时变化
- *   dataKey = 随机 32 字节                                              ← 永不变化
- *   encryptedDataKey = AES-GCM(MK, dataKey)                              ← 存 manifest header
+ * 两层密钥架构：
+ *   MK  = PBKDF2-HMAC-SHA256(password, per-vault-salt, 200k)  ← 改密码时变化
+ *   dataKey = 随机 32 字节                                    ← 永不变化
+ *   encryptedDataKey = AES-GCM(MK, dataKey)                    ← 存 manifest header
  *
- * 多端一致性关键：
- *   - MK 派生使用固定 salt，确保相同密码在所有设备派生出相同 MK
- *   - 远端 manifest header（明文）存储 encryptedDataKey，新设备加入时
- *     先派生 MK，再解开远端 encryptedDataKey 得到 dataKey
- *   - 本地 dataKey 与远端不一致时，需要 reEncryptAllNotes 迁移
+ * 密钥纪元（P0-1 修复）：
+ *   keyFingerprint = H(MK)，跨设备一致，用于检测他端改密码
+ *   keyVersion = 单调递增计数器，createNew=1，changePassword +1
+ *
+ * per-vault 随机 salt（P2-9 修复）：
+ *   每个 vault 创建时生成独立随机 salt，写入 manifest header 明文。
+ *   相同密码 + 不同 salt → 不同 MK，跨用户预计算彩虹表失效。
+ *   多端一致性：salt 随 header 传播，新设备按 header 中的 salt 派生 MK。
  *
  * 四种生命周期场景：
- *   1. 首次启用同步：createNew() → 生成 vaultId + dataKey，派生 MK，wrap
- *   2. 本地解锁（已有 vault）：unlockLocal() → 从 meta 读 vaultId + encryptedDataKey，派生 MK，unwrap
+ *   1. 首次启用同步：createNew() → 生成 vaultId + dataKey + salt，派生 MK，wrap
+ *   2. 本地解锁（已有 vault）：unlockLocal() → 从 meta 读 salt + vaultId + encryptedDataKey，派生 MK，unwrap
  *   3. 新设备加入（本地有 vault，但与远端不一致）：migrateToRemote() →
  *      用本地 MK 解开本地 dataKey → 用本地 MK 解开远端 encryptedDataKey 得到远端 dataKey →
  *      用远端 dataKey 重新加密所有本地笔记
  *   4. 新设备首次加入（本地无 vault）：unlockFromRemoteManifest() →
- *      从远端 manifest 取 vaultId + encryptedDataKey，派生 MK，unwrap
+ *      从远端 manifest 取 vaultId + encryptedDataKey + kdf(salt)，派生 MK，unwrap
  *
- * 改密码：changePassword() → 旧 MK unwrap dataKey → 新 MK rewrap → 只更新 encryptedDataKey
+ * 改密码：changePassword() → 旧 MK unwrap dataKey → 新 MK rewrap → 只更新 encryptedDataKey + keyFingerprint + keyVersion
+ * 注意：改密码时 salt 不变（salt 是 per-vault 的，与密码无关）
  *
  * 安全性：
  *   - 密码错误时 GCM tag 验证失败，抛出 WrongPasswordException
- *   - 固定 salt 不影响 PBKDF2 安全性（防彩虹表作用仍在）
+ *   - per-vault salt 防止跨用户预计算彩虹表
  *   - encryptedDataKey 本地存 meta 表，远端存 manifest header（明文部分）
+ *   - keyFingerprint 与 encryptedDataKey 安全性等价（都能离线验证密码）
  */
 
 // Dart 原生导入
@@ -37,6 +42,7 @@ import 'dart:typed_data';
 // 项目导入
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/sync/crypto.dart';
+import 'package:safenotes/sync/sync_models.dart';
 
 /// 密码错误异常（GCM tag 验证失败时抛出）
 class WrongPasswordException implements Exception {
@@ -47,7 +53,7 @@ class WrongPasswordException implements Exception {
   String toString() => 'WrongPasswordException: $message';
 }
 
-/// Vault 未初始化异常（本地无 vaultId / encryptedDataKey 时抛出）
+/// Vault 未初始化异常（本地无 vaultId / encryptedDataKey / kdfSalt 时抛出）
 class VaultNotInitializedException implements Exception {
   final String message;
   VaultNotInitializedException([
@@ -117,7 +123,7 @@ class MigrationResult {
 /// 持有解锁后的 dataKey 和当前 encryptedDataKey，供 SyncEngine 使用。
 /// 同时缓存 MK（派生后立即使用，不持久化到磁盘，仅内存）。
 class Vault {
-  /// vault 唯一标识（UUIDv4，仅用于标识同步组，不再作为 PBKDF2 salt）
+  /// vault 唯一标识（UUIDv4，仅用于标识同步组）
   final String vaultId;
 
   /// 数据主密钥（32 字节，永不变化，真正加密笔记的密钥）
@@ -128,6 +134,30 @@ class Vault {
   /// 改密码后这个值会变化，但 dataKey 本身不变。
   /// 注意：非 final，因为 sync 时需要回写远端值（H1 修复）。
   String encryptedDataKey;
+
+  /// 密钥指纹 = H(MK)，跨设备一致
+  ///
+  /// 用于 manifest header 明文存储，检测他端改密码。
+  /// 改密码时更新（新 MK → 新 fingerprint）。
+  final String keyFingerprint;
+
+  /// 密钥版本号（单调递增）
+  ///
+  /// createNew=1，changePassword +1。
+  /// 用于防止旧密码设备回滚新密码包裹。
+  final int keyVersion;
+
+  /// MK 派生参数（含 per-vault salt）
+  ///
+  /// salt 在 createNew 时随机生成，之后不变（包括改密码时）。
+  /// 写入 manifest header 供新设备派生 MK。
+  final KdfParams kdf;
+
+  /// vault 创建时间（Unix 毫秒）
+  ///
+  /// 首次 createNew 时设置为当前时间，之后不变。
+  /// 写入 manifest header 供审计，也写入本地 meta 供 _buildLocalManifest 使用。
+  final int createdAt;
 
   /// 当前会话派生出的 MK（Master Key）
   ///
@@ -144,6 +174,10 @@ class Vault {
     required this.vaultId,
     required this.dataKey,
     required this.encryptedDataKey,
+    required this.keyFingerprint,
+    this.keyVersion = 1,
+    required this.kdf,
+    required this.createdAt,
     Uint8List? mk,
   }) : _mk = mk;
 
@@ -152,12 +186,20 @@ class Vault {
     String? vaultId,
     Uint8List? dataKey,
     String? encryptedDataKey,
+    String? keyFingerprint,
+    int? keyVersion,
+    KdfParams? kdf,
+    int? createdAt,
     Uint8List? mk,
   }) =>
       Vault(
         vaultId: vaultId ?? this.vaultId,
         dataKey: dataKey ?? this.dataKey,
         encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
+        keyFingerprint: keyFingerprint ?? this.keyFingerprint,
+        keyVersion: keyVersion ?? this.keyVersion,
+        kdf: kdf ?? this.kdf,
+        createdAt: createdAt ?? this.createdAt,
         mk: mk ?? _mk,
       );
 
@@ -168,11 +210,13 @@ class Vault {
   /// 首次启用同步：生成新 vault
   ///
   /// 流程：
-  ///   1. 生成 vaultId（UUIDv4，仅作同步组标识，不再作为 salt）
+  ///   1. 生成 vaultId（UUIDv4）
   ///   2. 生成 dataKey（随机 32 字节，永不变化）
-  ///   3. 从密码派生 MK = PBKDF2(password, FIXED_SALT, 200k)
-  ///   4. 用 MK 加密 dataKey → encryptedDataKey
-  ///   5. 持久化 vaultId + encryptedDataKey 到本地 sync_meta 表
+  ///   3. 生成 per-vault 随机 salt（16 字节）
+  ///   4. 用 salt 派生 MK = PBKDF2(password, salt, 200k)
+  ///   5. 计算 keyFingerprint = H(MK)
+  ///   6. 用 MK 加密 dataKey → encryptedDataKey
+  ///   7. 持久化 vaultId + encryptedDataKey + salt + keyFingerprint + keyVersion 到本地 meta
   ///
   /// [password] 用户主密码（明文，用完即弃）
   /// [database] 本地数据库（用于持久化 vault 元数据）
@@ -181,25 +225,45 @@ class Vault {
     required String password,
     required NotesDatabase database,
   }) async {
-    // 1. 生成 vaultId（UUIDv4，仅作同步组标识）
+    // 1. 生成 vaultId（UUIDv4）
     final vaultId = _generateVaultId();
 
     // 2. 生成 dataKey（随机 32 字节，永不变化）
     final dataKey = SyncCrypto.generateDataKey();
 
-    // 3. 派生 MK 并 wrap dataKey
-    final mk = await _deriveMk(password);
+    // 3. 生成 per-vault 随机 salt
+    final salt = SyncCrypto.generateSalt();
+    final kdf = KdfParams.create(salt: salt);
+
+    // 4. 派生 MK（用 per-vault salt）
+    final mk = await _deriveMk(password, salt: salt);
+
+    // 5. 计算密钥指纹
+    final keyFingerprint = SyncCrypto.computeKeyFingerprint(mk);
+
+    // 6. 用 MK 加密 dataKey
     final encryptedDataKeyBytes = SyncCrypto.wrapDataKey(mk, dataKey);
     final encryptedDataKey = base64.encode(encryptedDataKeyBytes);
 
-    // 4. 持久化到本地 sync_meta 表
+    // 7. 记录 vault 创建时间
+    final createdAt = DateTime.now().millisecondsSinceEpoch;
+
+    // 8. 持久化到本地 sync_meta 表
     await database.setMeta(MetaKeys.vaultId, vaultId);
     await database.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
+    await database.setMeta(MetaKeys.kdfSalt, base64.encode(salt));
+    await database.setMeta(MetaKeys.keyFingerprint, keyFingerprint);
+    await database.setMeta(MetaKeys.keyVersion, '1');
+    await database.setMeta(MetaKeys.vaultCreatedAt, createdAt.toString());
 
     return Vault(
       vaultId: vaultId,
       dataKey: dataKey,
       encryptedDataKey: encryptedDataKey,
+      keyFingerprint: keyFingerprint,
+      keyVersion: 1,
+      kdf: kdf,
+      createdAt: createdAt,
       mk: mk,
     );
   }
@@ -207,9 +271,9 @@ class Vault {
   /// 从本地存储解锁已有 vault（后续解锁场景）
   ///
   /// 流程：
-  ///   1. 从 sync_meta 表读取 vaultId + encryptedDataKey
-  ///   2. 如果本地无 encryptedDataKey（新设备首次启动），抛 VaultNotInitializedException
-  ///   3. 从密码派生 MK = PBKDF2(password, FIXED_SALT, 200k)
+  ///   1. 从 sync_meta 表读取 vaultId + encryptedDataKey + kdfSalt + keyFingerprint + keyVersion
+  ///   2. 如果本地无 kdfSalt，抛 VaultNotInitializedException（开发阶段不做兼容）
+  ///   3. 用 salt 派生 MK = PBKDF2(password, salt, 200k)
   ///   4. 用 MK 解密 encryptedDataKey → dataKey
   ///   5. 密码错误时 GCM tag 验证失败 → 抛 WrongPasswordException
   ///
@@ -223,19 +287,36 @@ class Vault {
     // 读取本地 vault 元数据
     final vaultId = await database.getMeta(MetaKeys.vaultId);
     final encryptedDataKey = await database.getMeta(MetaKeys.encryptedDataKey);
+    final saltBase64 = await database.getMeta(MetaKeys.kdfSalt);
+    final keyFingerprint = await database.getMeta(MetaKeys.keyFingerprint);
+    final keyVersionStr = await database.getMeta(MetaKeys.keyVersion);
+    final createdAtStr = await database.getMeta(MetaKeys.vaultCreatedAt);
 
-    if (vaultId == null || encryptedDataKey == null) {
+    if (vaultId == null || encryptedDataKey == null || saltBase64 == null) {
       throw VaultNotInitializedException(
         '本地无 vault 元数据：vaultId=$vaultId, '
-        'hasEncryptedDataKey=${encryptedDataKey != null}',
+        'hasEncryptedDataKey=${encryptedDataKey != null}, '
+        'hasSalt=${saltBase64 != null}',
       );
     }
+
+    // 解析 salt 和 KDF 参数
+    final salt = base64.decode(saltBase64);
+    final kdf = KdfParams.create(salt: salt);
+    final keyVersion = int.tryParse(keyVersionStr ?? '1') ?? 1;
+    final createdAt = int.tryParse(createdAtStr ?? '') ??
+        DateTime.now().millisecondsSinceEpoch;
 
     // 派生 MK 并 unwrap dataKey
     return _unlockWith(
       password: password,
       vaultId: vaultId,
       encryptedDataKey: encryptedDataKey,
+      salt: salt,
+      kdf: kdf,
+      keyFingerprint: keyFingerprint ?? '',
+      keyVersion: keyVersion,
+      createdAt: createdAt,
       database: database,
     );
   }
@@ -243,31 +324,55 @@ class Vault {
   /// 从远端 manifest 解锁（本地无 vault 元数据的新设备首次加入场景）
   ///
   /// 新设备首次同步时，本地无 vault 元数据，需要从远端 manifest header 获取：
-  ///   1. 从远端 manifest header 读取 vaultId + encryptedDataKey
-  ///   2. 持久化到本地 sync_meta 表（后续可用 unlockLocal 快速解锁）
-  ///   3. 派生 MK（固定 salt），unwrap dataKey
+  ///   1. 从远端 manifest header 读取 vaultId + encryptedDataKey + kdf(salt) + keyFingerprint + keyVersion + createdAt
+  ///   2. 用 header 中的 salt 派生 MK，unwrap dataKey（先验证密码）
+  ///   3. 验证成功后持久化到本地 sync_meta 表（后续可用 unlockLocal 快速解锁）
+  ///
+  /// 安全顺序：先验证密码再持久化。若密码错误，抛出 WrongPasswordException，
+  /// 本地 meta 保持原状（不被远端覆盖），避免错误密码污染本地状态。
   ///
   /// [password] 用户主密码（需与创建 vault 时一致）
   /// [remoteVaultId] 远端 manifest header 中的 vaultId
   /// [remoteEncryptedDataKey] 远端 manifest header 中的 encryptedDataKey
+  /// [remoteKdf] 远端 manifest header 中的 KDF 参数（含 salt）
+  /// [remoteKeyFingerprint] 远端 manifest header 中的 keyFingerprint
+  /// [remoteKeyVersion] 远端 manifest header 中的 keyVersion
+  /// [remoteCreatedAt] 远端 manifest header 中的 createdAt（vault 创建时间）
   /// [database] 本地数据库
   /// 返回解锁后的 Vault 实例（含 MK 缓存）
   static Future<Vault> unlockFromRemoteManifest({
     required String password,
     required String remoteVaultId,
     required String remoteEncryptedDataKey,
+    required KdfParams remoteKdf,
+    required String remoteKeyFingerprint,
+    required int remoteKeyVersion,
+    required int remoteCreatedAt,
     required NotesDatabase database,
   }) async {
-    // 持久化远端 vault 元数据到本地（后续可用 unlockLocal 快速解锁）
-    await database.setMeta(MetaKeys.vaultId, remoteVaultId);
-    await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
-
-    return _unlockWith(
+    // 先验证密码（派生 MK + unwrap dataKey），失败则抛 WrongPasswordException
+    // 此时本地 meta 尚未修改，保持原状
+    final vault = await _unlockWith(
       password: password,
       vaultId: remoteVaultId,
       encryptedDataKey: remoteEncryptedDataKey,
+      salt: remoteKdf.saltBytes,
+      kdf: remoteKdf,
+      keyFingerprint: remoteKeyFingerprint,
+      keyVersion: remoteKeyVersion,
+      createdAt: remoteCreatedAt,
       database: database,
     );
+
+    // 验证成功后才持久化远端 vault 元数据到本地
+    await database.setMeta(MetaKeys.vaultId, remoteVaultId);
+    await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
+    await database.setMeta(MetaKeys.kdfSalt, remoteKdf.salt);
+    await database.setMeta(MetaKeys.keyFingerprint, remoteKeyFingerprint);
+    await database.setMeta(MetaKeys.keyVersion, remoteKeyVersion.toString());
+    await database.setMeta(MetaKeys.vaultCreatedAt, remoteCreatedAt.toString());
+
+    return vault;
   }
 
   /// 内部解锁逻辑：派生 MK + unwrap dataKey
@@ -275,9 +380,14 @@ class Vault {
     required String password,
     required String vaultId,
     required String encryptedDataKey,
+    required Uint8List salt,
+    required KdfParams kdf,
+    required String keyFingerprint,
+    required int keyVersion,
+    required int createdAt,
     required NotesDatabase database,
   }) async {
-    final mk = await _deriveMk(password);
+    final mk = await _deriveMk(password, salt: salt);
     final encryptedBytes = base64.decode(encryptedDataKey);
 
     final Uint8List dataKey;
@@ -294,6 +404,10 @@ class Vault {
       vaultId: vaultId,
       dataKey: dataKey,
       encryptedDataKey: encryptedDataKey,
+      keyFingerprint: keyFingerprint,
+      keyVersion: keyVersion,
+      kdf: kdf,
+      createdAt: createdAt,
       mk: mk,
     );
   }
@@ -313,14 +427,16 @@ class Vault {
   /// 与本地 dataKey 比较。
   ///
   /// [remoteEncryptedDataKey] 远端 manifest header 中的 encryptedDataKey
+  /// [remoteVaultId] 远端 manifest header 中的 vaultId（P2-7 修复：正确传递远端 vaultId）
   /// 返回 MigrationResult：
   ///   - noMigrationNeeded: 本地与远端 dataKey 一致
   ///   - migrated: 需要迁移，已解开远端 dataKey 供调用方使用
   ///   - failed: MK 不匹配（密码错误）或解密失败
-  MigrationResult checkMigrationNeeded(String remoteEncryptedDataKey) {
+  MigrationResult checkMigrationNeeded(
+    String remoteEncryptedDataKey, {
+    String? remoteVaultId,
+  }) {
     // 本地与远端 encryptedDataKey 完全相同 → 无需迁移（不需要 MK）
-    // 必须先做此比较：相同密码不同设备派生出相同 MK + 相同 dataKey 时，
-    // encryptedDataKey 一致，无需迁移也无需 MK。
     if (remoteEncryptedDataKey == encryptedDataKey) {
       return MigrationResult.noMigrationNeeded();
     }
@@ -338,7 +454,8 @@ class Vault {
       return MigrationResult.migrated(
         remoteDataKey: remoteDataKey,
         remoteEncryptedDataKey: remoteEncryptedDataKey,
-        remoteVaultId: vaultId,
+        // P2-7 修复：使用远端 vaultId，而非本地 vaultId
+        remoteVaultId: remoteVaultId ?? vaultId,
       );
     } on Exception catch (e) {
       // MK 不匹配（密码错误）或数据损坏
@@ -374,23 +491,24 @@ class Vault {
 
     final remoteDataKey = result.remoteDataKey!;
     final remoteEncryptedDataKey = result.remoteEncryptedDataKey!;
+    final remoteVaultId = result.remoteVaultId ?? vaultId;
 
     // 1. 重新加密所有本地笔记（事务保护，crash 安全）
-    //    旧 dataKey 解密 → 新 dataKey 重新加密
-    //    database_handler.reEncryptAllNotes 内部用 SQLite transaction
     await database.reEncryptAllNotes(
       oldKey: dataKey,
       newKey: remoteDataKey,
     );
 
-    // 2. 更新本地 meta（vaultId 不变，encryptedDataKey 更新）
+    // 2. 更新本地 meta（P2-7 修复：vaultId 也更新为远端值）
+    await database.setMeta(MetaKeys.vaultId, remoteVaultId);
     await database.setMeta(MetaKeys.encryptedDataKey, remoteEncryptedDataKey);
 
     // 3. 更新 database 的 dataKey（后续读写用新 key）
     database.setDataKey(remoteDataKey);
 
-    // 4. 返回新 Vault（dataKey 已更新，MK 缓存保留）
+    // 4. 返回新 Vault（dataKey 和 vaultId 已更新，MK 缓存保留）
     return copyWith(
+      vaultId: remoteVaultId,
       dataKey: remoteDataKey,
       encryptedDataKey: remoteEncryptedDataKey,
     );
@@ -400,28 +518,31 @@ class Vault {
   // 改密码
   // ──────────────────────────────────────────────
 
-  /// 修改密码：重新 wrap dataKey
+  /// 修改密码：重新 wrap dataKey + 更新密钥纪元
   ///
   /// 这是 O(1) 操作——只重新加密 32 字节的 dataKey，不触碰任何笔记。
-  /// 流程：
-  ///   1. 验证旧密码：用旧 MK 解开 dataKey（验证旧密码正确）
-  ///   2. 用新密码派生新 MK，重新 wrap dataKey → 新 encryptedDataKey
-  ///   3. 持久化新 encryptedDataKey 到本地 sync_meta 表
-  ///   4. 返回新 Vault（dataKey 不变，encryptedDataKey 已更新）
+  /// 注意：改密码时 salt 不变（salt 是 per-vault 的，与密码无关）。
   ///
-  /// 注意：调用方还需要在下次同步时把新 encryptedDataKey 写入 manifest 上传到远端。
-  /// 这由 SyncEngine 自动处理（manifest 的 encryptedDataKey 字段来自 Vault）。
+  /// 流程：
+  ///   1. 验证旧密码：用旧密码 + 当前 salt 派生旧 MK，解开 dataKey
+  ///   2. 用新密码 + 当前 salt 派生新 MK，重新 wrap dataKey → 新 encryptedDataKey
+  ///   3. 计算新 keyFingerprint = H(新 MK)
+  ///   4. 递增 keyVersion
+  ///   5. 持久化新 encryptedDataKey + keyFingerprint + keyVersion 到本地 meta
+  ///   6. 返回新 Vault（dataKey 不变，encryptedDataKey/keyFingerprint/keyVersion 已更新）
   ///
   /// [oldPassword] 旧密码（用于验证）
   /// [newPassword] 新密码（用于重新加密 dataKey）
-  /// [database] 本地数据库（持久化新 encryptedDataKey）
+  /// [database] 本地数据库（持久化新元数据）
   Future<Vault> changePassword({
     required String oldPassword,
     required String newPassword,
     required NotesDatabase database,
   }) async {
-    // 1. 验证旧密码：用旧 MK 解开 dataKey
-    final oldMk = await _deriveMk(oldPassword);
+    final salt = kdf.saltBytes;
+
+    // 1. 验证旧密码：用旧密码 + salt 派生旧 MK
+    final oldMk = await _deriveMk(oldPassword, salt: salt);
     final oldEncryptedBytes = base64.decode(encryptedDataKey);
 
     try {
@@ -431,19 +552,31 @@ class Vault {
       throw WrongPasswordException('旧密码错误：$e');
     }
 
-    // 2. 用新密码派生新 MK，重新 wrap dataKey
-    final newMk = await _deriveMk(newPassword);
+    // 2. 用新密码 + salt 派生新 MK，重新 wrap dataKey
+    final newMk = await _deriveMk(newPassword, salt: salt);
     final newEncryptedDataKeyBytes = SyncCrypto.wrapDataKey(newMk, dataKey);
     final newEncryptedDataKey = base64.encode(newEncryptedDataKeyBytes);
 
-    // 3. 持久化到本地 sync_meta 表
-    await database.setMeta(MetaKeys.encryptedDataKey, newEncryptedDataKey);
+    // 3. 计算新密钥指纹
+    final newKeyFingerprint = SyncCrypto.computeKeyFingerprint(newMk);
 
-    // 4. 返回新 Vault（dataKey 不变，MK 更新为新派生的）
+    // 4. 递增密钥版本号
+    final newKeyVersion = keyVersion + 1;
+
+    // 5. 持久化到本地 sync_meta 表
+    await database.setMeta(MetaKeys.encryptedDataKey, newEncryptedDataKey);
+    await database.setMeta(MetaKeys.keyFingerprint, newKeyFingerprint);
+    await database.setMeta(MetaKeys.keyVersion, newKeyVersion.toString());
+
+    // 6. 返回新 Vault（dataKey 不变，MK 更新为新派生的）
     return Vault(
       vaultId: vaultId,
       dataKey: dataKey,
       encryptedDataKey: newEncryptedDataKey,
+      keyFingerprint: newKeyFingerprint,
+      keyVersion: newKeyVersion,
+      kdf: kdf, // salt 不变
+      createdAt: createdAt, // vault 创建时间不变
       mk: newMk,
     );
   }
@@ -473,11 +606,12 @@ class Vault {
   // 检查 / 工具方法
   // ──────────────────────────────────────────────
 
-  /// 检查本地是否已初始化 vault（有 vaultId 和 encryptedDataKey）
+  /// 检查本地是否已初始化 vault（有 vaultId 和 encryptedDataKey 和 kdfSalt）
   static Future<bool> isInitialized(NotesDatabase database) async {
     final vaultId = await database.getMeta(MetaKeys.vaultId);
     final encryptedDataKey = await database.getMeta(MetaKeys.encryptedDataKey);
-    return vaultId != null && encryptedDataKey != null;
+    final salt = await database.getMeta(MetaKeys.kdfSalt);
+    return vaultId != null && encryptedDataKey != null && salt != null;
   }
 
   /// 从本地读取 vaultId（不解锁，用于 SyncEngine 构造）
@@ -492,17 +626,20 @@ class Vault {
   // 内部辅助方法
   // ──────────────────────────────────────────────
 
-  /// 生成 vaultId（UUIDv4，仅作同步组标识，不再作为 PBKDF2 salt）
+  /// 生成 vaultId（UUIDv4，仅作同步组标识）
   ///
   /// 使用 Dart 内置 Random.secure() 保证密码学安全。
   static String _generateVaultId() => _uuidV4();
 
   /// 从密码派生 MK（Master Key）
   ///
-  /// 使用固定 salt [kFixedSalt]（'safenotes-v1'）保证多端一致性。
+  /// 使用 per-vault salt 保证多端一致性。
   /// 使用 Isolate 后台线程执行 PBKDF2，避免阻塞 UI（手机端约 1-1.5 秒）。
-  static Future<Uint8List> _deriveMk(String password) async {
-    return SyncCrypto.deriveMasterKeyAsync(password);
+  static Future<Uint8List> _deriveMk(
+    String password, {
+    required Uint8List salt,
+  }) async {
+    return SyncCrypto.deriveMasterKeyAsync(password, salt: salt);
   }
 
   /// 生成 UUIDv4（RFC 4122）

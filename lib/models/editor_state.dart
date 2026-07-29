@@ -17,6 +17,7 @@ import 'dart:async';
 // Project imports:
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
+import 'package:safenotes/sync/sync_service.dart';
 
 class NoteEditorState {
   static SafeNote? original;
@@ -65,6 +66,9 @@ class NoteEditorState {
       } else {
         await addNote();
       }
+      // 笔记新增/编辑后触发自动同步（debounce 3 秒，非阻塞）
+      // 确保本地变更能及时上传到远端，避免多端数据不一致
+      SyncService.instance.autoSync();
     }
     destroyValue();
   }

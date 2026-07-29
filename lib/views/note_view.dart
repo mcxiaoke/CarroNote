@@ -26,6 +26,7 @@ import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/routes/route_generator.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
 class NoteDetailPage extends StatefulWidget {
@@ -142,6 +143,8 @@ class NoteDetailPageState extends State<NoteDetailPage> {
             var childNavigator = Navigator.of(contextChild);
             var navigator = Navigator.of(context);
             await NotesDatabase.instance.softDelete(widget.noteId);
+            // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
+            SyncService.instance.autoSync();
             childNavigator.pop();
             navigator.pop();
           },

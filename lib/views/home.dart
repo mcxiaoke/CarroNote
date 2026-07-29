@@ -288,11 +288,16 @@ class HomePageState extends State<HomePage> {
         await Navigator.pushNamed(context, '/changepassphrase');
       },
       onLogoutCallback: () async {
-        await Session.logout();
+        // F3 修复：顺序与 settings.dart / main.dart 超时退出保持一致：
+        // 1. 先停会话监听；2. 导航离开（不 await——该 Future 要等 '/login'
+        //    被 pop 才完成，await 会把 logout 拖到下次登录后）；
+        // 3. 导航落地、HomePage 卸载后再清敏感状态（clearDataKey 等）。
+        // 若反过来先 logout 再导航，HomePage 仍挂载且 dataKey 已清，
+        // 在途的 notes 读取会抛 DataKeyNotSetException。
         widget.sessionStateStream.add(SessionState.stopListening);
 
         if (context.mounted) {
-          await Navigator.pushNamedAndRemoveUntil(
+          Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',
             (Route<dynamic> route) => false,
@@ -302,6 +307,8 @@ class HomePageState extends State<HomePage> {
             ),
           );
         }
+
+        await Session.logout();
       },
       onSettingsCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。

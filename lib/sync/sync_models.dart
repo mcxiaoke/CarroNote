@@ -2,8 +2,8 @@
  * 同步数据模型
  *
  * 包含：
- *   - ManifestHeader：远端 manifest 明文头部（version + vaultId + encryptedDataKey + KDF 参数）
- *   - ManifestItem：manifest 加密体中单条笔记的元数据（hash + deleted + updatedAt）
+ *   - ManifestHeader：远端 manifest 明文头部（version + vaultId + encryptedDataKey + KDF 参数 + 密钥纪元）
+ *   - ManifestItem：manifest 加密体中单条笔记的元数据（hash + deleted + updatedAt + updatedBy + createdAt + deletedAt + contentSize）
  *   - Manifest：完整 manifest（header + items），便于内存操作
  *   - SyncState：本地同步状态（version + etag + 最后同步时间）
  *   - SyncResult：单次同步的结果统计
@@ -13,13 +13,17 @@
  *   ┌─────────────────────────────────────────────┐
  *   │ 明文 JSON header（UTF-8 字节）              │
  *   │ {                                           │
+ *   │   "schemaVersion": 1,                       │
  *   │   "version": 42,                            │
  *   │   "vaultId": "uuid-xxx",                    │
+ *   │   "createdAt": 1719470000000,               │
  *   │   "updatedAt": 1719470000000,               │
+ *   │   "keyFingerprint": "hex(MK)",              │
+ *   │   "keyVersion": 1,                          │
  *   │   "encryptedDataKey": "base64...",          │
  *   │   "kdf": {                                  │
  *   │     "algorithm": "PBKDF2-HMAC-SHA256",      │
- *   │     "salt": "base64(safenotes-v1)",         │
+ *   │     "salt": "base64(per-vault-random)",     │
  *   │     "iterations": 200000                    │
  *   │   },                                        │
  *   │   "dataKeyWrap": "AES-256-GCM",             │
@@ -34,11 +38,11 @@
  *   └─────────────────────────────────────────────┘
  *
  * 设计理由：
- *   - header 明文：新设备加入时无需 dataKey 即可拿到 encryptedDataKey，
+ *   - header 明文：新设备加入时无需 dataKey 即可拿到 encryptedDataKey 和 KDF 参数，
  *     用密码派生 MK 解开它得到 dataKey，再解密 items。这是多端 join 的关键。
- *   - items 加密：笔记元数据（hash/deleted/updatedAt）虽然不包含内容，
- *     但仍加密以防泄露笔记数量和更新模式。
- *   - KDF 参数写入 header：算法透明，未来升级迭代次数或算法时老 vault 仍可解析。
+ *   - items 加密：笔记元数据虽然不包含内容，但仍加密以防泄露笔记数量和更新模式。
+ *   - KDF 参数写入 header：算法透明，per-vault salt 随 header 传播，新设备自动获取。
+ *   - 密钥纪元（keyFingerprint/keyVersion）：检测他端改密码，防止翻转战争。
  */
 
 // Dart 原生导入
@@ -61,7 +65,7 @@ class ManifestItem {
   /// 是否已删除（墓碑标记）
   ///
   /// true 表示这条笔记已被软删除，用于同步删除操作到其他设备。
-  /// 墓碑永久保留（或客户端主动清理），确保所有设备都能看到删除事件。
+  /// 墓碑按 [deletedAt] 超过 30 天后可被 GC 清理。
   final bool deleted;
 
   /// 最后更新时间（Unix 毫秒）
@@ -72,21 +76,55 @@ class ManifestItem {
   ///   相等但 hash 不同 → 保留 hash 字典序小的（兜底，极少触发）
   final int updatedAt;
 
+  /// 最后修改此笔记的设备 ID（如 'android-xxx'）
+  ///
+  /// 用于冲突诊断和审计。明文存储，不降低安全性
+  /// （攻击者通过 hash 已能侧信道验证内容）。
+  final String updatedBy;
+
+  /// 笔记创建时间（Unix 毫秒）
+  ///
+  /// 解决 R10：远端下载笔记时保留原始创建时间，而非用下载时刻。
+  final int createdAt;
+
+  /// 软删除时间（Unix 毫秒，null 表示未删除）
+  ///
+  /// 用于 GC：墓碑按 deletedAt 超过 30 天后可清理。
+  /// 区别于 updatedAt：笔记可能在删除后有其他更新（理论上不应发生，但防御性设计）。
+  final int? deletedAt;
+
+  /// 笔记内容大小（字节）
+  ///
+  /// 用于 GC 优先级和统计。hash 已是更强的内容侧信道，不增加安全风险。
+  final int contentSize;
+
   const ManifestItem({
     required this.hash,
     required this.deleted,
     required this.updatedAt,
+    required this.updatedBy,
+    required this.createdAt,
+    this.deletedAt,
+    this.contentSize = 0,
   });
 
   ManifestItem copyWith({
     String? hash,
     bool? deleted,
     int? updatedAt,
+    String? updatedBy,
+    int? createdAt,
+    int? deletedAt,
+    int? contentSize,
   }) =>
       ManifestItem(
         hash: hash ?? this.hash,
         deleted: deleted ?? this.deleted,
         updatedAt: updatedAt ?? this.updatedAt,
+        updatedBy: updatedBy ?? this.updatedBy,
+        createdAt: createdAt ?? this.createdAt,
+        deletedAt: deletedAt ?? this.deletedAt,
+        contentSize: contentSize ?? this.contentSize,
       );
 
   /// 序列化为 JSON（用于 manifest 加密体存储）
@@ -94,6 +132,10 @@ class ManifestItem {
         'hash': hash,
         'deleted': deleted,
         'updatedAt': updatedAt,
+        'updatedBy': updatedBy,
+        'createdAt': createdAt,
+        if (deletedAt != null) 'deletedAt': deletedAt,
+        'contentSize': contentSize,
       };
 
   /// 从 JSON 反序列化
@@ -102,12 +144,17 @@ class ManifestItem {
       hash: json['hash'] as String,
       deleted: json['deleted'] as bool,
       updatedAt: json['updatedAt'] as int,
+      updatedBy: json['updatedBy'] as String? ?? '',
+      createdAt: json['createdAt'] as int? ?? json['updatedAt'] as int,
+      deletedAt: json['deletedAt'] as int?,
+      contentSize: json['contentSize'] as int? ?? 0,
     );
   }
 
   @override
   String toString() =>
-      'ManifestItem(hash=$hash, deleted=$deleted, updatedAt=$updatedAt)';
+      'ManifestItem(hash=$hash, deleted=$deleted, updatedAt=$updatedAt, '
+      'updatedBy=$updatedBy, contentSize=$contentSize)';
 
   @override
   bool operator ==(Object other) =>
@@ -115,21 +162,26 @@ class ManifestItem {
       other is ManifestItem &&
           hash == other.hash &&
           deleted == other.deleted &&
-          updatedAt == other.updatedAt;
+          updatedAt == other.updatedAt &&
+          updatedBy == other.updatedBy &&
+          createdAt == other.createdAt &&
+          deletedAt == other.deletedAt &&
+          contentSize == other.contentSize;
 
   @override
-  int get hashCode => Object.hash(hash, deleted, updatedAt);
+  int get hashCode =>
+      Object.hash(hash, deleted, updatedAt, updatedBy, createdAt, deletedAt, contentSize);
 }
 
 /// MK 派生参数（KDF parameters）
 ///
 /// 写入 manifest header 明文部分，供新设备加入时按相同参数派生 MK。
-/// 未来升级算法或迭代次数时，老 vault 仍能用此参数解析。
+/// per-vault 随机 salt 随 header 传播，确保跨用户预计算失效。
 class KdfParams {
   /// KDF 算法名称（如 'PBKDF2-HMAC-SHA256'）
   final String algorithm;
 
-  /// PBKDF2 salt（base64 编码）
+  /// PBKDF2 salt（base64 编码，per-vault 随机生成）
   final String salt;
 
   /// PBKDF2 迭代次数
@@ -141,10 +193,12 @@ class KdfParams {
     required this.iterations,
   });
 
-  /// 默认 KDF 参数（使用固定 salt 'safenotes-v1'）
-  factory KdfParams.defaultParams() => KdfParams(
+  /// 创建 KDF 参数（使用传入的 per-vault salt）
+  ///
+  /// [salt] 随机生成的 16 字节 salt
+  factory KdfParams.create({required Uint8List salt}) => KdfParams(
         algorithm: kMkKdfAlgorithm,
-        salt: base64.encode(kFixedSalt),
+        salt: base64.encode(salt),
         iterations: kPbkdf2Iterations,
       );
 
@@ -172,10 +226,15 @@ class KdfParams {
 
 /// 远端 manifest 明文头部
 ///
-/// 新设备加入时，先读取此头部拿到 encryptedDataKey 和 KDF 参数，
+/// 新设备加入时，先读取此头部拿到 encryptedDataKey、KDF 参数和密钥纪元，
 /// 用密码按 KDF 参数派生 MK，解开 encryptedDataKey 得到 dataKey，
 /// 然后才能解密 items 部分。
 class ManifestHeader {
+  /// 协议 schema 版本号（从 1 开始）
+  ///
+  /// 未来字段迁移时递增，用于自愈和兼容性判断。
+  final int schemaVersion;
+
   /// manifest 版本号（每次成功 PUT 后 +1）
   ///
   /// 用于检测冲突和调试。不是乐观锁的依据（ETag 才是）。
@@ -187,8 +246,25 @@ class ManifestHeader {
   /// 仅作同步组标识，不再作为 PBKDF2 salt。
   final String vaultId;
 
+  /// vault 创建时间（Unix 毫秒）
+  ///
+  /// 首次启用同步时设置，后续不变。用于审计。
+  final int createdAt;
+
   /// manifest 自身的更新时间（Unix 毫秒）
   final int updatedAt;
+
+  /// 密钥指纹 = H(MK)，跨设备一致（相同密码 + 相同 salt → 相同 MK → 相同 fingerprint）
+  ///
+  /// 用于检测他端改密码：
+  ///   - 远端 fingerprint != 本地 fingerprint → 他端改了密码
+  ///   - 安全性：与 encryptedDataKey 等价（都能离线验证密码），不降低安全性
+  final String keyFingerprint;
+
+  /// 密钥版本号（单调递增）
+  ///
+  /// createNew=1，changePassword +1。用于防止旧密码设备回滚新密码包裹。
+  final int keyVersion;
 
   /// 用 MK 加密后的 dataKey（base64 字符串）
   ///
@@ -198,7 +274,7 @@ class ManifestHeader {
 
   /// MK 派生参数（算法/salt/iterations）
   ///
-  /// 写入 header 供未来算法迁移使用。
+  /// per-vault 随机 salt 写入 header，新设备按此 salt 派生 MK。
   final KdfParams kdf;
 
   /// dataKey 包装算法（如 'AES-256-GCM'）
@@ -210,9 +286,13 @@ class ManifestHeader {
   final String lastModifiedBy;
 
   const ManifestHeader({
+    this.schemaVersion = 1,
     required this.version,
     required this.vaultId,
+    required this.createdAt,
     required this.updatedAt,
+    required this.keyFingerprint,
+    this.keyVersion = 1,
     required this.encryptedDataKey,
     required this.kdf,
     required this.dataKeyWrap,
@@ -220,18 +300,26 @@ class ManifestHeader {
   });
 
   ManifestHeader copyWith({
+    int? schemaVersion,
     int? version,
     String? vaultId,
+    int? createdAt,
     int? updatedAt,
+    String? keyFingerprint,
+    int? keyVersion,
     String? encryptedDataKey,
     KdfParams? kdf,
     String? dataKeyWrap,
     String? lastModifiedBy,
   }) =>
       ManifestHeader(
+        schemaVersion: schemaVersion ?? this.schemaVersion,
         version: version ?? this.version,
         vaultId: vaultId ?? this.vaultId,
+        createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
+        keyFingerprint: keyFingerprint ?? this.keyFingerprint,
+        keyVersion: keyVersion ?? this.keyVersion,
         encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
         kdf: kdf ?? this.kdf,
         dataKeyWrap: dataKeyWrap ?? this.dataKeyWrap,
@@ -239,9 +327,13 @@ class ManifestHeader {
       );
 
   Map<String, dynamic> toJson() => {
+        'schemaVersion': schemaVersion,
         'version': version,
         'vaultId': vaultId,
+        'createdAt': createdAt,
         'updatedAt': updatedAt,
+        'keyFingerprint': keyFingerprint,
+        'keyVersion': keyVersion,
         'encryptedDataKey': encryptedDataKey,
         'kdf': kdf.toJson(),
         'dataKeyWrap': dataKeyWrap,
@@ -250,9 +342,13 @@ class ManifestHeader {
 
   factory ManifestHeader.fromJson(Map<String, dynamic> json) {
     return ManifestHeader(
+      schemaVersion: json['schemaVersion'] as int? ?? 1,
       version: json['version'] as int,
       vaultId: json['vaultId'] as String,
+      createdAt: json['createdAt'] as int? ?? json['updatedAt'] as int,
       updatedAt: json['updatedAt'] as int,
+      keyFingerprint: json['keyFingerprint'] as String? ?? '',
+      keyVersion: json['keyVersion'] as int? ?? 1,
       encryptedDataKey: json['encryptedDataKey'] as String,
       kdf: KdfParams.fromJson(json['kdf'] as Map<String, dynamic>),
       dataKeyWrap: json['dataKeyWrap'] as String,
@@ -262,8 +358,8 @@ class ManifestHeader {
 
   @override
   String toString() =>
-      'ManifestHeader(version=$version, vaultId=$vaultId, updatedAt=$updatedAt, '
-      'lastModifiedBy=$lastModifiedBy)';
+      'ManifestHeader(schemaVersion=$schemaVersion, version=$version, '
+      'vaultId=$vaultId, keyVersion=$keyVersion, lastModifiedBy=$lastModifiedBy)';
 }
 
 /// 远端 manifest 完整结构（header + items）
@@ -271,7 +367,7 @@ class ManifestHeader {
 /// 内存中操作时使用完整 Manifest 对象；
 /// 序列化到后端时拆分为 header（明文）+ items（加密）两部分。
 class Manifest {
-  /// 明文头部（含 vaultId / encryptedDataKey / KDF 参数等）
+  /// 明文头部（含 vaultId / encryptedDataKey / KDF 参数 / 密钥纪元等）
   final ManifestHeader header;
 
   /// 所有笔记的元数据（note uuid → ManifestItem）
@@ -290,6 +386,8 @@ class Manifest {
   String get vaultId => header.vaultId;
   int get updatedAt => header.updatedAt;
   String get encryptedDataKey => header.encryptedDataKey;
+  String get keyFingerprint => header.keyFingerprint;
+  int get keyVersion => header.keyVersion;
 
   Manifest copyWith({
     ManifestHeader? header,
@@ -305,6 +403,8 @@ class Manifest {
     int? version,
     int? updatedAt,
     String? encryptedDataKey,
+    String? keyFingerprint,
+    int? keyVersion,
     String? lastModifiedBy,
     Map<String, ManifestItem>? items,
   }) =>
@@ -313,6 +413,8 @@ class Manifest {
           version: version,
           updatedAt: updatedAt,
           encryptedDataKey: encryptedDataKey,
+          keyFingerprint: keyFingerprint,
+          keyVersion: keyVersion,
           lastModifiedBy: lastModifiedBy,
         ),
         items: items ?? this.items,
@@ -322,15 +424,22 @@ class Manifest {
   factory Manifest.empty({
     required String vaultId,
     required String encryptedDataKey,
+    required String keyFingerprint,
+    required KdfParams kdf,
+    required int createdAt,
     required String lastModifiedBy,
   }) {
     return Manifest(
       header: ManifestHeader(
+        schemaVersion: 1,
         version: 0,
         vaultId: vaultId,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        createdAt: createdAt,
+        updatedAt: createdAt,
+        keyFingerprint: keyFingerprint,
+        keyVersion: 1,
         encryptedDataKey: encryptedDataKey,
-        kdf: KdfParams.defaultParams(),
+        kdf: kdf,
         dataKeyWrap: kDataKeyWrapAlgorithm,
         lastModifiedBy: lastModifiedBy,
       ),
@@ -340,7 +449,8 @@ class Manifest {
 
   @override
   String toString() =>
-      'Manifest(version=$version, vaultId=$vaultId, items=${items.length})';
+      'Manifest(version=$version, vaultId=$vaultId, keyVersion=$keyVersion, '
+      'items=${items.length})';
 }
 
 /// 同步操作类型（用于 UI 进度反馈和日志）
@@ -384,6 +494,10 @@ class SyncResult {
   final String? errorMessage;
   final List<SyncAction> actions; // 详细操作记录（用于 UI 和日志）
   final int attempts; // 实际重试次数（用于诊断乐观锁冲突频率）
+  /// 密钥纪元不匹配标志（远端 keyVersion > 本地）
+  ///
+  /// true 表示他端改了密码，UI 应提示用户输入新密码。
+  final bool passwordEpochMismatch;
 
   const SyncResult({
     required this.success,
@@ -396,6 +510,7 @@ class SyncResult {
     this.errorMessage,
     this.actions = const [],
     this.attempts = 1,
+    this.passwordEpochMismatch = false,
   });
 
   /// 同步成功
@@ -408,6 +523,7 @@ class SyncResult {
     int migrated = 0,
     List<SyncAction> actions = const [],
     int attempts = 1,
+    bool passwordEpochMismatch = false,
   }) =>
       SyncResult(
         success: true,
@@ -419,6 +535,7 @@ class SyncResult {
         migrated: migrated,
         actions: actions,
         attempts: attempts,
+        passwordEpochMismatch: passwordEpochMismatch,
       );
 
   /// 同步失败
@@ -462,6 +579,7 @@ class SyncResult {
     String? errorMessage,
     List<SyncAction>? actions,
     int? attempts,
+    bool? passwordEpochMismatch,
   }) =>
       SyncResult(
         success: success ?? this.success,
@@ -474,12 +592,14 @@ class SyncResult {
         errorMessage: errorMessage ?? this.errorMessage,
         actions: actions ?? this.actions,
         attempts: attempts ?? this.attempts,
+        passwordEpochMismatch: passwordEpochMismatch ?? this.passwordEpochMismatch,
       );
 
   @override
   String toString() => success
       ? 'SyncResult(success, ↑$uploaded ↓$downloaded ✗$deleted skip$skipped '
-          'conflict$conflicts migrate$migrated, attempts=$attempts)'
+          'conflict$conflicts migrate$migrated, attempts=$attempts, '
+          'epochMismatch=$passwordEpochMismatch)'
       : 'SyncResult(failed: $errorMessage, attempts=$attempts)';
 }
 
@@ -539,7 +659,7 @@ class ManifestCrypto {
   /// 反序列化密文为 manifest
   ///
   /// 两阶段解析：
-  ///   1. 先解析 header（明文），拿到 encryptedDataKey / KDF 参数
+  ///   1. 先解析 header（明文），拿到 encryptedDataKey / KDF 参数 / 密钥纪元
   ///   2. 用 dataKey 解密 items
   ///
   /// 如果 dataKey 不正确，items 解密会抛 GCM tag 验证异常。
@@ -579,8 +699,8 @@ class ManifestCrypto {
   /// 仅解析 manifest header（不解密 items，不需要 dataKey）
   ///
   /// 用于新设备加入场景：
-  ///   1. GET manifest → 仅解析 header 拿到 encryptedDataKey
-  ///   2. 用密码派生 MK，解开 encryptedDataKey 得到 dataKey
+  ///   1. GET manifest → 仅解析 header 拿到 encryptedDataKey + KDF 参数 + 密钥纪元
+  ///   2. 用密码 + header.kdf.salt 派生 MK，解开 encryptedDataKey 得到 dataKey
   ///   3. 用 dataKey 调用 deserialize 解析完整 manifest
   static ManifestHeader deserializeHeaderOnly(Uint8List bytes) {
     if (bytes.length < 4) {

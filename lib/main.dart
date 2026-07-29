@@ -32,6 +32,7 @@ import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
@@ -48,6 +49,11 @@ Future main() async {
 
   WidgetsBinding.instance.addObserver(AppLifecycleEventHandler(
     inactiveCallBack: ScheduledTask.backup,
+    resumeCallBack: () async {
+      // App 回前台时触发自动同步，拉取期间其他端可能产生的远端变更
+      // autoSync 内部会判断 _engine 是否就绪，未登录/未启用同步时直接返回
+      SyncService.instance.autoSync();
+    },
   ));
 
   await PreferencesStorage.init();

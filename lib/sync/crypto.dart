@@ -2,13 +2,18 @@
  * 同步功能核心加密层
  *
  * 两层密钥架构：
- *   MK (Master Key) = PBKDF2(password, FIXED_SALT, 200k)  ← 改密码时变化，只用来加密 dataKey
- *   dataKey = 随机 32 字节                                ← 永不变化，真正加密笔记内容
+ *   MK (Master Key) = PBKDF2(password, per-vault-salt, 200k)  ← 改密码时变化，只用来加密 dataKey
+ *   dataKey = 随机 32 字节                                     ← 永不变化，真正加密笔记内容
  *
  * 多端一致性关键：
- *   MK 派生使用固定 salt 'safenotes-v1'，保证相同密码在不同设备派生出相同 MK。
- *   早期实现用 vaultId 作为 salt，但 vaultId 在新设备加入前无法获得，
- *   且不同设备初始 vaultId 不同导致 MK 不一致，无法解密远端 encryptedDataKey。
+ *   per-vault 随机 salt 在 vault 首次创建时生成，写入 manifest header 随密文一起传播。
+ *   新设备加入时从远端 manifest 读取 salt，保证相同密码 + 相同 salt 派生出相同 MK。
+ *   跨用户使用不同 salt，使预计算的彩虹表失效（比全全局固定 salt 更安全）。
+ *
+ * 历史演进：
+ *   v0 用 vaultId 作为 salt，但 vaultId 在新设备加入前无法获得，且不同设备初始
+ *   vaultId 不同导致 MK 不一致。v1 改用全局固定 salt 'safenotes-v1'。v2 改为
+ *   per-vault 随机 salt（当前实现），兼顾跨设备一致性与跨用户隔离。
  *
  * 信封格式：nonce(12) ‖ ciphertext ‖ tag(16)
  *   = AES-256-GCM(dataKey, nonce, AAD=id, plaintext)
@@ -48,17 +53,12 @@ const int _saltLength = 16; // PBKDF2 salt 16 字节
 /// 公开为常量供 manifest header 写入 KDF 参数（算法透明性）。
 const int kPbkdf2Iterations = 200000;
 
-/// MK 派生使用的固定 salt（UTF-8 编码 'safenotes-v1'）
+/// per-vault 随机 salt 长度（字节）
 ///
-/// 多端一致性关键：
-///   相同密码 + 固定 salt → 相同 MK，确保新设备能解密远端 encryptedDataKey。
-///   写入 manifest header 供未来算法迁移（若升级 salt，老 vault 仍能用此值派生）。
-///
-/// 注意：固定 salt 不会降低 PBKDF2 安全性——salt 的作用是防止彩虹表攻击，
-///   固定 salt 仍然使预计算攻击不可行（攻击者需要为这个 salt 单独建表）。
-///   真正的密码强度由用户密码本身决定。
-final Uint8List kFixedSalt =
-    Uint8List.fromList(utf8.encode('safenotes-v1'));
+/// 每个 vault 创建时生成独立的随机 salt，写入 manifest header。
+/// 相同密码 + 不同 salt → 不同 MK，跨用户预计算彩虹表直接失效。
+/// 多端一致性：salt 随 manifest header 传播，新设备按 header 中的 salt 派生 MK。
+const int kSaltLength = 16;
 
 /// MK 派生算法名称（写入 manifest header 供未来算法迁移）
 const String kMkKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
@@ -80,19 +80,18 @@ class SyncCrypto {
   /// 用 PBKDF2-HMAC-SHA256 从用户密码派生主密钥 MK
   ///
   /// [password] 用户输入的明文密码
-  /// [salt] 派生盐值（默认使用 [kFixedSalt]，多端一致性关键）
+  /// [salt] per-vault 随机 salt（必填，从 manifest header 或本地 meta 读取）
   /// 返回 32 字节的 MK
   ///
-  /// 通常无需传入 salt，使用默认的固定 salt 即可。
-  /// 保留 salt 参数仅为未来算法迁移测试用。
+  /// 多端一致性关键：相同密码 + 相同 salt → 相同 MK。
+  /// salt 随 manifest header 传播，新设备按 header 中的 salt 派生 MK。
   static Uint8List deriveMasterKey(
     String password, {
-    Uint8List? salt,
+    required Uint8List salt,
     int iterations = kPbkdf2Iterations,
   }) {
-    final effectiveSalt = salt ?? kFixedSalt;
     final pbkdf2 = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
-    pbkdf2.init(Pbkdf2Parameters(effectiveSalt, iterations, _keyLength));
+    pbkdf2.init(Pbkdf2Parameters(salt, iterations, _keyLength));
     return pbkdf2.process(Uint8List.fromList(utf8.encode(password)));
   }
 
@@ -105,15 +104,26 @@ class SyncCrypto {
   /// 但 MK 只有 32 字节，复制开销可忽略。
   static Future<Uint8List> deriveMasterKeyAsync(
     String password, {
-    Uint8List? salt,
+    required Uint8List salt,
     int iterations = kPbkdf2Iterations,
   }) async {
-    final effectiveSalt = salt ?? kFixedSalt;
     final result = await compute(
       _deriveMasterKeyIsolate,
-      _DeriveParams(password, effectiveSalt, iterations),
+      _DeriveParams(password, salt, iterations),
     );
     return result;
+  }
+
+  /// 计算密钥指纹 = H(MK)
+  ///
+  /// 用于 manifest header 明文存储，检测他端改密码：
+  ///   - 远端 fingerprint != 本地 fingerprint → 他端改了密码
+  ///   - 安全性：与 encryptedDataKey 等价（都能离线验证密码），不降低安全性
+  ///
+  /// [masterKey] 32 字节的 MK
+  /// 返回 SHA-256(MK) 的十六进制字符串
+  static String computeKeyFingerprint(Uint8List masterKey) {
+    return sha256.convert(masterKey).toString();
   }
 
   /// Isolate 入口函数：执行 PBKDF2 派生

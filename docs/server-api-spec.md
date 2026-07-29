@@ -1,9 +1,16 @@
-# SafeServer 同步服务端 API 规范 v2
+# SafeServer 同步服务端 API 规范 v2.1
 
 > **自包含的服务端实现规范**：任何按本文档实现的 HTTP 服务端均可与 SafeNotes 客户端的 `safeServer` 后端类型互操作。实现者无需阅读客户端代码或客户端协议细节。
 >
 > 配套参考实现：[Go server](../server/go/main.go)、[Node.js server](../server/nodejs/server.js)。
 > 客户端侧的加密格式、冲突解决、同步算法见 [sync-protocol-spec.md](./sync-protocol-spec.md)。
+>
+> **v2.1 变更摘要**（详见 §15）：
+> - 新增 `DELETE /api/v2/manifest` 端点（清理损坏文件，客户端 `backupCorruptManifest` 用）
+> - 新增 `DELETE /api/v2/blob/<hash>` 端点（GC 清理孤儿 blob）
+> - 新增 `GET /api/v2/blobs` 端点（列出所有 blob hash，GC 用，需认证）
+> - 速率限制从"推荐"升级为"强烈建议"，并对 401 认证失败做 IP+时间窗口限速
+> - 旧版 v2 服务端仍可互操作（客户端对 405 静默降级）
 
 ---
 
@@ -97,7 +104,8 @@ Authorization: Bearer <token>
 - **不可变**：相同 `<hash>` 的多次 PUT 应返回成功（覆盖写或忽略均可）。
 - **不需要** ETag、不需要乐观锁。
 - 服务端**不应**校验内容与 hash 是否匹配（零知识要求）。
-- 服务端**不应**提供 blob 列表接口（防枚举）。
+- v2.1 起支持 `DELETE /api/v2/blob/<hash>` 删除 blob（GC 用，幂等）。
+- v2.1 起支持 `GET /api/v2/blobs` 列出所有 blob hash（GC 用，需认证——不破坏防枚举原则，因为无 Token 的攻击者无法访问）。
 
 ### 4.3 物理存储
 
@@ -115,15 +123,18 @@ Authorization: Bearer <token>
 
 ### 5.1 端点汇总
 
-| 方法 | 路径 | 用途 | 乐观锁 | 认证 |
-|------|------|------|--------|------|
-| GET | `/api/v2/manifest` | 下载 manifest | — | 是 |
-| PUT | `/api/v2/manifest` | 上传 manifest | If-Match / If-None-Match | 是 |
-| GET | `/api/v2/blob/<hash>` | 下载 blob | — | 是 |
-| PUT | `/api/v2/blob/<hash>` | 上传 blob | — | 是 |
-| GET | `/api/v2/health` | 健康检查（可选） | — | 否 |
+| 方法 | 路径 | 用途 | 乐观锁 | 认证 | 版本 |
+|------|------|------|--------|------|------|
+| GET | `/api/v2/manifest` | 下载 manifest | — | 是 | v2 |
+| PUT | `/api/v2/manifest` | 上传 manifest | If-Match / If-None-Match | 是 | v2 |
+| DELETE | `/api/v2/manifest` | 清理损坏 manifest | — | 是 | v2.1 |
+| GET | `/api/v2/blob/<hash>` | 下载 blob | — | 是 | v2 |
+| PUT | `/api/v2/blob/<hash>` | 上传 blob | — | 是 | v2 |
+| DELETE | `/api/v2/blob/<hash>` | 删除 blob（GC 用，幂等） | — | 是 | v2.1 |
+| GET | `/api/v2/blobs` | 列出所有 blob hash（GC 用） | — | 是 | v2.1 |
+| GET | `/api/v2/health` | 健康检查（可选） | — | 否 | v2 |
 
-**注意**：没有 MKCOL，没有 DELETE，没有 PROPFIND。服务端不需要"创建目录"——PUT 资源时父级路径不存在由服务端内部自行处理。
+**注意**：没有 MKCOL，没有 PROPFIND。服务端不需要"创建目录"——PUT 资源时父级路径不存在由服务端内部自行处理。v2.1 新增的三个端点（DELETE manifest、DELETE blob、GET blobs）均用于客户端的 GC 与自愈流程；旧版 v2 服务端不实现这些端点时返回 405，客户端会静默降级。
 
 ### 5.2 GET manifest
 
@@ -246,6 +257,93 @@ GET /api/v2/health HTTP/1.1
 
 **用途**：集成测试与负载均衡器探活。无法提供此端点的实现需在测试中改用其他就绪检测方式。
 
+### 5.7 DELETE /api/v2/manifest（v2.1 新增）
+
+**请求**：
+
+```http
+DELETE /api/v2/manifest HTTP/1.1
+Authorization: Bearer <token>
+```
+
+**语义**：删除 manifest 文件。客户端在 manifest 解析失败（密文损坏、版本不兼容等）时调用此端点清理损坏文件，然后用本地数据重建 manifest 上传。
+
+**幂等性**：删除不存在的 manifest 返回 204（视为成功）。
+
+**响应**：
+
+| 状态码 | 含义 |
+|--------|------|
+| 204 No Content | 删除成功（或文件本不存在） |
+| 401 Unauthorized | 认证失败 |
+| 405 Method Not Allowed | 旧版 v2 服务端未实现此端点（客户端静默降级） |
+| 500 Internal Server Error | 服务端异常 |
+
+**实现要点**：
+- 删除操作应与 PUT manifest 共享同一个互斥锁，避免与并发 PUT 竞争。
+- 客户端在调用此端点后会立即用 PUT 重新上传 manifest，因此 DELETE 失败也不应阻断流程（PUT 会覆盖旧文件）。
+- 此端点不返回 ETag。
+
+### 5.8 DELETE /api/v2/blob/<hash>（v2.1 新增，GC 用）
+
+**请求**：
+
+```http
+DELETE /api/v2/blob/<hash> HTTP/1.1
+Authorization: Bearer <token>
+```
+
+**语义**：删除指定 hash 的 blob。客户端在 GC 流程中识别出 manifest 未引用的孤儿 blob 后，调用此端点清理。
+
+**幂等性**：删除不存在的 blob 返回 204（视为成功）。
+
+**响应**：
+
+| 状态码 | 含义 |
+|--------|------|
+| 204 No Content | 删除成功（或 blob 本不存在） |
+| 400 Bad Request | hash 格式非法（含路径分隔符或 `..`） |
+| 401 Unauthorized | 认证失败 |
+| 405 Method Not Allowed | 旧版 v2 服务端未实现此端点（客户端静默降级） |
+| 500 Internal Server Error | 服务端异常 |
+
+**实现要点**：
+- 必须复用 GET/PUT blob 的路径安全校验（`resolveBlobPath`），防止目录穿越。
+- 服务端**不应**校验 blob 内容与 hash 是否匹配（零知识要求）。
+- 客户端对非 2xx 状态静默跳过，GC 失败不阻断同步流程。
+
+### 5.9 GET /api/v2/blobs（v2.1 新增，GC 用）
+
+**请求**：
+
+```http
+GET /api/v2/blobs HTTP/1.1
+Authorization: Bearer <token>
+```
+
+**语义**：列出服务端存储的所有 blob hash。客户端用此列表与 manifest 引用的 blob hash 对比，识别孤儿 blob。
+
+**响应**：
+
+| 状态码 | 含义 | Body |
+|--------|------|------|
+| 200 OK | 成功 | JSON 数组，如 `["hash1", "hash2", ...]` |
+| 401 Unauthorized | 认证失败 | 错误描述 |
+| 405 Method Not Allowed | 旧版 v2 服务端未实现此端点（客户端静默降级为空列表） | 空 |
+
+**响应体格式**：
+
+```json
+["a1b2c3d4e5f6...", "f7e6d5c4b3a2...", ...]
+```
+
+**实现要点**：
+- 返回 `blobs/` 目录下所有文件的文件名（即 hash），跳过 `.tmp` 临时文件和子目录。
+- 服务端不解析 blob 内容，仅列文件名。
+- **需认证**：此端点不破坏 §10.5 防枚举原则——攻击者无 Token 无法访问。
+- blobs 目录不存在时返回空数组 `[]`。
+- 客户端对 404/405/网络错误静默降级为空列表，GC 退化为"只标记不清理"。
+
 ---
 
 ## 六、ETag 规范
@@ -327,9 +425,12 @@ GET /api/v2/health HTTP/1.1
 |--------|------|-----------|
 | 200 OK | GET / PUT 成功 | 继续 |
 | 201 Created | PUT 首次创建 | 继续 |
+| 204 No Content | DELETE 成功（v2.1） | 继续 |
 | 401 Unauthorized | 认证失败 | 提示用户检查配置 |
 | 404 Not Found | GET manifest / GET blob 资源不存在 | manifest: 视为首次同步；blob: 跳过本次 |
+| 405 Method Not Allowed | v2.1 端点未实现（旧版 v2 服务端） | 客户端静默降级 |
 | 412 Precondition Failed | PUT manifest 乐观锁冲突 | 重新 GET manifest 并重试（最多 3 次） |
+| 429 Too Many Requests | 认证失败速率限制触发（v2.1） | 等待 Retry-After 后重试 |
 | 5xx Server Error | 服务端异常 | 中止本次同步，等下次触发 |
 
 ### 8.2 重试语义
@@ -394,11 +495,18 @@ manifest 与 blob 的 PUT 应使用原子写入：
 
 ### 9.5 孤儿 blob 清理
 
-服务端**不应**主动清理未被 manifest 引用的 blob。原因：
+服务端**不应**主动清理未被 manifest 引用的 blob（零知识要求：服务端不知道 manifest 内容）。
 
-- 服务端不知道 manifest 内容（零知识）。
-- 客户端可能回滚到引用旧 blob 的 manifest 版本。
-- 孤儿 blob 清理由客户端在合适时机通过未来扩展的 DELETE 端点处理（v2 不要求）。
+v2.1 起，服务端提供 GC 配套端点，由客户端在合适时机驱动清理：
+
+1. 客户端调用 `GET /api/v2/blobs` 获取服务端所有 blob hash 列表。
+2. 客户端用当前 manifest 引用的 blob hash 集合做差集，识别孤儿 blob。
+3. 客户端对每个孤儿 blob 调用 `DELETE /api/v2/blob/<hash>` 清理。
+
+**安全性考量**：
+- 客户端可能回滚到引用旧 blob 的 manifest 版本，因此 GC 应在 manifest 稳定后执行（如同步成功后延迟一段时间）。
+- DELETE 是幂等的，重复删除同一 blob 安全。
+- 旧版 v2 服务端未实现这些端点时，客户端 GC 退化为"只标记不清理"，不影响同步正确性。
 
 ### 9.6 资源自动创建
 
@@ -432,13 +540,26 @@ PUT 资源时，如果内部存储的父目录/命名空间不存在，服务端
 
 ETag 是密文的衍生物（如 SHA-256(密文)），不泄露明文信息。服务端不应使用基于明文的 ETag。
 
-### 10.5 blob 不可枚举
+### 10.5 blob 防枚举
 
-服务端**不应**提供 blob 列表接口。客户端只能通过 manifest 获知存在哪些 blob hash。这保证即使 manifest 未泄露，攻击者也无法通过遍历获取笔记内容。
+服务端**不应**向未认证客户端暴露 blob 列表。客户端只能通过 manifest 获知存在哪些 blob hash。
 
-### 10.6 速率限制（推荐）
+v2.1 起 `GET /api/v2/blobs` 端点**需认证**才能访问，不破坏防枚举原则——无 Token 的攻击者无法遍历 blob。部署者应确保 Token 足够强（≥ 32 字符随机字符串），并通过 §10.6 速率限制防止暴力枚举。
 
-服务端可对认证失败、PUT manifest 频率做速率限制，防止暴力破解与拒绝服务。
+### 10.6 速率限制（强烈建议）
+
+服务端**应**对 401 认证失败做 IP + 时间窗口限速，防止 Token 暴力枚举。
+
+**推荐策略**（参考实现已采用）：
+- 按客户端 IP 分组，滑动窗口 1 分钟。
+- 同一 IP 在窗口内累计 10 次认证失败后，拒绝该 IP 的所有请求（返回 `429 Too Many Requests`，附 `Retry-After: 60` 头）。
+- 认证成功后清除该 IP 的失败计数。
+- 通过 `X-Forwarded-For` 头识别反向代理后的真实客户端 IP。
+- 可通过启动参数 `--rate-limit N` 配置阈值，`0` 表示禁用（仅测试环境用）。
+
+**其他速率限制**（可选）：
+- PUT manifest 频率限制（防恶意覆盖）。
+- 总请求频率限制（防 DoS）。
 
 ---
 
@@ -448,8 +569,11 @@ ETag 是密文的衍生物（如 SHA-256(密文)），不泄露明文信息。�
 |------|--------|------|
 | GET manifest | ✅ | 同一状态多次 GET 返回相同内容与 ETag |
 | PUT manifest | ⚠️ 条件幂等 | 带相同 If-Match 的重复 PUT 会被 412 拒绝（已更新过）；带 If-None-Match: * 的重复 PUT 第二次也会被 412 拒绝 |
+| DELETE manifest | ✅ | 重复删除返回 204（v2.1） |
 | GET blob | ✅ | 多次 GET 返回相同内容 |
 | PUT blob | ✅ | 相同 hash + 内容多次上传结果一致 |
+| DELETE blob | ✅ | 重复删除返回 204（v2.1） |
+| GET blobs | ✅ | 多次 GET 返回相同列表（直到 PUT/DELETE 改变状态）（v2.1） |
 
 服务端实现必须保证上述幂等性，这是协议正确性的基础。
 
@@ -476,6 +600,12 @@ ETag 是密文的衍生物（如 SHA-256(密文)），不泄露明文信息。�
    - PUT manifest 带 If-None-Match: * 首次成功，重复返回 412
    - PUT manifest 带 If-Match 错误 etag 返回 412
    - PUT/GET blob 端到端
+9. **v2.1 GC 与自愈流程**：
+   - `GET /api/v2/blobs` 返回所有 blob hash（需认证）
+   - `DELETE /api/v2/blob/<hash>` 删除孤儿 blob（幂等，404 返回 204）
+   - `DELETE /api/v2/manifest` 清理损坏文件（幂等，404 返回 204）
+   - 未认证访问 `GET /api/v2/blobs` 返回 401
+   - 连续 10 次认证失败后返回 429 Too Many Requests
 
 ### 12.3 测试适配
 
@@ -513,26 +643,52 @@ curl -X PUT -H "Authorization: Bearer my-secret-token" \
 # 下载 manifest（带返回的 ETag）
 curl -i -H "Authorization: Bearer my-secret-token" \
   http://localhost:8080/api/v2/manifest
+
+# v2.1：列出所有 blob hash（GC 用）
+curl -H "Authorization: Bearer my-secret-token" \
+  http://localhost:8080/api/v2/blobs
+# ["hash1", "hash2", ...]
+
+# v2.1：删除孤儿 blob（幂等，404 返回 204）
+curl -i -X DELETE -H "Authorization: Bearer my-secret-token" \
+  http://localhost:8080/api/v2/blob/<hash>
+# HTTP/1.1 204 No Content
+
+# v2.1：清理损坏 manifest（自愈用）
+curl -i -X DELETE -H "Authorization: Bearer my-secret-token" \
+  http://localhost:8080/api/v2/manifest
+# HTTP/1.1 204 No Content
+
+# v2.1：未认证访问 blobs 列表应返回 401
+curl -i http://localhost:8080/api/v2/blobs
+# HTTP/1.1 401 Unauthorized
+
+# v2.1：连续 10 次错误 Token 后应返回 429
+for i in $(seq 1 11); do
+  curl -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer wrong-token" \
+    http://localhost:8080/api/v2/manifest
+done
+# 401 401 401 401 401 401 401 401 401 401 429
 ```
 
 ---
 
 ## 十三、参考实现
 
-| 实现 | 路径 | 语言 | 依赖 | 存储后端 |
-|------|------|------|------|---------|
-| Go server | [server/go/main.go](../server/go/main.go) | Go | 仅标准库 | 文件系统 |
-| Node.js server | [server/nodejs/server.js](../server/nodejs/server.js) | JavaScript | 仅内置模块 | 文件系统 |
+| 实现 | 路径 | 语言 | 依赖 | 存储后端 | 协议版本 |
+|------|------|------|------|---------|---------|
+| Go server | [server/go/main.go](../server/go/main.go) | Go | 仅标准库 | 文件系统 | v2.1 |
+| Node.js server | [server/nodejs/server.js](../server/nodejs/server.js) | JavaScript | 仅内置模块 | 文件系统 | v2.1 |
 
-两个参考实现均约 250 行代码，使用相同协议语义，可互换。实现新 server 时建议参照其中之一。
+两个参考实现使用相同协议语义，可互换，均已实现 v2.1 全部端点（含 DELETE manifest、DELETE blob、GET blobs 与认证失败速率限制）。实现新 server 时建议参照其中之一。
 
 ---
 
-## 十四、不强制支持的特性（v2）
+## 十四、不强制支持的特性（v2.1）
 
-以下功能在 v2 中**不要求**服务端实现，客户端也不会使用：
+以下功能在 v2.1 中**不要求**服务端实现，客户端也不会使用：
 
-- MKCOL / DELETE / PROPFIND / COPY / MOVE 等 WebDAV 方法
+- MKCOL / PROPFIND / COPY / MOVE 等 WebDAV 方法（注意：DELETE 已在 v2.1 中支持）
 - WebDAV 锁定（LOCK / UNLOCK）
 - 多用户账号系统、注册、登录
 - 分块上传
@@ -549,5 +705,6 @@ curl -i -H "Authorization: Bearer my-secret-token" \
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.1 | 2026-07-29 | 新增 `DELETE /api/v2/manifest`、`DELETE /api/v2/blob/<hash>`、`GET /api/v2/blobs` 端点（GC 与自愈配套）；速率限制从"推荐"升级为"强烈建议"，并对 401 认证失败做 IP+时间窗口限速；客户端对旧版 v2 服务端（返回 405）静默降级 |
 | v2 | 2026-07-28 | 重新设计：单用户 + Bearer Token + `/api/v2/` 路径 + 移除 MKCOL + 移除 vault-root 路径概念 |
 | v1 | 2026-07-28 | 初版：WebDAV 子集（含 MKCOL、vault-root 路径、Basic Auth） |

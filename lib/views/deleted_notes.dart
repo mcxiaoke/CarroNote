@@ -117,6 +117,8 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Future<void> _permanentDelete(SafeNote note) async {
     await NotesDatabase.instance.hardDelete(note.id!);
+    // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
+    SyncService.instance.autoSync();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -164,6 +166,8 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     for (final note in _deletedNotes) {
       await NotesDatabase.instance.hardDelete(note.id!);
     }
+    // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
+    SyncService.instance.autoSync();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已清空 ${_deletedNotes.length} 条笔记')),

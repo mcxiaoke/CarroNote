@@ -46,6 +46,24 @@ class DataKeyNotSetException implements Exception {
   String toString() => 'DataKeyNotSetException: $message';
 }
 
+/// 迁移进行中异常
+///
+/// F4 修复：reEncryptAllNotes 期间 _dataKey 被临时切换，
+/// 此时 UI 并发读取笔记会用错误的 key 解密导致抛 DataKeyNotSetException。
+/// 迁移期间所有公共读方法抛此异常，UI 可捕获并显示遮罩或等待重试。
+///
+/// 迁移通常在同步流程内（持有 _syncInProgress 互斥锁），
+/// 但 UI 的 readAllNotes 等读操作不经过同步锁，需此标志额外保护。
+class MigrationInProgressException implements Exception {
+  final String message;
+  MigrationInProgressException([
+    this.message = '数据迁移进行中，请稍候',
+  ]);
+
+  @override
+  String toString() => 'MigrationInProgressException: $message';
+}
+
 class MetaFields {
   static const String key = 'key';
   static const String value = 'value';
@@ -54,8 +72,12 @@ class MetaFields {
 // meta 表的已知键名
 class MetaKeys {
   static const String vaultId = 'vault_id';
-  // mkSalt 已移除：改用固定 salt 'safenotes-v1'（见 crypto.dart kFixedSalt）
   static const String encryptedDataKey = 'encrypted_data_key';
+  static const String kdfSalt = 'kdf_salt'; // per-vault 随机 salt（base64）
+  static const String keyFingerprint = 'key_fingerprint'; // H(MK) 十六进制
+  static const String keyVersion = 'key_version'; // 密钥版本号
+  static const String vaultCreatedAt =
+      'vault_created_at'; // vault 创建时间（Unix 毫秒）
   // manifest version 不再使用全局 key，改为按 providerKey 隔离：
   // 'manifest_version:<providerKey>'（见 [_manifestVersionKey]）
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
@@ -71,6 +93,15 @@ class NotesDatabase {
   /// 必填项：未设置时读写笔记会抛 DataKeyNotSetException。
   /// 生产环境由登录流程保证已设置；测试环境需在 setUp 中显式设置。
   Uint8List? _dataKey;
+
+  /// F4 修复：迁移进行中标志
+  ///
+  /// reEncryptAllNotes 期间置为 true，阻止 UI 并发读取笔记。
+  ///迁移在同步流程内（_syncInProgress 互斥锁），但 UI 读操作不经过同步锁。
+  bool _isMigrating = false;
+
+  /// 迁移是否进行中（UI 可监听此状态显示遮罩）
+  bool get isMigrating => _isMigrating;
 
   NotesDatabase._init();
 
@@ -102,6 +133,20 @@ class NotesDatabase {
       throw DataKeyNotSetException();
     }
     return key;
+  }
+
+  /// F4 修复：迁移进行中守卫
+  ///
+  /// reEncryptAllNotes 期间 _dataKey 被临时切换，UI 并发读取会用错误 key 解密。
+  /// 面向 UI 的公共读方法（readNote/readNoteByUuid/readAllNotes/readDeletedNotes）
+  /// 调用此守卫，迁移中抛 MigrationInProgressException。
+  ///
+  /// readAllNotesIncludingDeleted 不加守卫——它被同步引擎内部调用，
+  /// 且 reEncryptAllNotes 自身需要调用它读取明文。
+  void _checkNotMigrating() {
+    if (_isMigrating) {
+      throw MigrationInProgressException();
+    }
   }
 
   Future<Database> get database async {
@@ -284,6 +329,7 @@ class NotesDatabase {
 
   /// 新增笔记（title/description 加密后存储）
   Future<SafeNote> storeNote(SafeNote note) async {
+    _checkNotMigrating();
     final db = await instance.database;
     final id = await db.insert(tableNotes, _toEncryptedRow(note));
     return note.copyWith(id: id);
@@ -291,6 +337,7 @@ class NotesDatabase {
 
   /// 按 id 读取单条笔记（自动解密）
   Future<SafeNote> readNote(int id) async {
+    _checkNotMigrating();
     final db = await instance.database;
     final maps = await db.query(
       tableNotes,
@@ -308,6 +355,7 @@ class NotesDatabase {
 
   /// 按 uuid 读取单条笔记（同步用，自动解密）
   Future<SafeNote?> readNoteByUuid(String uuid) async {
+    _checkNotMigrating();
     final db = await instance.database;
     final maps = await db.query(
       tableNotes,
@@ -324,6 +372,7 @@ class NotesDatabase {
 
   /// 读取所有未删除的笔记（UI 列表用，自动解密）
   Future<List<SafeNote>> readAllNotes() async {
+    _checkNotMigrating();
     final db = await instance.database;
     final result = await db.query(
       tableNotes,
@@ -336,6 +385,7 @@ class NotesDatabase {
 
   /// 读取所有已删除的笔记（最近删除视图用，自动解密）
   Future<List<SafeNote>> readDeletedNotes() async {
+    _checkNotMigrating();
     final db = await instance.database;
     final result = await db.query(
       tableNotes,
@@ -366,6 +416,7 @@ class NotesDatabase {
 
   /// 更新笔记（title/description 加密后存储）
   Future<int> updateNote(SafeNote note) async {
+    _checkNotMigrating();
     final db = await instance.database;
     return db.update(
       tableNotes,
@@ -377,6 +428,7 @@ class NotesDatabase {
 
   /// 按 uuid 更新笔记（同步拉取时用，title/description 加密后存储）
   Future<int> updateNoteByUuid(SafeNote note) async {
+    _checkNotMigrating();
     final db = await instance.database;
     return db.update(
       tableNotes,
@@ -437,6 +489,24 @@ class NotesDatabase {
     // 3. 追加到待清理列表
     await _addPurgedUuid(uuid);
 
+    return deleted;
+  }
+
+  /// F1 修复：按 uuid 硬删除笔记（GC 墓碑清理用）
+  ///
+  /// 与 [hardDelete] 的区别：按 uuid 而非 id 删除，用于 GC 清理过期墓碑。
+  /// 流程：从 notes 表删除行 → 把 uuid 追加到 purged_uuids 列表。
+  /// 不存在时返回 0（幂等）。
+  Future<int> hardDeleteByUuid(String uuid) async {
+    final db = await instance.database;
+    final deleted = await db.delete(
+      tableNotes,
+      where: '${NoteFields.uuid} = ?',
+      whereArgs: [uuid],
+    );
+    if (deleted > 0) {
+      await _addPurgedUuid(uuid);
+    }
     return deleted;
   }
 
@@ -531,6 +601,10 @@ class NotesDatabase {
   }) async {
     final db = await instance.database;
 
+    // F4 修复：设置迁移中标志，阻止 UI 并发读取笔记
+    // 迁移期间 _dataKey 被临时切换，UI 读取会用错误 key 解密
+    _isMigrating = true;
+
     // 1. 临时切换 dataKey 为 oldKey 读取所有笔记（自动解密为明文）
     //    保存当前 _dataKey 以便失败时恢复
     final originalDataKey = _dataKey;
@@ -577,6 +651,9 @@ class NotesDatabase {
       // 失败时恢复 _dataKey 为原始值（可能是 oldKey 或 originalDataKey）
       _dataKey = originalDataKey;
       rethrow;
+    } finally {
+      // F4 修复：无论成功或失败，清除迁移中标志
+      _isMigrating = false;
     }
   }
 

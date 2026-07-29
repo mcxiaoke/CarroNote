@@ -460,4 +460,21 @@ class SyncService {
         );
     }
   }
+
+  /// B2 修复：登录页验证密码时创建后端实例（不污染单例状态）
+  ///
+  /// 与 [_createBackendFromConfig] 相同，但公开给 login.dart 使用。
+  /// 返回的后端实例独立于 _backend，调用方负责 init/close。
+  /// 返回 null 表示配置不完整或未启用同步。
+  SyncBackend? createBackendForVerification() =>
+      _createBackendFromConfig();
+
+  /// B2 修复：登录页通过 vault 验证密码后缓存 vault 引用
+  ///
+  /// 在 _tryVerifyPassphraseViaVault 验证成功后调用，
+  /// 把已解锁的 Vault 实例缓存到 _vault，供后续 initBackend 使用。
+  /// 避免重复解锁（PBKDF2 600k 迭代耗时 1-2 秒）。
+  Future<void> cacheVaultFromLogin(Vault vault) async {
+    _vault = vault;
+  }
 }
