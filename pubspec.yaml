@@ -27,7 +27,6 @@ dependencies:
   local_auth: ^3.0.2
   local_session_timeout: ^3.2.0
   logger: ^2.1.0
-  material_design_icons_flutter: ^7.0.7296
   media_scanner: ^2.1.0
   modal_bottom_sheet: ^3.0.0
   page_transition: ^2.0.9

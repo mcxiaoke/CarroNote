@@ -17,7 +17,6 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:provider/provider.dart';
 
 // Project imports:
@@ -93,13 +92,13 @@ class HomeDrawerState extends State<HomeDrawer> {
                   _buildMenuItem(
                     topPadding: height * 0.005,
                     text: importDataText,
-                    icon: MdiIcons.fileDownloadOutline,
+                    icon: Icons.file_download_outlined,
                     onClicked: widget.onImportCallback,
                   ),
                   _buildMenuItem(
                     topPadding: itemSpacing,
                     text: changePassText,
-                    icon: MdiIcons.keyOutline,
+                    icon: Icons.key_outlined,
                     onClicked: widget.onChangePassCallback,
                   ),
                   _buildMenuItem(
@@ -150,7 +149,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                   _buildMenuItem(
                     topPadding: itemSpacing,
                     text: faqsText,
-                    icon: MdiIcons.frequentlyAskedQuestions,
+                    icon: Icons.quiz_outlined,
                     onClicked: () async {
                       Navigator.of(context).pop();
                       String faqsUrl = SafeNotesConfig.faqsUrl;
