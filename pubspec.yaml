@@ -7,8 +7,8 @@ publish_to: 'none'
 version: 2.3.0+10
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
-  flutter: ">=3.19.3"
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:
@@ -18,12 +18,12 @@ dependencies:
   auto_size_text: ^3.0.0
   crypto: ^3.0.3
   cupertino_icons: ^1.0.6
-  device_info_plus: ^10.0.1  # 13.x 需要 win32 ^6.0+，与 file_picker 11.x（win32 ^5.9.0）冲突，暂不可升级
+  device_info_plus: ^12.0.0
   easy_localization: ^3.0.1
-  file_picker: ^11.0.2
+  file_picker: ^11.0.2  # 12.x 仍为 beta，暂保持稳定版
   flutter_secure_storage: ^10.3.1
   flutter_staggered_grid_view: ^0.7.0
-  intl: ^0.20.2  # 0.20.3 被 flutter SDK 的 flutter_localizations pin 在 0.20.2，暂不可升级
+  intl: ^0.20.2
   local_auth: ^3.0.2
   local_session_timeout: ^3.2.0
   logger: ^2.1.0
@@ -38,8 +38,8 @@ dependencies:
   rename: ^3.0.2
   settings_ui: ^3.0.1
   shared_preferences: ^2.0.6
-  sqflite: ^2.4.2+1  # 2.4.3 要求 Dart SDK ^3.12.0，当前 3.11.0，暂不可升级
-  sqflite_common_ffi: ^2.4.0+3  # 桌面端 SQLite（Windows/macOS/Linux 运行时 + 测试）；2.4.1+ 要求 Dart SDK >=3.12.0，暂不可升级
+  sqflite: ^2.4.3
+  sqflite_common_ffi: ^2.4.2  # 桌面端 SQLite（Windows/macOS/Linux 运行时 + 测试）
   timeago: ^3.3.0
   tuple: ^2.0.0
   url_launcher: ^6.1.5
@@ -58,7 +58,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_launcher_icons: ^0.14.4
-  flutter_native_splash: ^2.4.7  # 2.4.8 要求 meta ^1.18.0，但 flutter SDK 中 flutter_test pin 了 meta 1.17.0，暂不可升级
+  flutter_native_splash: ^2.4.8
   import_sorter: ^4.6.0
   dependency_validator: ^5.0.5
   flutter_lints: ^6.0.0

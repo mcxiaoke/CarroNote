@@ -191,10 +191,7 @@ class Vault {
   ///   1. changePassword 时验证旧密码
   ///   2. migrateVault 时解开远端 encryptedDataKey
   /// 不持久化到磁盘，logout 时清零。
-  final Uint8List? _mk;
-
-  /// 获取 MK（迁移场景需要，可能为 null 表示未缓存）
-  Uint8List? get mk => _mk;
+  final Uint8List? mk;
 
    Vault({
     required this.vaultId,
@@ -205,8 +202,8 @@ class Vault {
     this.dataKeyEpoch = 1,
     required this.kdf,
     required this.createdAt,
-    Uint8List? mk,
-  }) : _mk = mk;
+    this.mk,
+  });
 
   /// 复制并更新部分字段（保留 mk 缓存）
   Vault copyWith({
@@ -229,7 +226,7 @@ class Vault {
         dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
         kdf: kdf ?? this.kdf,
         createdAt: createdAt ?? this.createdAt,
-        mk: mk ?? _mk,
+        mk: mk ?? this.mk,
       );
 
   // ──────────────────────────────────────────────
@@ -481,7 +478,7 @@ static Future<Vault> _unlockWith({
     }
 
     // encryptedDataKey 不同，需要 MK 来解密远端 dataKey 进行迁移
-    final mk = _mk;
+    final mk = this.mk;
     if (mk == null) {
       return MigrationResult.failed('MK 未缓存，无法检查迁移');
     }

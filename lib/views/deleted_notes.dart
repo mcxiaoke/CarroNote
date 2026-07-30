@@ -87,7 +87,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: _deletedNotes.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final note = _deletedNotes[index];
         return _DeletedNoteTile(
