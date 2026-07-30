@@ -21,7 +21,9 @@ import 'package:safenotes/utils/device_info.dart';
 Future<bool> handleStoragePermission() async {
   // if sdk is above 29 no permission needed to store file in Download folder
   if (!await isAndroidSdkVersionAbove(29) &&
-      !await _requestPermission(Permission.storage)) return false;
+      !await _requestPermission(Permission.storage)) {
+    return false;
+  }
   return true;
 }
 

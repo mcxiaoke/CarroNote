@@ -54,13 +54,15 @@ class AppThemes {
       bottomAppBarTheme: NordTheme.dark().bottomAppBarTheme.copyWith(
             color: Colors.grey.shade900,
           ),
-      dialogBackgroundColor: Colors.grey.shade900,
+      dialogTheme: const DialogThemeData().copyWith(
+        backgroundColor: Colors.grey.shade900,
+      ),
       primaryColor: Colors.black,
       scaffoldBackgroundColor: Colors.black,
       canvasColor: Colors.black,
       primaryColorDark: Colors.black,
       appBarTheme: const AppBarTheme().copyWith(
-        color: Colors.grey.shade900,
+        backgroundColor: Colors.grey.shade900,
       ),
       bottomSheetTheme: const BottomSheetThemeData().copyWith(
         modalBackgroundColor: Colors.grey.shade900,

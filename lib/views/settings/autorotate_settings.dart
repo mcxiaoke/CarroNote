@@ -24,7 +24,7 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class AutoRotationSetting extends StatefulWidget {
-  const AutoRotationSetting({Key? key}) : super(key: key);
+  const AutoRotationSetting({super.key});
 
   @override
   State<AutoRotationSetting> createState() => _AutoRotationSettingState();

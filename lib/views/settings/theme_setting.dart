@@ -34,8 +34,8 @@ void showThemeBottomSheet(BuildContext context) {
 
 class ThemeBottomSheet extends StatefulWidget {
   const ThemeBottomSheet({
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   ThemeBottomSheetState createState() => ThemeBottomSheetState();

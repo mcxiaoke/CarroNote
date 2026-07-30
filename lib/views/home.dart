@@ -46,9 +46,9 @@ class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
   const HomePage({
-    Key? key,
+    super.key,
     required this.sessionStateStream,
-  }) : super(key: key);
+  });
 
   @override
   HomePageState createState() => HomePageState();
@@ -537,7 +537,7 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  void dismissKeyboard([var _]) {
+  void dismissKeyboard([Object? _]) {
     final FocusScopeNode currentScope = FocusScope.of(context);
     if (!currentScope.hasPrimaryFocus && currentScope.hasFocus) {
       FocusManager.instance.primaryFocus?.unfocus();

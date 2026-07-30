@@ -110,13 +110,13 @@ class FileHandler {
         FilePickerResult? result;
 
         if (await isAndroidSdkVersionAbove(29)) {
-          result = await FilePicker.platform.pickFiles(
+          result = await FilePicker.pickFiles(
             type: FileType.custom,
             allowedExtensions: [SafeNotesConfig.importFileExtension],
             allowMultiple: false,
           );
         } else {
-          result = await FilePicker.platform.pickFiles(
+          result = await FilePicker.pickFiles(
             type: FileType.any,
             allowMultiple: false,
           );
@@ -130,7 +130,7 @@ class FileHandler {
           return content;
         }
       } else if (Platform.isIOS) {
-        FilePickerResult? result = await FilePicker.platform.pickFiles(
+        FilePickerResult? result = await FilePicker.pickFiles(
           type: FileType.custom,
           allowedExtensions: [SafeNotesConfig.importFileExtension],
           allowMultiple: false,
@@ -147,7 +147,7 @@ class FileHandler {
     return null;
   }
 
-  insertNotes(List<SafeNote> imported) async {
+  Future<void> insertNotes(List<SafeNote> imported) async {
     for (final note in imported) {
       await NotesDatabase.instance.encryptAndStore(note);
     }

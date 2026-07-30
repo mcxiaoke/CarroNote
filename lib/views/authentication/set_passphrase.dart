@@ -41,10 +41,10 @@ class SetEncryptionPhrasePage extends StatefulWidget {
   final bool? isKeyboardFocused;
 
   const SetEncryptionPhrasePage({
-    Key? key,
+    super.key,
     required this.sessionStream,
     this.isKeyboardFocused,
-  }) : super(key: key);
+  });
 
   @override
   SetEncryptionPhrasePageState createState() => SetEncryptionPhrasePageState();
@@ -326,6 +326,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // 字符串 → 指纹登录必失败（评审 hy3/mmm3 A1）。
         final ok = await _initVault(enteredPassphrase);
         if (!ok) return;
+        if (!mounted) return;
         Session.onPasswordSet(enteredPassphrase);
 
         TextInput.finishAutofillContext();

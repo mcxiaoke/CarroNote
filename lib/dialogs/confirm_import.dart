@@ -29,9 +29,9 @@ class ImportConfirm extends StatefulWidget {
   final int importCount;
 
   const ImportConfirm({
-    Key? key,
+    super.key,
     required this.importCount,
-  }) : super(key: key);
+  });
 
   @override
   ImportConfirmState createState() => ImportConfirmState();
@@ -109,7 +109,7 @@ class ImportConfirmState extends State<ImportConfirm> {
         Expanded(
           child: ElevatedButton(
             style: ButtonStyle(
-              backgroundColor: MaterialStateProperty.all(NordColors.aurora.red),
+              backgroundColor: WidgetStateProperty.all(NordColors.aurora.red),
             ),
             child: _buttonText(cancelButtonText, buttonTextFontSize),
             onPressed: () {

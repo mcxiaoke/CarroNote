@@ -40,12 +40,9 @@ enum SyncBackendType {
 /// 同步配置
 class SyncConfig {
   static SharedPreferences? _prefs;
-  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
-    // Android: 使用 EncryptedSharedPreferences（默认）
-    // iOS: 使用 Keychain（默认）
-    // 桌面: 使用 DPAPI/libsecret（默认）
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  // flutter_secure_storage 10.x：Android 默认使用自定义加密（EncryptedSharedPreferences 已弃用），
+  // 旧数据会在首次访问时自动迁移；iOS 用 Keychain，桌面用 DPAPI/libsecret。
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   // SharedPreferences 键名（非敏感配置）
   static const _keyBackendType = 'sync_backend_type';

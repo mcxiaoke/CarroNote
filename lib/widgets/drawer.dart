@@ -35,14 +35,14 @@ class HomeDrawer extends StatefulWidget {
   final VoidCallback? onDeletedNotesCallback;
 
   const HomeDrawer({
-    Key? key,
+    super.key,
     required this.onImportCallback,
     required this.onChangePassCallback,
     required this.onLogoutCallback,
     required this.onSettingsCallback,
     required this.onBiometricsCallback,
     this.onDeletedNotesCallback,
-  }) : super(key: key);
+  });
 
   @override
   HomeDrawerState createState() => HomeDrawerState();

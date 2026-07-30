@@ -30,10 +30,10 @@ class NoteTileWidget extends StatelessWidget {
   final int index;
 
   const NoteTileWidget({
-    Key? key,
+    super.key,
     required this.note,
     required this.index,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

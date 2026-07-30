@@ -27,7 +27,7 @@ class CupertinoSwitchListTile extends StatelessWidget {
   final bool selected;
 
   const CupertinoSwitchListTile({
-    Key? key,
+    super.key,
     required this.value,
     required this.onChanged,
     required this.title,
@@ -37,7 +37,7 @@ class CupertinoSwitchListTile extends StatelessWidget {
     this.dense = false,
     this.contentPadding = const EdgeInsets.symmetric(horizontal: 15.0),
     this.selected = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -70,12 +70,12 @@ class CupertinoCheckListTile extends StatelessWidget {
   final EdgeInsetsGeometry contentPadding;
 
   const CupertinoCheckListTile({
-    Key? key,
+    super.key,
     required this.title,
     required this.value,
     this.onChanged,
     this.contentPadding = const EdgeInsets.symmetric(horizontal: 15.0),
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -104,10 +104,10 @@ class CupertinoCheckboxIcon extends StatelessWidget {
   final bool isEnabled;
 
   const CupertinoCheckboxIcon({
-    Key? key,
+    super.key,
     required this.value,
     required this.isEnabled,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

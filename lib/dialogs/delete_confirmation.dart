@@ -28,9 +28,9 @@ import 'package:safenotes/utils/styles.dart';
 class DeleteConfirmationDialog extends StatelessWidget {
   final VoidCallback callback;
   const DeleteConfirmationDialog({
-    Key? key,
+    super.key,
     required this.callback,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +117,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
             child: ElevatedButton(
               style: ButtonStyle(
                 backgroundColor:
-                    MaterialStateProperty.all(NordColors.aurora.red),
+                    WidgetStateProperty.all(NordColors.aurora.red),
               ),
               onPressed: callback,
               child: _buttonText(deleteButtonText, buttonTextFontSize),

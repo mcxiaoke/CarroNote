@@ -33,7 +33,7 @@ int _counter = 0;
 Timer? _timer;
 
 class PreInactivityLogOff extends StatelessWidget {
-  const PreInactivityLogOff({Key? key}) : super(key: key);
+  const PreInactivityLogOff({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +114,7 @@ class PreInactivityLogOff extends StatelessWidget {
         Expanded(
           child: ElevatedButton(
             style: ButtonStyle(
-              backgroundColor: MaterialStateProperty.all(NordColors.aurora.red),
+              backgroundColor: WidgetStateProperty.all(NordColors.aurora.red),
             ),
             child: _buttonText(yesButtonText, buttonTextFontSize),
             onPressed: () {

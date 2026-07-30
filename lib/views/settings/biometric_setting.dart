@@ -25,7 +25,7 @@ import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class BiometricSetting extends StatefulWidget {
-  const BiometricSetting({Key? key}) : super(key: key);
+  const BiometricSetting({super.key});
 
   @override
   State<BiometricSetting> createState() => _BiometricSettingState();

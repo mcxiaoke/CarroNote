@@ -24,7 +24,7 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class SecureDisplaySetting extends StatefulWidget {
-  const SecureDisplaySetting({Key? key}) : super(key: key);
+  const SecureDisplaySetting({super.key});
 
   @override
   State<SecureDisplaySetting> createState() => _SecureDisplaySettingState();

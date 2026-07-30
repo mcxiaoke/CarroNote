@@ -36,7 +36,7 @@ import 'package:safenotes/utils/time_utils.dart';
 import 'package:safenotes/widgets/login_button.dart';
 
 class BackupSetting extends StatefulWidget {
-  const BackupSetting({Key? key}) : super(key: key);
+  const BackupSetting({super.key});
 
   @override
   State<BackupSetting> createState() => BackupSettingState();
@@ -228,7 +228,7 @@ class BackupSettingState extends State<BackupSetting> {
     );
   }
 
-  Widget _showLocationPath(context) {
+  Widget _showLocationPath(BuildContext context) {
     if (Platform.isIOS && validWorkingBackupFullyQualifiedPath.isNotEmpty) {
       return Text.rich(
         TextSpan(

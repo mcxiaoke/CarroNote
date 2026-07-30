@@ -25,10 +25,10 @@ class ButtonWidget extends StatelessWidget {
   final VoidCallback? onClicked;
 
   const ButtonWidget({
-    Key? key,
+    super.key,
     required this.text,
     required this.onClicked,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

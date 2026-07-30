@@ -29,7 +29,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class ImportPassPhraseDialog extends StatefulWidget {
-  const ImportPassPhraseDialog({Key? key}) : super(key: key);
+  const ImportPassPhraseDialog({super.key});
 
   @override
   ImportPassPhraseDialogState createState() => ImportPassPhraseDialogState();
@@ -161,7 +161,7 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
             child: ElevatedButton(
               style: ButtonStyle(
                 backgroundColor:
-                    MaterialStateProperty.all(NordColors.aurora.red),
+                    WidgetStateProperty.all(NordColors.aurora.red),
               ),
               child: _buttonText(formCancelButtonText, buttonTextFontSize),
               onPressed: () => Navigator.of(context).pop(),

@@ -34,10 +34,10 @@ class App extends StatelessWidget {
   final GlobalKey<NavigatorState> navigatorKey;
 
   const App({
-    Key? key,
+    super.key,
     required this.sessionStateStream,
     required this.navigatorKey,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

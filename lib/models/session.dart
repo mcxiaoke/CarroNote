@@ -25,11 +25,11 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 
 class Session {
-  static login(String passphrase) {
+  static void login(String passphrase) {
     PhraseHandler.initPass(passphrase);
   }
 
-  static logout() async {
+  static Future<void> logout() async {
     // Take care of backup if enabled
     await ScheduledTask.backup();
 
@@ -52,7 +52,7 @@ class Session {
   /// 调用时机：
   ///   - set_passphrase 首次设置密码成功后
   ///   - change_passphrase 改密码成功后
-  static onPasswordSet(String passphrase) {
+  static void onPasswordSet(String passphrase) {
     PhraseHandler.initPass(passphrase);
     if (PreferencesStorage.isBiometricAuthEnabled) BiometricAuth.setAuthKey();
   }

@@ -90,7 +90,7 @@ Future main() async {
 }
 
 class SafeNotesApp extends StatelessWidget {
-  SafeNotesApp({Key? key}) : super(key: key);
+  SafeNotesApp({super.key});
 
   final navigatorKey = GlobalKey<NavigatorState>();
   NavigatorState? get _navigator => navigatorKey.currentState;

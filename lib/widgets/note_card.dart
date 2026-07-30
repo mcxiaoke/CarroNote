@@ -31,10 +31,10 @@ class NoteCardWidget extends StatelessWidget {
   final int index;
 
   const NoteCardWidget({
-    Key? key,
+    super.key,
     required this.note,
     required this.index,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -32,7 +32,7 @@ import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class ChangePassphrase extends StatefulWidget {
-  const ChangePassphrase({Key? key}) : super(key: key);
+  const ChangePassphrase({super.key});
   @override
   ChangePassphraseState createState() => ChangePassphraseState();
 }

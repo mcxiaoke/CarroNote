@@ -62,7 +62,7 @@ class DeviceIdProvider {
     _cachedDeviceId = null;
   }
 
-  /// 获取设备 ID（格式：<platform>-<id>）
+  /// 获取设备 ID（格式：`<platform>-<id>`）
   ///
   /// 首次调用会查询系统 API（异步），后续调用返回缓存（同步）。
   /// 测试环境若调用了 [overrideForTesting]，直接返回 mock 值。

@@ -27,7 +27,7 @@ import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class ColorPallet extends StatefulWidget {
-  const ColorPallet({Key? key}) : super(key: key);
+  const ColorPallet({super.key});
 
   @override
   State<ColorPallet> createState() => ColorPalletState();

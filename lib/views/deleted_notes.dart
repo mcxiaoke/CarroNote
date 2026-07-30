@@ -24,7 +24,7 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class DeletedNotesPage extends StatefulWidget {
-  const DeletedNotesPage({Key? key}) : super(key: key);
+  const DeletedNotesPage({super.key});
 
   @override
   State<DeletedNotesPage> createState() => _DeletedNotesPageState();

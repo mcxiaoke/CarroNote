@@ -47,10 +47,10 @@ class EncryptionPhraseLoginPage extends StatefulWidget {
   final bool? isKeyboardFocused;
 
   const EncryptionPhraseLoginPage({
-    Key? key,
+    super.key,
     required this.sessionStream,
     this.isKeyboardFocused,
-  }) : super(key: key);
+  });
 
   @override
   EncryptionPhraseLoginPageState createState() =>
@@ -203,7 +203,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  _buildTimeOut() {
+  Widget _buildTimeOut() {
     if (_isLocked) {
       SystemChannels.textInput.invokeMethod('TextInput.hide');
       passPhraseController.clear();

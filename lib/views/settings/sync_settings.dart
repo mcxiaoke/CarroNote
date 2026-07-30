@@ -22,7 +22,7 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 
 class SyncSettingsPage extends StatefulWidget {
-  const SyncSettingsPage({Key? key}) : super(key: key);
+  const SyncSettingsPage({super.key});
 
   @override
   State<SyncSettingsPage> createState() => _SyncSettingsPageState();
@@ -287,7 +287,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Future<void> _pickLocalFsPath() async {
-    final result = await FilePicker.platform.getDirectoryPath();
+    final result = await FilePicker.getDirectoryPath();
     if (result != null) {
       await SyncConfig.setLocalFsPath(result);
       if (mounted) setState(() {});

@@ -38,8 +38,7 @@ import 'package:safenotes/widgets/footer.dart';
 class SettingsScreen extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
-  const SettingsScreen({Key? key, required this.sessionStateStream})
-      : super(key: key);
+  const SettingsScreen({super.key, required this.sessionStateStream});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();

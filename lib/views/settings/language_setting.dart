@@ -25,7 +25,7 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class LanguageSetting extends StatefulWidget {
-  const LanguageSetting({Key? key}) : super(key: key);
+  const LanguageSetting({super.key});
 
   @override
   State<LanguageSetting> createState() => _LanguageSettingState();

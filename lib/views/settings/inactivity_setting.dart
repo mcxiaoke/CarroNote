@@ -25,7 +25,7 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class InactivityTimerSetting extends StatefulWidget {
-  const InactivityTimerSetting({Key? key}) : super(key: key);
+  const InactivityTimerSetting({super.key});
 
   @override
   State<InactivityTimerSetting> createState() => _InactivityTimerSettingState();

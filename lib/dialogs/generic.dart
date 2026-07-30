@@ -28,10 +28,10 @@ class GenericDialog extends StatelessWidget {
   final String message;
 
   const GenericDialog({
-    Key? key,
+    super.key,
     required this.icon,
     required this.message,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +113,7 @@ class GenericDialog extends StatelessWidget {
   }
 }
 
-showGenericDialog({
+Future<void> showGenericDialog({
   required BuildContext context,
   required IconData icon,
   required String message,

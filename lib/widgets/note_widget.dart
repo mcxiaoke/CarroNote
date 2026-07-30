@@ -34,13 +34,13 @@ class NoteFormWidget extends StatelessWidget {
   final ValueChanged<String> onChangedDescription;
 
   const NoteFormWidget({
-    Key? key,
+    super.key,
     this.title = '',
     this.description = '',
     required this.onChangedTitle,
     required this.onChangedDescription,
     required this.sessionStateStream,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

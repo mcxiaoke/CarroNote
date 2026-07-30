@@ -34,8 +34,7 @@ class NoteDetailPage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
   const NoteDetailPage(
-      {Key? key, required this.noteId, required this.sessionStateStream})
-      : super(key: key);
+      {super.key, required this.noteId, required this.sessionStateStream});
 
   @override
   NoteDetailPageState createState() => NoteDetailPageState();
@@ -133,7 +132,7 @@ class NoteDetailPageState extends State<NoteDetailPage> {
     );
   }
 
-  confirmAndDeleteDialog(BuildContext context) async {
+  Future<void> confirmAndDeleteDialog(BuildContext context) async {
     return showDialog(
       context: context,
       barrierDismissible: true,

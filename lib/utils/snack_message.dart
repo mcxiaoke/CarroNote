@@ -14,11 +14,11 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-showSnackBarMessage(BuildContext context, String? message) {
+void showSnackBarMessage(BuildContext context, String? message) {
   if (message != null) {
     final double width = MediaQuery.of(context).size.width * 0.80;
 
-    return ScaffoldMessenger.of(context)
+    ScaffoldMessenger.of(context)
       ..removeCurrentSnackBar()
       ..showSnackBar(
         SnackBar(

@@ -29,9 +29,9 @@ class FileImportDialog extends StatelessWidget {
   final VoidCallback callback;
 
   const FileImportDialog({
-    Key? key,
+    super.key,
     required this.callback,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

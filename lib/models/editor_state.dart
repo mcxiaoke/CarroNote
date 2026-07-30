@@ -25,17 +25,17 @@ class NoteEditorState {
   static String description = '';
 
   static bool wasNoteSaveAttempted = false;
-  static setSaveAttempted(bool flag) => wasNoteSaveAttempted = flag;
+  static void setSaveAttempted(bool flag) => wasNoteSaveAttempted = flag;
 
 // to be called everytime content of note in editor is changes
-  static setState(SafeNote? note, String titleNew, String descriptionNew) {
+  static void setState(SafeNote? note, String titleNew, String descriptionNew) {
     original = note;
     title = titleNew;
     description = descriptionNew;
     wasNoteSaveAttempted = false;
   }
 
-  static destroyValue() {
+  static void destroyValue() {
     original = null;
     title = description = '';
     wasNoteSaveAttempted = false;

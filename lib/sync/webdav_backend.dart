@@ -32,6 +32,7 @@ import 'dart:typed_data';
 // Package 导入
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 
 // Project 导入
 import 'package:safenotes/sync/crypto.dart';
@@ -43,6 +44,9 @@ import 'package:safenotes/sync/sync_backend.dart';
 /// 避免把 manifest/blobs 散落到用户网盘根目录与其他文件混在一起。
 /// 多设备共享时只要 baseUrl 一样，子目录路径自动一致。
 const String kWebDavVaultSubdir = 'safenotes-vault';
+
+/// 项目级日志实例（用于 ETag 等告警输出）
+final _logger = Logger();
 
 /// WebDAV 后端
 ///
@@ -167,9 +171,7 @@ class WebDavBackend implements SyncBackend {
 
       if (!_etagSupported && !_etagWarningLogged) {
         _etagWarningLogged = true;
-        // 注意：这里用 print 而非日志框架，避免引入新依赖
-        // 生产环境可接入 logger，当前开发阶段足够
-        print('[WebDAV] 警告：服务器不支持 ETag 头，'
+        _logger.w('[WebDAV] 警告：服务器不支持 ETag 头，'
             '乐观锁将退化为内容 hash 比较，'
             'If-Match 可能被服务器忽略，多端并发写入有覆盖风险。'
             '建议升级 WebDAV 服务或使用 SafeServer 后端。');

@@ -1165,7 +1165,7 @@ class SyncEngine {
   /// 上传单条笔记的 blob 到远端
   ///
   /// 墓碑不需要 blob（只在 manifest 里标记 deleted=true）。
-  /// 非墓碑：加密笔记内容为 envelope，PUT 到 blobs/<hash>。
+  /// 非墓碑：加密笔记内容为 envelope，PUT 到 blobs/`<hash>`。
   Future<void> _uploadNote(
     SafeNote note,
     List<SyncAction> actions, {

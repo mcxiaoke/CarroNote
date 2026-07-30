@@ -260,7 +260,7 @@ class SafeServerBackend implements SyncBackend {
 
   /// 删除 blob（GC 用，幂等）
   ///
-  /// SafeServer v2.1 协议定义了 DELETE /api/v2/blob/<hash> 端点。
+  /// SafeServer v2.1 协议定义了 DELETE /api/v2/blob/`<hash>` 端点。
   /// 客户端在 GC 流程中调用此端点清理孤儿 blob。
   ///
   /// 兼容性：若服务端为旧版 v2（未实现 DELETE 端点），返回 405 Method Not Allowed
