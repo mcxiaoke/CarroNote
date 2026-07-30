@@ -796,6 +796,26 @@ class SyncEngine {
         createdAt: note.createdTime.millisecondsSinceEpoch,
         deletedAt: note.deleted ? note.updatedAt : null,
         contentSize: note.toContentBytes().length,
+        // blobKeyEpoch 乐观标记为当前纪元（而非从 DB 持久化字段读取）。
+        //
+        // 设计意图：本地 DB 的 title/description 字段已用当前 dataKey 加密
+        // （迁移时 reEncryptAllNotes 已处理），但远端 blob 可能还是旧密钥。
+        // 这里"乐观声明当前纪元"是安全的，因为：
+        //   1. 任何 dataKey 变化（scenario-d）都会触发 markAllForBlobReupload，
+        //      所有笔记进入 pendingReupload 集合
+        //   2. _mergeAndTransfer 的 L917-L924 分支会在 hash 相同时强制重传
+        //      （pendingReupload.contains(uuid) 为真）
+        //   3. _uploadNote 用当前 _dataKey 加密 → 远端 blob 被更新为当前纪元
+        //   4. clearAllPendingReupload 只在 PUT manifest 成功后调用
+        // 这形成闭环：manifest 声称当前纪元 + blob 被重传为当前纪元 → 一致。
+        //
+        // 为什么不持久化每条笔记的实际 blobKeyEpoch 到 DB？
+        //   - 老数据迁移默认值（0）会让 manifest 回滚为旧纪元 → 其他设备
+        //     isOldKey 判定失效 → 旧密钥 blob 无法 heal → 永久 corrupt
+        //   - crash 一致性：_uploadNote 成功但字段更新失败 → manifest 与
+        //     blob 实际纪元不一致 → 可能导致无法自愈的 corrupt
+        // 当前"乐观声明 + pendingReupload 兑现"的设计避免了这些风险。
+        // 详见 2026-07-30 代码审查（docs/CHANGES-20260730.md）。
         blobKeyEpoch: vault.dataKeyEpoch,
       );
     }
@@ -1073,8 +1093,12 @@ class SyncEngine {
 
         // 存入本地数据库
         await database.storeNote(newNote);
-        // 上传 blob（新 hash）
-        await _uploadNote(newNote, actions);
+        // 上传 blob（新 hash），标记为冲突副本以便上层（如混沌测试）识别
+        await _uploadNote(
+          newNote,
+          actions,
+          message: 'conflict-copy from $uuid',
+        );
         // 加入 merged（新 UUID）
         mergedItems[newNote.uuid] = ManifestItem(
           hash: newNote.contentHash,
@@ -1105,8 +1129,12 @@ class SyncEngine {
 
         // 更新本地数据库（新 UUID 的新笔记）
         await database.storeNote(newNote);
-        // 上传 blob（新 hash）
-        await _uploadNote(newNote, actions);
+        // 上传 blob（新 hash），标记为冲突副本以便上层（如混沌测试）识别
+        await _uploadNote(
+          newNote,
+          actions,
+          message: 'conflict-copy from $uuid',
+        );
         // 加入 merged（新 UUID）
         mergedItems[newNote.uuid] = ManifestItem(
           hash: newNote.contentHash,
@@ -1140,8 +1168,9 @@ class SyncEngine {
   /// 非墓碑：加密笔记内容为 envelope，PUT 到 blobs/<hash>。
   Future<void> _uploadNote(
     SafeNote note,
-    List<SyncAction> actions,
-  ) async {
+    List<SyncAction> actions, {
+    String? message,
+  }) async {
     if (note.deleted) {
       // 墓碑：不传 blob，只在 manifest 里标记
       actions.add(SyncAction(
@@ -1187,6 +1216,7 @@ class SyncEngine {
       type: SyncActionType.upload,
       uuid: note.uuid,
       hash: note.contentHash,
+      message: message,
     ));
   }
 
