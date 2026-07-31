@@ -38,6 +38,7 @@ import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/login_button.dart';
@@ -451,6 +452,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       showSnackBarMessage(context, 'Decrypting your notes!'.tr());
     }
     Session.login(passphrase);
+    Log.auth.i('登录成功：进入主界面（密码登录）');
 
     // re-enable biometric auth
     if (forcePassphraseInput) {
@@ -488,6 +490,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///
   /// 简化方案:限流计数从 validator(sync)迁移到这里(async)
   void _onLoginFailure() {
+    Log.auth.w('登录失败：剩余尝试次数 $_noOfAllowedAttempts');
     _noOfAllowedAttempts--;
     final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
 
@@ -693,6 +696,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///   3. 清除 PreferencesStorage 中的 vault 相关 key
   ///   4. 重启应用(走首次设置流程)
   Future<void> _performLocalDataReset() async {
+    Log.auth.i('执行本地数据重置（清空 vault 与 notes 数据库）');
     try {
       await NotesDatabase.instance.close();
       await NotesDatabase.instance.deleteDbFile();
@@ -748,6 +752,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         );
       } catch (_) {}
       if (authenticated) await _login(await BiometricAuth.authKey);
+      if (authenticated) Log.auth.i('生物识别认证通过');
     }
     setState(() {
       forcePassphraseInput =

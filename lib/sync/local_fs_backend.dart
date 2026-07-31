@@ -29,7 +29,7 @@ import 'package:path/path.dart' as p;
 // Project 导入
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
-import 'package:safenotes/sync/sync_logging.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 /// 本地文件系统后端
 ///
@@ -206,12 +206,12 @@ class LocalFsBackend implements SyncBackend {
       await src.rename(dst.path);
     } on Exception catch (e) {
       // 重命名失败（跨文件系统）：退化为硬删除
-      syncLogger.w('LocalFs deleteBlobSoft: 重命名失败，退化为硬删除 '
+      Log.sync.w('LocalFs deleteBlobSoft: 重命名失败，退化为硬删除 '
           'hash=${hash.substring(0, 8)}…', error: e);
       try {
         await src.delete();
       } on Exception catch (e2) {
-        syncLogger.w('LocalFs deleteBlobSoft: 硬删除也失败 '
+        Log.sync.w('LocalFs deleteBlobSoft: 硬删除也失败 '
             'hash=${hash.substring(0, 8)}…', error: e2);
       }
     }

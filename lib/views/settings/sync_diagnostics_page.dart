@@ -23,8 +23,8 @@ import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project 导入
-import 'package:safenotes/sync/sync_log_webserver.dart';
-import 'package:safenotes/sync/sync_logging.dart';
+import 'package:safenotes/utils/log_webserver.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -484,19 +484,19 @@ class _LogsTab extends StatefulWidget {
 }
 
 class _LogsTabState extends State<_LogsTab> {
-  final List<SyncLogEntry> _entries = [];
-  StreamSubscription<SyncLogEntry>? _sub;
+  final List<AppLogEntry> _entries = [];
+  StreamSubscription<AppLogEntry>? _sub;
   final ScrollController _scrollController = ScrollController();
   bool _autoScroll = true;
 
   // 级别过滤
-  final Map<SyncLogLevel, bool> _levelFilter = {
-    SyncLogLevel.trace: false,
-    SyncLogLevel.debug: false,
-    SyncLogLevel.info: true,
-    SyncLogLevel.warning: true,
-    SyncLogLevel.error: true,
-    SyncLogLevel.fatal: true,
+  final Map<AppLogLevel, bool> _levelFilter = {
+    AppLogLevel.trace: false,
+    AppLogLevel.debug: false,
+    AppLogLevel.info: true,
+    AppLogLevel.warning: true,
+    AppLogLevel.error: true,
+    AppLogLevel.fatal: true,
   };
 
   @override
@@ -533,7 +533,7 @@ class _LogsTabState extends State<_LogsTab> {
     super.dispose();
   }
 
-  List<SyncLogEntry> get _filteredEntries {
+  List<AppLogEntry> get _filteredEntries {
     return _entries.where((e) => _levelFilter[e.level] ?? true).toList();
   }
 
@@ -553,7 +553,7 @@ class _LogsTabState extends State<_LogsTab> {
           child: Row(
             children: [
               // 级别过滤按钮
-              PopupMenuButton<SyncLogLevel>(
+              PopupMenuButton<AppLogLevel>(
                 icon: const Icon(Icons.filter_list, size: 20),
                 tooltip: '级别过滤',
                 onSelected: (level) {
@@ -561,7 +561,7 @@ class _LogsTabState extends State<_LogsTab> {
                     _levelFilter[level] = !(_levelFilter[level] ?? true);
                   });
                 },
-                itemBuilder: (context) => SyncLogLevel.values.map((level) {
+                itemBuilder: (context) => AppLogLevel.values.map((level) {
                   final enabled = _levelFilter[level] ?? true;
                   return PopupMenuItem(
                     value: level,
@@ -646,7 +646,7 @@ class _LogsTabState extends State<_LogsTab> {
     );
   }
 
-  Widget _buildLogLine(SyncLogEntry entry) {
+  Widget _buildLogLine(AppLogEntry entry) {
     final color = _levelColor(entry.level);
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
@@ -662,36 +662,36 @@ class _LogsTabState extends State<_LogsTab> {
     );
   }
 
-  Color _levelColor(SyncLogLevel level) {
+  Color _levelColor(AppLogLevel level) {
     switch (level) {
-      case SyncLogLevel.trace:
+      case AppLogLevel.trace:
         return Colors.grey[600]!;
-      case SyncLogLevel.debug:
+      case AppLogLevel.debug:
         return Colors.grey[500]!;
-      case SyncLogLevel.info:
+      case AppLogLevel.info:
         return Colors.blue[300]!;
-      case SyncLogLevel.warning:
+      case AppLogLevel.warning:
         return Colors.orange[400]!;
-      case SyncLogLevel.error:
+      case AppLogLevel.error:
         return Colors.red[400]!;
-      case SyncLogLevel.fatal:
+      case AppLogLevel.fatal:
         return Colors.red[700]!;
     }
   }
 
-  String _levelName(SyncLogLevel level) {
+  String _levelName(AppLogLevel level) {
     switch (level) {
-      case SyncLogLevel.trace:
+      case AppLogLevel.trace:
         return 'TRACE';
-      case SyncLogLevel.debug:
+      case AppLogLevel.debug:
         return 'DEBUG';
-      case SyncLogLevel.info:
+      case AppLogLevel.info:
         return 'INFO';
-      case SyncLogLevel.warning:
+      case AppLogLevel.warning:
         return 'WARN';
-      case SyncLogLevel.error:
+      case AppLogLevel.error:
         return 'ERROR';
-      case SyncLogLevel.fatal:
+      case AppLogLevel.fatal:
         return 'FATAL';
     }
   }
@@ -718,19 +718,19 @@ class _WebServerTabState extends State<_WebServerTab> {
   void initState() {
     super.initState();
     // 页面打开时如果服务器已在运行，刷新状态显示
-    if (SyncLogWebServer.instance.isRunning) {
+    if (LogWebServer.instance.isRunning) {
       _refreshStatus();
     }
   }
 
   /// 刷新状态文本（显示 IP 和端口）
   Future<void> _refreshStatus() async {
-    if (!SyncLogWebServer.instance.isRunning) {
+    if (!LogWebServer.instance.isRunning) {
       setState(() => _statusText = '未启动');
       return;
     }
     final ip = await _getLocalIp();
-    final port = SyncLogWebServer.instance.port;
+    final port = LogWebServer.instance.port;
     setState(() {
       _statusText = '运行中\n'
           '局域网访问: http://$ip:$port\n'
@@ -739,13 +739,13 @@ class _WebServerTabState extends State<_WebServerTab> {
   }
 
   Future<void> _toggleServer() async {
-    if (SyncLogWebServer.instance.isRunning) {
-      await SyncLogWebServer.instance.stop();
+    if (LogWebServer.instance.isRunning) {
+      await LogWebServer.instance.stop();
       setState(() => _statusText = '已停止');
     } else {
       setState(() => _isStarting = true);
       try {
-        final port = await SyncLogWebServer.instance.start();
+        final port = await LogWebServer.instance.start();
         // 获取本机 IP
         final ip = await _getLocalIp();
         setState(() {
@@ -783,7 +783,7 @@ class _WebServerTabState extends State<_WebServerTab> {
 
   @override
   Widget build(BuildContext context) {
-    final isRunning = SyncLogWebServer.instance.isRunning;
+    final isRunning = LogWebServer.instance.isRunning;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -823,7 +823,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                   const SizedBox(width: 8),
                   Text(
                     isRunning
-                        ? '运行中 (端口 ${SyncLogWebServer.instance.port})'
+                        ? '运行中 (端口 ${LogWebServer.instance.port})'
                         : '已停止',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,

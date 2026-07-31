@@ -29,8 +29,18 @@ import 'package:sqflite/sqflite.dart';
 // Project 导入
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 const String tableMeta = 'sync_meta';
+
+/// 隐私红线：日志中**绝不允许**出现笔记标题 / 正文明文。
+///
+/// SafeNotes 是隐私优先的加密笔记应用，日志文件与日志 Web 服务器都可能被
+/// 第三方看到。因此所有笔记相关日志只记录**非敏感元数据**：
+///   uuid、内容长度、contentHash 前缀、时间戳、影响行数。
+/// 需要新增笔记相关日志时，务必遵守此约定。
+String _hashBrief(String? hash) =>
+    (hash != null && hash.length >= 8) ? '${hash.substring(0, 8)}…' : '-';
 
 /// dataKey 未设置异常
 ///
@@ -227,12 +237,19 @@ class NotesDatabase {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(
-      path,
-      version: 2,
-      onCreate: _createDB,
-      onUpgrade: _upgradeDB,
-    );
+    try {
+      final db = await openDatabase(
+        path,
+        version: 2,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+      );
+      Log.db.i('数据库已打开: $path (version=2)');
+      return db;
+    } on Object catch (e, st) {
+      Log.db.f('数据库打开失败: $path', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 测试专用：注入 in-memory 数据库
@@ -324,10 +341,13 @@ class NotesDatabase {
 
   /// 数据库升级：不迁移旧数据，直接重建
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    // 破坏性 schema 变更，必须留痕
+    Log.db.w('数据库升级 $oldVersion → $newVersion（旧数据将被丢弃重建）');
     if (oldVersion < 2) {
       await db.execute('DROP TABLE IF EXISTS $tableNotes');
       await db.execute('DROP TABLE IF EXISTS $tableMeta');
       await _createDB(db, newVersion);
+      Log.db.i('数据库重建完成 (version=$newVersion)');
     }
   }
 
@@ -339,8 +359,17 @@ class NotesDatabase {
   Future<SafeNote> storeNote(SafeNote note) async {
     _checkNotMigrating();
     final db = await instance.database;
-    final id = await db.insert(tableNotes, _toEncryptedRow(note));
-    return note.copyWith(id: id);
+    try {
+      final id = await db.insert(tableNotes, _toEncryptedRow(note));
+      // 只记录元数据，不记录标题 / 正文（见文件顶部隐私红线说明）
+      Log.note.i('新增笔记 uuid=${note.uuid} id=$id '
+          'hash=${_hashBrief(note.contentHash)} '
+          'len=${note.title.length}+${note.description.length}');
+      return note.copyWith(id: id);
+    } on Object catch (e, st) {
+      Log.note.e('新增笔记失败 uuid=${note.uuid}', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 按 id 读取单条笔记（自动解密）
@@ -448,40 +477,67 @@ class NotesDatabase {
   Future<int> updateNote(SafeNote note) async {
     _checkNotMigrating();
     final db = await instance.database;
-    return db.update(
-      tableNotes,
-      _toEncryptedRow(note),
-      where: '${NoteFields.id} = ?',
-      whereArgs: [note.id],
-    );
+    try {
+      final rows = await db.update(
+        tableNotes,
+        _toEncryptedRow(note),
+        where: '${NoteFields.id} = ?',
+        whereArgs: [note.id],
+      );
+      Log.note.i('修改笔记 uuid=${note.uuid} id=${note.id} '
+          'hash=${_hashBrief(note.contentHash)} '
+          'len=${note.title.length}+${note.description.length} rows=$rows');
+      return rows;
+    } on Object catch (e, st) {
+      Log.note.e('修改笔记失败 uuid=${note.uuid} id=${note.id}',
+          error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 按 uuid 更新笔记（同步拉取时用，title/description 加密后存储）
   Future<int> updateNoteByUuid(SafeNote note) async {
     _checkNotMigrating();
     final db = await instance.database;
-    return db.update(
-      tableNotes,
-      _toEncryptedRow(note),
-      where: '${NoteFields.uuid} = ?',
-      whereArgs: [note.uuid],
-    );
+    try {
+      final rows = await db.update(
+        tableNotes,
+        _toEncryptedRow(note),
+        where: '${NoteFields.uuid} = ?',
+        whereArgs: [note.uuid],
+      );
+      Log.note.i('按 uuid 更新笔记 uuid=${note.uuid} '
+          'hash=${_hashBrief(note.contentHash)} '
+          'deleted=${note.deleted} rows=$rows');
+      return rows;
+    } on Object catch (e, st) {
+      Log.note.e('按 uuid 更新笔记失败 uuid=${note.uuid}',
+          error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 软删除笔记（标记为墓碑，不真正删除行）
   Future<int> softDelete(int id) async {
     final db = await instance.database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    return db.update(
-      tableNotes,
-      {
-        NoteFields.deleted: 1,
-        NoteFields.updatedAt: now,
-        NoteFields.synced: 0,
-      },
-      where: '${NoteFields.id} = ?',
-      whereArgs: [id],
-    );
+    try {
+      final rows = await db.update(
+        tableNotes,
+        {
+          NoteFields.deleted: 1,
+          NoteFields.updatedAt: now,
+          NoteFields.synced: 0,
+        },
+        where: '${NoteFields.id} = ?',
+        whereArgs: [id],
+      );
+      Log.note.i('删除笔记（软删除，移入回收站）id=$id rows=$rows');
+      return rows;
+    } on Object catch (e, st) {
+      Log.note.e('软删除笔记失败 id=$id', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 彻底删除笔记（从数据库移除，最近删除视图的"永久删除"用）
@@ -506,7 +562,10 @@ class NotesDatabase {
       whereArgs: [id],
       limit: 1,
     );
-    if (maps.isEmpty) return 0;
+    if (maps.isEmpty) {
+      Log.note.w('永久删除笔记：id=$id 不存在，忽略');
+      return 0;
+    }
     final uuid = maps.first[NoteFields.uuid] as String;
 
     // 2. 删除行
@@ -519,6 +578,9 @@ class NotesDatabase {
     // 3. 追加到待清理列表
     await _addPurgedUuid(uuid);
 
+    // 不可恢复的破坏性操作，必须留痕
+    Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
+        '已加入 purged 列表待同步清理');
     return deleted;
   }
 
@@ -536,6 +598,7 @@ class NotesDatabase {
     );
     if (deleted > 0) {
       await _addPurgedUuid(uuid);
+      Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
   }
@@ -593,16 +656,23 @@ class NotesDatabase {
   Future<int> restoreNote(int id) async {
     final db = await instance.database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    return db.update(
-      tableNotes,
-      {
-        NoteFields.deleted: 0,
-        NoteFields.updatedAt: now,
-        NoteFields.synced: 0,
-      },
-      where: '${NoteFields.id} = ?',
-      whereArgs: [id],
-    );
+    try {
+      final rows = await db.update(
+        tableNotes,
+        {
+          NoteFields.deleted: 0,
+          NoteFields.updatedAt: now,
+          NoteFields.synced: 0,
+        },
+        where: '${NoteFields.id} = ?',
+        whereArgs: [id],
+      );
+      Log.note.i('恢复笔记（撤回删除）id=$id rows=$rows');
+      return rows;
+    } on Object catch (e, st) {
+      Log.note.e('恢复笔记失败 id=$id', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// 重新加密所有笔记（dataKey 迁移时调用）
@@ -634,6 +704,9 @@ class NotesDatabase {
     // F4 修复：设置迁移中标志，阻止 UI 并发读取笔记
     // 迁移期间 _dataKey 被临时切换，UI 读取会用错误 key 解密
     _isMigrating = true;
+    // 全库重加密是最高风险的数据变更，起止与结果都必须留痕
+    Log.db.w('开始全库重加密（dataKey 迁移），期间禁止 UI 读取笔记');
+    final startedAt = DateTime.now();
 
     // 1. 临时切换 dataKey 为 oldKey 读取所有笔记（自动解密为明文）
     //    保存当前 _dataKey 以便失败时恢复
@@ -676,10 +749,14 @@ class NotesDatabase {
       // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
+      final ms = DateTime.now().difference(startedAt).inMilliseconds;
+      Log.db.i('全库重加密完成: ${notes.length} 条笔记, 耗时 ${ms}ms');
       return notes.length;
-    } catch (e) {
+    } catch (e, st) {
       // 失败时恢复 _dataKey 为原始值（可能是 oldKey 或 originalDataKey）
       _dataKey = originalDataKey;
+      Log.db.f('全库重加密失败，已回滚事务并恢复原 dataKey',
+          error: e, stackTrace: st);
       rethrow;
     } finally {
       // F4 修复：无论成功或失败，清除迁移中标志
@@ -895,8 +972,17 @@ class NotesDatabase {
   Future<void> deleteDbFile() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'safenotes_sync.db');
-    await databaseFactory.deleteDatabase(path);
-    _database = null;
-    _dataKey = null;
+    // 不可逆的全量数据销毁（忘记密码逃生通道），必须以 FATAL 级别留痕
+    Log.db.f('⚠ 删除数据库文件（所有本地笔记将永久丢失）: $path');
+    try {
+      await databaseFactory.deleteDatabase(path);
+      Log.db.i('数据库文件已删除，内存密钥已清空');
+    } on Object catch (e, st) {
+      Log.db.e('删除数据库文件失败', error: e, stackTrace: st);
+      rethrow;
+    } finally {
+      _database = null;
+      _dataKey = null;
+    }
   }
 }

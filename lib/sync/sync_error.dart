@@ -14,7 +14,7 @@
  *   旧 UI），由 error.toDisplayString() 派生。
  *
  * 与 SyncLogging 的关系：
- *   引擎层 catch 到具体 SyncError 后通过 syncLogger 记录（带堆栈），
+ *   引擎层 catch 到具体 SyncError 后通过 Log.sync 记录（带堆栈），
  *   同时塞入 SyncAction 供调试面板查看。
  */
 

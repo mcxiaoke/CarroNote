@@ -32,6 +32,8 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/app_logger.dart';
+import 'package:safenotes/utils/log_webserver.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/drawer.dart';
@@ -75,16 +77,35 @@ class HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    Log.ui.i('进入主界面');
     refreshNotes();
     _syncStateSub =
         SyncService.instance.stateStream.listen(_onSyncStateChanged);
+    // 需求：日志 Web 服务器随主界面启动（全平台：移动端 + 桌面端），
+    // 应用退出（detached）时由 main.dart 的 _shutdown 统一停止。
+    // 放在主界面而非 SyncService，是为了让未配置同步的用户也能远程看日志。
+    _startLogWebServer();
   }
 
   @override
   void dispose() {
     _syncStateSub?.cancel();
     importPassphraseController.dispose();
+    // 注意：此处不停止日志 Web 服务器。
+    // HomePage 会因登出 / 页面跳转等原因反复销毁重建，
+    // 而日志服务器的生命周期是"应用级"的，只在应用退出时结束。
     super.dispose();
+  }
+
+  /// 启动日志 Web 服务器（幂等，失败不影响主流程）
+  Future<void> _startLogWebServer() async {
+    if (LogWebServer.instance.isRunning) return;
+    try {
+      await LogWebServer.instance.start();
+    } on Object catch (e, st) {
+      Log.web.w('日志 Web 服务器启动失败（不影响应用使用）',
+          error: e, stackTrace: st);
+    }
   }
 
   /// B4 修复：他端改密码提示

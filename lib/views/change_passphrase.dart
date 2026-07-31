@@ -29,6 +29,7 @@ import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class ChangePassphrase extends StatefulWidget {
@@ -308,6 +309,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   void _finalSublmitChange() async {
+    Log.auth.i('开始修改密码（旧密码校验通过后执行变更）');
     final form = formKey.currentState!;
     final String passChangedSnackMsg = 'Passphrase changed!'.tr();
     final String wrongOldPassMsg = 'Wrong passphrase!'.tr();
@@ -335,6 +337,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         await vault.verifyPassword(oldPassword);
       } on WrongPasswordException {
         // 旧密码错误(简化方案:vault 是唯一凭证,失败必须中止)
+        Log.auth.e('改密码中止：旧密码错误');
         if (mounted) {
           showSnackBarMessage(context, wrongOldPassMsg);
         }

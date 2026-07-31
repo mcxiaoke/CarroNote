@@ -57,6 +57,7 @@ temp/
 tmp/
 server/nodejs/data/
 server/go/data/
+coverage/
 
 #Ignore App Store Listing Assets
 app_store_listing_assets/
