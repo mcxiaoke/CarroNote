@@ -149,6 +149,12 @@ func ValidateVaultPath(rel string) error {
 	if filepath.IsAbs(clean) {
 		return ErrInvalidPath
 	}
+	// 拒绝以分隔符开头的路径（如 Unix 的 "/abs" 或 Windows 上 Clean 后的 "\abs"）。
+	// 注意：Windows 下无盘符的 "/abs/path" 经 Clean 变为 "\abs\path"，
+	// filepath.IsAbs 会误判为非绝对，因此必须单独拦截以分隔符开头的情形。
+	if strings.HasPrefix(clean, string(filepath.Separator)) {
+		return ErrInvalidPath
+	}
 	// 拒绝逃逸出 vault 根（规范化后仍以 ".." 开头）
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return ErrInvalidPath

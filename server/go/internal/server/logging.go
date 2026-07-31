@@ -19,14 +19,23 @@ import (
 	"os"
 )
 
+// noopCloser 是一个不执行任何操作的 io.Closer，用于 stdout 日志场景。
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
+
 // NewLogger 创建结构化日志器
 //
 // 根据 cfg 的日志配置创建：
 //   - level：日志级别
 //   - file：日志文件路径（空=stdout）
 //   - json：是否 JSON 格式
-func NewLogger(level slog.Level, logFile string, useJSON bool) *slog.Logger {
+//
+// 返回 (logger, closer)：当日志写入文件时 closer 为该文件句柄，调用方应在
+// graceful shutdown 时 Close 以释放句柄（修复 L-6）；stdout 场景返回 noopCloser。
+func NewLogger(level slog.Level, logFile string, useJSON bool) (*slog.Logger, io.Closer) {
 	var w io.Writer = os.Stdout
+	var closer io.Closer = noopCloser{}
 	if logFile != "" {
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -34,6 +43,7 @@ func NewLogger(level slog.Level, logFile string, useJSON bool) *slog.Logger {
 			os.Stderr.WriteString("warning: open log file failed: " + err.Error() + ", fallback to stdout\n")
 		} else {
 			w = f
+			closer = f
 		}
 	}
 
@@ -46,7 +56,7 @@ func NewLogger(level slog.Level, logFile string, useJSON bool) *slog.Logger {
 	} else {
 		handler = slog.NewTextHandler(w, opts)
 	}
-	return slog.New(handler)
+	return slog.New(handler), closer
 }
 
 // statusWriter 包装 http.ResponseWriter，捕获响应状态码和写入字节数用于日志

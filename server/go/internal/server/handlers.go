@@ -17,7 +17,8 @@ import (
 	"safenotes-server/internal/storage"
 )
 
-// maxBytesErr 检测是否是 http.MaxBytesReader 超限错误，返回 true 时应响应 413
+// isPayloadTooLarge 检测错误是否源自 http.MaxBytesReader 请求体超限，
+// 命中时应响应 413 Payload Too Large。
 func isPayloadTooLarge(err error) bool {
 	var maxErr *http.MaxBytesError
 	return errors.As(err, &maxErr)
@@ -49,6 +50,7 @@ func (s *Server) handleGetManifest(w http.ResponseWriter, r *http.Request) {
 //
 // 乐观锁由 Vault 实现内部保证（"校验 + 写入" 在同一个锁内完成，防 TOCTOU）。
 func (s *Server) handlePutManifest(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close() // 修复 L-7：尽早注册关闭，错误分支也能释放连接
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if isPayloadTooLarge(err) {
@@ -58,7 +60,6 @@ func (s *Server) handlePutManifest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read body failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	ifMatch := r.Header.Get("If-Match")
 	ifNoneMatch := r.Header.Get("If-None-Match")
@@ -119,6 +120,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request, hash stri
 
 // PUT /api/v2/blob/<hash>（幂等）
 func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash string) {
+	defer r.Body.Close() // 修复 L-7：尽早注册关闭
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if isPayloadTooLarge(err) {
@@ -128,7 +130,6 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash stri
 		http.Error(w, "read body failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	if err := s.vault.PutBlob(hash, body); err != nil {
 		switch {
@@ -224,6 +225,7 @@ func (s *Server) handlePutResource(w http.ResponseWriter, r *http.Request, rel s
 		http.Error(w, "resource path required", http.StatusBadRequest)
 		return
 	}
+	defer r.Body.Close() // 修复 L-7：尽早注册关闭
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if isPayloadTooLarge(err) {
@@ -233,7 +235,6 @@ func (s *Server) handlePutResource(w http.ResponseWriter, r *http.Request, rel s
 		http.Error(w, "read body failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	var opts storage.PutOptions
 	if ifNoneMatch := r.Header.Get("If-None-Match"); ifNoneMatch == "*" {

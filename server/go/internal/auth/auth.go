@@ -145,14 +145,21 @@ func CheckToken(r *http.Request, expected string) bool {
 
 // ExtractIP 从请求中提取客户端 IP
 //
-// 优先从 X-Forwarded-For 取（反向代理场景），取第一个 IP；
-// 否则用 RemoteAddr，处理 IPv6 格式（如 [::1]:port 或 ::1）。
-func ExtractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
+// trustProxy=false（默认，直连公网）：完全忽略 X-Forwarded-For，直接使用 RemoteAddr。
+// 这是安全默认值——攻击者在公网可直接伪造 XFF，若信任它即可无限尝试 token 或把限速
+// 转移到受害者 IP（DoS 放大）。
+//
+// trustProxy=true（位于可信反向代理之后）：才信任 X-Forwarded-For，
+// 且只取最右一跳（由可信代理追加的那一段），忽略客户端可自行注入的前置条目。
+//
+// 无论哪种模式都会正确处理 RemoteAddr 的 IPv6（[::1]:port）与 IPv4-mapped IPv6 格式。
+func ExtractIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// 取最右一跳：XFF 格式为 "client, proxy1, proxy2"，最右一段由可信代理追加，最可靠。
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
 		}
-		return strings.TrimSpace(xff)
 	}
 	host := r.RemoteAddr
 	// 处理 IPv6 格式：[::1]:port

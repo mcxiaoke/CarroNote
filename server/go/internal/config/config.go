@@ -1,144 +1,235 @@
 // Package config 处理 SafeServer 的配置
 //
-// 配置来源：命令行参数（flag）+ 可选 JSON 配置文件（-config path）。
-// 配置文件用于开发/调试场景（如调整日志级别、日志路径），命令行参数优先级更高。
+// 配置来源：命令行参数（flag）+ 可选 JSON 配置文件（-config path）+ 环境变量。
+// 优先级：命令行 flag（显式）> 环境变量 > 配置文件 > 默认值。
 package config
 
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"time"
 )
 
+// duration 是对 time.Duration 的封装，支持 JSON 中以字符串（"60s"）或数字（纳秒）形式解析，
+// 同时实现 flag.Value 接口，供命令行 -read-timeout 等使用。
+//
+// 修复 S-1：旧实现直接用 time.Duration 字段接收 JSON，无法解析 "60s" 形式的字符串，
+// 导致整个配置文件解析失败并静默回退到弱默认 token。
+type duration time.Duration
+
+// Std 返回原生 time.Duration，方便在 http.Server 等处直接使用。
+func (d duration) Std() time.Duration { return time.Duration(d) }
+
+// UnmarshalJSON 支持字符串（"60s"）与数字（纳秒）两种形式。
+func (d *duration) UnmarshalJSON(b []byte) error {
+	var v interface{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	switch val := v.(type) {
+	case float64: // 数字纳秒（兼容旧格式）
+		*d = duration(time.Duration(val))
+	case string: // "60s" / "1m" 等
+		if val == "" {
+			return nil
+		}
+		parsed, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("invalid duration %q: %w", val, err)
+		}
+		*d = duration(parsed)
+	default:
+		return fmt.Errorf("invalid duration: %v", v)
+	}
+	return nil
+}
+
+// MarshalJSON 输出字符串形式（如 "60s"），便于配置回写与阅读。
+func (d duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Std().String())
+}
+
+// Set 实现 flag.Value 接口，支持命令行以 "60s" 形式传入。
+func (d *duration) Set(s string) error {
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = duration(parsed)
+	return nil
+}
+
+// String 实现 flag.Value 接口。
+func (d duration) String() string { return d.Std().String() }
+
 // Config 是 SafeServer 的运行配置
 type Config struct {
-	Addr         string        `json:"addr"`         // 监听地址
-	DataDir      string        `json:"dataDir"`      // 数据存储根目录
-	Token        string        `json:"token"`        // Bearer Token（认证用）
-	RateLimit    int           `json:"rateLimit"`    // 每分钟允许的认证失败次数（<=0 禁用，建议用 -1 显式禁用）
-	MaxBodyBytes int64         `json:"maxBodyBytes"` // 请求体最大大小（字节，防恶意大文件上传）
-	ReadTimeout  time.Duration `json:"readTimeout"`  // HTTP 读超时（含 body）
-	WriteTimeout time.Duration `json:"writeTimeout"` // HTTP 写超时
-	IdleTimeout  time.Duration `json:"idleTimeout"`  // HTTP 空闲连接超时
+	Addr         string  `json:"addr"`         // 监听地址
+	DataDir      string  `json:"dataDir"`      // 数据存储根目录
+	Token        string  `json:"token"`        // Bearer Token（认证用）
+	RateLimit    int     `json:"rateLimit"`    // 每分钟允许的认证失败次数（<=0 禁用，建议用 -1 显式禁用）
+	MaxBodyBytes int64   `json:"maxBodyBytes"` // 请求体最大大小（字节，防恶意大文件上传）
+	ReadTimeout  duration `json:"readTimeout"`  // HTTP 读超时（含 body）
+	WriteTimeout duration `json:"writeTimeout"` // HTTP 写超时
+	IdleTimeout  duration `json:"idleTimeout"`  // HTTP 空闲连接超时
+
+	// BehindProxy 是否位于可信反向代理之后。
+	// 仅当开启时才信任 X-Forwarded-For（且只取最右一跳），否则一律使用 RemoteAddr。
+	// 直连公网时务必保持默认关闭，否则攻击者可伪造 XFF 绕过限速（修复 C-1）。
+	BehindProxy bool `json:"behindProxy"`
+
+	// TLS 配置：同时设置 CertFile 与 KeyFile 时启用 HTTPS（修复 L-1）。
+	// 为空则明文 HTTP，启动时打印告警，禁止公网裸跑。
+	CertFile string `json:"certFile"` // TLS 证书路径
+	KeyFile  string `json:"keyFile"`  // TLS 私钥路径
 
 	// 日志配置（开发调试用）
-	LogLevel    slog.Level `json:"-"`              // 日志级别（不直接 JSON 序列化，用 LogLevel 字符串）
-	LogLevelStr string     `json:"logLevel"`       // 日志级别字符串："debug"/"info"/"warn"/"error"
-	LogFile     string     `json:"logFile"`        // 日志文件路径（空=stdout）
-	LogJSON     bool       `json:"logJSON"`        // 是否输出 JSON 格式日志（true=JSON，false=文本）
+	LogLevel    slog.Level `json:"-"`        // 日志级别（不直接 JSON 序列化，用 LogLevel 字符串）
+	LogLevelStr string     `json:"logLevel"` // 日志级别字符串："debug"/"info"/"warn"/"error"
+	LogFile     string     `json:"logFile"`  // 日志文件路径（空=stdout）
+	LogJSON     bool       `json:"logJSON"`  // 是否输出 JSON 格式日志（true=JSON，false=文本）
 }
+
+// DefaultToken 是默认的弱 Token，仅用于本地开发未配置时的兜底。
+// 任何生产/非默认场景都应通过 -token / 环境变量 / 配置文件覆盖它。
+const DefaultToken = "my-secret-token"
 
 // Default 返回默认配置
 func Default() *Config {
 	return &Config{
 		Addr:         ":4080",
 		DataDir:      "./data",
-		Token:        "my-secret-token",
+		Token:        DefaultToken,
 		RateLimit:    10,
 		MaxBodyBytes: 64 << 20, // 64MB
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  duration(60 * time.Second),
+		WriteTimeout: duration(60 * time.Second),
+		IdleTimeout:  duration(120 * time.Second),
 		LogLevelStr:  "info",
 		LogFile:      "", // 默认 stdout
 		LogJSON:      false,
 	}
 }
 
-// DevConfig 返回开发调试配置（debug 级别日志，写入文件）
-//
-// 用法：go run . -config dev.json（dev.json 内容见 docs/server-api-spec.md §13）
-func DevConfig(logFile string) *Config {
-	c := Default()
-	c.LogLevelStr = "debug"
-	c.LogFile = logFile
-	c.LogJSON = false
-	return c
-}
-
 // ParseFlags 解析命令行参数
 //
-// 参数优先级：命令行 flag > 配置文件 > 默认值
+// 参数优先级：命令行 flag（显式）> 环境变量 > 配置文件 > 默认值。
 func ParseFlags() *Config {
 	c := Default()
 
 	var configFile string
+	// 记录显式设置的 flag，供配置文件合并时判断优先级（修复 M-1）
+	set := map[string]bool{}
+
 	flag.StringVar(&configFile, "config", "", "配置文件路径（JSON，可选，用于开发调试场景）")
 	flag.StringVar(&c.Addr, "addr", c.Addr, "监听地址")
 	flag.StringVar(&c.DataDir, "data", c.DataDir, "数据存储目录")
 	flag.StringVar(&c.Token, "token", c.Token, "Bearer Token（认证用）")
 	flag.IntVar(&c.RateLimit, "rate-limit", c.RateLimit, "每分钟允许的认证失败次数（<=0 禁用，建议用 -1）")
 	flag.Int64Var(&c.MaxBodyBytes, "max-body", c.MaxBodyBytes, "请求体最大大小（字节，默认 64MB）")
-	flag.DurationVar(&c.ReadTimeout, "read-timeout", c.ReadTimeout, "HTTP 读超时")
-	flag.DurationVar(&c.WriteTimeout, "write-timeout", c.WriteTimeout, "HTTP 写超时")
-	flag.DurationVar(&c.IdleTimeout, "idle-timeout", c.IdleTimeout, "HTTP 空闲连接超时")
+	flag.Var(&c.ReadTimeout, "read-timeout", "HTTP 读超时（如 60s）")
+	flag.Var(&c.WriteTimeout, "write-timeout", "HTTP 写超时（如 60s）")
+	flag.Var(&c.IdleTimeout, "idle-timeout", "HTTP 空闲连接超时（如 120s）")
+	flag.BoolVar(&c.BehindProxy, "behind-proxy", c.BehindProxy, "是否位于可信反向代理之后（开启才信任 X-Forwarded-For）")
+	flag.StringVar(&c.CertFile, "cert", c.CertFile, "TLS 证书路径（与 -key 同时设置时启用 HTTPS）")
+	flag.StringVar(&c.KeyFile, "key", c.KeyFile, "TLS 私钥路径（与 -cert 同时设置时启用 HTTPS）")
 	flag.StringVar(&c.LogLevelStr, "log-level", c.LogLevelStr, "日志级别（debug/info/warn/error）")
 	flag.StringVar(&c.LogFile, "log-file", c.LogFile, "日志文件路径（空=stdout）")
 	flag.BoolVar(&c.LogJSON, "log-json", c.LogJSON, "是否输出 JSON 格式日志")
 	flag.Parse()
 
-	// 加载配置文件（命令行参数优先，配置文件只填充未通过命令行设置的字段）
+	// 收集显式设置的 flag（flag.Visit 仅在被显式传参时回调）
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	// 加载配置文件（仅填充命令行未显式设置的字段）
 	if configFile != "" {
-		if err := loadConfigFile(c, configFile); err != nil {
-			// 配置文件加载失败不致命，降级用命令行参数
-			os.Stderr.WriteString("warning: load config file failed: " + err.Error() + "\n")
+		if err := loadConfigFile(c, configFile, set); err != nil {
+			// 修复 S-1：配置文件加载失败属致命错误，必须非零退出，
+			// 严禁静默回退到弱默认 token 导致鉴权被绕过。
+			log.Fatalf("fatal: load config file %q failed: %v", configFile, err)
+		}
+	}
+
+	// 修复 L-3：环境变量 SAFESERVER_TOKEN 仅在未通过命令行显式设置 token 时生效，
+	// 且优先级低于显式 flag、高于配置文件/默认值。
+	if !set["token"] {
+		if envToken := os.Getenv("SAFESERVER_TOKEN"); envToken != "" {
+			c.Token = envToken
 		}
 	}
 
 	// 解析日志级别字符串到 slog.Level
 	c.LogLevel = parseLogLevel(c.LogLevelStr)
+
+	// 修复 L-4：仍在使用默认弱 token 时打印醒目告警，提醒用户配置强 token。
+	if c.Token == DefaultToken && !set["token"] && os.Getenv("SAFESERVER_TOKEN") == "" {
+		log.Printf("WARNING: using default weak token %q, set -token / SAFESERVER_TOKEN / config.token before any real deployment", DefaultToken)
+	}
 	return c
 }
 
-// loadConfigFile 从 JSON 文件加载配置（只填充未通过命令行显式设置的字段）
+// loadConfigFile 从 JSON 文件加载配置（仅填充命令行未显式设置的字段）。
 //
-// 简化实现：直接反序列化到 c，覆盖现有值。
-// 更严格的做法是用指针字段区分"未设置"和"显式设为零值"，但对当前场景足够。
-func loadConfigFile(c *Config, path string) error {
+// set 记录命令行显式设置的 flag 名；只有 set 中不存在的字段才允许配置文件覆盖，
+// 从而保证「命令行优先级 > 配置文件」的约定（修复 M-1）。
+//
+// duration 字段通过自定义 duration 类型解析，支持 "60s" 字符串，不再导致整体解析失败（修复 S-1）。
+func loadConfigFile(c *Config, path string, set map[string]bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	// 反序列化到临时结构，只覆盖非零字段
 	var fileCfg Config
 	if err := json.Unmarshal(data, &fileCfg); err != nil {
 		return err
 	}
-	// 合并：文件配置覆盖默认值，但命令行参数已解析到 c 中优先级更高
-	// 这里简化处理：文件的字段如果非零则覆盖
-	if fileCfg.Addr != "" {
+	// 仅当对应 flag 未被命令行显式设置，且文件字段非零时才覆盖。
+	if !set["addr"] && fileCfg.Addr != "" {
 		c.Addr = fileCfg.Addr
 	}
-	if fileCfg.DataDir != "" {
+	if !set["data"] && fileCfg.DataDir != "" {
 		c.DataDir = fileCfg.DataDir
 	}
-	if fileCfg.Token != "" {
+	// token 不允许被配置文件覆盖显式 flag（显式 flag 已在 ParseFlags 处理，这里 set["token"] 为命令行标记）
+	if !set["token"] && fileCfg.Token != "" {
 		c.Token = fileCfg.Token
 	}
-	if fileCfg.RateLimit != 0 {
+	if !set["rate-limit"] && fileCfg.RateLimit != 0 {
 		c.RateLimit = fileCfg.RateLimit
 	}
-	if fileCfg.MaxBodyBytes != 0 {
+	if !set["max-body"] && fileCfg.MaxBodyBytes != 0 {
 		c.MaxBodyBytes = fileCfg.MaxBodyBytes
 	}
-	if fileCfg.ReadTimeout != 0 {
+	if !set["read-timeout"] && fileCfg.ReadTimeout != 0 {
 		c.ReadTimeout = fileCfg.ReadTimeout
 	}
-	if fileCfg.WriteTimeout != 0 {
+	if !set["write-timeout"] && fileCfg.WriteTimeout != 0 {
 		c.WriteTimeout = fileCfg.WriteTimeout
 	}
-	if fileCfg.IdleTimeout != 0 {
+	if !set["idle-timeout"] && fileCfg.IdleTimeout != 0 {
 		c.IdleTimeout = fileCfg.IdleTimeout
 	}
-	if fileCfg.LogLevelStr != "" {
+	// behind-proxy / TLS 仅在未显式设置时从配置文件读取
+	if !set["behind-proxy"] && fileCfg.BehindProxy {
+		c.BehindProxy = fileCfg.BehindProxy
+	}
+	if !set["cert"] && fileCfg.CertFile != "" {
+		c.CertFile = fileCfg.CertFile
+	}
+	if !set["key"] && fileCfg.KeyFile != "" {
+		c.KeyFile = fileCfg.KeyFile
+	}
+	if !set["log-level"] && fileCfg.LogLevelStr != "" {
 		c.LogLevelStr = fileCfg.LogLevelStr
 	}
-	if fileCfg.LogFile != "" {
+	if !set["log-file"] && fileCfg.LogFile != "" {
 		c.LogFile = fileCfg.LogFile
 	}
-	if fileCfg.LogJSON {
+	if !set["log-json"] && fileCfg.LogJSON {
 		c.LogJSON = fileCfg.LogJSON
 	}
 	return nil

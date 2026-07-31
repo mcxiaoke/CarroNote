@@ -15,6 +15,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -30,11 +32,12 @@ import (
 
 // Server 是 SafeServer HTTP 服务
 type Server struct {
-	cfg      *config.Config
-	storage  storage.Storage // 存储后端（多 vault 扩展用）
-	vault    storage.Vault   // 默认 vault（单用户场景）
-	authFail *auth.FailTracker
-	logger   *slog.Logger
+	cfg       *config.Config
+	storage   storage.Storage // 存储后端（多 vault 扩展用）
+	vault     storage.Vault   // 默认 vault（单用户场景）
+	authFail  *auth.FailTracker
+	logger    *slog.Logger
+	logCloser io.Closer // 日志文件句柄（graceful shutdown 时关闭，修复 L-6）
 }
 
 // New 创建 Server 实例
@@ -51,12 +54,14 @@ func New(cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create default vault failed: %w", err)
 	}
+	logger, closer := NewLogger(cfg.LogLevel, cfg.LogFile, cfg.LogJSON)
 	return &Server{
-		cfg:      cfg,
-		storage:  store,
-		vault:    vault,
-		authFail: auth.NewFailTracker(time.Minute, 10000),
-		logger:   NewLogger(cfg.LogLevel, cfg.LogFile, cfg.LogJSON),
+		cfg:       cfg,
+		storage:   store,
+		vault:     vault,
+		authFail:  auth.NewFailTracker(time.Minute, 10000),
+		logger:    logger,
+		logCloser: closer,
 	}, nil
 }
 
@@ -64,12 +69,20 @@ func New(cfg *config.Config) (*Server, error) {
 //
 // 捕获 SIGINT/SIGTERM 信号，等待在途请求完成（最多 30 秒）后退出。
 func (s *Server) Run() error {
+	// 修复 L-6：graceful shutdown 时关闭日志文件句柄，避免句柄泄漏。
+	defer func() {
+		if s.logCloser != nil {
+			_ = s.logCloser.Close()
+		}
+	}()
+
 	srv := &http.Server{
-		Addr:         s.cfg.Addr,
-		Handler:      s.Handler(),
-		ReadTimeout:  s.cfg.ReadTimeout,
-		WriteTimeout: s.cfg.WriteTimeout,
-		IdleTimeout:  s.cfg.IdleTimeout,
+		Addr:              s.cfg.Addr,
+		Handler:           s.Handler(),
+		ReadTimeout:       s.cfg.ReadTimeout.Std(),
+		WriteTimeout:      s.cfg.WriteTimeout.Std(),
+		IdleTimeout:       s.cfg.IdleTimeout.Std(),
+		ReadHeaderTimeout: 10 * time.Second, // 修复 L-5：防 slowloris 慢速请求头耗尽连接
 	}
 
 	errCh := make(chan error, 1)
@@ -87,7 +100,7 @@ func (s *Server) Run() error {
 			"log_file", s.cfg.LogFile,
 			"log_json", s.cfg.LogJSON,
 		)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := s.listenAndServe(srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
@@ -98,12 +111,25 @@ func (s *Server) Run() error {
 	select {
 	case err := <-errCh:
 		return err
-	case sig := <-sigCh:
+		case sig := <-sigCh:
 		s.logger.Info("received signal, shutting down gracefully", "signal", sig.String())
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return srv.Shutdown(ctx)
 	}
+}
+
+// listenAndServe 启动 HTTP/HTTPS 服务（修复 L-1）
+//
+// 同时配置了 -cert 与 -key 时启用 TLS（ListenAndServeTLS）；否则明文 HTTP，
+// 并打印告警提醒「禁止公网裸跑，必须前置 TLS 反向代理」。
+func (s *Server) listenAndServe(srv *http.Server) error {
+	if s.cfg.CertFile != "" && s.cfg.KeyFile != "" {
+		s.logger.Info("TLS enabled", "cert", s.cfg.CertFile, "key", s.cfg.KeyFile)
+		return srv.ListenAndServeTLS(s.cfg.CertFile, s.cfg.KeyFile)
+	}
+	log.Printf("WARNING: server is running WITHOUT TLS (plain HTTP). Do not expose it to public networks without a TLS reverse proxy.")
+	return srv.ListenAndServe()
 }
 
 // Handler 返回 HTTP handler（中间件链 + 路由）
@@ -144,22 +170,23 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 速率限制检查（认证失败超限的 IP 直接拒绝）
-	clientIP := auth.ExtractIP(r)
-	if s.authFail.IsRateLimited(clientIP, s.cfg.RateLimit) {
-		w.Header().Set("Retry-After", "60")
-		http.Error(w, "Too Many Requests (auth failure rate limit)", http.StatusTooManyRequests)
-		return
-	}
-
-	// 认证
+	// 速率限制与认证：
+	// 修复 C-2 ——「正确凭证即白名单」。先校验 token：
+	//   - token 正确：直接放行并清除失败计数，被限速的合法用户立即可恢复（无需等窗口过期）；
+	//   - token 错误：再判断是否已被限速（防暴力枚举），命中则 429，否则记录一次失败并返回 401。
+	clientIP := auth.ExtractIP(r, s.cfg.BehindProxy)
 	if !auth.CheckToken(r, s.cfg.Token) {
+		if s.authFail.IsRateLimited(clientIP, s.cfg.RateLimit) {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "Too Many Requests (auth failure rate limit)", http.StatusTooManyRequests)
+			return
+		}
 		s.authFail.RecordFailure(clientIP)
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	// 认证成功：清除失败计数
+	// 认证成功：清除失败计数（限速自愈）
 	s.authFail.ResetFailures(clientIP)
 
 	// 路由分发

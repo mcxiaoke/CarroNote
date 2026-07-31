@@ -13,6 +13,9 @@
 package storage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -474,7 +477,13 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmpPath := path + ".tmp"
+	// 修复 C-3：临时文件名加随机后缀，保证并发写入同一目标（如同 hash 的 blob 重试）
+	// 各自使用独立临时文件，O_TRUNC 不会相互截断，rename 也不会互相覆盖。
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return err
+	}
+	tmpPath := fmt.Sprintf("%s.%s.tmp", path, hex.EncodeToString(buf))
 
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {

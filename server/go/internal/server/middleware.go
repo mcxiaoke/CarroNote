@@ -12,6 +12,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
 	"net/http"
@@ -86,7 +87,7 @@ func (s *Server) Logging(next http.Handler) http.Handler {
 				"status", ww.status,
 				"duration_ms", duration,
 				"request_id", rid,
-				"remote_addr", auth.ExtractIP(r),
+				"remote_addr", auth.ExtractIP(r, s.cfg.BehindProxy),
 				"req_headers", keyHeaders,
 				"resp_bytes", ww.bytesWritten,
 				"host", r.Host,
@@ -99,18 +100,22 @@ func (s *Server) Logging(next http.Handler) http.Handler {
 				"status", ww.status,
 				"duration_ms", duration,
 				"request_id", rid,
-				"remote_addr", auth.ExtractIP(r),
+				"remote_addr", auth.ExtractIP(r, s.cfg.BehindProxy),
 			)
 		}
 	})
 }
 
-// maskAuth 脱敏 Authorization 头（只显示前缀，不泄露 token）
+// maskAuth 脱敏 Authorization 头（修复 L-2）
+//
+// 不再保留 token 明文前缀，只输出其 SHA-256 的前 8 位十六进制，
+// 既可用于关联同一 token 的请求，又不泄露任何 token 明文字节。
 func maskAuth(authHeader string) string {
-	if len(authHeader) > 12 {
-		return authHeader[:12] + "...(masked)"
+	if authHeader == "" {
+		return ""
 	}
-	return authHeader
+	sum := sha256.Sum256([]byte(authHeader))
+	return "sha256:" + hex.EncodeToString(sum[:])[:8] + "(masked)"
 }
 
 // Recover 捕获 handler 中的 panic，防止进程崩溃
