@@ -95,6 +95,13 @@ class SyncEngine {
   /// 防止墓碑无限累积。30 天保证离线设备重新上线后能同步到删除操作。
   static const int kTombstoneGcThresholdMs = 30 * 24 * 60 * 60 * 1000;
 
+  /// P1-2 修复：隔离区 blob 保留期（30 天）
+  ///
+  /// 软删除（[SyncBackend.deleteBlobSoft]）到隔离区的孤儿 blob 超过此期限后，
+  /// 才由 [_gcOrphanBlobs] 调用 [SyncBackend.purgeOrphans] 彻底删除。
+  /// "超期才真删"给误删 / blob 静默损坏留出恢复窗口，避免不可逆数据损失。
+  static const Duration _orphanRetention = Duration(days: 30);
+
   SyncEngine({
     required this.backend,
     required this.database,
@@ -402,6 +409,13 @@ class SyncEngine {
       }
     }
 
+    // P0-1 修复：远端 manifest 为空（首次同步 / 远端被清空 / 损坏重建分支已在
+    // 上面 early-return）时，本地 merged 只包含本端笔记，无法得知远端还有哪些
+    // 内容寻址 blob 被其他设备引用。此时执行孤儿 blob GC 会误删其他设备残留在
+    // 服务端的内容，造成不可逆数据丢失。因此跳过本次 GC，等待下次同步拿到远端
+    // manifest 后再安全清理（next sync 时 remoteManifest != null）。
+    final bool skipGc = remoteManifest == null;
+
     // Step 2: 构建本地 manifest（纪元不匹配时整体用远端密钥纪元）
     final localManifest = await _buildLocalManifest(
       overrideEncryptedDataKey: overrideEncryptedDataKey,
@@ -449,7 +463,8 @@ class SyncEngine {
 
       // F1 修复：即使跳过 PUT，也执行孤儿 blob GC
       // 场景：上次同步上传了 blob，本次同步无变更但远端有孤儿 blob 需清理
-      await _gcOrphanBlobs(merged);
+      // P0-1：远端 manifest 为空时跳过 GC（见上方 skipGc 说明）
+      if (!skipGc) await _gcOrphanBlobs(merged);
 
       return SyncResult.success(
         uploaded: 0,
@@ -467,6 +482,10 @@ class SyncEngine {
 
     // Step 4: 加密 + PUT manifest（乐观锁）
     final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
+    // P1-1 修复：覆盖远端前先备份"即将被覆盖的旧 manifest"（环形 N 份）
+    if (remoteResponse.ciphertext.isNotEmpty) {
+      await backend.backupManifest(remoteResponse.ciphertext);
+    }
     await backend.putManifest(
       newCiphertext,
       remoteResponse.etag,
@@ -478,7 +497,8 @@ class SyncEngine {
     // F1 修复：孤儿 blob GC（manifest PUT 成功后）
     // listBlobs() - manifest 引用的 hash = 孤儿，删除。
     // GC 失败不阻断同步（try-catch），下次同步会重试。
-    await _gcOrphanBlobs(merged);
+    // P0-1：远端 manifest 为空（首次同步/远端被清空）时跳过，避免误删其他设备 blob。
+    if (!skipGc) await _gcOrphanBlobs(merged);
 
     // 密钥变更后的首次同步已将 pending 笔记的 blob 用新密钥重新上传，
     // 成功后清除待重传标记（Layer 2a）。
@@ -576,13 +596,38 @@ class SyncEngine {
 
       final blob = await backend.getBlob(item.hash);
       if (blob == null) {
-        // blob 缺失：保留远端条目，标记跳过（下次同步重试）
+        // P0-3 修复：blob 缺失时先尝试本机明文/孪生兜底重传，而不是直接跳过。
+        // 本机持有该笔记的明文（同 uuid 且 hash 一致，或同内容孪生）→ 用当前
+        // 密钥重新上传，恢复远端缺失的 blob；本机也无明文才标记跳过。
+        // 注意：只有当 local.contentHash == item.hash 才用本机明文，防止并发编辑
+        // 导��� upload 错误内容（与 P0-4 的 canHealLocal 对齐）。
+        final local = await database.readNoteByUuid(uuid);
+        final canHealLocal =
+            local != null && !local.deleted && local.contentHash == item.hash;
+        final twin = canHealLocal
+            ? null
+            : await database.readNoteByContentHash(item.hash);
+        final source = canHealLocal ? local : twin;
+        if (source != null && !source.deleted) {
+          await _uploadNote(source, actions);
+          repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
+          actions.add(SyncAction(
+            type: SyncActionType.heal,
+            uuid: uuid,
+            hash: item.hash,
+            message: local != null
+                ? 'repair: blob 缺失，本机有明文重传修复'
+                : 'repair: blob 缺失，本机有同内容孪生重传修复',
+          ));
+          continue;
+        }
+        // 本机也无明文：保留远端条目，标记跳过（下次同步重试）
         repairedItems[uuid] = item;
         actions.add(SyncAction(
           type: SyncActionType.skip,
           uuid: uuid,
           hash: item.hash,
-          message: 'repair: blob 缺失，跳过',
+          message: 'repair: blob 缺失且无本机明文，跳过',
         ));
         continue;
       }
@@ -687,6 +732,10 @@ class SyncEngine {
     );
     final manifest = Manifest(header: header, items: repairedItems);
     final ciphertext = ManifestCrypto.serialize(_dataKey, manifest);
+    // P1-1 修复：覆盖远端前先备份"即将被覆盖的旧 manifest"（环形 N 份）
+    if (remoteResponse.ciphertext.isNotEmpty) {
+      await backend.backupManifest(remoteResponse.ciphertext);
+    }
     await backend.putManifest(ciphertext, remoteResponse.etag);
 
     return SyncResult.success(
@@ -1305,7 +1354,32 @@ class SyncEngine {
     // 下载 blob
     final envelope = await backend.getBlob(item.hash);
     if (envelope == null) {
-      // blob 不存在：可能是其他设备还没上传完，跳过本次
+      // P0-4 修复：blob 在远端缺失（被静默删除/损坏）时，先尝试本机明文兜底重传。
+      // 本机持有该笔记的明文（同 uuid 且内容 hash 一致，或同内容孪生）→ 用当前
+      // 密钥重新上传，恢复远端缺失的 blob，本次视为自愈成功。
+      // 注意：只有内容 hash 与 item.hash 一致时才兜底，避免并发编辑导致本地 uuid
+      // 笔记内容已变时把错误内容写回远端 blob（自愈方向错误）。
+      final local = await database.readNoteByUuid(uuid);
+      final canHealLocal =
+          local != null && !local.deleted && local.contentHash == item.hash;
+      final twin = canHealLocal
+          ? null
+          : await database.readNoteByContentHash(item.hash);
+      final source = canHealLocal ? local : twin;
+      if (source != null && !source.deleted) {
+        await _uploadNote(source, actions);
+        actions.add(SyncAction(
+          type: SyncActionType.heal,
+          uuid: uuid,
+          hash: item.hash,
+          message: (local != null && local.uuid == uuid)
+              ? 'download: blob 缺失，本机有明文重传修复'
+              : 'download: blob 缺失，本机有同内容孪生重传修复',
+        ));
+        // 自愈成功：重传后 item.hash 对应的 blob 已恢复，保留 item 进 merged
+        return _DownloadHealed(item);
+      }
+      // blob 不存在且本机无可用明文：可能是其他设备还没上传完，跳过本次
       actions.add(SyncAction(
         type: SyncActionType.skip,
         uuid: uuid,
@@ -1608,6 +1682,10 @@ class SyncEngine {
   /// 此时 A 设备的 listBlobs 可能包含 B 刚上传但还未写入 manifest 的 blob，
   /// 误判为孤儿删除。缓解：manifest 引用的 blob 一定不会被删（referenced 集合保护）。
   /// 极端情况下删除了 B 正在上传的 blob，B 下次同步会重新上传（putBlob 幂等）。
+  ///
+  /// P1-2 修复：孤儿 blob 不再立即物理删除，而是软删除到隔离区（deleteBlobSoft），
+  /// 保留 [_orphanRetention] 后才由 purgeOrphans 彻底删除，避免"误删其他设备 blob
+  /// / blob 静默损坏后才发现"的不可逆损失。
   Future<void> _gcOrphanBlobs(Manifest merged) async {
     try {
       final remoteBlobs = await backend.listBlobs();
@@ -1626,10 +1704,17 @@ class SyncEngine {
       final orphans = remoteBlobs.where((h) => !referenced.contains(h));
       for (final hash in orphans) {
         try {
-          await backend.deleteBlob(hash);
+          await backend.deleteBlobSoft(hash); // P1-2：软删除到隔离区
         } on Exception {
-          // 单个 blob 删除失败不阻断整体 GC
+          // 单个 blob 软删除失败不阻断整体 GC
         }
+      }
+
+      // P1-2：清理隔离区中超过保留期的 blob（超期才真删）
+      try {
+        await backend.purgeOrphans(_orphanRetention);
+      } on Exception {
+        // 隔离区清理失败不阻断同步
       }
     } on Exception {
       // GC 失败不阻断同步，下次同步重试

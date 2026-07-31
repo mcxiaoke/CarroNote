@@ -15,7 +15,11 @@
  */
 
 // Dart 原生导入
+import 'dart:io';
 import 'dart:typed_data';
+
+// Package 导入
+import 'package:path/path.dart' as p;
 
 /// 后端抽象接口
 ///
@@ -114,6 +118,45 @@ abstract class SyncBackend {
   ///   - SafeServer：GET /api/v2/blobs（若服务端支持）
   Future<List<String>> listBlobs() async => [];
 
+  /// P1-2 修复：软删除 blob（移动到隔离区而非物理删除）
+  ///
+  /// 孤儿 blob GC 时调用：把 blob 移动到隔离区（保留一段时间可恢复/回放），
+  /// 而非立即物理删除，避免"误删其他设备 blob / blob 静默损坏后才发现"的
+  /// 不可逆损失。默认实现退化为 [deleteBlob]（硬删除），不支持隔离区的后端
+  /// 子类可不覆盖。
+  ///
+  /// [hash] blob 的 SHA-256 哈希（十六进制字符串）
+  Future<void> deleteBlobSoft(String hash) async {
+    await deleteBlob(hash);
+  }
+
+  /// P1-2 修复：列出隔离区中的孤儿 blob hash
+  ///
+  /// 供 [purgeOrphans] 与测试/回放使用。返回隔离区 blob 的 hash 列表
+  /// （不含时间戳、不含隔离区前缀）。默认返回空列表（后端不支持隔离区）。
+  Future<List<String>> listOrphanBlobs() async => [];
+
+  /// P1-2 修复：彻底删除隔离区中超过保留期的 blob
+  ///
+  /// [retention] 保留期（如 30 天）；早于 `now - retention` 的隔离区 blob 被物理删除。
+  /// GC 成功后可调用本方法清理过期隔离项，实现"超期才真删"。
+  /// 默认空实现（no-op）：不支持隔离区的后端隔离区本身为空，无需清理。
+  Future<void> purgeOrphans(Duration retention) async {}
+
+  /// P1-1 修复：manifest 代际备份（环形 N 份）
+  ///
+  /// 在每次 PUT manifest 覆盖远端之前调用，把"即将被覆盖的旧 manifest 密文"
+  /// 快照到环形备份（最多保留 N 代）。当检测到远端 manifest 损坏/被清空时，
+  /// 可从最近一代备份恢复，避免单点故障导致整库元数据丢失。
+  ///
+  /// [currentManifestBytes] 即将被覆盖的远端 manifest 密文（引擎传入，避免后端
+  /// 再发一次网络 GET）。首次上传（无旧 manifest）时传 null，实现应 no-op。
+  /// 默认空实现（no-op）：子类按需覆盖
+  /// （LocalFS 落地到 vault 的 `manifest-backup/` 子目录；WebDAV/SafeServer
+  /// 落地到各自服务端（网盘 / SafeServer 资源层）的 `manifest-backup/` 子目录；
+  /// 旧版 SafeServer 未实现资源层时降级为客户端本地临时目录环形备份）。
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
+
   /// D2 修复：备份损坏的 manifest 文件
   ///
   /// 当 SyncEngine 解析远端 manifest 失败（FormatException / GCM tag 验证失败）
@@ -167,4 +210,42 @@ class BackendNotInitializedException implements Exception {
   @override
   String toString() =>
       'BackendNotInitializedException: Call init() before using the backend';
+}
+
+/// manifest 代际备份环形份数（三个后端保持一致）
+const int kManifestBackupRingCount = 5;
+
+/// P1-1 通用环形备份写入
+///
+/// 把 [bytes] 写入 [dir] 下的环形备份文件 `manifest.bak-0` ..
+/// `manifest.bak-{count - 1}`，轮转位置记录在 [dir]/.manifest-bak-index 中。
+/// 多个后端共用此函数，保证"环形 N 份"语义一致（LocalFS 传入 vault 的
+/// `manifest-backup/` 子目录；WebDAV/SafeServer 传入各自服务端的 `manifest-backup/`
+/// 子目录，旧版 SafeServer 兜底时传入客户端临时目录）。备份失败由调用方
+/// try-catch，不抛异常。
+Future<String> writeRingBackup(
+  Directory dir,
+  Uint8List bytes, {
+  int count = 5,
+}) async {
+  await dir.create(recursive: true);
+  final indexFile = File(p.join(dir.path, '.manifest-bak-index'));
+  var slot = 0;
+  try {
+    if (await indexFile.exists()) {
+      slot = int.tryParse(await indexFile.readAsString()) ?? 0;
+    }
+  } on Exception {
+    slot = 0;
+  }
+  slot = (slot + 1) % count;
+  try {
+    await indexFile.writeAsString(slot.toString());
+  } on Exception {
+    // 索引写入失败不阻断备份
+  }
+  final path = p.join(dir.path, 'manifest.bak-$slot');
+  final file = File(path);
+  await file.writeAsBytes(bytes, flush: true);
+  return path;
 }

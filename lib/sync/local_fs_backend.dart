@@ -188,6 +188,92 @@ class LocalFsBackend implements SyncBackend {
     return result;
   }
 
+  /// P1-2 修复：软删除 blob（移动到 blobs-orphan/ 隔离区）
+  ///
+  /// 孤儿 blob GC 时调用：rename 到隔离区（文件名附时间戳 `hash.<epochMs>`），
+  /// 保留一段时间后可恢复或彻底删除，避免立即物理删除的不可逆损失。
+  @override
+  Future<void> deleteBlobSoft(String hash) async {
+    _ensureInitialized();
+    final src = File(p.join(_blobsDirPath, hash));
+    if (!await src.exists()) return; // 已不存在，幂等
+    final orphanDir = Directory(p.join(rootPath, 'blobs-orphan'));
+    await orphanDir.create(recursive: true);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final dst = File(p.join(orphanDir.path, '$hash.$ts'));
+    try {
+      await src.rename(dst.path);
+    } on Exception {
+      // 重命名失败（跨文件系统）：退化为硬删除
+      try {
+        await src.delete();
+      } on Exception {
+        // ignore
+      }
+    }
+  }
+
+  /// P1-2 修复：列出隔离区孤儿 blob 的 hash
+  @override
+  Future<List<String>> listOrphanBlobs() async {
+    _ensureInitialized();
+    final dir = Directory(p.join(rootPath, 'blobs-orphan'));
+    if (!await dir.exists()) return [];
+    final result = <String>[];
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        final dot = name.indexOf('.');
+        if (dot > 0) result.add(name.substring(0, dot));
+      }
+    }
+    return result;
+  }
+
+  /// P1-2 修复：清理隔离区中超过保留期的 blob
+  @override
+  Future<void> purgeOrphans(Duration retention) async {
+    _ensureInitialized();
+    final dir = Directory(p.join(rootPath, 'blobs-orphan'));
+    if (!await dir.exists()) return;
+    final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        final dot = name.indexOf('.');
+        if (dot > 0) {
+          final ts = int.tryParse(name.substring(dot + 1));
+          if (ts != null && ts < cutoff) {
+            try {
+              await entity.delete();
+            } on Exception {
+              // 单个删除失败不阻断整体清理
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /// P1-1 修复：manifest 代际备份（落地到 vault 的 `manifest-backup/` 子目录环形备份）
+  ///
+  /// 把即将被覆盖的旧 manifest 密文写入 vault 下 `manifest-backup/` 子目录的环形备份
+  /// `manifest.bak-0`..`manifest.bak-4`（最多保留 5 代），与 webdav/safeServer 后端
+  /// 布局一致（均落在各自"服务端"的 `manifest-backup/` 子目录）。
+  @override
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {
+    if (currentManifestBytes == null || currentManifestBytes.isEmpty) return;
+    _ensureInitialized();
+    try {
+      await writeRingBackup(
+        Directory(p.join(rootPath, 'manifest-backup')),
+        currentManifestBytes,
+      );
+    } on Exception {
+      // 备份失败不阻断同步
+    }
+  }
+
   @override
   Future<void> close() async {
     // LocalFS 无需释放资源（文件句柄在每次操作后自动关闭）

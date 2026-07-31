@@ -113,6 +113,18 @@ class FakeBackend implements SyncBackend {
     _etag = '';
     _blobs.clear();
   }
+
+  @override
+  Future<void> deleteBlobSoft(String hash) async => deleteBlob(hash);
+
+  @override
+  Future<List<String>> listOrphanBlobs() async => [];
+
+  @override
+  Future<void> purgeOrphans(Duration retention) async {}
+
+  @override
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
 }
 
 /// 创建测试用笔记

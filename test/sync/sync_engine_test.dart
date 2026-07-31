@@ -129,6 +129,16 @@ class FakeBackend implements SyncBackend {
     _manifestCiphertext = ciphertext;
     _etag = 'etag-other-device-${DateTime.now().microsecondsSinceEpoch}';
   }
+
+  // P0/P1 接口新增方法的默认实现（测试用 FakeBackend 无需真实隔离区/备份语义）
+  @override
+  Future<void> deleteBlobSoft(String hash) async => deleteBlob(hash);
+  @override
+  Future<List<String>> listOrphanBlobs() async => [];
+  @override
+  Future<void> purgeOrphans(Duration retention) async {}
+  @override
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
 }
 
 /// 测试辅助：构造 SyncEngine

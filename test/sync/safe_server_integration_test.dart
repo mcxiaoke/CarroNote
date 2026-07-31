@@ -1184,6 +1184,60 @@ void main() {
       expect(getRes.statusCode, 404);
     });
 
+    test(
+        'SafeServerBackend.deleteBlobSoft/listOrphanBlobs/purgeOrphans 真实 server 隔离与清理链路',
+        () async {
+      // 64 位 hex 哈希（sha256 空串），满足 purgeOrphans 的 hash 长度过滤（==64）
+      const hash =
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+      // 1. 上传一个真实 blob
+      await http.put(
+        Uri.parse('${server.baseUrl}/api/v2/blob/$hash'),
+        headers: {
+          'Authorization': 'Bearer $kTestToken',
+          'Content-Type': 'application/octet-stream',
+        },
+        body: utf8.encode('orphan-blob-content'),
+      );
+
+      // 2. 上传后：活动 blobs 列表包含该 hash
+      expect(await backend.listBlobs(), contains(hash));
+
+      // 3. 软删除（v2.2 资源层 move 到 blobs-orphan/）
+      await backend.deleteBlobSoft(hash);
+
+      // 4. 软删除后：活动 blobs 不再包含该 hash，但隔离区包含它
+      expect(await backend.listBlobs(), isNot(contains(hash)));
+      expect(await backend.listOrphanBlobs(), contains(hash));
+
+      // 5. 隔离区确有物理文件（propfind 可见），证明是 move 而非直接删除
+      //    （propfind depth=1 返回目录自身 + 子项，故按文件名是否含 hash 过滤）
+      final orphanDir = await http.post(
+        Uri.parse('${server.baseUrl}/api/v2/resources/blobs-orphan'),
+        headers: {
+          'Authorization': 'Bearer $kTestToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'op': 'propfind', 'depth': 1}),
+      );
+      expect(orphanDir.statusCode, 200);
+      final orphanEntries = jsonDecode(orphanDir.body) as List<dynamic>;
+      final orphanFiles = orphanEntries
+          .where((e) => ((e is Map ? e['name'] : null)?.toString() ?? '')
+              .contains(hash))
+          .toList();
+      expect(orphanFiles.length, 1,
+          reason: 'blobs-orphan/ 应恰有一个以该 hash 命名的孤儿文件');
+
+      // 6. 立即 purge（retention=0，孤儿 ts 早于 now 必删）
+      await backend.purgeOrphans(Duration.zero);
+
+      // 7. 清理后：隔离区清空，活动 blobs 仍不含该 hash
+      expect(await backend.listOrphanBlobs(), isNot(contains(hash)));
+      expect(await backend.listBlobs(), isNot(contains(hash)));
+    });
+
     test('未认证访问 GET /api/v2/blobs 返回 401', () async {
       final res = await http.get(
         Uri.parse('${server.baseUrl}/api/v2/blobs'),

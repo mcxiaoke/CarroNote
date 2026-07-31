@@ -129,6 +129,9 @@ class WebDavBackend implements SyncBackend {
   /// blobs 目录 URL
   String get _blobsUrl => '$baseUrl/blobs';
 
+  /// manifest 代际备份目录 URL（服务端 `manifest-backup/` 子目录）
+  String get _manifestBackupUrl => '$baseUrl/manifest-backup';
+
   @override
   Future<void> init() async {
     // MKCOL 创建根目录和 blobs 子目录（幂等：已存在返回 405）
@@ -417,6 +420,189 @@ class WebDavBackend implements SyncBackend {
       // 探测失败：保守返回空列表，GC 跳过孤儿清理
       return [];
     }
+  }
+
+  /// P1-2 修复：软删除 blob（COPY 到 blobs-orphan/ 隔离区，再删原 blob）
+  ///
+  /// WebDAV 无"移动"语义，用 COPY + DELETE 模拟：先把 blob COPY 到隔离区
+  /// （文件名附时间戳 `hash.<epochMs>`），再删除原 blob。COPY 失败时退化为
+  /// 直接 DELETE 原 blob（硬删除），不阻断 GC。
+  @override
+  Future<void> deleteBlobSoft(String hash) async {
+    _ensureInitialized();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final dest = '$_blobsUrl/blobs-orphan/$hash.$ts';
+    // 确保隔离区目录存在（已存在返回 405，忽略）
+    try {
+      await _mkcol('$_blobsUrl/blobs-orphan');
+    } on Exception {
+      // ignore
+    }
+    try {
+      final copyReq = http.Request('COPY', Uri.parse('$_blobsUrl/$hash'));
+      copyReq.headers.addAll(_authHeaders());
+      copyReq.headers['Destination'] = dest;
+      copyReq.headers['Depth'] = '0';
+      copyReq.headers['Overwrite'] = 'T';
+      final copyRes = await _client.send(copyReq);
+      final copyHttp = await http.Response.fromStream(copyRes);
+      if (copyHttp.statusCode >= 200 && copyHttp.statusCode < 300) {
+        // 隔离区已有副本：删除原 blob
+        await _client.delete(
+          Uri.parse('$_blobsUrl/$hash'),
+          headers: _authHeaders(),
+        );
+        return;
+      }
+    } on Exception {
+      // COPY 失败：退化为硬删除原 blob
+    }
+    try {
+      await _client.delete(
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: _authHeaders(),
+      );
+    } on Exception {
+      // 删除失败不抛异常（GC 不阻断同步）
+    }
+  }
+
+  /// P1-2 修复：列出隔离区孤儿 blob 的 hash
+  ///
+  /// PROPFIND blobs-orphan/ 目录，解析 `hash.<epochMs>` 文件名，返回 hash 部分。
+  @override
+  Future<List<String>> listOrphanBlobs() async {
+    _ensureInitialized();
+    try {
+      final req = http.Request('PROPFIND', Uri.parse('$_blobsUrl/blobs-orphan'));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '1';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+      final streamedRes = await _client.send(req);
+      final res = await http.Response.fromStream(streamedRes);
+      if (res.statusCode != 207 && res.statusCode != 200) return [];
+      final hashRegex = RegExp(r'^[a-f0-9]{64}\.');
+      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      final result = <String>[];
+      for (final match in hrefRegex.allMatches(res.body)) {
+        final href = match.group(1)!;
+        final name = Uri.decodeComponent(
+            href.split('/').where((s) => s.isNotEmpty).last);
+        if (hashRegex.hasMatch(name)) {
+          result.add(name.substring(0, 64));
+        }
+      }
+      return result;
+    } on Exception {
+      return [];
+    }
+  }
+
+  /// P1-2 修复：清理隔离区中超过保留期的 blob
+  ///
+  /// PROPFIND blobs-orphan/ 目录，解析 `hash.<epochMs>`，早于 now-retention 的
+  /// 通过 DELETE 彻底删除。
+  @override
+  Future<void> purgeOrphans(Duration retention) async {
+    _ensureInitialized();
+    try {
+      final req = http.Request('PROPFIND', Uri.parse('$_blobsUrl/blobs-orphan'));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '1';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+      final streamedRes = await _client.send(req);
+      final res = await http.Response.fromStream(streamedRes);
+      if (res.statusCode != 207 && res.statusCode != 200) return;
+      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      final cutoff =
+          DateTime.now().subtract(retention).millisecondsSinceEpoch;
+      for (final match in hrefRegex.allMatches(res.body)) {
+        final href = match.group(1)!;
+        final name = Uri.decodeComponent(
+            href.split('/').where((s) => s.isNotEmpty).last);
+        final dot = name.indexOf('.');
+        if (dot > 0 && name.substring(0, dot).length == 64) {
+          final ts = int.tryParse(name.substring(dot + 1));
+          if (ts != null && ts < cutoff) {
+            try {
+              await _client.delete(
+                Uri.parse('$_blobsUrl/blobs-orphan/$name'),
+                headers: _authHeaders(),
+              );
+            } on Exception {
+              // 单个删除失败不阻断
+            }
+          }
+        }
+      }
+    } on Exception {
+      // 清理失败不阻断同步
+    }
+  }
+
+  /// P1-1 修复：manifest 代际备份（落地到服务端 `manifest-backup/` 子目录环形备份）
+  ///
+  /// 与 localFs / safeServer 后端一致：在"服务端"（用户网盘）的 `manifest-backup/`
+  /// 子目录维护环形备份 `manifest.bak-0`..`manifest.bak-{N-1}`（轮转位置记在
+  /// `.manifest-bak-index`），远端 manifest 损坏/被清空时可从服务端备份恢复。
+  @override
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {
+    if (currentManifestBytes == null || currentManifestBytes.isEmpty) return;
+    _ensureInitialized();
+    try {
+      await _backupManifestOnServer(currentManifestBytes);
+    } on Exception {
+      // 服务端备份失败不阻断同步
+    }
+  }
+
+  /// P1-1：在 WebDAV 服务端 `manifest-backup/` 子目录维护环形备份
+  ///
+  /// 通过 GET 读取 `.manifest-bak-index` 确定轮转槽位，再 PUT 索引与备份文件
+  /// （父目录由服务端自动创建，无需显式 MKCOL 备份子目录）。
+  Future<void> _backupManifestOnServer(Uint8List bytes) async {
+    final backupUrl = _manifestBackupUrl;
+    // 确保备份子目录存在（已存在返回 405，忽略）
+    try {
+      await _mkcol(backupUrl);
+    } on Exception {
+      // 某些服务端自动创建父目录，MKCOL 失败可忽略
+    }
+    var slot = 0;
+    try {
+      final idxRes = await _client.get(
+        Uri.parse('$backupUrl/.manifest-bak-index'),
+        headers: _authHeaders(),
+      );
+      if (idxRes.statusCode == 200) {
+        slot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
+      }
+    } on Exception {
+      slot = 0;
+    }
+    slot = (slot + 1) % kManifestBackupRingCount;
+    // 写轮转索引
+    await _client.put(
+      Uri.parse('$backupUrl/.manifest-bak-index'),
+      headers: {
+        ..._authHeaders(),
+        'Content-Type': 'application/octet-stream',
+      },
+      body: utf8.encode(slot.toString()),
+    );
+    // 写备份文件
+    await _client.put(
+      Uri.parse('$backupUrl/manifest.bak-$slot'),
+      headers: {
+        ..._authHeaders(),
+        'Content-Type': 'application/octet-stream',
+      },
+      body: bytes,
+    );
   }
 
   /// D2 修复：备份损坏的 manifest（WebDAV 退化实现）

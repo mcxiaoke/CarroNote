@@ -121,6 +121,18 @@ class FakeBackend implements SyncBackend {
 
   @override
   Future<bool> ping() async => true;
+
+  @override
+  Future<void> deleteBlobSoft(String hash) async => deleteBlob(hash);
+
+  @override
+  Future<List<String>> listOrphanBlobs() async => [];
+
+  @override
+  Future<void> purgeOrphans(Duration retention) async {}
+
+  @override
+  Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
 }
 
 /// Bug A 测试专用：可切换离/在线状态的 FakeBackend。
