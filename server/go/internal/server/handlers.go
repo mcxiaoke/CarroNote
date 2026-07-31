@@ -1,7 +1,10 @@
-// HTTP handlers（SafeServer v2.1 协议端点）
+// HTTP handlers（SafeServer v2.1 + v2.2 协议端点）
 //
 // 所有 handler 通过 s.vault 操作存储层，不直接接触文件系统。
 // 这样切换存储后端（数据库/对象存储）时只需实现新的 Vault，无需改 handler。
+//
+// v2.2 新增 /api/v2/resources/<path> 通用资源层：用纯 REST/JSON 表达等价于
+// WebDAV GET/PUT/DELETE/MOVE/MKCOL/COPY/PROPFIND 的语义，兼容任意 HTTP client。
 package server
 
 import (
@@ -103,7 +106,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request, hash stri
 		switch {
 		case errors.Is(err, storage.ErrNotFound):
 			http.Error(w, "Not Found", http.StatusNotFound)
-		case errors.Is(err, storage.ErrInvalidHash):
+		case errors.Is(err, storage.ErrInvalidHash), errors.Is(err, storage.ErrInvalidPath):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		default:
 			http.Error(w, "read failed: "+err.Error(), http.StatusInternalServerError)
@@ -129,7 +132,7 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash stri
 
 	if err := s.vault.PutBlob(hash, body); err != nil {
 		switch {
-		case errors.Is(err, storage.ErrInvalidHash):
+		case errors.Is(err, storage.ErrInvalidHash), errors.Is(err, storage.ErrInvalidPath):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		default:
 			http.Error(w, "write failed: "+err.Error(), http.StatusInternalServerError)
@@ -143,7 +146,7 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash stri
 func (s *Server) handleDeleteBlob(w http.ResponseWriter, r *http.Request, hash string) {
 	if err := s.vault.DeleteBlob(hash); err != nil {
 		switch {
-		case errors.Is(err, storage.ErrInvalidHash):
+		case errors.Is(err, storage.ErrInvalidHash), errors.Is(err, storage.ErrInvalidPath):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		default:
 			http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
@@ -165,4 +168,211 @@ func (s *Server) handleListBlobs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(hashes)
+}
+
+// ──────────────────────────────────────────────
+// 通用资源层 /api/v2/resources/<path>（v2.2）
+//
+// 语义等价于 WebDAV 的 GET / PUT / DELETE / MOVE / MKCOL / COPY / PROPFIND，
+// 但用纯 REST/JSON 表达：
+//   GET  /api/v2/resources/<path>        → 读资源内容（WebDAV GET）
+//   PUT  /api/v2/resources/<path>        → 写资源（WebDAV PUT，支持 If-Match/If-None-Match）
+//   DELETE /api/v2/resources/<path>      → 删资源（WebDAV DELETE）
+//   POST /api/v2/resources/<path>        → 扩展操作（body 中指定 op）：
+//       {op:"move",   dest, overwrite}   → 移动/重命名（WebDAV MOVE）
+//       {op:"mkdir"}                     → 建目录（WebDAV MKCOL）
+//       {op:"copy",   dest, overwrite}   → 复制（WebDAV COPY）
+//       {op:"propfind", depth}           → 列目录+属性（WebDAV PROPFIND，depth=1）
+//       {op:"stats"}                     → 单资源元数据（WebDAV PROPFIND depth=0 的别名）
+// 所有操作都在 vault 命名空间内，服务端不解析 blob 内容（零知识不变）。
+// ──────────────────────────────────────────────
+
+// resourceOpBody 是 POST /api/v2/resources/<path> 的请求体
+type resourceOpBody struct {
+	Op       string `json:"op"`
+	Dest     string `json:"dest"`
+	Overwrite bool  `json:"overwrite"`
+	Depth    int    `json:"depth"`
+}
+
+// GET /api/v2/resources/<path> → 读资源内容
+func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request, rel string) {
+	if rel == "" {
+		http.Error(w, "resource path required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.vault.GetResource(rel)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrNotFound):
+			http.Error(w, "Not Found", http.StatusNotFound)
+		case errors.Is(err, storage.ErrInvalidPath), errors.Is(err, storage.ErrInvalidHash):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "read failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("ETag", storage.ComputeETag(data))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(data)
+}
+
+// PUT /api/v2/resources/<path> → 写资源（支持 If-Match / If-None-Match）
+func (s *Server) handlePutResource(w http.ResponseWriter, r *http.Request, rel string) {
+	if rel == "" {
+		http.Error(w, "resource path required", http.StatusBadRequest)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		if isPayloadTooLarge(err) {
+			http.Error(w, "Payload Too Large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "read body failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var opts storage.PutOptions
+	if ifNoneMatch := r.Header.Get("If-None-Match"); ifNoneMatch == "*" {
+		opts.IfNoneMatch = true
+	} else if ifMatch := r.Header.Get("If-Match"); ifMatch != "" {
+		opts.IfMatch = strings.Trim(ifMatch, `"`)
+	}
+
+	if err := s.vault.PutResource(rel, body, opts); err != nil {
+		switch {
+		case errors.Is(err, storage.ErrPreconditionFailed):
+			http.Error(w, err.Error(), http.StatusPreconditionFailed)
+		case errors.Is(err, storage.ErrInvalidPath), errors.Is(err, storage.ErrInvalidHash):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "write failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("ETag", storage.ComputeETag(body))
+	w.WriteHeader(http.StatusOK)
+}
+
+// DELETE /api/v2/resources/<path> → 删资源（幂等）
+func (s *Server) handleDeleteResource(w http.ResponseWriter, r *http.Request, rel string) {
+	if rel == "" {
+		http.Error(w, "resource path required", http.StatusBadRequest)
+		return
+	}
+	if err := s.vault.DeleteResource(rel); err != nil {
+		switch {
+		case errors.Is(err, storage.ErrInvalidPath), errors.Is(err, storage.ErrInvalidHash):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /api/v2/resources/<path> → 扩展操作（move / mkdir / copy / propfind / stats）
+func (s *Server) handleResourceOp(w http.ResponseWriter, r *http.Request, rel string) {
+	if rel == "" {
+		http.Error(w, "resource path required", http.StatusBadRequest)
+		return
+	}
+	var ob resourceOpBody
+	if err := json.NewDecoder(r.Body).Decode(&ob); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	switch ob.Op {
+	case "move":
+		if ob.Dest == "" {
+			http.Error(w, "dest required", http.StatusBadRequest)
+			return
+		}
+		if err := s.vault.MoveResource(rel, ob.Dest, ob.Overwrite); err != nil {
+			if e := mapResourceErr(err); e != 0 {
+				http.Error(w, err.Error(), e)
+				return
+			}
+			http.Error(w, "move failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case "copy":
+		if ob.Dest == "" {
+			http.Error(w, "dest required", http.StatusBadRequest)
+			return
+		}
+		if err := s.vault.CopyResource(rel, ob.Dest, ob.Overwrite); err != nil {
+			if e := mapResourceErr(err); e != 0 {
+				http.Error(w, err.Error(), e)
+				return
+			}
+			http.Error(w, "copy failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case "mkdir":
+		if err := s.vault.MkCol(rel); err != nil {
+			if errors.Is(err, storage.ErrExists) {
+				http.Error(w, "already exists", http.StatusMethodNotAllowed) // 405，客户端忽略
+				return
+			}
+			if errors.Is(err, storage.ErrConflict) {
+				http.Error(w, "parent not found", http.StatusConflict)
+				return
+			}
+			if errors.Is(err, storage.ErrInvalidPath) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "mkdir failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+
+	case "propfind", "stats":
+		depth := ob.Depth
+		if ob.Op == "stats" {
+			depth = 0
+		}
+		entries, err := s.vault.PropFind(rel, depth)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				http.Error(w, "Not Found", http.StatusNotFound)
+				return
+			}
+			if errors.Is(err, storage.ErrInvalidPath) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "propfind failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+
+	default:
+		http.Error(w, "unknown op: "+ob.Op, http.StatusBadRequest)
+	}
+}
+
+// mapResourceErr 将 Move/Copy 的资源层错误映射为 HTTP 状态码
+func mapResourceErr(err error) int {
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, storage.ErrConflict):
+		return http.StatusConflict
+	case errors.Is(err, storage.ErrInvalidPath), errors.Is(err, storage.ErrInvalidHash):
+		return http.StatusBadRequest
+	default:
+		return 0
+	}
 }

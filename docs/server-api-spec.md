@@ -1,9 +1,15 @@
-# SafeServer 同步服务端 API 规范 v2.1
+# SafeServer 同步服务端 API 规范 v2.2
 
 > **自包含的服务端实现规范**：任何按本文档实现的 HTTP 服务端均可与 SafeNotes 客户端的 `safeServer` 后端类型互操作。实现者无需阅读客户端代码或客户端协议细节。
 >
 > 配套参考实现：[Go server](../server/go/main.go)、[Node.js server](../server/nodejs/server.js)。
 > 客户端侧的加密格式、冲突解决、同步算法见 [sync-protocol-spec.md](./sync-protocol-spec.md)。
+>
+> **v2.2 变更摘要**（详见 §15）：
+> - 新增**通用资源层** `/api/v2/resources/<path>`（详见 §5.10），用纯 REST/JSON 表达等价于 WebDAV `GET`/`PUT`/`DELETE`/`MOVE`/`MKCOL`/`COPY`/`PROPFIND` 的语义，兼容任意 HTTP client。
+> - 软删除（孤儿 blob 隔离）与 `backupCorruptManifest` 现在可走资源层 `move`/`mkdir`/`propfind`，与 `localFs`/`webdav` 后端能力对齐，消除"能力倒置"。
+> - `manifest` 与 `blob` 端点（§5.2–§5.9）作为资源层的**便利接口**保留，语义不变，旧客户端（v2.1）继续兼容。
+> - 旧版 v2.1/v2 服务端若不实现资源层，客户端对 405 静默降级（仅失去软删除隔离等增强能力）。
 >
 > **v2.1 变更摘要**（详见 §15）：
 > - 新增 `DELETE /api/v2/manifest` 端点（清理损坏文件，客户端 `backupCorruptManifest` 用）
@@ -41,7 +47,9 @@ SafeNotes 客户端支持三种同步后端类型，各自独立的协议：
 3. **单用户**：一个 server 实例服务一个 vault，不需要用户注册系统。认证用固定 Bearer Token。
 4. **内容寻址**：blob 资源按客户端提供的 hash 命名，服务端不计算也不校验 hash。
 5. **单点真相**：整个 server 只有一个 manifest 资源，由 ETag 乐观锁保护全局一致性。
-6. **无目录概念**：URL 路径直接对应资源，服务端不需要"创建目录"操作。
+6. **无目录概念（便利接口层）**：`manifest` 与 `blob` 端点（§5.2–§5.9）本身无目录概念，URL 路径直接对应单个资源。
+
+   > **v2.2 补充**：通用资源层 `/api/v2/resources/<path>`（§5.10）**允许子目录**，以对齐 `localFs`/`webdav` 后端的软删除隔离能力（孤儿 blob 移入 `blobs-orphan/` 子目录）。资源层内的路径必须做严格穿越防护（§9.7），禁止 `..` 逃逸与绝对路径。
 
 ---
 
@@ -90,6 +98,8 @@ Authorization: Bearer <token>
 /api/v2/blob/<hash>           # blob 资源（多个，内容寻址）
 ```
 
+此外，v2.2 起提供**通用资源层** `/api/v2/resources/<path>`（§5.10），可在 vault 命名空间内对任意路径（含子目录）做 GET/PUT/DELETE/move/mkdir/copy/propfind 操作。该层是 `manifest`/`blob` 便利接口的通用化表达，所有路径均经 `§9.7` 的穿越防护。
+
 ### 4.1 manifest 资源
 
 - 路径固定为 `/api/v2/manifest`。
@@ -125,16 +135,20 @@ Authorization: Bearer <token>
 
 | 方法 | 路径 | 用途 | 乐观锁 | 认证 | 版本 |
 |------|------|------|--------|------|------|
-| GET | `/api/v2/manifest` | 下载 manifest | — | 是 | v2 |
-| PUT | `/api/v2/manifest` | 上传 manifest | If-Match / If-None-Match | 是 | v2 |
-| DELETE | `/api/v2/manifest` | 清理损坏 manifest | — | 是 | v2.1 |
-| GET | `/api/v2/blob/<hash>` | 下载 blob | — | 是 | v2 |
-| PUT | `/api/v2/blob/<hash>` | 上传 blob | — | 是 | v2 |
+| GET | `/api/v2/manifest` | 下载 manifest（便利接口，= `GET /api/v2/resources/manifest`） | — | 是 | v2 |
+| PUT | `/api/v2/manifest` | 上传 manifest（便利接口） | If-Match / If-None-Match | 是 | v2 |
+| DELETE | `/api/v2/manifest` | 清理损坏 manifest（便利接口） | — | 是 | v2.1 |
+| GET | `/api/v2/blob/<hash>` | 下载 blob（便利接口，= `GET /api/v2/resources/blobs/<hash>`） | — | 是 | v2 |
+| PUT | `/api/v2/blob/<hash>` | 上传 blob（便利接口） | — | 是 | v2 |
 | DELETE | `/api/v2/blob/<hash>` | 删除 blob（GC 用，幂等） | — | 是 | v2.1 |
 | GET | `/api/v2/blobs` | 列出所有 blob hash（GC 用） | — | 是 | v2.1 |
 | GET | `/api/v2/health` | 健康检查（可选） | — | 否 | v2 |
+| GET | `/api/v2/resources/<path>` | 读取任意资源（等价 WebDAV GET） | — | 是 | v2.2 |
+| PUT | `/api/v2/resources/<path>` | 写入任意资源（等价 WebDAV PUT，支持乐观锁） | If-Match / If-None-Match | 是 | v2.2 |
+| DELETE | `/api/v2/resources/<path>` | 删除任意资源（等价 WebDAV DELETE，幂等） | — | 是 | v2.2 |
+| POST | `/api/v2/resources/<path>` | 扩展操作：move / mkdir / copy / propfind / stats | — | 是 | v2.2 |
 
-**注意**：没有 MKCOL，没有 PROPFIND。服务端不需要"创建目录"——PUT 资源时父级路径不存在由服务端内部自行处理。v2.1 新增的三个端点（DELETE manifest、DELETE blob、GET blobs）均用于客户端的 GC 与自愈流程；旧版 v2 服务端不实现这些端点时返回 405，客户端会静默降级。
+**注意**：v2.1 端点（DELETE manifest、DELETE blob、GET blobs）用于客户端的 GC 与自愈流程。v2.2 通用资源层（`/api/v2/resources/<path>`）是前述便利接口的通用化表达，语义对齐 `localFs`/`webdav` 后端能力；旧版 v2.1/v2 服务端不实现资源层时返回 405，客户端仅失去软删除隔离等增强能力，其余同步流程不受影响。
 
 ### 5.2 GET manifest
 
@@ -344,6 +358,129 @@ Authorization: Bearer <token>
 - blobs 目录不存在时返回空数组 `[]`。
 - 客户端对 404/405/网络错误静默降级为空列表，GC 退化为"只标记不清理"。
 
+### 5.10 通用资源层 `/api/v2/resources/<path>`（v2.2 新增）
+
+**动机**：`localFs` 后端用 `rename` 把孤儿 blob 移入 `blobs-orphan/`，`webdav` 后端用 `COPY`+`DELETE` 做同样的事。旧版 `safeServer` 没有"移动/建目录"语义，软删除只能用 `GET`+`PUT`+`DELETE` 三段往返，并在 `blobs/` 内伪造 `0rphan-` 前缀，造成"能力倒置"。
+
+v2.2 引入一个**通用资源层**，用纯 REST/JSON 表达等价于 WebDAV 动词的语义，从而：
+
+1. **兼容任意 HTTP client**：不使用 WebDAV 专有方法（`MOVE`/`MKCOL`/`COPY`/`PROPFIND`），只使用 `GET`/`PUT`/`DELETE`/`POST` + JSON body。
+2. **能力对齐 fs/webdav**：客户端可用 `move`/`mkdir`/`copy`/`propfind` 在 vault 命名空间内自由组织子目录（如 `blobs-orphan/`）。
+3. **零知识不变**：服务端只操作路径与元数据，不解析 blob 内容。
+4. **便利接口保持不变**：`manifest`/`blob` 端点（§5.2–§5.9）作为资源层的特化继续提供，旧客户端无需改动。
+
+**路径安全红线**：`<path>` 是 vault 内的相对路径，必须按 §9.7 校验——禁止空路径、绝对路径、含 `..` 逃逸段、含 NUL 字节。一次请求至多穿越一层目录边界（如 `blobs-orphan/<hash>.<ts>`），不允许逃逸出 vault 根。
+
+#### 5.10.1 GET /api/v2/resources/<path>（读资源）
+
+等价于 WebDAV `GET`。
+
+**响应**：
+
+| 状态码 | 含义 | Body | ETag |
+|--------|------|------|------|
+| 200 OK | 成功 | 资源字节（二进制） | 文件资源**必须返回**强 ETag |
+| 404 Not Found | 资源不存在 | 空 | 无 |
+| 400 Bad Request | 路径非法（含 `..` / 绝对路径 / NUL） | 错误描述 | 无 |
+| 401 Unauthorized | 认证失败 | 错误描述 | 无 |
+
+`<path>` 为空（即 `/api/v2/resources/`）时返回 400 `resource path required`。
+
+#### 5.10.2 PUT /api/v2/resources/<path>（写资源）
+
+等价于 WebDAV `PUT`，支持 `If-Match` / `If-None-Match` 乐观锁（规则同 §5.3 / §7）。
+
+- `<path> == "manifest"` 时复用 §5.3 的 manifest 写入（含互斥锁与乐观锁）。
+- 其余资源做原子写入（§9.3）；携带乐观锁条件时先校验再写入。
+- 父目录不存在时由服务端自动创建（§9.6 仍适用）。
+
+**响应**：200 OK / 412 Precondition Failed / 400 Bad Request（路径非法）/ 401 Unauthorized，语义同 §5.3。
+
+#### 5.10.3 DELETE /api/v2/resources/<path>（删资源）
+
+等价于 WebDAV `DELETE`，幂等。
+
+- `<path> == "manifest"` 时复用 §5.7。
+- 删除不存在的资源返回 204（视为成功）。
+- 不递归删除目录（删除非空目录由客户端先逐子项 DELETE，或用 `move` 隔离后整体 `propfind`+删除）。
+
+**响应**：204 No Content / 400 Bad Request（路径非法）/ 401 Unauthorized。
+
+#### 5.10.4 POST /api/v2/resources/<path>（扩展操作）
+
+请求体为 JSON，通过 `op` 字段区分操作：
+
+```json
+{ "op": "move",    "dest": "<vault相对目标路径>", "overwrite": false }
+{ "op": "copy",    "dest": "<vault相对目标路径>", "overwrite": false }
+{ "op": "mkdir" }
+{ "op": "propfind", "depth": 1 }
+{ "op": "stats" }
+```
+
+**`op: "move"`（等价 WebDAV MOVE）**
+
+- `dest` 必填，为 vault 内相对目标路径（经 §9.7 校验）。
+- `overwrite=false` 且目标已存在 → 返回 409 Conflict。
+- `overwrite=false` 且目标为目录 → 返回 409 Conflict。
+- 成功返回 204 No Content。
+- 若 `src` 或 `dest` 为 `manifest`，操作全程持有 manifest 互斥锁。
+
+**`op: "copy"`（等价 WebDAV COPY）**
+
+- 语义、错误码与 `move` 一致；不删除源。
+
+**`op: "mkdir"`（等价 WebDAV MKCOL）**
+
+- 创建集合（目录）。
+- 目标已存在（文件或目录）→ 返回 405 Method Not Allowed（客户端忽略，视为已存在）。
+- 父目录不存在 → 返回 409 Conflict（RFC 4918 §9.3）。
+- 路径非法 → 返回 400 Bad Request。
+- 成功返回 201 Created。
+
+**`op: "propfind"`（等价 WebDAV PROPFIND）**
+
+- `depth: 1` → 返回集合本身 + 其直接子项的 `[ResourceEntry]` 数组（list）。
+- `depth: 0` → 返回单个资源自身的元数据（等价于 `stats`）。
+- 资源不存在 → 404 Not Found。
+- 返回 `Content-Type: application/json`，数组按子项名排序（结果稳定）。
+
+**`op: "stats"`（`propfind` depth=0 的别名）**
+
+- 返回单个资源的 `ResourceEntry`（文件或目录自身），含 `modTime` 与（文件）`etag`。
+
+**`ResourceEntry` 字段**：
+
+| 字段 | 类型 | 含义 |
+|------|------|------|
+| `name` | string | 资源名（路径最后一段） |
+| `path` | string | vault 内相对路径 |
+| `isDir` | bool | 是否为目录 |
+| `size` | int64 | 文件大小（字节），目录为 0 |
+| `modTime` | int64 | 最后修改时间（Unix 毫秒） |
+| `etag` | string | 文件内容的强 ETag（目录为空） |
+
+**未识别的 `op`** 返回 400 Bad Request。
+
+**客户端用法示例（软删除隔离）**：
+
+```bash
+# 1. 确保孤儿隔离区存在
+curl -X POST -H "Authorization: Bearer <token>" \
+  -d '{"op":"mkdir"}' \
+  http://localhost:8080/api/v2/resources/blobs-orphan
+
+# 2. 将孤儿 blob 移入隔离区（等价 localFs rename / webdav COPY+DELETE）
+curl -X POST -H "Authorization: Bearer <token>" \
+  -d '{"op":"move","dest":"blobs-orphan/<hash>.<epochMs>","overwrite":false}' \
+  http://localhost:8080/api/v2/resources/blobs/<hash>
+
+# 3. 列出隔离区内容（等价 webdav PROPFIND blobs-orphan/）
+curl -X POST -H "Authorization: Bearer <token>" \
+  -d '{"op":"propfind","depth":1}' \
+  http://localhost:8080/api/v2/resources/blobs-orphan
+```
+
 ---
 
 ## 六、ETag 规范
@@ -424,11 +561,13 @@ Authorization: Bearer <token>
 | 状态码 | 场景 | 客户端行为 |
 |--------|------|-----------|
 | 200 OK | GET / PUT 成功 | 继续 |
-| 201 Created | PUT 首次创建 | 继续 |
-| 204 No Content | DELETE 成功（v2.1） | 继续 |
+| 201 Created | PUT 首次创建 / `mkdir` 成功 | 继续 |
+| 204 No Content | DELETE 成功 / `move`/`copy` 成功（v2.2） | 继续 |
+| 400 Bad Request | 路径非法（含 `..` / 绝对路径 / NUL）/ JSON 体非法 / `move`/`copy` 缺 `dest` | 视为请求错误，中止本次操作 |
 | 401 Unauthorized | 认证失败 | 提示用户检查配置 |
-| 404 Not Found | GET manifest / GET blob 资源不存在 | manifest: 视为首次同步；blob: 跳过本次 |
-| 405 Method Not Allowed | v2.1 端点未实现（旧版 v2 服务端） | 客户端静默降级 |
+| 404 Not Found | GET manifest / GET blob / `GET|DELETE` resources / `propfind` 资源不存在 | manifest: 视为首次同步；blob: 跳过本次 |
+| 405 Method Not Allowed | v2.1/v2.2 端点未实现（旧版服务端）；`mkdir` 目标已存在（v2.2，客户端忽略） | 客户端静默降级 |
+| 409 Conflict | `move`/`copy` 目标已存在且 `overwrite=false`；`mkdir` 父目录不存在（v2.2） | 中止本次操作或改用其他策略 |
 | 412 Precondition Failed | PUT manifest 乐观锁冲突 | 重新 GET manifest 并重试（最多 3 次） |
 | 429 Too Many Requests | 认证失败速率限制触发（v2.1） | 等待 Retry-After 后重试 |
 | 5xx Server Error | 服务端异常 | 中止本次同步，等下次触发 |
@@ -459,6 +598,17 @@ Authorization: Bearer <token>
     └── <hash-2>
 ```
 
+v2.2 起，资源层可在 vault 命名空间内创建子目录（典型用途见 §9.8）：
+
+```
+<dataDir>/
+├── manifest
+└── blobs/
+    ├── <hash-1>
+    └── blobs-orphan/        # 孤儿 blob 隔离区（v2.2 资源层使用）
+        └── <hash>.<epochMs>
+```
+
 其他存储后端应保持等价的逻辑隔离。
 
 ### 9.2 路径穿越防护
@@ -472,6 +622,20 @@ Authorization: Bearer <token>
 这是安全红线，缺失会导致目录穿越漏洞。
 
 对于数据库存储，hash 是主键，不存在路径穿越问题。
+
+### 9.7 资源层路径穿越防护（v2.2）
+
+通用资源层 `/api/v2/resources/<path>` 允许相对子目录，但必须执行更严格的校验（对应 §5.10 的路径安全红线）：
+
+- 拒绝空路径。
+- 拒绝绝对路径（POSIX 以 `/` 开头；Windows 盘符）。
+- 拒绝含 `..` 逃逸段的路径（任一路径段为 `..` 即拒绝）。
+- 拒绝含 NUL 字节（`\0`）或反斜杠 `\` 的路径。
+- 规范化后验证最终物理路径仍停留在 `<dataDir>/vaults/<vaultID>/` 内（含其自身），不允许逃逸。
+
+参考实现提供 `ValidateVaultPath(rel)`（`server/go/internal/storage/storage.go`）与 `validateVaultPath(rel)`（`server/nodejs/src/storage/storage.js`）作为统一校验入口。
+
+对于数据库存储，`<path>` 作为 key 前缀，不存在物理穿越问题，但仍应拒绝 `..` 与绝对路径段以保证语义一致。
 
 ### 9.3 原子写入
 
@@ -501,7 +665,7 @@ v2.1 起，服务端提供 GC 配套端点，由客户端在合适时机驱动�
 
 1. 客户端调用 `GET /api/v2/blobs` 获取服务端所有 blob hash 列表。
 2. 客户端用当前 manifest 引用的 blob hash 集合做差集，识别孤儿 blob。
-3. 客户端对每个孤儿 blob 调用 `DELETE /api/v2/blob/<hash>` 清理。
+3. 客户端对每个孤儿 blob 调用 `DELETE /api/v2/blob/<hash>` 清理。**或**（v2.2）先 `move` 到 `blobs-orphan/<hash>.<epochMs>` 隔离，确认无误后再整体清理（见 §9.8）。
 
 **安全性考量**：
 - 客户端可能回滚到引用旧 blob 的 manifest 版本，因此 GC 应在 manifest 稳定后执行（如同步成功后延迟一段时间）。
@@ -511,6 +675,26 @@ v2.1 起，服务端提供 GC 配套端点，由客户端在合适时机驱动�
 ### 9.6 资源自动创建
 
 PUT 资源时，如果内部存储的父目录/命名空间不存在，服务端应**自动创建**。客户端不需要、也不应该预先"创建目录"。
+
+v2.2 资源层的 `move` / `copy` / `putResource` 同样保证目标父目录存在（不足时自动 `MkdirAll`），因此 `<path>` 可以含子目录层次。但 `mkdir`（`MKCOL`）遵循 RFC 4918 §9.3：父目录必须已存在，否则返回 409 Conflict——这是为了与 WebDAV 语义对齐，客户端应先用 `mkdir` 逐级建目录。
+
+### 9.8 软删除隔离与孤儿 blob（v2.2 资源层）
+
+v2.2 之前，软删除（孤儿 blob 隔离）在 `safeServer` 上只能用 `GET`+`PUT`+`DELETE` 三段往返，并在 `blobs/` 内伪造 `0rphan-<hash>.<epoch>` 前缀——既多往返又污染 `blobs/` 列表，形成对 `localFs`/`webdav` 的"能力倒置"。
+
+v2.2 资源层消除该倒置，使 `safeServer` 与另两个后端能力对齐：
+
+| 操作 | localFs | webdav | safeServer (v2.2) |
+|------|---------|--------|-------------------|
+| 软删除 | `rename` → `blobs-orphan/<h>.<ts>` | `COPY`+`DELETE` → `blobs-orphan/<h>.<ts>` | `POST {op:"move", dest:"blobs-orphan/<h>.<ts>"}` |
+| 列孤儿 | `readdir blobs-orphan` | `PROPFIND blobs-orphan/` | `POST {op:"propfind", depth:1} blobs-orphan` |
+| 清理孤儿 | `unlink` | `DELETE` | `DELETE /api/v2/resources/blobs-orphan/<h>.<ts>` |
+| 备份损坏 manifest | `rename` → `.corrupt-<ts>` | `COPY`+`DELETE` | `POST {op:"move", dest:".corrupt-<ts>"}` |
+
+**要点**：
+- `blobs-orphan/` 是 `blobs/` 的子目录，不影响 `GET /api/v2/blobs` 的列目录结果（该端点只列 `blobs/` 的直接文件）。
+- `move` 等价于 `localFs rename`：单次 `rename`（跨设备时退化为 copy+unlink），比旧方案的 `GET`+`PUT`+`DELETE` 节省一次往返与一倍流量。
+- 客户端对旧版 v2.1/v2 服务端仍走降级路径（伪造 `0rphan-` 前缀），保证向后兼容。
 
 ---
 
@@ -671,24 +855,68 @@ done
 # 401 401 401 401 401 401 401 401 401 401 429
 ```
 
+# ── v2.2 通用资源层验证 ──
+
+# 创建孤儿隔离区（等价 webdav MKCOL blobs-orphan/）
+curl -i -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"mkdir"}' \
+  http://localhost:8080/api/v2/resources/blobs-orphan
+# HTTP/1.1 201 Created
+
+# 重复创建应返回 405（客户端忽略，视为已存在）
+curl -i -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"mkdir"}' \
+  http://localhost:8080/api/v2/resources/blobs-orphan
+# HTTP/1.1 405 Method Not Allowed
+
+# 写入任意资源（等价 webdav PUT，可含子目录）
+curl -X PUT -H "Authorization: Bearer my-secret-token" \
+  --data-binary @note.bin \
+  http://localhost:8080/api/v2/resources/blobs-orphan/note1
+
+# 软删除：将 blob 移到隔离区（等价 localFs rename / webdav COPY+DELETE）
+curl -i -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"move","dest":"blobs-orphan/<hash>.<epochMs>","overwrite":false}' \
+  http://localhost:8080/api/v2/resources/blobs/<hash>
+# HTTP/1.1 204 No Content
+
+# 列出隔离区（等价 webdav PROPFIND blobs-orphan/ depth=1）
+curl -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"propfind","depth":1}' \
+  http://localhost:8080/api/v2/resources/blobs-orphan
+# [{"name":"<hash>.<epochMs>","path":"blobs-orphan/<hash>.<epochMs>","isDir":false,...}]
+
+# 单资源元数据（等价 PROPFIND depth=0）
+curl -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"stats"}' \
+  http://localhost:8080/api/v2/resources/blobs/<hash>
+# {"name":"<hash>","path":"blobs/<hash>","isDir":false,"size":...,"modTime":...,"etag":"\"...\""}
+
+# 路径穿越应返回 400
+curl -i -X POST -H "Authorization: Bearer my-secret-token" \
+  -d '{"op":"move","dest":"../../etc/passwd","overwrite":false}' \
+  http://localhost:8080/api/v2/resources/blobs/<hash>
+# HTTP/1.1 400 Bad Request
+```
+
 ---
 
 ## 十三、参考实现
 
 | 实现 | 路径 | 语言 | 依赖 | 存储后端 | 协议版本 |
 |------|------|------|------|---------|---------|
-| Go server | [server/go/main.go](../server/go/main.go) | Go | 仅标准库 | 文件系统 | v2.1 |
-| Node.js server | [server/nodejs/server.js](../server/nodejs/server.js) | JavaScript | 仅内置模块 | 文件系统 | v2.1 |
+| Go server | [server/go/main.go](../server/go/main.go) | Go | 仅标准库 | 文件系统 | v2.2 |
+| Node.js server | [server/nodejs/server.js](../server/nodejs/server.js) | JavaScript | 仅内置模块 | 文件系统 | v2.2 |
 
-两个参考实现使用相同协议语义，可互换，均已实现 v2.1 全部端点（含 DELETE manifest、DELETE blob、GET blobs 与认证失败速率限制）。实现新 server 时建议参照其中之一。
+两个参考实现使用相同协议语义，可互换，均已实现 v2.2 全部端点（v2.1 的 DELETE manifest、DELETE blob、GET blobs、认证失败速率限制，外加 v2.2 通用资源层 `/api/v2/resources/<path>`）。实现新 server 时建议参照其中之一。
 
 ---
 
-## 十四、不强制支持的特性（v2.1）
+## 十四、不强制支持的特性（v2.2）
 
-以下功能在 v2.1 中**不要求**服务端实现，客户端也不会使用：
+以下功能在 v2.2 中**不要求**服务端实现，客户端也不会使用：
 
-- MKCOL / PROPFIND / COPY / MOVE 等 WebDAV 方法（注意：DELETE 已在 v2.1 中支持）
+- **WebDAV 专有方法**：服务端**无需**实现 `MOVE`/`MKCOL`/`COPY`/`PROPFIND` 等 WebDAV HTTP 方法。其等价语义已由通用资源层 `/api/v2/resources/<path>`（§5.10）用 `GET`/`PUT`/`DELETE`/`POST {op}` 表达，以兼容任意 HTTP client。
 - WebDAV 锁定（LOCK / UNLOCK）
 - 多用户账号系统、注册、登录
 - 分块上传
@@ -696,6 +924,8 @@ done
 - 压缩传输（Content-Encoding: gzip）
 - 配额管理
 - 审计日志
+
+> 注意：v2.2 资源层的 `move`/`mkdir`/`copy`/`propfind` 操作**正是**对 WebDAV 语义的重新表达，只是协议形态不同（纯 REST/JSON 而非 WebDAV 方法）。客户端对未实现资源层的旧服务端（返回 405）走降级路径。
 
 未来版本可能扩展其中部分功能。
 
@@ -705,6 +935,7 @@ done
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.2 | 2026-07-31 | 新增通用资源层 `/api/v2/resources/<path>`（GET/PUT/DELETE + POST {op}: move/mkdir/copy/propfind/stats），用纯 REST/JSON 表达等价于 WebDAV 的语义，消除 safeServer 对 localFs/webdav 的"能力倒置"（软删除隔离可走 `move` 到 `blobs-orphan/`）；新增路径安全红线 `ValidateVaultPath`（§9.7）；`manifest`/`blob` 端点作为资源层便利接口保留；Go 与 Node.js 参考实现同步升级 |
 | v2.1 | 2026-07-29 | 新增 `DELETE /api/v2/manifest`、`DELETE /api/v2/blob/<hash>`、`GET /api/v2/blobs` 端点（GC 与自愈配套）；速率限制从"推荐"升级为"强烈建议"，并对 401 认证失败做 IP+时间窗口限速；客户端对旧版 v2 服务端（返回 405）静默降级 |
 | v2 | 2026-07-28 | 重新设计：单用户 + Bearer Token + `/api/v2/` 路径 + 移除 MKCOL + 移除 vault-root 路径概念 |
 | v1 | 2026-07-28 | 初版：WebDAV 子集（含 MKCOL、vault-root 路径、Basic Auth） |

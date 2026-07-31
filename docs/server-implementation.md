@@ -1,6 +1,6 @@
 # SafeServer 参考实现文档
 
-> **本文档描述 SafeServer v2.1 协议的两个参考实现（Go / Node.js）的架构设计、模块职责与扩展点。**
+> **本文档描述 SafeServer v2.2 协议的两个参考实现（Go / Node.js）的架构设计、模块职责与扩展点。**
 >
 > - 协议规范（HTTP 端点、ETag、认证等）：[server-api-spec.md](./server-api-spec.md)
 > - 客户端同步协议（加密、冲突解决、墓碑）：[sync-protocol-spec.md](./sync-protocol-spec.md)
@@ -12,8 +12,8 @@
 
 | 实现 | 路径 | 语言 | 依赖 | 存储后端 | 协议版本 |
 |------|------|------|------|---------|---------|
-| Go server | [server/go/](../server/go/) | Go 1.21+ | 仅标准库 | 文件系统 | v2.1 |
-| Node.js server | [server/nodejs/](../server/nodejs/) | JavaScript (ESM) | 仅内置模块 | 文件系统 | v2.1 |
+| Go server | [server/go/](../server/go/) | Go 1.21+ | 仅标准库 | 文件系统 | v2.2 |
+| Node.js server | [server/nodejs/](../server/nodejs/) | JavaScript (ESM) | 仅内置模块 | 文件系统 | v2.2 |
 
 两个实现**协议完全一致**，可互换。整个 `server/` 目录已被 `.gitignore` 排除，仅供本地测试和参考。
 
@@ -84,11 +84,11 @@ server/go/
     ├── auth/
     │   └── auth.go                  # Bearer Token 校验 + FailTracker（IP 限速 + LRU 防护）
     ├── storage/
-    │   ├── storage.go               # Storage + Vault 接口定义 + 哨兵错误 + ValidateHash + ComputeETag
-    │   └── fs.go                    # 文件系统实现（fsVault + atomicWrite）
+    │   ├── storage.go               # Storage + Vault 接口定义 + 哨兵错误 + ValidateHash + ValidateVaultPath + ResourceEntry + ComputeETag
+    │   └── fs.go                    # 文件系统实现（fsVault + 通用资源层 + atomicWrite）
     └── server/
         ├── server.go                # Server 结构 + 路由分发 + graceful shutdown
-        ├── handlers.go              # 7 个 HTTP handler（manifest/blob CRUD + blobs 列表）
+        ├── handlers.go              # HTTP handler（manifest/blob CRUD + blobs 列表 + 通用资源层）
         ├── middleware.go            # 中间件链（Chain + RequestID + Logging + Recover）
         └── logging.go               # slog 日志器 + statusWriter（捕获状态码/字节数）
 ```
@@ -108,10 +108,11 @@ Server.handle()
     ├── 3. FailTracker.IsRateLimited → 429
     ├── 4. auth.CheckToken → 401（记录失败）
     ├── 5. 认证成功 → ResetFailures
-    └── 6. 路由分发：
-         ├── /api/v2/manifest    → GET/PUT/DELETE
-         ├── /api/v2/blobs       → GET
-         └── /api/v2/blob/<hash> → GET/PUT/DELETE
+        └── 6. 路由分发：
+             ├── /api/v2/manifest    → GET/PUT/DELETE
+             ├── /api/v2/blobs       → GET
+             ├── /api/v2/blob/<hash> → GET/PUT/DELETE
+             └── /api/v2/resources/<path> → GET/PUT/DELETE/POST（通用资源层，v2.2）
 ```
 
 ### 3.3 关键设计
@@ -208,10 +209,10 @@ server/nodejs/
     ├── auth.js                      # FailTracker + checkToken + extractIP
     ├── logger.js                    # 轻量结构化日志（JSON/文本，支持文件输出）
     ├── middleware.js                # requestID + wrapResponse + makeLogging
-    ├── handlers.js                  # 7 个 HTTP handler + readBody（带大小限制）
+    ├── handlers.js                  # HTTP handler（含通用资源层 resourceOp）+ readBody（带大小限制）
     └── storage/
-        ├── storage.js               # Vault/Storage 基类 + 哨兵错误 + validateHash + computeETag
-        └── fs.js                    # FileSystemStorage + FsVault + atomicWrite
+        ├── storage.js               # Vault/Storage 基类 + 哨兵错误 + validateHash + validateVaultPath + ResourceEntry + computeETag
+        └── fs.js                    # FileSystemStorage + FsVault + 通用资源层 + atomicWrite
 ```
 
 ### 4.2 请求处理流程
@@ -228,7 +229,7 @@ handle(req, res)
     ├── 5. FailTracker.isRateLimited → 429
     ├── 6. checkToken → 401（记录失败）
     ├── 7. 认证成功 → resetFailures
-    ├── 8. 路由分发 → handlers.* 
+    ├── 8. 路由分发 → handlers.* （含 /api/v2/resources/<path> 通用资源层）
     └── finally: makeLogging(logger) 记录请求日志
 ```
 
@@ -296,8 +297,18 @@ Vault（单 vault 操作句柄）
   ├── GetBlob(hash) → []byte
   ├── PutBlob(hash, data) → error       ← 幂等（覆盖写）
   ├── DeleteBlob(hash) → error          ← 幂等
-  └── ListBlobs() → []string
+  ├── ListBlobs() → []string
+  └── v2.2 通用资源层（语义=WebDAV 动词，纯 REST/JSON）
+      ├── GetResource(rel) → []byte          ← 等价 GET
+      ├── PutResource(rel, data, opts) → error  ← 等价 PUT（含乐观锁；manifest 复用 PutManifest）
+      ├── DeleteResource(rel) → error        ← 等价 DELETE（幂等；manifest 复用 DeleteManifest）
+      ├── MoveResource(src, dst, overwrite) → error  ← 等价 MOVE
+      ├── CopyResource(src, dst, overwrite) → error  ← 等价 COPY
+      ├── MkCol(rel) → error                 ← 等价 MKCOL（已存在返回 ErrExists→405）
+      └── PropFind(rel, depth) → []ResourceEntry  ← 等价 PROPFIND（depth=0→stats）
 ```
+
+> blob 的 `Get/Put/Delete` 在 v2.2 中直接委托到资源层（`blobs/<hash>`），由资源层统一做路径校验与原子写入；`manifest` 路径在资源层内被特化回 `GetManifest/PutManifest/DeleteManifest`（带互斥锁）。
 
 ### 5.2 文件系统存储布局
 
@@ -310,6 +321,7 @@ Vault（单 vault 操作句柄）
 单用户场景使用 DefaultVaultID（"vault-default"）：
 <rootDir>/vaults/vault-default/manifest
 <rootDir>/vaults/vault-default/blobs/<hash>
+<rootDir>/vaults/vault-default/blobs/blobs-orphan/<hash>.<epochMs>  # v2.2 孤儿 blob 隔离区（资源层用）
 ```
 
 不再使用空字符串 `vaultID=""`，这样：
@@ -483,7 +495,7 @@ systemd 服务文件包含安全加固：专用用户运行、`ProtectSystem=str
 
 **文本格式**（默认）：
 ```
-time=2026-07-29T11:09:47.577+08:00 level=INFO msg="SafeServer v2.1 (Go) starting" addr=:8080 ...
+time=2026-07-29T11:09:47.577+08:00 level=INFO msg="SafeServer v2.2 (Go) starting" addr=:8080 ...
 time=2026-07-29T11:09:48.088+08:00 level=DEBUG msg="request detailed" method=GET path=/api/v2/health status=200 duration_ms=0 request_id=5f63f6b7...
 ```
 
@@ -531,12 +543,27 @@ time=2026-07-29T11:09:48.175+08:00 level=DEBUG msg="request detailed"
 
 ### 8.3 路径穿越防护
 
+**blob 路径（三类资源）**：
+
 ```go
 // 三层防护
 1. ValidateHash(hash)              // 拒绝空/含 / \ .. \0 的 hash
 2. filepath.Join(blobsDir, hash)   // 拼接路径
 3. filepath.Abs + HasPrefix 校验   // 验证最终路径仍在 blobs/ 下
 ```
+
+**通用资源层路径（v2.2）**：
+
+```go
+// ValidateVaultPath(rel)（Go）/ validateVaultPath(rel)（Node.js）
+1. 拒绝空路径、含 NUL(\0) 或反斜杠 \ 的路径
+2. filepath.Clean / path.posix.normalize 规范化
+3. 拒绝绝对路径（以 / 开头或 Windows 盘符）
+4. 拒绝任何路径段为 ".." 的逃逸
+5. filepath.Abs + HasPrefix 校验最终路径仍在 <dataDir>/vaults/<vaultID>/ 内
+```
+
+资源层允许"一级子目录"（如 `blobs-orphan/<hash>.<ts>`），但不允许逃逸出 vault 根。所有 `move`/`copy` 的 `src` 与 `dest` 都先过此校验。
 
 ### 8.4 请求体限制
 
@@ -570,6 +597,7 @@ time=2026-07-29T11:09:48.175+08:00 level=DEBUG msg="request detailed"
 | 幂等性 | 连续两次同步结果一致 |
 | HTTP 协议 | 404/401/412/ETag/If-Match/If-None-Match 端到端验证 |
 | v2.1 GC 端点 | GET blobs、DELETE blob、DELETE manifest、幂等性 |
+| v2.2 资源层 | GET/PUT/DELETE resources、move/mkdir/copy/propfind/stats、路径穿越防护、孤儿 blob 隔离 |
 | 速率限制 | 连续认证失败超限后返回 429 |
 
 ### 9.2 运行测试

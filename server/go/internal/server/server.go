@@ -74,7 +74,7 @@ func (s *Server) Run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		s.logger.Info("SafeServer v2.1 (Go) starting",
+		s.logger.Info("SafeServer v2.2 (Go) starting",
 			"addr", s.cfg.Addr,
 			"data_dir", s.cfg.DataDir,
 			"token_mask", strings.Repeat("*", len(s.cfg.Token)),
@@ -190,6 +190,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			s.handleDeleteBlob(w, r, hash)
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case strings.HasPrefix(r.URL.Path, "/api/v2/resources/"):
+		// 通用资源层（v2.2）：语义 = WebDAV 动词，纯 REST/JSON 表达
+		rel := strings.TrimPrefix(r.URL.Path, "/api/v2/resources/")
+		switch r.Method {
+		case "GET":
+			s.handleGetResource(w, r, rel)
+		case "PUT":
+			s.handlePutResource(w, r, rel)
+		case "DELETE":
+			s.handleDeleteResource(w, r, rel)
+		case "POST":
+			s.handleResourceOp(w, r, rel)
+		default:
+			w.Header().Set("Allow", "GET, PUT, DELETE, POST")
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	default:

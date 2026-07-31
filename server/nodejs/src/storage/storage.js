@@ -13,6 +13,7 @@
 'use strict';
 
 import crypto from 'crypto';
+import path from 'path';
 
 // DefaultVaultID 是单用户场景下使用的默认 vault ID
 //
@@ -26,6 +27,12 @@ export const DefaultVaultID = 'vault-default';
 export const ErrNotFound = Object.freeze(new Error('not found'));
 export const ErrInvalidHash = Object.freeze(new Error('invalid hash'));
 export const ErrPreconditionFailed = Object.freeze(new Error('precondition failed'));
+// ErrInvalidPath 资源路径非法（空路径 / 绝对路径 / 含 .. 逃逸 / 含 NUL 等）
+export const ErrInvalidPath = Object.freeze(new Error('invalid path'));
+// ErrExists 资源已存在（MKCOL 目标已存在，映射为 405）
+export const ErrExists = Object.freeze(new Error('already exists'));
+// ErrConflict 目标已存在且 overwrite=false（MOVE/COPY 冲突或父目录缺失，映射 409）
+export const ErrConflict = Object.freeze(new Error('conflict'));
 
 // ValidateHash 校验 blob hash 是否合法（防路径穿越）
 //
@@ -35,6 +42,26 @@ export function validateHash(hash) {
   if (hash.includes('/') || hash.includes('\\')) return false;
   if (hash.includes('..')) return false;
   if (hash.includes('\0')) return false;
+  return true;
+}
+
+// ValidateVaultPath 校验 vault 内相对路径是否合法（允许子目录，禁止路径穿越）
+//
+// 与 validateHash 的区别：允许一个相对子目录（如 "blobs-orphan/<hash>.<ts>"），
+// 但仍禁止绝对路径、空路径、含 NUL 字节，以及任何 ".." 逃逸段。
+// 这是通用资源层（v2.2）的安全红线。
+export function validateVaultPath(rel) {
+  if (!rel) return false;
+  if (rel.includes('\0')) return false;
+  if (rel.includes('\\')) return false;
+  const clean = path.posix.normalize(rel);
+  // 拒绝绝对路径（POSIX 以 "/" 开头；Windows 盘符在 URL 中不会出现）
+  if (clean.startsWith('/')) return false;
+  // 拒绝逃逸出 vault 根（规范化后以 ".." 开头或含 ".." 段）
+  const segs = clean.split('/');
+  for (const seg of segs) {
+    if (seg === '..') return false;
+  }
   return true;
 }
 
@@ -54,9 +81,24 @@ export class PutOptions {
   }
 }
 
+// ResourceEntry 是 PropFind 返回的单个资源元数据
+//
+// 等价于 WebDAV PROPFIND 的属性集合（getcontentlength / getlastmodified / resourcetype），
+// 但以普通 JSON 返回，避免 XML 解析。
+export class ResourceEntry {
+  constructor({ name, path: p, isDir, size, modTime, etag = '' }) {
+    this.name = name;       // 资源名（路径最后一段）
+    this.path = p;          // vault 内相对路径
+    this.isDir = isDir;     // 是否为目录
+    this.size = size;       // 文件大小（字节），目录为 0
+    this.modTime = modTime; // 最后修改时间（Unix 毫秒）
+    this.etag = etag;       // 文件内容的强 ETag（目录为空）
+  }
+}
+
 // Vault 表示一个同步保险库的存储操作句柄
 //
-// 单用户场景下只有一个默认 Vault（vaultID=""）；
+// 单用户场景下只有一个默认 Vault（vaultID="vault-default"）；
 // 未来多 vault 场景下，每个 vaultID 对应一个独立的 Vault 实例，存储相互隔离。
 //
 // 实现要求：
@@ -72,6 +114,19 @@ export class Vault {
   async putBlob(hash, data) { throw new Error('not implemented'); }
   async deleteBlob(hash) { throw new Error('not implemented'); }
   async listBlobs() { throw new Error('not implemented'); }
+
+  // ── v2.2 通用资源层 ──
+  // 语义等价于 WebDAV 的 GET / PUT / DELETE / MOVE / MKCOL / COPY / PROPFIND，
+  // 但用纯 REST/JSON 表达（move/mkdir/copy/propfind 通过 POST + {op} 触发），
+  // 从而兼容任意 HTTP client，不依赖 WebDAV 专有方法或头。
+  // 全部操作都在 vault 命名空间内，服务端不解析 blob 内容（零知识不变）。
+  async getResource(rel) { throw new Error('not implemented'); }
+  async putResource(rel, data, opts) { throw new Error('not implemented'); }
+  async deleteResource(rel) { throw new Error('not implemented'); }
+  async moveResource(src, dst, overwrite) { throw new Error('not implemented'); }
+  async copyResource(src, dst, overwrite) { throw new Error('not implemented'); }
+  async mkCol(rel) { throw new Error('not implemented'); }
+  async propFind(rel, depth) { throw new Error('not implemented'); }
 }
 
 // Storage 是存储后端的抽象接口

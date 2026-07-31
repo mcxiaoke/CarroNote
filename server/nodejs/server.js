@@ -1,8 +1,9 @@
 // SafeServer 同步服务端参考实现（Node.js）
 //
-// 实现 docs/server-api-spec.md v2.1 协议：
+// 实现 docs/server-api-spec.md v2.2 协议：
 //   - 单用户 + 固定 Bearer Token 认证
-//   - 7 个 HTTP 端点（manifest/blob 的 CRUD + health + blobs 列表）
+//   - 7 个 v2.1 端点（manifest/blob 的 CRUD + health + blobs 列表）
+//   - 通用资源层 /api/v2/resources/<path>（v2.2，WebDAV 等价语义，纯 REST/JSON）
 //   - ETag 乐观锁（If-Match / If-None-Match）
 //   - 认证失败速率限制（防 Token 暴力枚举，含 OOM 防护）
 //   - 原子写入（tmp + fsync + rename）
@@ -138,6 +139,19 @@ async function handle(req, res) {
       return;
     }
 
+    if (pathname.startsWith('/api/v2/resources/')) {
+      const rel = decodeURIComponent(pathname.slice('/api/v2/resources/'.length));
+      if (req.method === 'GET') await handlers.getResource(req, res, rel);
+      else if (req.method === 'PUT') await handlers.putResource(req, res, rel);
+      else if (req.method === 'DELETE') await handlers.deleteResource(req, res, rel);
+      else if (req.method === 'POST') await handlers.resourceOp(req, res, rel);
+      else {
+        res.writeHead(405, { 'Allow': 'GET, PUT, DELETE, POST' });
+        res.end('Method not allowed');
+      }
+      return;
+    }
+
     res.writeHead(404);
     res.end('Not Found');
   } catch (err) {
@@ -176,7 +190,7 @@ server.headersTimeout = cfg.readTimeoutMs;
 server.timeout = cfg.writeTimeoutMs;
 
 server.listen(cfg.port, () => {
-  logger.info('SafeServer v2.1 (Node.js) starting', {
+  logger.info('SafeServer v2.2 (Node.js) starting', {
     port: cfg.port,
     data_dir: cfg.dataDir,
     token_mask: '*'.repeat(cfg.token.length),
