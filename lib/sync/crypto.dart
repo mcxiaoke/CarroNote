@@ -34,6 +34,9 @@ import 'package:crypto/crypto.dart' show sha256;
 // HMac / SHA256Digest / AEADParameters / KeyParameter / FortunaRandom
 import 'package:pointycastle/export.dart';
 
+// 项目导入
+import 'package:safenotes/sync/sync_error.dart';
+
 // 信封各部分的固定长度
 const int _nonceLength = 12; // AES-GCM 推荐 12 字节 nonce
 const int _tagLength = 16; // AES-GCM 认证标签 16 字节
@@ -266,7 +269,11 @@ class SyncCrypto {
   /// AES-256-GCM 解密
   ///
   /// 输入信封：nonce(12) ‖ ciphertext ‖ tag(16)
-  /// 如果密钥错误或 AAD 不匹配，GCM tag 验证失败会抛出异常。
+  /// 如果密钥错误或 AAD 不匹配，GCM tag 验证失败会抛出 [SyncDecryptionException]。
+  ///
+  /// 注意：pointycastle 的 `InvalidTag` 继承自 `Error` 而非 `Exception`，
+  /// 这里在底层捕获并包装为 `SyncDecryptionException`（实现 Exception），
+  /// 让上层能用 `on SyncDecryptionException` 精确捕获，不再需要 `on Object` 兜底。
   static Uint8List _aesGcmDecrypt(
     Uint8List key,
     Uint8List aad,
@@ -280,7 +287,13 @@ class SyncCrypto {
       false,
       AEADParameters(KeyParameter(key), _tagLength * 8, nonce, aad),
     );
-    return cipher.process(ctAndTag);
+    try {
+      return cipher.process(ctAndTag);
+    } on Object catch (e) {
+      // pointycastle 的 InvalidTag（密钥错误/AAD 不匹配/数据篡改）
+      // 包装为 Exception 子类，上层可用 on SyncDecryptionException 精确捕获。
+      throw wrapDecryptionError(e);
+    }
   }
 
   // ──────────────────────────────────────────────

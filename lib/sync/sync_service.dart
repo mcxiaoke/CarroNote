@@ -30,6 +30,8 @@ import 'package:safenotes/sync/safe_server_backend.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_engine.dart';
+import 'package:safenotes/sync/sync_log_webserver.dart';
+import 'package:safenotes/sync/sync_logging.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/sync/webdav_backend.dart';
@@ -164,6 +166,10 @@ class SyncService {
     required SyncBackend backend,
     required NotesDatabase database,
   }) async {
+    // 初始化日志文件（桌面端 exe 同目录 logs/，移动端私有目录 logs/）
+    // 失败不阻断，仅退化为 console + 内存缓冲
+    await SyncLogFile.init();
+
     _vault = vault;
     _backend = backend;
 
@@ -178,10 +184,27 @@ class SyncService {
       passphraseProvider: () => PhraseHandler.getPass,
     );
 
+    syncLogger.i('SyncService 初始化 (backend=${backend.runtimeType}, '
+        'deviceId=$_deviceId, vaultId=${vault.vaultId}, '
+        'keyVersion=${vault.keyVersion}, dataKeyEpoch=${vault.dataKeyEpoch})');
+
     await backend.init();
     _backendReady = true;
 
+    syncLogger.i('后端初始化成功 (providerKey=${backend.providerKey})');
     _updateState(state.copyWith(status: SyncStatus.idle));
+
+    // 自动启动日志 Web 服务器（debug 功能，后续发布版本可改为默认关闭）
+    // 失败不阻断初始化，仅在控制台记录警告
+    if (!SyncLogWebServer.instance.isRunning) {
+      try {
+        await SyncLogWebServer.instance.start();
+        syncLogger.i('日志 Web 服务器已随 SyncService 初始化自动启动 '
+            '(端口 ${SyncLogWebServer.instance.port})');
+      } on Object catch (e) {
+        syncLogger.w('日志 Web 服务器自动启动失败（不阻断）', error: e);
+      }
+    }
   }
 
   /// 更新 Vault（改密码后或 dataKey 迁移后调用）
@@ -209,7 +232,12 @@ class SyncService {
 
   /// 销毁同步服务（应用退出时调用）
   Future<void> dispose() async {
+    syncLogger.i('SyncService dispose');
     _autoSyncTimer?.cancel();
+    // 停止日志 Web 服务器
+    if (SyncLogWebServer.instance.isRunning) {
+      await SyncLogWebServer.instance.stop();
+    }
     await _backend?.close();
     await _stateController.close();
     _vault = null;
@@ -217,6 +245,8 @@ class SyncService {
     _engine = null;
     _deviceId = null;
     _backendReady = false;
+    // 关闭日志文件（flush 剩余缓冲）
+    await SyncLogFile.close();
   }
 
   /// 用户登出时调用：清除敏感数据但保留 stream（供下次登录复用）
@@ -279,16 +309,19 @@ class SyncService {
         return null;
       }
       try {
+        syncLogger.i('后端未就绪，尝试重新初始化');
         await backend.init();
         _backendReady = true;
-      } on BackendUnavailableException catch (e) {
+      } on BackendUnavailableException catch (e, st) {
+        syncLogger.w('后端初始化失败（网络不可用）', error: e, stackTrace: st);
         _updateState(state.copyWith(
           status: SyncStatus.error,
           lastSyncTime: DateTime.now(),
           errorMessage: '网络不可用，请检查连接后重试：$e',
         ));
         return SyncResult.failure('网络不可用，请检查连接后重试：$e');
-      } on Exception catch (e) {
+      } on Exception catch (e, st) {
+        syncLogger.e('后端初始化失败（未预期异常）', error: e, stackTrace: st);
         _updateState(state.copyWith(
           status: SyncStatus.error,
           lastSyncTime: DateTime.now(),
@@ -300,6 +333,7 @@ class SyncService {
 
     // 互斥锁
     if (_syncInProgress) {
+      syncLogger.d('同步被跳过（已有同步进行中）');
       return null;
     }
 
@@ -318,14 +352,16 @@ class SyncService {
         errorMessage: result.success ? null : result.errorMessage,
       ));
       return result;
-    } on BackendUnavailableException catch (e) {
+    } on BackendUnavailableException catch (e, st) {
+      syncLogger.e('同步失败（后端不可用）', error: e, stackTrace: st);
       _updateState(state.copyWith(
         status: SyncStatus.error,
         lastSyncTime: DateTime.now(),
         errorMessage: '后端不可用：$e',
       ));
       return SyncResult.failure('后端不可用：$e');
-    } on Exception catch (e) {
+    } on Exception catch (e, st) {
+      syncLogger.e('同步失败（未预期异常）', error: e, stackTrace: st);
       _updateState(state.copyWith(
         status: SyncStatus.error,
         lastSyncTime: DateTime.now(),
@@ -363,11 +399,15 @@ class SyncService {
         return null;
       }
       try {
+        syncLogger.i('repairRemote: 后端未就绪，尝试重新初始化');
         await backend.init();
         _backendReady = true;
-      } on BackendUnavailableException catch (e) {
+      } on BackendUnavailableException catch (e, st) {
+        syncLogger.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
         return SyncResult.failure('网络不可用，请检查连接后重试：$e');
-      } on Exception catch (e) {
+      } on Exception catch (e, st) {
+        syncLogger.e('repairRemote: 后端初始化失败（未预期异常）',
+            error: e, stackTrace: st);
         return SyncResult.failure('后端初始化失败：$e');
       }
     }
@@ -375,6 +415,7 @@ class SyncService {
     // 与同步互斥（修复期间不应并发同步）
     if (_syncInProgress) return null;
 
+    syncLogger.i('repairRemote: 开始修复 (hasOldPassword=${oldPassword != null})');
     _syncInProgress = true;
     _updateState(state.copyWith(
       status: SyncStatus.syncing,
@@ -383,6 +424,8 @@ class SyncService {
 
     try {
       final result = await engine.repairRemote(oldPassword: oldPassword);
+      syncLogger.i('repairRemote: 修复完成 (success=${result.success}, '
+          'uploaded=${result.uploaded}, failed=${result.failedNoteUuids.length})');
       _updateState(state.copyWith(
         status: result.success ? SyncStatus.success : SyncStatus.error,
         lastSyncTime: DateTime.now(),
@@ -390,9 +433,11 @@ class SyncService {
         errorMessage: result.success ? null : result.errorMessage,
       ));
       return result;
-    } on BackendUnavailableException catch (e) {
+    } on BackendUnavailableException catch (e, st) {
+      syncLogger.e('repairRemote: 后端不可用', error: e, stackTrace: st);
       return SyncResult.failure('后端不可用：$e');
-    } on Exception catch (e) {
+    } on Exception catch (e, st) {
+      syncLogger.e('repairRemote: 修复异常', error: e, stackTrace: st);
       return SyncResult.failure('修复异常：$e');
     } finally {
       _syncInProgress = false;
@@ -455,6 +500,116 @@ class SyncService {
 
   /// 获取当前 Vault（供改密码等操作使用）
   Vault? get vault => _vault;
+
+  // ──────────────────────────────────────────────
+  // 调试面板支持（E1/E2）
+  // ──────────────────────────────────────────────
+
+  /// 获取诊断快照（调试面板"状态"页用）
+  ///
+  /// 返回当前同步子系统的完整状态信息（不含敏感凭据），用于调试面板展示。
+  /// 包含：同步状态、后端配置、Vault 元数据、设备 ID、最近同步结果、
+  /// manifest version、失败笔记列表、日志文件路径等。
+  SyncDiagnosticsSnapshot getDiagnosticsSnapshot() {
+    final vault = _vault;
+    final backend = _backend;
+    final lastResult = state.lastResult;
+
+    return SyncDiagnosticsSnapshot(
+      captureTime: DateTime.now(),
+      // 同步状态
+      status: state.status.name,
+      lastSyncTime: state.lastSyncTime,
+      errorMessage: state.errorMessage,
+      isSyncing: _syncInProgress,
+      backendReady: _backendReady,
+      // 后端配置（不含密码/Token）
+      backendType: SyncConfig.backendType.name,
+      backendDisplayName: SyncConfig.backendDisplayName,
+      backendRuntimeType: backend?.runtimeType.toString(),
+      providerKey: backend?.providerKey,
+      localFsPath: SyncConfig.localFsPath,
+      webdavUrl: SyncConfig.webdavUrl,
+      webdavUsername: SyncConfig.webdavUsername,
+      safeServerUrl: SyncConfig.safeServerUrl,
+      autoSyncEnabled: SyncConfig.isAutoSyncEnabled,
+      // Vault 元数据
+      vaultId: vault?.vaultId,
+      keyVersion: vault?.keyVersion,
+      dataKeyEpoch: vault?.dataKeyEpoch,
+      keyFingerprint: vault?.keyFingerprint,
+      kdfAlgorithm: vault?.kdf.algorithm,
+      kdfIterations: vault?.kdf.iterations,
+      // 设备
+      deviceId: _deviceId,
+      // 最近同步结果
+      lastResultSuccess: lastResult?.success,
+      lastResultAttempts: lastResult?.attempts,
+      lastResultUploaded: lastResult?.uploaded,
+      lastResultDownloaded: lastResult?.downloaded,
+      lastResultDeleted: lastResult?.deleted,
+      lastResultConflicts: lastResult?.conflicts,
+      lastResultMigrated: lastResult?.migrated,
+      lastResultSkipped: lastResult?.skipped,
+      lastResultPasswordEpochMismatch: lastResult?.passwordEpochMismatch,
+      lastResultErrorMessage: lastResult?.errorMessage,
+      lastResultFailedNoteUuids: lastResult?.failedNoteUuids,
+      lastResultActions: lastResult?.actions
+          .map((a) => SyncActionInfo.fromAction(a))
+          .toList(),
+      // 日志
+      logDirPath: SyncLogFile.dirPath,
+      logBufferCount: SyncLogBuffer.instance.all().length,
+    );
+  }
+
+  /// 获取日志缓冲区所有条目（调试面板"日志"页用）
+  List<SyncLogEntry> getLogEntries() => SyncLogBuffer.instance.snapshot();
+
+  /// 实时日志流（调试面板 StreamBuilder 监听用）
+  Stream<SyncLogEntry> get logStream => SyncLogBuffer.instance.stream;
+
+  /// 清空内存日志缓冲（调试面板"清空日志"按钮）
+  void clearLogBuffer() => SyncLogBuffer.instance.clear();
+
+  /// 获取当前日志文件路径（调试面板"导出日志"按钮用）
+  Future<String?> getLogFilePath() => SyncLogFile.currentPath();
+
+  /// 导出全部日志为文本（调试面板"复制全部"按钮用）
+  ///
+  /// 格式：每条一行，含时间戳/级别/消息/错误/堆栈。
+  /// 同时包含当前诊断快照作为头部信息。
+  Future<String> exportAllLogsAsText() async {
+    final snapshot = getDiagnosticsSnapshot();
+    final buffer = StringBuffer();
+    buffer.writeln('=== SafeNotes 同步诊断快照 ===');
+    buffer.writeln('导出时间: ${snapshot.captureTime}');
+    buffer.writeln('设备 ID: ${snapshot.deviceId ?? "N/A"}');
+    buffer.writeln('后端: ${snapshot.backendDisplayName} '
+        '(${snapshot.backendRuntimeType ?? "N/A"})');
+    buffer.writeln('Vault ID: ${snapshot.vaultId ?? "N/A"}');
+    buffer.writeln('keyVersion: ${snapshot.keyVersion ?? "N/A"}, '
+        'dataKeyEpoch: ${snapshot.dataKeyEpoch ?? "N/A"}');
+    buffer.writeln('同步状态: ${snapshot.status}, '
+        'isSyncing=${snapshot.isSyncing}');
+    if (snapshot.errorMessage != null) {
+      buffer.writeln('错误信息: ${snapshot.errorMessage}');
+    }
+    if (snapshot.lastResultErrorMessage != null) {
+      buffer.writeln('上次同步错误: ${snapshot.lastResultErrorMessage}');
+    }
+    if (snapshot.lastResultFailedNoteUuids?.isNotEmpty ?? false) {
+      buffer.writeln('失败笔记 UUID: '
+          '${snapshot.lastResultFailedNoteUuids!.join(", ")}');
+    }
+    buffer.writeln('日志目录: ${snapshot.logDirPath ?? "N/A"}');
+    buffer.writeln('');
+    buffer.writeln('=== 日志记录 ===');
+    for (final entry in SyncLogBuffer.instance.all()) {
+      buffer.writeln(entry.formattedLine);
+    }
+    return buffer.toString();
+  }
 
   // ──────────────────────────────────────────────
   // 内部辅助

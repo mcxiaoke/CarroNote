@@ -39,6 +39,7 @@ import 'package:path/path.dart' as p;
 // Project 导入
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
+import 'package:safenotes/sync/sync_logging.dart';
 
 /// SafeServer v2 API 路径前缀
 const String kSafeServerApiPrefix = '/api/v2';
@@ -287,8 +288,10 @@ class SafeServerBackend implements SyncBackend {
         Uri.parse('$_blobUrlPrefix/$hash'),
         headers: _authHeaders(),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // 网络错误：静默跳过，GC 不阻断同步
+      syncLogger.w('[SafeServer] deleteBlob 网络错误，GC 跳过 '
+          'hash=${hash.substring(0, 8)}…', error: e);
       return;
     }
 
@@ -337,8 +340,10 @@ class SafeServerBackend implements SyncBackend {
         Uri.parse(_manifestUrl),
         headers: _authHeaders(),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // 删除失败不抛异常，让 SyncEngine 的 PUT 覆盖
+      syncLogger.w('[SafeServer] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
+          error: e);
     }
   }
 
@@ -361,8 +366,9 @@ class SafeServerBackend implements SyncBackend {
         Uri.parse(_blobsUrl),
         headers: _authHeaders(),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // 网络错误：返回空列表，GC 不阻断同步
+      syncLogger.w('[SafeServer] _listAllBlobs 网络错误，GC 退化为只标记', error: e);
       return [];
     }
 
@@ -421,8 +427,9 @@ class SafeServerBackend implements SyncBackend {
         // 隔离区已存在同名项：直接删除原 blob 即可
         try {
           await deleteBlob(hash);
-        } on Exception {
-          // 忽略
+        } on Exception catch (e) {
+          syncLogger.w('[SafeServer] deleteBlobSoft: 409 后删除原 blob 失败 '
+              'hash=${hash.substring(0, 8)}…', error: e);
         }
         return;
       }
@@ -490,8 +497,10 @@ class SafeServerBackend implements SyncBackend {
               if (ts != null && ts < cutoff) {
                 try {
                   await _deleteResource('blobs-orphan/$name');
-                } on Exception {
+                } on Exception catch (e) {
                   // 单个删除失败不阻断
+                  syncLogger.w('[SafeServer] purgeOrphans: 单个孤儿删除失败 '
+                      'name=$name', error: e);
                 }
               }
             }
@@ -517,8 +526,10 @@ class SafeServerBackend implements SyncBackend {
               Uri.parse('$_blobUrlPrefix/$name'),
               headers: _authHeaders(),
             );
-          } on Exception {
+          } on Exception catch (e) {
             // 单个删除失败不阻断
+            syncLogger.w('[SafeServer] purgeOrphans(降级): 单个删除失败 '
+                'name=$name', error: e);
           }
         }
       }
@@ -541,8 +552,10 @@ class SafeServerBackend implements SyncBackend {
       try {
         await _backupManifestOnServer(currentManifestBytes);
         return;
-      } on Exception {
+      } on Exception catch (e) {
         // 服务端备份失败：退化为本地临时目录兜底
+        syncLogger.w('[SafeServer] 服务端 manifest 备份失败，退化为本地临时目录',
+            error: e);
       }
     }
     try {
@@ -552,8 +565,9 @@ class SafeServerBackend implements SyncBackend {
         providerKey,
       ));
       await writeRingBackup(dir, currentManifestBytes);
-    } on Exception {
+    } on Exception catch (e) {
       // 备份失败不阻断同步
+      syncLogger.w('[SafeServer] 本地 manifest 备份失败', error: e);
     }
   }
 
@@ -567,7 +581,9 @@ class SafeServerBackend implements SyncBackend {
       if (idx.statusCode == 200) {
         slot = int.tryParse(utf8.decode(idx.bodyBytes).trim()) ?? 0;
       }
-    } on Exception {
+    } on Exception catch (e) {
+      syncLogger.d('[SafeServer] _backupManifestOnServer: 读取备份索引失败，slot=0',
+          error: e);
       slot = 0;
     }
     slot = (slot + 1) % kManifestBackupRingCount;
@@ -589,7 +605,8 @@ class SafeServerBackend implements SyncBackend {
     try {
       final res = await _postResource('blobs-orphan', 'mkdir');
       _resourcesSupported = (res.statusCode == 201 || res.statusCode == 405);
-    } on Exception {
+    } on Exception catch (e) {
+      syncLogger.d('[SafeServer] 资源层探测失败，标记为不支持', error: e);
       _resourcesSupported = false;
     }
   }
@@ -649,7 +666,9 @@ class SafeServerBackend implements SyncBackend {
         headers: _authHeaders(),
       );
       if (res.statusCode == 200) bytes = res.bodyBytes;
-    } on Exception {
+    } on Exception catch (e) {
+      syncLogger.d('[SafeServer] _deleteBlobSoftLegacy: GET 原 blob 失败 '
+          'hash=${hash.substring(0, 8)}…', error: e);
       bytes = null;
     }
     if (bytes == null) return; // 原 blob 已不存在，幂等
@@ -671,16 +690,20 @@ class SafeServerBackend implements SyncBackend {
         );
         return;
       }
-    } on Exception {
+    } on Exception catch (e) {
       // 复制失败：退化为硬删除原 blob
+      syncLogger.w('[SafeServer] _deleteBlobSoftLegacy: 复制到隔离区失败，退化为硬删除 '
+          'hash=${hash.substring(0, 8)}…', error: e);
     }
     try {
       await _client.delete(
         Uri.parse('$_blobUrlPrefix/$hash'),
         headers: _authHeaders(),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // 删除失败不抛异常（GC 不阻断同步）
+      syncLogger.w('[SafeServer] _deleteBlobSoftLegacy: 硬删除失败 '
+          'hash=${hash.substring(0, 8)}…', error: e);
     }
   }
 

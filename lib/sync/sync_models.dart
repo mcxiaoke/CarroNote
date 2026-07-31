@@ -51,6 +51,7 @@ import 'dart:typed_data';
 
 // Package 导入
 import 'package:safenotes/sync/crypto.dart';
+import 'package:safenotes/sync/sync_error.dart';
 
 /// manifest 中单条笔记的元数据
 ///
@@ -513,18 +514,38 @@ class SyncAction {
   final SyncActionType type;
   final String uuid;      // 笔记 UUID
   final String? hash;     // 涉及的 blob hash（可能为空）
-  final String? message;  // 附加信息（如冲突原因）
+
+  /// 附加信息（如冲突原因、修复说明等）
+  ///
+  /// 向后兼容字段：旧 UI 直接显示此字段。新代码应优先使用 [error]，
+  /// 当 [error] 为 null 时此字段作为补充说明。
+  final String? message;
+
+  /// 结构化错误信息（可选）
+  ///
+  /// 当 [type] 为 [SyncActionType.uploadFailed] / [SyncActionType.corrupt] 等
+  /// 失败类型时，此字段持有具体错误信息，便于调试面板展示和日志聚合。
+  /// 与 [message] 的关系：error 是机器可读结构化信息，message 是人可读补充说明。
+  /// 调试面板应优先显示 error.toDisplayString()，其次显示 message。
+  final SyncError? error;
 
   const SyncAction({
     required this.type,
     required this.uuid,
     this.hash,
     this.message,
+    this.error,
   });
+
+  /// 调试面板展示用：优先返回 error 的描述，其次返回 message
+  String get displayMessage =>
+      error?.toDisplayString() ?? message ?? type.name;
 
   @override
   String toString() =>
-      'SyncAction($type, uuid=$uuid, hash=$hash${message != null ? ', msg=$message' : ''})';
+      'SyncAction($type, uuid=$uuid, hash=$hash'
+      '${error != null ? ', err=${error!.label}' : ''}'
+      '${message != null ? ', msg=$message' : ''})';
 }
 
 /// 同步结果统计
@@ -779,4 +800,196 @@ class ManifestCrypto {
     final headerJson = jsonDecode(utf8.decode(headerBytes)) as Map<String, dynamic>;
     return ManifestHeader.fromJson(headerJson);
   }
+}
+
+// ──────────────────────────────────────────────
+// 调试面板数据模型（E1）
+// ──────────────────────────────────────────────
+
+/// 同步诊断快照（调试面板"状态"页展示用）
+///
+/// 由 [SyncService.getDiagnosticsSnapshot] 生成，包含同步子系统当前状态的
+/// 完整信息（不含敏感凭据如密码/Token）。调试面板可直接渲染此对象。
+class SyncDiagnosticsSnapshot {
+  /// 快照捕获时间
+  final DateTime captureTime;
+
+  // 同步状态
+  final String status;
+  final DateTime? lastSyncTime;
+  final String? errorMessage;
+  final bool isSyncing;
+  final bool backendReady;
+
+  // 后端配置（不含密码/Token）
+  final String backendType;
+  final String backendDisplayName;
+  final String? backendRuntimeType;
+  final String? providerKey;
+  final String localFsPath;
+  final String webdavUrl;
+  final String webdavUsername;
+  final String safeServerUrl;
+  final bool autoSyncEnabled;
+
+  // Vault 元数据
+  final String? vaultId;
+  final int? keyVersion;
+  final int? dataKeyEpoch;
+  final String? keyFingerprint;
+  final String? kdfAlgorithm;
+  final int? kdfIterations;
+
+  // 设备
+  final String? deviceId;
+
+  // 最近同步结果
+  final bool? lastResultSuccess;
+  final int? lastResultAttempts;
+  final int? lastResultUploaded;
+  final int? lastResultDownloaded;
+  final int? lastResultDeleted;
+  final int? lastResultConflicts;
+  final int? lastResultMigrated;
+  final int? lastResultSkipped;
+  final bool? lastResultPasswordEpochMismatch;
+  final String? lastResultErrorMessage;
+  final List<String>? lastResultFailedNoteUuids;
+  final List<SyncActionInfo>? lastResultActions;
+
+  // 日志
+  final String? logDirPath;
+  final int logBufferCount;
+
+  const SyncDiagnosticsSnapshot({
+    required this.captureTime,
+    required this.status,
+    this.lastSyncTime,
+    this.errorMessage,
+    required this.isSyncing,
+    required this.backendReady,
+    required this.backendType,
+    required this.backendDisplayName,
+    this.backendRuntimeType,
+    this.providerKey,
+    required this.localFsPath,
+    required this.webdavUrl,
+    required this.webdavUsername,
+    required this.safeServerUrl,
+    required this.autoSyncEnabled,
+    this.vaultId,
+    this.keyVersion,
+    this.dataKeyEpoch,
+    this.keyFingerprint,
+    this.kdfAlgorithm,
+    this.kdfIterations,
+    this.deviceId,
+    this.lastResultSuccess,
+    this.lastResultAttempts,
+    this.lastResultUploaded,
+    this.lastResultDownloaded,
+    this.lastResultDeleted,
+    this.lastResultConflicts,
+    this.lastResultMigrated,
+    this.lastResultSkipped,
+    this.lastResultPasswordEpochMismatch,
+    this.lastResultErrorMessage,
+    this.lastResultFailedNoteUuids,
+    this.lastResultActions,
+    this.logDirPath,
+    required this.logBufferCount,
+  });
+
+  /// 转为可读文本（调试面板"复制状态"按钮用）
+  String toReadableText() {
+    final b = StringBuffer();
+    b.writeln('=== SafeNotes 同步诊断快照 ===');
+    b.writeln('捕获时间: $captureTime');
+    b.writeln('');
+    b.writeln('-- 同步状态 --');
+    b.writeln('状态: $status');
+    b.writeln('正在同步: $isSyncing');
+    b.writeln('后端就绪: $backendReady');
+    b.writeln('上次同步: $lastSyncTime');
+    if (errorMessage != null) b.writeln('错误信息: $errorMessage');
+    b.writeln('');
+    b.writeln('-- 后端配置 --');
+    b.writeln('类型: $backendDisplayName ($backendType)');
+    b.writeln('运行时类型: $backendRuntimeType');
+    b.writeln('providerKey: $providerKey');
+    if (localFsPath.isNotEmpty) b.writeln('LocalFs 路径: $localFsPath');
+    if (webdavUrl.isNotEmpty) {
+      b.writeln('WebDAV URL: $webdavUrl');
+      b.writeln('WebDAV 用户: $webdavUsername');
+    }
+    if (safeServerUrl.isNotEmpty) b.writeln('SafeServer URL: $safeServerUrl');
+    b.writeln('自动同步: $autoSyncEnabled');
+    b.writeln('');
+    b.writeln('-- Vault 元数据 --');
+    b.writeln('Vault ID: $vaultId');
+    b.writeln('keyVersion: $keyVersion');
+    b.writeln('dataKeyEpoch: $dataKeyEpoch');
+    b.writeln('keyFingerprint: $keyFingerprint');
+    b.writeln('KDF: $kdfAlgorithm (iterations=$kdfIterations)');
+    b.writeln('');
+    b.writeln('-- 设备 --');
+    b.writeln('设备 ID: $deviceId');
+    b.writeln('');
+    b.writeln('-- 最近同步结果 --');
+    b.writeln('成功: $lastResultSuccess');
+    b.writeln('重试次数: $lastResultAttempts');
+    b.writeln('上传: $lastResultUploaded, 下载: $lastResultDownloaded, '
+        '删除: $lastResultDeleted, 冲突: $lastResultConflicts, '
+        '迁移: $lastResultMigrated, 跳过: $lastResultSkipped');
+    b.writeln('密钥纪元不匹配: $lastResultPasswordEpochMismatch');
+    if (lastResultErrorMessage != null) {
+      b.writeln('错误: $lastResultErrorMessage');
+    }
+    if (lastResultFailedNoteUuids != null &&
+        lastResultFailedNoteUuids!.isNotEmpty) {
+      b.writeln('失败笔记 (${lastResultFailedNoteUuids!.length}): '
+          '${lastResultFailedNoteUuids!.join(", ")}');
+    }
+    b.writeln('');
+    b.writeln('-- 日志 --');
+    b.writeln('日志目录: $logDirPath');
+    b.writeln('内存缓冲条目数: $logBufferCount');
+    return b.toString();
+  }
+}
+
+/// SyncAction 的可展示信息（调试面板用）
+///
+/// 从 [SyncAction] 转换而来，只保留调试面板需要展示的字段，
+/// 避免 UI 层直接依赖 [SyncError] 体系。
+class SyncActionInfo {
+  final String type;
+  final String uuid;
+  final String? hash;
+  final String? message;
+  final String? errorLabel;
+  final String? errorDisplay;
+
+  const SyncActionInfo({
+    required this.type,
+    required this.uuid,
+    this.hash,
+    this.message,
+    this.errorLabel,
+    this.errorDisplay,
+  });
+
+  /// 从 [SyncAction] 转换
+  factory SyncActionInfo.fromAction(SyncAction action) => SyncActionInfo(
+        type: action.type.name,
+        uuid: action.uuid,
+        hash: action.hash,
+        message: action.message,
+        errorLabel: action.error?.label,
+        errorDisplay: action.error?.toDisplayString(),
+      );
+
+  @override
+  String toString() =>
+      'SyncActionInfo($type, uuid=$uuid${errorLabel != null ? ', err=$errorLabel' : ''})';
 }

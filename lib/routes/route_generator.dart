@@ -42,6 +42,7 @@ import 'package:safenotes/views/settings/language_setting.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
 import 'package:safenotes/views/settings/secure_display_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
+import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
 
 class RouteGenerator {
@@ -168,6 +169,13 @@ class RouteGenerator {
       case '/syncSettings':
         return PageTransition(
           child: const SyncSettingsPage(),
+          duration: const Duration(milliseconds: transitionDuration),
+          type: transitionType,
+        );
+
+      case '/diagnostics':
+        return PageTransition(
+          child: const SyncDiagnosticsPage(),
           duration: const Duration(milliseconds: transitionDuration),
           type: transitionType,
         );

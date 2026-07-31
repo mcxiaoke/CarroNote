@@ -44,6 +44,8 @@ import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
+import 'package:safenotes/sync/sync_error.dart';
+import 'package:safenotes/sync/sync_logging.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/vault.dart';
 
@@ -135,6 +137,10 @@ class SyncEngine {
     int totalMigrated = 0;
     bool epochMismatch = false;
 
+    syncLogger.i('同步开始 (backend=${backend.runtimeType}, '
+        'deviceId=$deviceId, keyVersion=${vault.keyVersion}, '
+        'dataKeyEpoch=${vault.dataKeyEpoch})');
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         final result = await _syncOnce(attempt);
@@ -143,13 +149,19 @@ class SyncEngine {
         allActions.addAll(result.actions);
         epochMismatch = epochMismatch || result.passwordEpochMismatch;
 
+        syncLogger.i('同步完成 (attempt=$attempt, success=${result.success}, '
+            'uploaded=${result.uploaded}, downloaded=${result.downloaded}, '
+            'deleted=${result.deleted}, conflicts=${result.conflicts}, '
+            'migrated=$totalMigrated, epochMismatch=$epochMismatch)');
         // 迁移后需要重新同步一次（用新 dataKey），但 _syncOnce 已处理
         return result.copyWith(
           migrated: totalMigrated,
           passwordEpochMismatch: epochMismatch,
         );
-      } on ConflictException catch (e) {
+      } on ConflictException catch (e, st) {
         // 乐观锁冲突：回到 Step 1 重试
+        syncLogger.w('乐观锁冲突 (attempt=$attempt/$maxRetries)',
+            error: e, stackTrace: st);
         if (attempt == maxRetries) {
           return SyncResult.failure(
             '乐观锁冲突超过 $maxRetries 次：$e',
@@ -161,12 +173,14 @@ class SyncEngine {
         // 迁移后需要重新拉取并同步，回到 Step 1 重试
         // 迁移已成功，但 manifest 中的 encryptedDataKey 已变化，
         // 需要重新 GET 远端 manifest（用新 dataKey 解密）
+        syncLogger.i('dataKey 迁移完成 (migratedCount=${e.migratedCount})，重新同步');
         totalMigrated += e.migratedCount;
         allActions.add(const SyncAction(
           type: SyncActionType.migrate,
           uuid: '',
           message: 'dataKey 迁移完成，重新同步',
         ));
+        syncLogger.i('⇄ migrate dataKey 迁移完成，重新同步');
         // 继续重试（不计入乐观锁冲突次数，但复用重试循环）
         if (attempt == maxRetries) {
           return SyncResult.failure(
@@ -176,6 +190,7 @@ class SyncEngine {
         }
       }
     }
+    syncLogger.w('同步流程异常退出（超出重试次数）');
     return SyncResult.failure('Unexpected sync flow exit');
   }
 
@@ -214,15 +229,17 @@ class SyncEngine {
       try {
         remoteHeader =
             ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
-      } on FormatException catch (e) {
+      } on FormatException catch (e, st) {
         // 远端 manifest 格式损坏（数据截断、header 长度字段错误等）
         // 备份损坏文件，用本地数据重建 manifest 上传覆盖
+        syncLogger.w('远端 manifest 格式损坏，备份后用本地数据重建',
+            error: e, stackTrace: st);
         await backend.backupCorruptManifest(remoteResponse.ciphertext);
         final localManifest = await _buildLocalManifest(
           overrideEncryptedDataKey: null,
         );
         final actions = <SyncAction>[];
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.skip,
           uuid: '',
           message: '远端 manifest 损坏已备份：$e',
@@ -285,11 +302,16 @@ class SyncEngine {
           try {
             ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
             // 本地 dataKey 能解远端 manifest → 场景 b，继续同步
-          } on Exception {
+            syncLogger.i('dataKey 迁移检查：本地 dataKey 可解远端 manifest '
+                '（本端改密码未推送或纪元不匹配），继续同步');
+          } on Exception catch (e) {
             // 场景 c 或 d：用 keyFingerprint 判别
+            syncLogger.w('dataKey 迁移检查：本地 dataKey 解不开远端 manifest，'
+                '尝试 keyFingerprint 判别 (场景 c/d)', error: e);
             final password = passphraseProvider?.call();
             if (password == null || password.isEmpty) {
               // 无密码提供者（旧测试或未注入），退回原失败逻辑
+              syncLogger.w('dataKey 迁移失败：无密码提供者');
               return SyncResult.failure(
                 'dataKey 迁移失败：${migrationResult.error}',
                 attempts: attempt,
@@ -306,6 +328,7 @@ class SyncEngine {
 
             if (remoteResult == null) {
               // 场景 c：密码真的不匹配
+              syncLogger.w('密码不匹配，无法同步（场景 c）');
               return SyncResult.failure(
                 '密码不匹配，无法同步：${migrationResult.error}',
                 attempts: attempt,
@@ -314,6 +337,7 @@ class SyncEngine {
 
             // 场景 d：密码相同、salt 不同 → 完整 vault 迁移
             // 用远端 dataKey 重新加密所有本地笔记，更新本地 vault 元数据
+            syncLogger.i('检测到场景 d（密码相同、salt 不同），开始完整 vault 迁移');
             final migratedCount = await _executeMigrationVault(
               remoteDataKey: remoteResult.dataKey,
               remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
@@ -551,10 +575,18 @@ class SyncEngine {
         _dataKey,
         remoteResponse.ciphertext,
       );
-    } on Object {
+    } on SyncDecryptionException catch (e, st) {
       // 当前 dataKey 解不开 manifest（密码不匹配/纪元过期），无法枚举远端条目。
+      syncLogger.e('repairRemote: 远端 manifest 解密失败', error: e, stackTrace: st);
       return SyncResult.failure(
         '无法解密远端 manifest（dataKey 不匹配），修复中止：请先用正确密码登录',
+        attempts: 1,
+      );
+    } on Object catch (e, st) {
+      // 未预期异常（如 JSON 解析失败、字段缺失），记录堆栈便于排查
+      syncLogger.e('repairRemote: 解析远端 manifest 未预期异常', error: e, stackTrace: st);
+      return SyncResult.failure(
+        '解析远端 manifest 失败：$e',
         attempts: 1,
       );
     }
@@ -575,12 +607,17 @@ class SyncEngine {
           try {
             final dk = SyncCrypto.unwrapDataKey(oldMk, wrapped);
             if (!candidates.any((c) => _sameKey(c, dk))) candidates.add(dk);
-          } on Object {
+          } on SyncDecryptionException catch (e) {
             // 该历史条目不是用 oldPassword 的 MK 包裹的，跳过
+            syncLogger.d('repairRemote: 历史条目跳过（MK 不匹配）', error: e);
+          } on Object catch (e, st) {
+            // 解包异常（base64 损坏等），跳过该条
+            syncLogger.w('repairRemote: 历史条目解包异常', error: e, stackTrace: st);
           }
         }
-      } on Object {
+      } on Object catch (e, st) {
         // 派生失败，忽略历史候选
+        syncLogger.w('repairRemote: 派生旧 MK 失败，跳过历史候选', error: e, stackTrace: st);
       }
     }
 
@@ -611,7 +648,7 @@ class SyncEngine {
         if (source != null && !source.deleted) {
           await _uploadNote(source, actions);
           repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
             hash: item.hash,
@@ -623,7 +660,7 @@ class SyncEngine {
         }
         // 本机也无明文：保留远端条目，标记跳过（下次同步重试）
         repairedItems[uuid] = item;
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.skip,
           uuid: uuid,
           hash: item.hash,
@@ -645,8 +682,11 @@ class SyncEngine {
           );
           workingKey = key;
           break;
-        } on Object {
-          // 试下一个候选
+        } on SyncDecryptionException {
+          // 试下一个候选（密钥不匹配，预期内）
+        } on Object catch (e, st) {
+          // 其他异常（数据损坏），记录后试下一个
+          syncLogger.d('repairRemote: 候选密钥解密异常 uuid=$uuid', error: e, stackTrace: st);
         }
       }
 
@@ -674,7 +714,7 @@ class SyncEngine {
             synced: true,
           );
           await _uploadNote(note, actions); // 用当前密钥重传（现代化）
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
             hash: item.hash,
@@ -693,7 +733,7 @@ class SyncEngine {
       if (source != null && !source.deleted) {
         await _uploadNote(source, actions);
         repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.heal,
           uuid: uuid,
           hash: item.hash,
@@ -707,7 +747,7 @@ class SyncEngine {
       // 3c. 无法修复：保留远端条目，标记损坏（不丢弃，等待其他设备/手动处理）
       failed.add(uuid);
       repairedItems[uuid] = item;
-      actions.add(SyncAction(
+      _addAction(actions, SyncAction(
         type: SyncActionType.corrupt,
         uuid: uuid,
         hash: item.hash,
@@ -941,7 +981,7 @@ class SyncEngine {
         // purgedSet 中的 uuid 是用户主动硬删除的，应从远端 manifest 清除，
         // 而不是重新下载回来。下面的 M1 cleanup 会从 mergedItems 中移除这些 uuid。
         if (purgedSet.contains(uuid)) {
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.skip,
             uuid: uuid,
             message: 'locally purged (hard-deleted on this device)',
@@ -966,7 +1006,7 @@ class SyncEngine {
         // 正常情况下 hardDelete 后 readNoteByUuid 返回 null 不会走到这里，
         // 但为防止边缘情况（如笔记被重新下载后又在 purgedSet 中），加保护。
         if (purgedSet.contains(uuid)) {
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.skip,
             uuid: uuid,
             message: 'locally purged, skip upload',
@@ -994,7 +1034,7 @@ class SyncEngine {
           } else {
             // 完全一致：跳过
             mergedItems[uuid] = localItem;
-            actions.add(SyncAction(type: SyncActionType.skip, uuid: uuid));
+            _addAction(actions, SyncAction(type: SyncActionType.skip, uuid: uuid));
           }
         } else {
           // 冲突：LWW 解决
@@ -1037,7 +1077,7 @@ class SyncEngine {
               mergedItems[uuid] = remoteItem;
             }
           }
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.conflict,
             uuid: uuid,
             message: winner == localItem
@@ -1222,7 +1262,7 @@ class SyncEngine {
   }) async {
     if (note.deleted) {
       // 墓碑：不传 blob，只在 manifest 里标记
-      actions.add(SyncAction(
+      _addAction(actions, SyncAction(
         type: SyncActionType.delete,
         uuid: note.uuid,
         message: 'tombstone (no blob)',
@@ -1251,17 +1291,44 @@ class SyncEngine {
         note.toContentBytes(),
       );
       await backend.putBlob(note.contentHash, envelope);
-    } on Object {
-      actions.add(SyncAction(
+    } on BackendUnavailableException catch (e, st) {
+      // 网络/存储不可用（可重试）
+      syncLogger.w('uploadNote: blob 上传失败（后端不可用）uuid=${note.uuid}',
+          error: e, stackTrace: st);
+      _addAction(actions, SyncAction(
         type: SyncActionType.uploadFailed,
         uuid: note.uuid,
         hash: note.contentHash,
         message: 'blob 上传失败（网络/存储错误），将重试',
+        error: NetworkError(
+          operation: 'putBlob',
+          noteUuid: note.uuid,
+          cause: e,
+          stackTrace: st,
+          retryable: true,
+        ),
+      ));
+      return;
+    } on Object catch (e, st) {
+      // 其他异常（加密失败、序列化错误等），记录详细堆栈便于排查
+      syncLogger.e('uploadNote: blob 上传未预期异常 uuid=${note.uuid}',
+          error: e, stackTrace: st);
+      _addAction(actions, SyncAction(
+        type: SyncActionType.uploadFailed,
+        uuid: note.uuid,
+        hash: note.contentHash,
+        message: 'blob 上传失败（${e.runtimeType}），将重试',
+        error: UnexpectedError(
+          operation: 'putBlob',
+          noteUuid: note.uuid,
+          cause: e,
+          stackTrace: st,
+        ),
       ));
       return;
     }
 
-    actions.add(SyncAction(
+    _addAction(actions, SyncAction(
       type: SyncActionType.upload,
       uuid: note.uuid,
       hash: note.contentHash,
@@ -1292,14 +1359,18 @@ class SyncEngine {
     if (blobKeyEpoch > 0) {
       try {
         return SyncCrypto.open(key, hash, envelope, epoch: blobKeyEpoch);
-      } on Object {
+      } on SyncDecryptionException catch (e) {
         // 该 dataKey 解不开该纪元 blob，继续尝试遗留格式兜底
+        syncLogger.d('openBlobEnvelope: 纪元格式解密失败，回退遗留格式 '
+            'hash=${hash.substring(0, 8)}… epoch=$blobKeyEpoch', error: e);
       }
     }
     try {
       return SyncCrypto.open(key, hash, envelope);
-    } on Object {
+    } on SyncDecryptionException catch (e) {
       // 回退旧格式（AAD=uuid）
+      syncLogger.d('openBlobEnvelope: v2 格式解密失败，回退 v1 (AAD=uuid) '
+          'hash=${hash.substring(0, 8)}…', error: e);
       return SyncCrypto.open(key, uuid, envelope);
     }
   }
@@ -1343,7 +1414,7 @@ class SyncEngine {
           synced: true,
         ));
       }
-      actions.add(SyncAction(
+      _addAction(actions, SyncAction(
         type: SyncActionType.delete,
         uuid: uuid,
         message: 'remote tombstone applied',
@@ -1368,7 +1439,7 @@ class SyncEngine {
       final source = canHealLocal ? local : twin;
       if (source != null && !source.deleted) {
         await _uploadNote(source, actions);
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.heal,
           uuid: uuid,
           hash: item.hash,
@@ -1380,7 +1451,7 @@ class SyncEngine {
         return _DownloadHealed(item);
       }
       // blob 不存在且本机无可用明文：可能是其他设备还没上传完，跳过本次
-      actions.add(SyncAction(
+      _addAction(actions, SyncAction(
         type: SyncActionType.skip,
         uuid: uuid,
         hash: item.hash,
@@ -1408,7 +1479,7 @@ class SyncEngine {
         // 内容 hash 与 manifest 记录不符：blob 内容被篡改/错位（能解密但内容不对）。
         // 这不是密钥问题，不走 _handleDownloadFailure 的自愈/失败流程；
         // 按原 HEAD 行为记为 skip 并保留远端条目供下次重试（M7 回归契约）。
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.skip,
           uuid: uuid,
           hash: item.hash,
@@ -1458,12 +1529,12 @@ class SyncEngine {
         } else {
           await database.updateNoteByUuid(stored);
         }
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.download,
           uuid: uuid,
           hash: item.hash,
         ));
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.heal,
           uuid: uuid,
           hash: item.hash,
@@ -1504,15 +1575,24 @@ class SyncEngine {
         await database.updateNoteByUuid(note);
       }
 
-      actions.add(SyncAction(
+      _addAction(actions, SyncAction(
         type: SyncActionType.download,
         uuid: uuid,
         hash: item.hash,
       ));
       return _DownloadSuccess(item);
-    } on Object {
-      // Layer 1 容错：解密/解析/校验失败（坏 blob、错误 dataKey、数据损坏）
+    } on SyncDecryptionException catch (e, st) {
+      // Layer 1 容错：解密失败（坏 blob、错误 dataKey）
       // 不应中断整次同步。转交自愈逻辑处理（本地有明文则重传覆盖，否则记录失败）。
+      syncLogger.w('downloadNote: blob 解密失败，进入自愈流程 '
+          'uuid=$uuid hash=${item.hash.substring(0, 8)}…', error: e, stackTrace: st);
+      final healed = await _handleDownloadFailure(uuid, item, actions);
+      return healed != null
+          ? _DownloadHealed(healed)
+          : _DownloadFailed(uuid);
+    } on Object catch (e, st) {
+      // 其他异常（解析/校验失败/数据损坏），记录详细堆栈后进入自愈流程
+      syncLogger.e('downloadNote: 下载未预期异常 uuid=$uuid', error: e, stackTrace: st);
       final healed = await _handleDownloadFailure(uuid, item, actions);
       return healed != null
           ? _DownloadHealed(healed)
@@ -1549,7 +1629,7 @@ class SyncEngine {
     if (local != null && !local.deleted) {
       try {
         await _uploadNote(local, actions);
-        actions.add(SyncAction(
+        _addAction(actions, SyncAction(
           type: SyncActionType.heal,
           uuid: uuid,
           hash: local.contentHash,
@@ -1567,8 +1647,10 @@ class SyncEngine {
           contentSize: local.toContentBytes().length,
           blobKeyEpoch: vault.dataKeyEpoch,
         );
-      } on Object {
+      } on Object catch (e, st) {
         // 自愈上传也失败：退化为记录失败，不抛
+        syncLogger.e('handleDownloadFailure: 本机明文自愈重传失败 uuid=$uuid',
+            error: e, stackTrace: st);
       }
     }
 
@@ -1606,7 +1688,7 @@ class SyncEngine {
 
           // 2) 重传 blob（_uploadNote 现用 AAD=hash，重传后全网可解）
           await _uploadNote(materialized, actions);
-          actions.add(SyncAction(
+          _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
             hash: remoteItem.hash,
@@ -1616,8 +1698,10 @@ class SyncEngine {
           // blobKeyEpoch 更新为当前纪元（重传时已用当前纪元加密）。
           return remoteItem.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
         }
-      } on Object {
+      } on Object catch (e, st) {
         // 孪生自愈失败：退化为记录失败，不抛
+        syncLogger.e('handleDownloadFailure: 孪生笔记自愈重传失败 uuid=$uuid',
+            error: e, stackTrace: st);
       }
     }
 
@@ -1627,7 +1711,7 @@ class SyncEngine {
     // failedNoteUuids，UI 提示用户运行「修复同步数据」。
     final isOldKey = remoteItem.blobKeyEpoch > 0 &&
         remoteItem.blobKeyEpoch != vault.dataKeyEpoch;
-    actions.add(SyncAction(
+    _addAction(actions, SyncAction(
       type: SyncActionType.corrupt,
       uuid: uuid,
       hash: remoteItem.hash,
@@ -1728,6 +1812,51 @@ class SyncEngine {
       if (a.type == type) count++;
     }
     return count;
+  }
+
+  /// 添加操作记录并同步输出日志（含笔记 uuid，便于调试追踪）
+  ///
+  /// 所有 SyncAction 的创建都应通过此方法，确保每条操作都有对应的日志行，
+  /// 方便从日志中按 uuid 检索同步行为。
+  void _addAction(List<SyncAction> actions, SyncAction action) {
+    actions.add(action);
+    _logAction(action);
+  }
+
+  /// 输出单条操作的日志（按类型分级别，含 uuid 和 hash）
+  void _logAction(SyncAction action) {
+    final uuid = action.uuid.isNotEmpty ? action.uuid : '-';
+    // hash 截断前 8 位，足够辨识又避免日志过长
+    final hash = action.hash != null && action.hash!.isNotEmpty
+        ? '${action.hash!.substring(0, 8)}…'
+        : '';
+    final msg = action.message ?? '';
+    final hashPart = hash.isNotEmpty ? ' hash=$hash' : '';
+    final msgPart = msg.isNotEmpty ? ' $msg' : '';
+
+    switch (action.type) {
+      case SyncActionType.upload:
+        syncLogger.i('↑ upload uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.download:
+        syncLogger.i('↓ download uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.delete:
+        syncLogger.i('✗ delete uuid=$uuid$msgPart');
+      case SyncActionType.skip:
+        // skip 量大，用 debug 级别避免淹没 info 日志
+        syncLogger.d('· skip uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.conflict:
+        syncLogger.w('⚡ conflict uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.migrate:
+        syncLogger.i('⇄ migrate uuid=$uuid$msgPart');
+      case SyncActionType.uploadFailed:
+        // uploadFailed 已在调用处用 syncLogger.e/w 记录详细错误，
+        // 这里只补一条操作级别日志，避免重复
+        syncLogger.w('✗ uploadFailed uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.corrupt:
+        syncLogger.e('⚠ corrupt uuid=$uuid$hashPart$msgPart');
+      case SyncActionType.heal:
+        syncLogger.i('✚ heal uuid=$uuid$hashPart$msgPart');
+    }
   }
 
   /// D3 修复：判断本次同步是否有实际变更需要 PUT manifest

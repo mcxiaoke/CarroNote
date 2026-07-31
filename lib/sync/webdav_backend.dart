@@ -32,11 +32,11 @@ import 'dart:typed_data';
 // Package 导入
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:http/http.dart' as http;
-import 'package:logger/logger.dart';
 
 // Project 导入
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
+import 'package:safenotes/sync/sync_logging.dart';
 
 /// WebDAV vault 子目录名（固定常量）
 ///
@@ -44,9 +44,6 @@ import 'package:safenotes/sync/sync_backend.dart';
 /// 避免把 manifest/blobs 散落到用户网盘根目录与其他文件混在一起。
 /// 多设备共享时只要 baseUrl 一样，子目录路径自动一致。
 const String kWebDavVaultSubdir = 'safenotes-vault';
-
-/// 项目级日志实例（用于 ETag 等告警输出）
-final _logger = Logger();
 
 /// WebDAV 后端
 ///
@@ -158,8 +155,9 @@ class WebDavBackend implements SyncBackend {
           Uri.parse(_manifestUrl),
           headers: _authHeaders(),
         );
-      } on Exception {
+      } on Exception catch (e) {
         // 网络错误：保守假设支持，不阻断 init
+        syncLogger.w('[WebDAV] ETag 探测网络错误，保守假设支持', error: e);
         return;
       }
 
@@ -174,13 +172,14 @@ class WebDavBackend implements SyncBackend {
 
       if (!_etagSupported && !_etagWarningLogged) {
         _etagWarningLogged = true;
-        _logger.w('[WebDAV] 警告：服务器不支持 ETag 头，'
+        syncLogger.w('[WebDAV] 警告：服务器不支持 ETag 头，'
             '乐观锁将退化为内容 hash 比较，'
             'If-Match 可能被服务器忽略，多端并发写入有覆盖风险。'
             '建议升级 WebDAV 服务或使用 SafeServer 后端。');
       }
-    } on Exception {
+    } on Exception catch (e) {
       // 探测失败不阻断 init
+      syncLogger.w('[WebDAV] ETag 探测失败，保守假设支持', error: e);
     }
   }
 
@@ -208,8 +207,9 @@ class WebDavBackend implements SyncBackend {
       // 成功响应格式：<D:getetag>"xxx"</D:getetag>
       // 失败响应格式：<D:getetag/> 或 <D:status>HTTP/1.1 404 Not Found</D:status>
       return body.contains('<D:getetag>') && !body.contains('<D:getetag/>');
-    } on Exception {
+    } on Exception catch (e) {
       // 探测失败：保守假设支持
+      syncLogger.w('[WebDAV] PROPFIND 探测失败，保守假设 ETag 支持', error: e);
       return true;
     }
   }
@@ -416,8 +416,9 @@ class WebDavBackend implements SyncBackend {
         }
       }
       return result;
-    } on Exception {
+    } on Exception catch (e) {
       // 探测失败：保守返回空列表，GC 跳过孤儿清理
+      syncLogger.w('[WebDAV] listBlobs PROPFIND 失败，GC 跳过孤儿清理', error: e);
       return [];
     }
   }
@@ -435,8 +436,10 @@ class WebDavBackend implements SyncBackend {
     // 确保隔离区目录存在（已存在返回 405，忽略）
     try {
       await _mkcol('$_blobsUrl/blobs-orphan');
-    } on Exception {
-      // ignore
+    } on Exception catch (e) {
+      // MKCOL 失败（目录已存在或无权限），忽略继续
+      syncLogger.d('[WebDAV] deleteBlobSoft: MKCOL blobs-orphan 失败（可能已存在）',
+          error: e);
     }
     try {
       final copyReq = http.Request('COPY', Uri.parse('$_blobsUrl/$hash'));
@@ -454,16 +457,20 @@ class WebDavBackend implements SyncBackend {
         );
         return;
       }
-    } on Exception {
+    } on Exception catch (e) {
       // COPY 失败：退化为硬删除原 blob
+      syncLogger.w('[WebDAV] deleteBlobSoft: COPY 失败，退化为硬删除 '
+          'hash=${hash.substring(0, 8)}…', error: e);
     }
     try {
       await _client.delete(
         Uri.parse('$_blobsUrl/$hash'),
         headers: _authHeaders(),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // 删除失败不抛异常（GC 不阻断同步）
+      syncLogger.w('[WebDAV] deleteBlobSoft: 硬删除失败 '
+          'hash=${hash.substring(0, 8)}…', error: e);
     }
   }
 
@@ -495,7 +502,8 @@ class WebDavBackend implements SyncBackend {
         }
       }
       return result;
-    } on Exception {
+    } on Exception catch (e) {
+      syncLogger.w('[WebDAV] listOrphanBlobs PROPFIND 失败', error: e);
       return [];
     }
   }
@@ -533,14 +541,17 @@ class WebDavBackend implements SyncBackend {
                 Uri.parse('$_blobsUrl/blobs-orphan/$name'),
                 headers: _authHeaders(),
               );
-            } on Exception {
+            } on Exception catch (e) {
               // 单个删除失败不阻断
+              syncLogger.w('[WebDAV] purgeOrphans: 单个孤儿删除失败 '
+                  'name=$name', error: e);
             }
           }
         }
       }
-    } on Exception {
+    } on Exception catch (e) {
       // 清理失败不阻断同步
+      syncLogger.w('[WebDAV] purgeOrphans: 清理失败', error: e);
     }
   }
 
@@ -555,8 +566,9 @@ class WebDavBackend implements SyncBackend {
     _ensureInitialized();
     try {
       await _backupManifestOnServer(currentManifestBytes);
-    } on Exception {
+    } on Exception catch (e) {
       // 服务端备份失败不阻断同步
+      syncLogger.w('[WebDAV] manifest 备份失败', error: e);
     }
   }
 
@@ -569,8 +581,10 @@ class WebDavBackend implements SyncBackend {
     // 确保备份子目录存在（已存在返回 405，忽略）
     try {
       await _mkcol(backupUrl);
-    } on Exception {
+    } on Exception catch (e) {
       // 某些服务端自动创建父目录，MKCOL 失败可忽略
+      syncLogger.d('[WebDAV] _backupManifestOnServer: MKCOL 备份目录失败（可能已存在）',
+          error: e);
     }
     var slot = 0;
     try {
@@ -581,7 +595,9 @@ class WebDavBackend implements SyncBackend {
       if (idxRes.statusCode == 200) {
         slot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
       }
-    } on Exception {
+    } on Exception catch (e) {
+      syncLogger.d('[WebDAV] _backupManifestOnServer: 读取备份索引失败，slot=0',
+          error: e);
       slot = 0;
     }
     slot = (slot + 1) % kManifestBackupRingCount;
@@ -623,8 +639,10 @@ class WebDavBackend implements SyncBackend {
           res.statusCode != 404) {
         // 删除失败：不抛异常，让 SyncEngine 的 PUT 覆盖
       }
-    } on Exception {
+    } on Exception catch (e) {
       // 网络错误：不抛异常，让 SyncEngine 的 PUT 覆盖
+      syncLogger.w('[WebDAV] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
+          error: e);
     }
   }
 

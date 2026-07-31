@@ -240,6 +240,7 @@ class HomePageState extends State<HomePage> {
               : [
                   //_DevSessionListner(),
                   _syncStatusButton(),
+                  _diagnosticsButton(),
                   _gridListView(),
                   _shortNotes(),
                 ],
@@ -317,6 +318,20 @@ class HomePageState extends State<HomePage> {
       case SyncStatus.error:
         return '同步失败';
     }
+  }
+
+  /// AppBar 调试面板入口按钮
+  ///
+  /// 始终显示（即使未启用同步），便于用户随时查看日志和诊断信息。
+  /// 点击跳转 /diagnostics 调试面板。
+  Widget _diagnosticsButton() {
+    return IconButton(
+      icon: const Icon(Icons.bug_report_outlined),
+      tooltip: '调试面板',
+      onPressed: () async {
+        await Navigator.pushNamed(context, '/diagnostics');
+      },
+    );
   }
 
   Widget _gridListView() {
@@ -453,6 +468,11 @@ class HomePageState extends State<HomePage> {
         if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
           refreshNotes();
         }
+      },
+      onDiagnosticsCallback: () async {
+        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+        Navigator.of(context).pop();
+        await Navigator.pushNamed(context, '/diagnostics');
       },
     );
   }
