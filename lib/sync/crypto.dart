@@ -6,7 +6,7 @@
  *   dataKey = 随机 32 字节                                     ← 永不变化，真正加密笔记内容
  *
  * 多端一致性关键：
- *   per-vault 随机 salt 在 vault 首次创建时生成，写入 manifest header 随密文一起传播。
+ *   per-vault 随机 salt 在 keyring 首次创建时生成，写入 manifest header 随密文一起传播。
  *   新设备加入时从远端 manifest 读取 salt，保证相同密码 + 相同 salt 派生出相同 MK。
  *   跨用户使用不同 salt，使预计算的彩虹表失效（比全全局固定 salt 更安全）。
  *
@@ -58,7 +58,7 @@ const int kPbkdf2Iterations = 200000;
 
 /// per-vault 随机 salt 长度（字节）
 ///
-/// 每个 vault 创建时生成独立的随机 salt，写入 manifest header。
+/// 每个 keyring 创建时生成独立的随机 salt，写入 manifest header。
 /// 相同密码 + 不同 salt → 不同 MK，跨用户预计算彩虹表直接失效。
 /// 多端一致性：salt 随 manifest header 传播，新设备按 header 中的 salt 派生 MK。
 const int kSaltLength = 16;

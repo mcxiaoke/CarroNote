@@ -38,11 +38,16 @@ import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/utils/app_logger.dart';
 
-/// WebDAV vault 子目录名（固定常量）
+/// WebDAV keyring 子目录名（固定常量）
 ///
 /// 客户端会在用户输入的 baseUrl 后自动附加此子目录，
 /// 避免把 manifest/blobs 散落到用户网盘根目录与其他文件混在一起。
 /// 多设备共享时只要 baseUrl 一样，子目录路径自动一致。
+///
+/// ⚠️ **不要跟着 Vault→Keyring 重命名改成 'safenotes-keyring'**。
+/// 这是**线上数据的物理路径**，不是代码内部标识符：改名 = 所有已有用户
+/// 的网盘数据"凭空消失"（客户端跑去一个空目录同步），且旧目录变成孤儿。
+/// P2 的 Keyring 重构只改密钥状态模型，不涉及远端存储布局。
 const String kWebDavVaultSubdir = 'safenotes-vault';
 
 /// WebDAV 后端
@@ -51,12 +56,12 @@ const String kWebDavVaultSubdir = 'safenotes-vault';
 ///   - 坚果云：https://dav.jianguoyun.com/dav/
 ///   - NextCloud：https://nc.example.com/remote.php/dav/files/user/
 ///
-/// 客户端会自动附加 `/safenotes-vault` 子目录作为 vault 根路径，
+/// 客户端会自动附加 `/safenotes-vault` 子目录作为 keyring 根路径，
 /// 用户不需要手动指定子目录名，多设备共享时只要 baseUrl 一样即一致。
 ///
 /// [username] / [password] 是 WebDAV 账号密码（坚果云需使用应用专用密码）
 class WebDavBackend implements SyncBackend {
-  /// WebDAV vault 根 URL（用户 baseUrl + 自动附加的 safenotes-vault 子目录，不带末尾斜杠）
+  /// WebDAV keyring 根 URL（用户 baseUrl + 自动附加的 safenotes-vault 子目录，不带末尾斜杠）
   final String baseUrl;
 
   /// 用户输入的原始 baseUrl（用于 providerKey 计算）
@@ -96,7 +101,7 @@ class WebDavBackend implements SyncBackend {
         // 规范化：去掉末尾斜杠，附加固定子目录
         baseUrl = _normalizeAndAppendVault(baseUrl);
 
-  /// 规范化用户输入的 URL，附加固定 vault 子目录
+  /// 规范化用户输入的 URL，附加固定 keyring 子目录
   ///
   /// 例：
   ///   - 'https://dav.jianguoyun.com/dav/' → 'https://dav.jianguoyun.com/dav/safenotes-vault'
@@ -552,6 +557,85 @@ class WebDavBackend implements SyncBackend {
     } on Exception catch (e) {
       // 清理失败不阻断同步
       Log.sync.w('[WebDAV] purgeOrphans: 清理失败', error: e);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // P2 Journal 远端副本（服务端 `journal/` 子目录）
+  // ──────────────────────────────────────────────
+
+  /// journal 远端副本目录 URL
+  String get _journalUrl => '$baseUrl/journal';
+
+  /// P2：写入 journal 密文副本（内容已由 Journal 加密，网盘只存字节）
+  @override
+  Future<void> putJournalObject(String name, Uint8List ciphertext) async {
+    _ensureInitialized();
+    try {
+      // 确保目录存在（已存在返回 405，忽略）
+      try {
+        await _mkcol(_journalUrl);
+      } on Exception catch (e) {
+        Log.sync.d('[WebDAV] putJournalObject: MKCOL journal 失败（可能已存在）',
+            error: e);
+      }
+      await _client.put(
+        Uri.parse('$_journalUrl/$name'),
+        headers: {
+          ..._authHeaders(),
+          'Content-Type': 'application/octet-stream',
+        },
+        body: ciphertext,
+      );
+    } on Exception catch (e) {
+      // journal 副本失败不阻断同步
+      Log.sync.d('[WebDAV] journal 副本上传失败 name=$name', error: e);
+    }
+  }
+
+  @override
+  Future<Uint8List?> getJournalObject(String name) async {
+    _ensureInitialized();
+    try {
+      final res = await _client.get(
+        Uri.parse('$_journalUrl/$name'),
+        headers: _authHeaders(),
+      );
+      if (res.statusCode != 200) return null;
+      return res.bodyBytes;
+    } on Exception catch (e) {
+      Log.sync.d('[WebDAV] journal 副本读取失败 name=$name', error: e);
+      return null;
+    }
+  }
+
+  @override
+  Future<List<String>> listJournalObjects() async {
+    _ensureInitialized();
+    try {
+      final req = http.Request('PROPFIND', Uri.parse(_journalUrl));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '1';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+      final streamedRes = await _client.send(req);
+      final res = await http.Response.fromStream(streamedRes);
+      if (res.statusCode != 207 && res.statusCode != 200) return [];
+      final result = <String>[];
+      final hrefRegex =
+          RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      for (final match in hrefRegex.allMatches(res.body)) {
+        final href = match.group(1)!;
+        final parts = href.split('/').where((s) => s.isNotEmpty);
+        if (parts.isEmpty) continue;
+        final decoded = Uri.decodeComponent(parts.last);
+        if (decoded.endsWith('.json')) result.add(decoded);
+      }
+      return result;
+    } on Exception catch (e) {
+      Log.sync.d('[WebDAV] journal 副本列举失败', error: e);
+      return [];
     }
   }
 

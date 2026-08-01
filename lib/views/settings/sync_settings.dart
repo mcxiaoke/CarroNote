@@ -172,13 +172,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           ],
         ),
 
-        // ── Vault 管理 ──
+        // ── Keyring 管理 ──
         SettingsSection(
-          title: const Text('加密 Vault'),
+          title: const Text('加密 Keyring'),
           tiles: [
             SettingsTile.navigation(
               leading: const Icon(Icons.vpn_key_outlined),
-              title: const Text('Vault 状态'),
+              title: const Text('Keyring 状态'),
               value: Text(_vaultStatusText()),
             ),
           ],
@@ -228,7 +228,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   String _vaultStatusText() {
-    return SyncService.instance.vault != null ? '已解锁' : '未初始化';
+    return SyncService.instance.keyring != null ? '已解锁' : '未初始化';
   }
 
   // ──────────────────────────────────────────────
@@ -396,11 +396,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   // ──────────────────────────────────────────────
 
   Future<void> _triggerSync() async {
-    // 如果同步服务未初始化，尝试用内存中 vault 初始化后端
-    // （登录时 vault 已缓存，配置完后端即可直接初始化）
+    // 如果同步服务未初始化，尝试用内存中 keyring 初始化后端
+    // （登录时 keyring 已缓存，配置完后端即可直接初始化）
     if (!SyncService.instance.state.isInitialized) {
-      if (SyncService.instance.vault == null) {
-        _showMessage('Vault 未初始化，请重新登录');
+      if (SyncService.instance.keyring == null) {
+        _showMessage('Keyring 未初始化，请重新登录');
         return;
       }
       final result = await SyncService.instance.initBackend(
@@ -429,8 +429,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   /// 留空则仅用当前 dataKey + 本机明文尝试修复。
   Future<void> _triggerRepair() async {
     if (!SyncService.instance.state.isInitialized) {
-      if (SyncService.instance.vault == null) {
-        _showMessage('Vault 未初始化，请重新登录');
+      if (SyncService.instance.keyring == null) {
+        _showMessage('Keyring 未初始化，请重新登录');
         return;
       }
       final result = await SyncService.instance.initBackend(

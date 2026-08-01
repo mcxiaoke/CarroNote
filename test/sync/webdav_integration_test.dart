@@ -29,11 +29,14 @@ import 'package:http/http.dart' as http;
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
+import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/vault.dart';
 import 'package:safenotes/sync/webdav_backend.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+// 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
+import 'sync_test_support.dart';
 
 /// webdav.exe 路径（hacdias/webdav）
 const String kWebDavBinary = r'C:\Home\Develop\tools\webdav.exe';
@@ -125,7 +128,7 @@ class WebDavServerProcess {
     return false;
   }
 
-  /// 清理 vault 子目录（让每个测试从干净状态开始）
+  /// 清理 keyring 子目录（让每个测试从干净状态开始）
   ///
   /// WebDavBackend 会在用户 baseUrl 下自动附加 safenotes-vault 子目录。
   /// 清理该子目录可重置到干净状态。
@@ -253,8 +256,8 @@ SyncEngine _makeEngine({
   String deviceId = 'test-device',
   int dataKeyEpoch = 1,
 }) {
-  final vault = Vault(
-    vaultId: 'test-vault-id',
+  final keyring = makeTestKeyring(
+    vaultId: 'test-keyring-id',
     dataKey: dataKey,
     encryptedDataKey: encryptedDataKey,
     keyFingerprint: '',
@@ -266,8 +269,9 @@ SyncEngine _makeEngine({
   return SyncEngine(
     backend: backend,
     database: database,
-    vault: vault,
+    keyring: keyring,
     deviceId: deviceId,
+    journal: makeTestJournal(),
   );
 }
 
@@ -283,7 +287,7 @@ Future<void> _uploadRemoteManifest({
   required Map<String, ManifestItem> items,
   required String encryptedDataKey,
   required KdfParams kdf,
-  String vaultId = 'remote-vault-id',
+  String vaultId = 'remote-keyring-id',
   int keyVersion = 1,
   String keyFingerprint = '',
   int version = 1,
@@ -1209,7 +1213,7 @@ void main() {
       // 用 localMk 包裹 R，使 checkMigrationNeeded 能解开并拿到 remoteDataKey=R
       final remoteEdk = base64Encode(SyncCrypto.wrapDataKey(localMk, R));
 
-      final vault = Vault(
+      final keyring = makeTestKeyring(
         vaultId: 'v-test',
         dataKey: L,
         encryptedDataKey: localEdk,
@@ -1225,12 +1229,12 @@ void main() {
       await database.storeNote(_makeNote(uuid: 'u1', title: 'One'));
       await database.storeNote(_makeNote(uuid: 'u2', title: 'Two'));
 
-      final migration = vault.checkMigrationNeeded(remoteEdk);
+      final migration = keyring.checkMigrationNeeded(remoteEdk);
       expect(migration.needsMigration, isTrue);
       expect(migration.success, isTrue);
       expect(migration.remoteDataKey, isNotNull);
 
-      await vault.migrateToRemote(result: migration, database: database);
+      await keyring.migrateToRemote(result: migration, database: database);
       final pending = await database.getPendingReuploadUuids();
       expect(pending, containsAll(['u1', 'u2']),
           reason: 'dataKey 变更应把所有本地笔记标记为待重传');
@@ -1250,13 +1254,19 @@ void main() {
       final localHash = SafeNote.computeHash(localTitle, 'desc');
       final remoteHash = SafeNote.computeHash(remoteTitle, 'desc');
 
-      // 本地持有明文（localTitle / localHash），updatedAt 较早
+      // 本地持有明文（localTitle / localHash），updatedAt 较早。
+      // 设定 syncedHash = 远端上一次同步收敛时的 hash（remoteHash）：
+      // 表示本机这份笔记"上次同步的就是远端版本"，如今只是本地单方面改成了
+      // localTitle。配合 base-hash 冲突判定 → remoteChanged=false、localChanged=true
+      // → 单边编辑，走 LWW（远端较新）后自愈重传本地明文，不产生冲突副本。
+      // （这正是自愈场景的真实语义：服务器持有上次同步版本，本地编辑后服务器
+      //  blob 损坏，自愈把本地明文重新上传覆盖即可，不该多留一份副本。）
       await database.storeNote(_makeNote(
         uuid: 'note-heal',
         title: localTitle,
         description: 'desc',
         updatedAt: now,
-      ));
+      ).copyWith(syncedHash: remoteHash));
       // 远端 manifest 引用 remoteHash（不同内容），updatedAt 较晚 → 远端"赢" → 触发下载
       await _uploadRemoteManifest(
         backend: backend,
@@ -1660,7 +1670,95 @@ void main() {
   });
 
   group('容错与自愈 - repair 全面修复远端数据', () {
-    test('用历史 dataKey 恢复旧密钥坏 blob（提供旧密码）', () async {
+    // P2 主路径：归档密钥的唯一真相源是 keyring 账本的 history。
+    //
+    // 这个用例存在的意义：changePassword / adoptRemoteEpoch / migrateDataKey
+    // 在 P2 之后**只往 keyring.history 写**，legacy 的 data_key_history 键
+    // 已无任何生产写入方。若 repairRemote 仍只读 legacy 键，本用例会直接失败——
+    // 它锁死的是「P2 之后旧密码依然能救回旧密钥 blob」这条恢复承诺。
+    test('用 keyring 账本 history 恢复旧密钥坏 blob（P2 主路径）', () async {
+      final dataKeyNew = SyncCrypto.generateDataKey();
+      final dataKeyOld = SyncCrypto.generateDataKey();
+      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      database.setDataKey(dataKeyNew);
+      final engine = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: dataKeyNew,
+        encryptedDataKey: encK,
+        dataKeyEpoch: 2,
+      );
+
+      const uuid = 'repair-note-ledger';
+      const title = 'RepairViaLedger';
+      const description = 'old key blob, archived in keyring ledger';
+      final hash = SafeNote.computeHash(title, description);
+
+      await _uploadRemoteManifest(
+        backend: backend,
+        dataKey: dataKeyNew,
+        items: {
+          uuid: ManifestItem(
+            hash: hash,
+            deleted: false,
+            updatedAt: 1700000000000,
+            updatedBy: 'seed',
+            createdAt: 1700000000000,
+            contentSize: 64,
+            blobKeyEpoch: 1,
+          ),
+        },
+        encryptedDataKey: encK,
+        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
+      );
+
+      // 注入坏 blob：用 dataKeyOld + epoch=1 加密（当前 dataKeyNew 解不开）
+      final content =
+          _makeNote(uuid: uuid, title: title, description: description);
+      await backend.putBlob(
+        hash,
+        SyncCrypto.seal(dataKeyOld, hash, content.toContentBytes(), epoch: 1),
+      );
+
+      // 归档旧密钥——**走 P2 账本**，不碰 legacy data_key_history 键
+      const oldPassword = 'old-pass-ledger-123';
+      final oldMk = SyncCrypto.deriveMasterKey(
+        oldPassword,
+        salt: engine.keyring.kdf.saltBytes,
+      );
+      engine.keyring.history.add(KeyringEntry(
+        keyFingerprint: SyncCrypto.computeKeyFingerprint(oldMk),
+        encryptedDataKey:
+            base64Encode(SyncCrypto.wrapDataKey(oldMk, dataKeyOld)),
+        keyVersion: 1,
+        dataKeyEpoch: 1,
+        archivedAt: 1700000000000,
+        reason: KeyringReason.changePassword,
+      ));
+      // 本机未 storeNote → 无 uuid 明文、无孪生，repair 只能靠账本历史密钥恢复
+
+      final result = await engine.repairRemote(oldPassword: oldPassword);
+      expect(result.success, isTrue, reason: 'repair 应成功');
+      expect(result.failedNoteUuids, isEmpty,
+          reason: '账本 history 里的旧密钥必须被用上，否则这条 blob 就永久救不回来了');
+      expect(result.uploaded, greaterThanOrEqualTo(1),
+          reason: '应重传治愈至少 1 条');
+
+      // 治愈后 blob 用当前 dataKeyNew 可解，内容与原文一致（没救错东西）
+      final repaired = await backend.getBlob(hash);
+      expect(repaired, isNotNull);
+      final opened = SyncCrypto.open(dataKeyNew, hash, repaired!);
+      expect(SafeNote.fromContentBytes(opened).title, title);
+
+      // 远端 manifest item.blobKeyEpoch 修正为当前纪元
+      final resp = await backend.getManifest();
+      final cur = ManifestCrypto.deserialize(dataKeyNew, resp.ciphertext);
+      expect(cur.items[uuid]?.blobKeyEpoch, 2);
+    });
+
+    // pre-P2 兼容路径：老安装可能残留未被账本收编的 data_key_history 记录。
+    // 保留此用例是为了锁住那条兼容兜底不被顺手删掉。
+    test('用 legacy data_key_history 恢复旧密钥坏 blob（pre-P2 兼容）', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();
       final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
@@ -1711,7 +1809,7 @@ void main() {
       const oldPassword = 'old-pass-123';
       final oldMk = SyncCrypto.deriveMasterKey(
         oldPassword,
-        salt: engine.vault.kdf.saltBytes,
+        salt: engine.keyring.kdf.saltBytes,
       );
       final wrapped =
           base64Encode(SyncCrypto.wrapDataKey(oldMk, dataKeyOld));

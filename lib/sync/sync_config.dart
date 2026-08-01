@@ -143,7 +143,7 @@ class SyncConfig {
 
   /// WebDAV 服务端 URL（如 https://dav.jianguoyun.com/dav/）
   ///
-  /// 客户端会自动附加 /safenotes-vault 子目录作为 vault 根路径。
+  /// 客户端会自动附加 /safenotes-vault 子目录作为 keyring 根路径。
   static String get webdavUrl =>
       _prefs?.getString(_keyWebdavUrl) ?? '';
 

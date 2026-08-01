@@ -46,7 +46,7 @@ class Session {
   /// 密码设置/变更后的副作用处理（简化方案：不再写 passPhraseHash）
   ///
   /// 保留 PhraseHandler 和 biometric 更新：
-  ///   - PhraseHandler.getPass:biometric 登录需要原始 password 来解锁 vault
+  ///   - PhraseHandler.getPass:biometric 登录需要原始 password 来解锁 keyring
   ///   - BiometricAuth.setAuthKey:secure storage 存新密码
   ///
   /// 调用时机：

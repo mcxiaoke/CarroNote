@@ -102,7 +102,7 @@ class ManifestItem {
   /// blob 密钥纪元（Layer 3 显式标记）
   ///
   /// 记录加密该笔记 blob 时使用的 dataKey 纪元。
-  /// 与 [ManifestHeader] 中的当前 [Vault.dataKeyEpoch] 比较：
+  /// 与 [ManifestHeader] 中的当前 [Keyring.dataKeyEpoch] 比较：
   ///   - 相等 → blob 用当前 dataKey 加密，正常解密；
   ///   - 不等且本机持有匹配的历史 dataKey → 旧密钥 blob，走显式修复路径（重传）；
   ///   - 不等且本机无匹配密钥 → 内容已损坏/不可达，跳过并标记。
@@ -268,13 +268,13 @@ class ManifestHeader {
   /// 用于检测冲突和调试。不是乐观锁的依据（ETag 才是）。
   final int version;
 
-  /// vault 唯一标识（UUIDv4）
+  /// keyring 唯一标识（UUIDv4）
   ///
   /// 首次启用同步时生成，所有设备共享同一个 vaultId。
   /// 仅作同步组标识，不再作为 PBKDF2 salt。
   final String vaultId;
 
-  /// vault 创建时间（Unix 毫秒）
+  /// keyring 创建时间（Unix 毫秒）
   ///
   /// 首次启用同步时设置，后续不变。用于审计。
   final int createdAt;
@@ -766,7 +766,7 @@ class ManifestCrypto {
     // 3. 解密 items
     final encryptedItems = bytes.sublist(4 + headerLen);
     if (encryptedItems.isEmpty) {
-      // 首次创建 vault：items 为空
+      // 首次创建 keyring：items 为空
       return Manifest(header: header, items: {});
     }
 
@@ -832,7 +832,7 @@ class SyncDiagnosticsSnapshot {
   final String safeServerUrl;
   final bool autoSyncEnabled;
 
-  // Vault 元数据
+  // Keyring 元数据
   final String? vaultId;
   final int? keyVersion;
   final int? dataKeyEpoch;
@@ -925,8 +925,8 @@ class SyncDiagnosticsSnapshot {
     if (safeServerUrl.isNotEmpty) b.writeln('SafeServer URL: $safeServerUrl');
     b.writeln('自动同步: $autoSyncEnabled');
     b.writeln('');
-    b.writeln('-- Vault 元数据 --');
-    b.writeln('Vault ID: $vaultId');
+    b.writeln('-- Keyring 元数据 --');
+    b.writeln('Keyring ID: $vaultId');
     b.writeln('keyVersion: $keyVersion');
     b.writeln('dataKeyEpoch: $dataKeyEpoch');
     b.writeln('keyFingerprint: $keyFingerprint');

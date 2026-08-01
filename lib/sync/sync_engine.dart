@@ -13,9 +13,9 @@
  *
  * dataKey 迁移流程（新设备加入已存在的同步组）：
  *   1. GET 远端 manifest → deserializeHeaderOnly 拿到 remote.encryptedDataKey
- *   2. vault.checkMigrationNeeded(remote.encryptedDataKey)
+ *   2. keyring.checkMigrationNeeded(remote.encryptedDataKey)
  *      - 不需要迁移（本地与远端一致）→ 继续正常同步
- *      - 需要迁移 → vault.migrateToRemote(...) 重新加密所有本地笔记
+ *      - 需要迁移 → keyring.migrateToRemote(...) 重新加密所有本地笔记
  *      - 失败（MK 不匹配）→ 抛 WrongPasswordException
  *   3. 迁移成功后，用新 dataKey 重建 SyncEngine 并重新同步
  *
@@ -31,7 +31,8 @@
  * 依赖关系：
  *   - SyncBackend：远端存储（LocalFS / WebDAV / SafeServer）
  *   - NotesDatabase：本地 SQLite
- *   - Vault：密钥管理（dataKey + MK 缓存 + 迁移能力）
+ *   - Keyring：密钥管理（dataKey + MK 缓存 + 迁移能力）
+ *   - Journal：操作日志（P2，审计 + 可恢复；记录点见 §3.5）
  *   - DeviceIdProvider：manifest header.lastModifiedBy
  */
 
@@ -43,15 +44,16 @@ import 'dart:typed_data';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
+import 'package:safenotes/sync/journal.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_error.dart';
 import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/sync/keyring.dart';
 
 /// 同步引擎
 ///
-/// 状态：持有 vault 引用（用于 dataKey 迁移）。
+/// 状态：持有 keyring 引用（用于 dataKey 迁移）。
 /// 线程安全：SyncService 通过互斥锁保证同一时间只有一个 sync() 在执行。
 class SyncEngine {
   /// 远端后端
@@ -60,12 +62,12 @@ class SyncEngine {
   /// 本地数据库
   final NotesDatabase database;
 
-  /// Vault 引用（用于 dataKey 迁移检查）
+  /// Keyring 引用（用于 dataKey 迁移检查）
   ///
-  /// sync() 期间可能因迁移而更新 vault.dataKey 和 vault.encryptedDataKey，
-  /// 因此不能缓存 dataKey 副本，需每次通过 vault.dataKey 获取。
-  /// 非 final：_executeMigration 后会用 migrateToRemote 返回的新 Vault 替换。
-  Vault vault;
+  /// sync() 期间可能因迁移而更新 keyring.dataKey 和 keyring.encryptedDataKey，
+  /// 因此不能缓存 dataKey 副本，需每次通过 keyring.dataKey 获取。
+  /// 非 final：_executeMigration 后会用 migrateToRemote 返回的新 Keyring 替换。
+  Keyring keyring;
 
   /// 设备 ID（写入 manifest header.lastModifiedBy）
   final String deviceId;
@@ -84,12 +86,10 @@ class SyncEngine {
   /// 最大重试次数（乐观锁冲突时）
   static const int maxRetries = 3;
 
-  /// E1 修复：冲突副本保留阈值（5 分钟，单位毫秒）
-  ///
-  /// 当冲突双方的 updatedAt 差值超过此阈值时，视为真冲突（非并发编辑），
-  /// 败方内容另存为新笔记保留，避免 LWW 覆盖导致数据丢失。
-  /// 差值小于此阈值视为并发编辑，走原 LWW 覆盖逻辑。
-  static const int kConflictPreserveThresholdMs = 5 * 60 * 1000;
+  // 注：原冲突副本保留阈值 kConflictPreserveThresholdMs（updatedAt 差值 5 分钟）
+  // 已废弃并移除。判据改为「共同祖先 base hash」——时间差衡量内容新旧，无法
+  // 区分「单边更新」与「真并发冲突」，是删除复活 / 副本增殖 / 并发丢数据的根因。
+  // 现判据见 _mergeManifests 冲突分支的 localChanged/remoteChanged。
 
   /// F1 修复：墓碑 GC 阈值（30 天，单位毫秒）
   ///
@@ -104,22 +104,49 @@ class SyncEngine {
   /// "超期才真删"给误删 / blob 静默损坏留出恢复窗口，避免不可逆数据损失。
   static const Duration _orphanRetention = Duration(days: 30);
 
+  /// P2：操作日志（设计 §3.5，本阶段必填不可为空）
+  ///
+  /// 为什么必填而非可空：可空会让每个记录点都要写 `journal?.append(...)`，
+  /// 漏写不报错、覆盖率无法保证。测试可传 [Journal.inMemory]（零 I/O），
+  /// 生产由 SyncService 用 [Journal.openOrMemory] 构造（沙盒不可用自动降级）。
+  final Journal journal;
+
   SyncEngine({
     required this.backend,
     required this.database,
-    required this.vault,
+    required this.keyring,
     required this.deviceId,
+    required this.journal,
     this.passphraseProvider,
   });
 
-  /// 当前 dataKey（便捷访问器，每次从 vault 获取最新值）
-  Uint8List get _dataKey => vault.dataKey;
+  /// 当前密钥状态快照（写入 key.* journal 条目）
+  JournalKeyState get _keyStateSnapshot => JournalKeyState(
+        keyVersion: keyring.keyVersion,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        keyFingerprint: keyring.keyFingerprint,
+        encryptedDataKey: keyring.encryptedDataKey,
+      );
 
-  /// 当前 encryptedDataKey（便捷访问器）
-  String get _encryptedDataKey => vault.encryptedDataKey;
+  /// 当前 dataKey（便捷访问器，每次从 keyring 获取最新值）
+  ///
+  /// P2 收敛后 encryptedDataKey / vaultId 不再由 SyncEngine 直接拼装 header，
+  /// 统一走 [Keyring.toManifestHeader]，故此处只保留加解密所需的 dataKey。
+  Uint8List get _dataKey => keyring.dataKey;
 
-  /// 当前 vaultId（便捷访问器）
-  String get _vaultId => vault.vaultId;
+  /// 把本地 journal 的加密副本推送到远端（设计 §3.3-4 / §3.6c）。
+  ///
+  /// 契约：**永不抛异常、永不阻断同步**。journal 是可观测/可恢复的辅助设施，
+  /// 它自己坏掉不能反过来把用户的正常同步搞挂——这是 §3.6b 的硬约束。
+  /// 内存降级模式下 [Journal.syncToRemote] 自身即为 no-op。
+  Future<void> _uploadJournal() async {
+    try {
+      await journal.syncToRemote(backend, _dataKey);
+    } catch (e, st) {
+      Log.sync.w('journal 远端副本上传失败（不影响同步结果）',
+          error: e, stackTrace: st);
+    }
+  }
 
   /// 执行一次完整同步
   ///
@@ -138,8 +165,8 @@ class SyncEngine {
     bool epochMismatch = false;
 
     Log.sync.i('同步开始 (backend=${backend.runtimeType}, '
-        'deviceId=$deviceId, keyVersion=${vault.keyVersion}, '
-        'dataKeyEpoch=${vault.dataKeyEpoch})');
+        'deviceId=$deviceId, keyVersion=${keyring.keyVersion}, '
+        'dataKeyEpoch=${keyring.dataKeyEpoch})');
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -237,6 +264,15 @@ class SyncEngine {
         Log.sync.w('远端 manifest 格式损坏，备份后用本地数据重建',
             error: e, stackTrace: st);
         await backend.backupCorruptManifest(remoteResponse.ciphertext);
+        // P2 journal §3.6c：manifest 单点故障是 journal「第二数据源」角色的
+        // 核心场景，这一刻必须留痕（含当时 keyState，便于事后取真）
+        journal.append(
+          type: JournalEventType.syncManifestRebuild,
+          phase: JournalPhase.done,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          keyState: _keyStateSnapshot,
+          note: 'remote manifest corrupt, rebuilt from local: $e',
+        );
         final localManifest = await _buildLocalManifest(
           overrideEncryptedDataKey: null,
         );
@@ -256,6 +292,9 @@ class SyncEngine {
         final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
         await backend.putManifest(newCiphertext, remoteResponse.etag);
         await _updateLocalState(merged);
+        // 重建路径也要把 journal 推到远端——这正是「manifest 丢了还能取真」
+        // 的那份第二数据源
+        await _uploadJournal();
         return SyncResult.success(
           uploaded: _countActions(actions, SyncActionType.upload),
           downloaded: _countActions(actions, SyncActionType.download),
@@ -272,7 +311,7 @@ class SyncEngine {
       //   - 远端 > 本地 → 他端改了密码，本地密码过期
       //   - 远端 < 本地 → 本端改了密码还没推送（正常流程）
       //   - 相等 → 正常流程
-      if (remoteHeader.keyVersion > vault.keyVersion) {
+      if (remoteHeader.keyVersion > keyring.keyVersion) {
         // 他端改了密码，本地旧密码设备不应回滚远端新纪元。
         // B1-2 修复：三元组整体采用远端值（不只是 encryptedDataKey）。
         epochMismatch = true;
@@ -283,7 +322,7 @@ class SyncEngine {
 
       // 1c. 检查是否需要 dataKey 迁移
       final migrationResult =
-          vault.checkMigrationNeeded(remoteHeader.encryptedDataKey);
+          keyring.checkMigrationNeeded(remoteHeader.encryptedDataKey);
       if (migrationResult.needsMigration) {
         if (!migrationResult.success) {
           // MK 解不开远端 encryptedDataKey，可能是三种场景：
@@ -321,7 +360,7 @@ class SyncEngine {
             }
 
             // 用远端 KDF 参数派生 MK_remote，比对 keyFingerprint
-            final remoteResult = await Vault.tryDeriveRemoteDataKey(
+            final remoteResult = await Keyring.tryDeriveRemoteDataKey(
               password: password,
               remoteKdf: remoteHeader.kdf,
               remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
@@ -337,9 +376,9 @@ class SyncEngine {
               );
             }
 
-            // 场景 d：密码相同、salt 不同 → 完整 vault 迁移
-            // 用远端 dataKey 重新加密所有本地笔记，更新本地 vault 元数据
-            Log.sync.i('检测到场景 d（密码相同、salt 不同），开始完整 vault 迁移');
+            // 场景 d：密码相同、salt 不同 → 完整 keyring 迁移
+            // 用远端 dataKey 重新加密所有本地笔记，更新本地 keyring 元数据
+            Log.sync.i('检测到场景 d（密码相同、salt 不同），开始完整 keyring 迁移');
             final migratedCount = await _executeMigrationVault(
               remoteDataKey: remoteResult.dataKey,
               remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
@@ -375,18 +414,27 @@ class SyncEngine {
           // 场景：他端改密码后上传新 encryptedDataKey，本端用新密码登录
           //   dataKey 没变，只是 wrap dataKey 的 MK 变了
           //   不需要 reEncryptAllNotes
-          if (remoteHeader.keyVersion >= vault.keyVersion) {
+          if (remoteHeader.keyVersion >= keyring.keyVersion) {
             // B3 修复：整体采用远端纪元（encryptedDataKey + fingerprint +
             // keyVersion），而不是只回写 encryptedDataKey。
             // 原实现只更新 encryptedDataKey，本地 keyVersion/fingerprint
             // 停留在旧值 → 每次同步都误报 epochMismatch（纪元永不收敛），
             // 且构建 header 时把远端 keyVersion/fingerprint 回滚。
-            await vault.adoptRemoteEpoch(
+            await keyring.adoptRemoteEpoch(
               remoteEncryptedDataKey: migrationResult.remoteEncryptedDataKey!,
               remoteKeyFingerprint: remoteHeader.keyFingerprint,
               remoteKeyVersion: remoteHeader.keyVersion,
               remoteDataKeyEpoch: remoteHeader.dataKeyEpoch,
               database: database,
+            );
+            // P2 journal §3.5：记录采纳远端纪元（携带采纳后的完整 keyState，
+            // 供 §3.6c "坏纪元污染 keyring.current 时重放取真"）
+            journal.append(
+              type: JournalEventType.keyAdoptEpoch,
+              phase: JournalPhase.done,
+              dataKeyEpoch: keyring.dataKeyEpoch,
+              keyState: _keyStateSnapshot,
+              note: 'adopt remote epoch from ${remoteHeader.lastModifiedBy}',
             );
             // 本地纪元已与远端一致：本端持有的就是新密码派生的 MK，
             // 不需要提示用户重新登录，清除纪元不匹配标志与 override
@@ -398,7 +446,7 @@ class SyncEngine {
             // 防御分支：远端纪元反而更旧（理论上不可达——本地 MK 能解开
             // 远端包裹意味着远端包裹就是本地 MK 包的）。保守起见只回写
             // encryptedDataKey，不动本地纪元。
-            await vault.updateEncryptedDataKey(
+            await keyring.updateEncryptedDataKey(
               migrationResult.remoteEncryptedDataKey!,
               database,
             );
@@ -530,6 +578,11 @@ class SyncEngine {
     // 成功后清除待重传标记（Layer 2a）。
     await database.clearAllPendingReupload();
 
+    // P2 journal §3.3-4 / §3.6c：同步成功后把本地 journal 的加密副本推到远端。
+    // 这是 journal「第二数据源」角色的落地点：本机沙盒被清、manifest 损坏时，
+    // 仍能从远端 journal 还原出 keyState 与操作序列。失败不阻断同步。
+    await _uploadJournal();
+
     // 统计结果
     return SyncResult.success(
       uploaded: _countActions(actions, SyncActionType.upload),
@@ -601,20 +654,33 @@ class SyncEngine {
       try {
         final oldMk = SyncCrypto.deriveMasterKey(
           oldPassword,
-          salt: vault.kdf.saltBytes,
+          salt: keyring.kdf.saltBytes,
         );
-        final history = await database.getDataKeyHistory();
-        for (final entry in history) {
-          final wrapped = base64.decode(entry['wrappedDataKey'] as String);
+
+        // 主路径（P2 方案 B）：keyring 账本的 history 是归档密钥的**唯一真相源**。
+        // changePassword / adoptRemoteEpoch / migrateDataKey 归档的旧条目全在这里，
+        // 旧的 data_key_history 键在 P2 之后已无任何生产写入方。
+        for (final dk in keyring.unwrapHistoryWith(oldMk)) {
+          if (!candidates.any((c) => _sameKey(c, dk))) candidates.add(dk);
+        }
+
+        // 兼容兜底：pre-P2 安装可能残留尚未被账本收编的 data_key_history 记录。
+        // 正常情况下 KeyringLedger.load 已在解锁时完成收编（fromLegacyMeta），
+        // 这里只是双保险——多读一次 meta 的代价，换"旧密码恢复"这条路不断。
+        final legacy = await database.getDataKeyHistory();
+        for (final entry in legacy) {
+          final raw = entry['wrappedDataKey'];
+          if (raw is! String || raw.isEmpty) continue;
           try {
-            final dk = SyncCrypto.unwrapDataKey(oldMk, wrapped);
+            final dk = SyncCrypto.unwrapDataKey(oldMk, base64.decode(raw));
             if (!candidates.any((c) => _sameKey(c, dk))) candidates.add(dk);
           } on SyncDecryptionException catch (e) {
             // 该历史条目不是用 oldPassword 的 MK 包裹的，跳过
-            Log.sync.d('repairRemote: 历史条目跳过（MK 不匹配）', error: e);
+            Log.sync.d('repairRemote: legacy 历史条目跳过（MK 不匹配）', error: e);
           } on Object catch (e, st) {
             // 解包异常（base64 损坏等），跳过该条
-            Log.sync.w('repairRemote: 历史条目解包异常', error: e, stackTrace: st);
+            Log.sync.w('repairRemote: legacy 历史条目解包异常',
+                error: e, stackTrace: st);
           }
         }
       } on Object catch (e, st) {
@@ -649,7 +715,7 @@ class SyncEngine {
         final source = canHealLocal ? local : twin;
         if (source != null && !source.deleted) {
           await _uploadNote(source, actions);
-          repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
+          repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
           _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
@@ -695,7 +761,7 @@ class SyncEngine {
       if (workingKey != null) {
         final needsModernize =
             !_sameKey(workingKey, _dataKey) ||
-                item.blobKeyEpoch != vault.dataKeyEpoch;
+                item.blobKeyEpoch != keyring.dataKeyEpoch;
         if (needsModernize) {
           final plaintext = _openBlobEnvelope(
             uuid,
@@ -723,7 +789,7 @@ class SyncEngine {
             message: 'repair: 用历史/旧密钥解密并重新上传为当前密钥',
           ));
         }
-        repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
+        repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
         continue;
       }
 
@@ -734,7 +800,7 @@ class SyncEngine {
       final source = local ?? twin;
       if (source != null && !source.deleted) {
         await _uploadNote(source, actions);
-        repairedItems[uuid] = item.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
+        repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
         _addAction(actions, SyncAction(
           type: SyncActionType.heal,
           uuid: uuid,
@@ -758,19 +824,20 @@ class SyncEngine {
     }
 
     // Step 4: 用修复后的 items + 当前 header 重新 PUT manifest（乐观锁 etag）
-    final header = ManifestHeader(
+    //
+    // P2 收敛：header 投影统一由 keyring.toManifestHeader 产出（唯一出口）。
+    // 修复路径保留远端密钥三元组（不回滚他端新纪元），dataKeyEpoch 用本地当前值
+    // （blob 已按本地 dataKey 重传）。vaultId / createdAt 与远端同源：
+    // fromRemoteHeader / _executeMigrationVault 都把远端值写进了 keyring。
+    final header = keyring.toManifestHeader(
       schemaVersion: remoteHeader.schemaVersion,
       version: remoteHeader.version + 1,
-      vaultId: remoteHeader.vaultId,
-      createdAt: remoteHeader.createdAt,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
-      keyFingerprint: remoteHeader.keyFingerprint,
-      keyVersion: remoteHeader.keyVersion,
-      encryptedDataKey: remoteHeader.encryptedDataKey,
-      kdf: remoteHeader.kdf,
-      dataKeyWrap: remoteHeader.dataKeyWrap,
       lastModifiedBy: deviceId,
-      dataKeyEpoch: vault.dataKeyEpoch,
+      dataKeyWrap: remoteHeader.dataKeyWrap,
+      overrideEncryptedDataKey: remoteHeader.encryptedDataKey,
+      overrideKeyFingerprint: remoteHeader.keyFingerprint,
+      overrideKeyVersion: remoteHeader.keyVersion,
     );
     final manifest = Manifest(header: header, items: repairedItems);
     final ciphertext = ManifestCrypto.serialize(_dataKey, manifest);
@@ -794,20 +861,54 @@ class SyncEngine {
   }
 
 
-  /// 执行 dataKey 迁移：调用 vault.migrateToRemote
+  /// 执行 dataKey 迁移：调用 keyring.migrateToRemote
   ///
   /// 返回迁移的笔记数量。
-  /// 迁移成功后，vault 引用更新为新实例（含新 dataKey 和 encryptedDataKey），
+  /// 迁移成功后，keyring 引用更新为新实例（含新 dataKey 和 encryptedDataKey），
   /// database._dataKey 也已通过 database.setDataKey 更新。
   Future<int> _executeMigration(
     MigrationResult migrationResult,
     ManifestHeader remoteHeader,
   ) async {
-    // migrateToRemote 返回新 Vault，需要更新 self.vault
-    // 否则后续 _syncOnce 重试时仍用旧 vault.dataKey 解密会失败
-    vault = await vault.migrateToRemote(
-      result: migrationResult,
-      database: database,
+    // P2 journal §3.6b 两段式：**先记意图**再动手。
+    // 注意职责边界：reEncryptAllNotes 自身的原子性由 SQLite 单事务保证，
+    // journal 不替代事务；这里记录的是"跨边界步骤"（本地重加密 + 远端
+    // manifest 推进 + blob 重传）的意图，崩溃后可据此诊断停在哪一步。
+    final opId = journal.newOpId();
+    journal.append(
+      type: JournalEventType.keyMigrate,
+      phase: JournalPhase.start,
+      opId: opId,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      keyState: _keyStateSnapshot,
+      note: 'migrate to remote dataKey (same vault)',
+    );
+
+    // migrateToRemote 返回新 Keyring，需要更新 self.keyring
+    // 否则后续 _syncOnce 重试时仍用旧 keyring.dataKey 解密会失败
+    try {
+      keyring = await keyring.migrateToRemote(
+        result: migrationResult,
+        database: database,
+      );
+    } on Object {
+      // 记 failed，避免 start 悬挂被 findIncompleteOperations 误判为"需重放"
+      journal.append(
+        type: JournalEventType.keyMigrate,
+        phase: JournalPhase.failed,
+        opId: opId,
+        note: 'migrateToRemote failed',
+      );
+      rethrow;
+    }
+
+    journal.append(
+      type: JournalEventType.keyMigrate,
+      phase: JournalPhase.done,
+      opId: opId,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      keyState: _keyStateSnapshot,
+      note: 'migrate to remote dataKey done',
     );
 
     // 读取迁移的笔记数量（用于结果统计）
@@ -815,12 +916,12 @@ class SyncEngine {
     return notes.length;
   }
 
-  /// 场景 d 迁移：调用 vault.migrateToRemoteVault
+  /// 场景 d 迁移：调用 keyring.migrateToRemoteVault
   ///
   /// 与 [_executeMigration] 的区别：
-  ///   - _executeMigration：同 vault、dataKey 不同（他端改密码）
-  ///   - _executeMigrationVault：不同 vault、salt 不同（两设备独立 createNew）
-  ///     需要更新本地 vault 的全部元数据（kdf/keyFingerprint/keyVersion/createdAt）
+  ///   - _executeMigration：同 keyring、dataKey 不同（他端改密码）
+  ///   - _executeMigrationVault：不同 keyring、salt 不同（两设备独立 createNew）
+  ///     需要更新本地 keyring 的全部元数据（kdf/keyFingerprint/keyVersion/createdAt）
   Future<int> _executeMigrationVault({
     required Uint8List remoteDataKey,
     required String remoteEncryptedDataKey,
@@ -831,17 +932,47 @@ class SyncEngine {
     required int remoteCreatedAt,
     required Uint8List remoteMk,
   }) async {
-    // migrateToRemoteVault 返回新 Vault，需要更新 self.vault
-    vault = await vault.migrateToRemoteVault(
-      remoteDataKey: remoteDataKey,
-      remoteEncryptedDataKey: remoteEncryptedDataKey,
-      remoteVaultId: remoteVaultId,
-      remoteKdf: remoteKdf,
-      remoteKeyFingerprint: remoteKeyFingerprint,
-      remoteKeyVersion: remoteKeyVersion,
-      remoteCreatedAt: remoteCreatedAt,
-      remoteMk: remoteMk,
-      database: database,
+    // P2 journal §3.6b 两段式（场景 d：整库改嫁到远端 vault，风险最高的一步）
+    final opId = journal.newOpId();
+    journal.append(
+      type: JournalEventType.keyMigrate,
+      phase: JournalPhase.start,
+      opId: opId,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      keyState: _keyStateSnapshot,
+      note: 'scenario-d: migrate to remote vault $remoteVaultId',
+    );
+
+    // migrateToRemoteVault 返回新 Keyring，需要更新 self.keyring
+    try {
+      keyring = await keyring.migrateToRemoteVault(
+        remoteDataKey: remoteDataKey,
+        remoteEncryptedDataKey: remoteEncryptedDataKey,
+        remoteVaultId: remoteVaultId,
+        remoteKdf: remoteKdf,
+        remoteKeyFingerprint: remoteKeyFingerprint,
+        remoteKeyVersion: remoteKeyVersion,
+        remoteCreatedAt: remoteCreatedAt,
+        remoteMk: remoteMk,
+        database: database,
+      );
+    } on Object {
+      journal.append(
+        type: JournalEventType.keyMigrate,
+        phase: JournalPhase.failed,
+        opId: opId,
+        note: 'scenario-d migrate failed',
+      );
+      rethrow;
+    }
+
+    journal.append(
+      type: JournalEventType.keyMigrate,
+      phase: JournalPhase.done,
+      opId: opId,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      keyState: _keyStateSnapshot,
+      note: 'scenario-d migrate done',
     );
 
     // 读取迁移的笔记数量（用于结果统计）
@@ -861,7 +992,7 @@ class SyncEngine {
   ///
   /// [overrideEncryptedDataKey] / [overrideKeyFingerprint] /
   /// [overrideKeyVersion]：纪元不匹配时（他端改密码），传入远端的密钥纪元
-  /// 三元组以避免回滚远端新纪元（B1-2 修复）。null 时用本地 vault 的值。
+  /// 三元组以避免回滚远端新纪元（B1-2 修复）。null 时用本地 keyring 的值。
   Future<Manifest> _buildLocalManifest({
     String? overrideEncryptedDataKey,
     String? overrideKeyFingerprint,
@@ -907,26 +1038,21 @@ class SyncEngine {
         //     blob 实际纪元不一致 → 可能导致无法自愈的 corrupt
         // 当前"乐观声明 + pendingReupload 兑现"的设计避免了这些风险。
         // 详见 2026-07-30 代码审查（docs/CHANGES-20260730.md）。
-        blobKeyEpoch: vault.dataKeyEpoch,
+        blobKeyEpoch: keyring.dataKeyEpoch,
       );
     }
     final localVersion = await database.getManifestVersion(backend.providerKey);
 
     return Manifest(
-      header: ManifestHeader(
-        schemaVersion: 1,
+      // P2 收敛：header 由 keyring 投影，字段完整性由 Keyring 单点保证
+      // （B1-2：纪元不匹配时三元组整体采用远端值，避免回滚远端新纪元）
+      header: keyring.toManifestHeader(
         version: localVersion,
-        vaultId: _vaultId,
-        createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        // B1-2 修复：纪元不匹配时三元组整体采用远端值，避免回滚远端新纪元
-        keyFingerprint: overrideKeyFingerprint ?? vault.keyFingerprint,
-        keyVersion: overrideKeyVersion ?? vault.keyVersion,
-        encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
-        kdf: vault.kdf,
-        dataKeyWrap: kDataKeyWrapAlgorithm,
-        dataKeyEpoch: vault.dataKeyEpoch,
         lastModifiedBy: deviceId,
+        overrideEncryptedDataKey: overrideEncryptedDataKey,
+        overrideKeyFingerprint: overrideKeyFingerprint,
+        overrideKeyVersion: overrideKeyVersion,
       ),
       items: items,
     );
@@ -1041,12 +1167,37 @@ class SyncEngine {
         } else {
           // 冲突：LWW 解决
           final winner = _resolveConflict(localItem, remoteItem);
-          // E1 修复：冲突副本保留
-          // 当 updatedAt 差值 > 5 分钟且 hash 不同时，说明是真冲突（非并发编辑），
-          // 败方内容应作为新笔记保留，避免数据丢失。
-          // 差值 <= 5 分钟视为并发编辑，走原 LWW 覆盖逻辑。
-          final timeDiff = (localItem.updatedAt - remoteItem.updatedAt).abs();
-          final shouldPreserveCopy = timeDiff > kConflictPreserveThresholdMs;
+          // BUG-P0（二次修复）：冲突副本保留判定改用「共同祖先」，弃用时间差。
+          //
+          // 旧实现用 updatedAt 差值 > 5 分钟判「真冲突」。但时间差衡量的是
+          // 内容「新旧」，冲突与否取决于「双方是否都偏离了上次同步的共同版本」。
+          // 判据整个用反了，造成两个方向的严重缺陷：
+          //   · 单边更新误判为冲突：一端编辑老笔记、其他端没动，编辑后 updatedAt
+          //     与远端老时间戳天然相差远超 5 分钟 → 每台设备各把手里的旧版本
+          //     另存成一条新 uuid 副本 → 无限增殖（长期测试实测每代 +3 副本）。
+          //   · 真并发误判为并发编辑：两端几乎同时改，时间差小 → 走 LWW 覆盖，
+          //     败方编辑被静默丢弃（实测 A 写的 v2 同步后凭空消失）。
+          //
+          // 正解：以本地 syncedHash（上次同步收敛时的 content_hash）为三方合并
+          // 的 base，判断双方各自是否真的偏离了共同祖先：
+          final localNote = await database.readNoteByUuid(uuid);
+          final base = localNote?.syncedHash;
+          // base==null：本地无同步基线（新笔记 / 迁移前未同步）。保守视为双方
+          // 都可能改过，退化为「内容不同即保留副本」——绝不丢数据（顶多多留一份，
+          // 且仍要求双方活跃），也绝不复活删除。
+          final localChanged = base == null || localItem.hash != base;
+          final remoteChanged = base == null || remoteItem.hash != base;
+          // 保留副本四条缺一不可：
+          //   1. 本地偏离 base（本地确实改过）
+          //   2. 远端偏离 base（远端确实改过）—— 与 1 合起来才是「双方都改」的真并发
+          //   3. 双方都活跃：一端删一端活是删除传播，交给 LWW，绝不另存副本
+          //      （否则被删内容以新 uuid 复活并每端各复活一份 → 无限增殖）
+          //   4. 内容确实不同：hash 相同则无败方内容需要保留
+          final shouldPreserveCopy = localChanged &&
+              remoteChanged &&
+              !localItem.deleted &&
+              !remoteItem.deleted &&
+              localItem.hash != remoteItem.hash;
           if (shouldPreserveCopy) {
             await _preserveConflictCopy(
               uuid: uuid,
@@ -1058,8 +1209,8 @@ class SyncEngine {
             );
           }
           if (winner == localItem) {
-            // 本地胜：上传覆盖远端
-            final note = await database.readNoteByUuid(uuid);
+            // 本地胜：上传覆盖远端（复用上面已读的 localNote，避免二次读库）
+            final note = localNote;
             if (note != null) {
               await _uploadNote(note, actions);
               mergedItems[uuid] = localItem;
@@ -1099,21 +1250,16 @@ class SyncEngine {
     }
 
     return Manifest(
-      header: ManifestHeader(
-        schemaVersion: 1,
+      // P2 收敛：header 由 keyring 投影（唯一出口）
+      // B1-2 修复：纪元不匹配时密钥纪元三元组整体采用远端值，
+      // 避免回滚远端新纪元（keyVersion 回滚会导致守卫下次失效 → 翻转战争）
+      header: keyring.toManifestHeader(
         version: remote.version + 1,
-        vaultId: _vaultId,
-        createdAt: vault.createdAt,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
-        // B1-2 修复：纪元不匹配时密钥纪元三元组整体采用远端值，
-        // 避免回滚远端新纪元（keyVersion 回滚会导致守卫下次失效 → 翻转战争）
-        keyFingerprint: overrideKeyFingerprint ?? vault.keyFingerprint,
-        keyVersion: overrideKeyVersion ?? vault.keyVersion,
-        encryptedDataKey: overrideEncryptedDataKey ?? _encryptedDataKey,
-        kdf: vault.kdf,
-        dataKeyWrap: kDataKeyWrapAlgorithm,
-        dataKeyEpoch: vault.dataKeyEpoch,
         lastModifiedBy: deviceId,
+        overrideEncryptedDataKey: overrideEncryptedDataKey,
+        overrideKeyFingerprint: overrideKeyFingerprint,
+        overrideKeyVersion: overrideKeyVersion,
       ),
       items: mergedItems,
     );
@@ -1169,12 +1315,18 @@ class SyncEngine {
         );
         final content = SafeNote.fromContentBytes(plaintext);
 
-        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间
+        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间。
+        // 标题追加"(冲突副本 N)"：既让用户一眼分辨来源，也让 hash 与原件不同，
+        // 从源头切断"同 hash 副本被反复卷入冲突判定"的链式增殖。
+        final copyTitle = await _makeConflictCopyTitle(
+          content.title,
+          content.description,
+        );
         final newNote = SafeNote(
           uuid: SafeNote.generateUuid(),
-          title: content.title,
+          title: copyTitle,
           description: content.description,
-          contentHash: SafeNote.computeHash(content.title, content.description),
+          contentHash: SafeNote.computeHash(copyTitle, content.description),
           createdTime: DateTime.fromMillisecondsSinceEpoch(
             loserItem.createdAt,
           ),
@@ -1204,15 +1356,17 @@ class SyncEngine {
         final localNote = await database.readNoteByUuid(uuid);
         if (localNote == null) return;
 
-        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间和内容
+        // 生成新笔记（新 UUID + 新 hash），保留原始创建时间和正文。
+        // 标题追加"(冲突副本 N)"，理由同上：避免与原件 hash 碰撞后链式增殖。
+        final copyTitle = await _makeConflictCopyTitle(
+          localNote.title,
+          localNote.description,
+        );
         final newNote = SafeNote(
           uuid: SafeNote.generateUuid(),
-          title: localNote.title,
+          title: copyTitle,
           description: localNote.description,
-          contentHash: SafeNote.computeHash(
-            localNote.title,
-            localNote.description,
-          ),
+          contentHash: SafeNote.computeHash(copyTitle, localNote.description),
           createdTime: localNote.createdTime,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           synced: false,
@@ -1239,6 +1393,35 @@ class SyncEngine {
     } on Exception {
       // 副本保留失败不阻断主同步流程，记录日志即可
     }
+  }
+
+  /// 为冲突副本生成带序号的标题，确保内容 hash 不与本机既有笔记碰撞
+  ///
+  /// 背景（增殖缺陷根因）：早期实现直接复制原标题与正文，副本的 contentHash
+  /// 与原件**完全相同**。由于 blob 按内容 hash 寻址、孪生自愈按 hash 反查笔记
+  /// （`readNoteByContentHash` 是 limit:1 的 1:1 假设），同 hash 副本会不断被
+  /// 冲突判定与孪生匹配重新卷入，副本再生副本，形成链式增殖。
+  /// 实测曾出现一份内容对应 13 个活跃 uuid。
+  ///
+  /// 这里从 1 开始递增探测序号，直到该「标题+正文」组合的 hash 在本机
+  /// （含墓碑）不存在为止，副本因此成为内容独立的实体。
+  /// 附带收益：用户与调试者能一眼看出这是系统生成的冲突副本及其来源设备。
+  ///
+  /// 后缀必须带设备标识：多端会各自对同一个冲突生成副本，若只用序号，
+  /// 每端都从 1 开始探测、在本机都不碰撞，同步汇合后却是同名同内容，
+  /// hash 再次相同，增殖链并未真正切断（实测三端各生成一份"冲突副本 1"）。
+  Future<String> _makeConflictCopyTitle(
+    String baseTitle,
+    String description,
+  ) async {
+    final dev = deviceId.length > 6 ? deviceId.substring(0, 6) : deviceId;
+    for (var n = 1; n <= 99; n++) {
+      final candidate = '$baseTitle (冲突副本 $n·$dev)';
+      final hash = SafeNote.computeHash(candidate, description);
+      if (!await database.existsContentHash(hash)) return candidate;
+    }
+    // 极端兜底：99 个序号全部碰撞时退化为时间戳，保证唯一性优先
+    return '$baseTitle (冲突副本 $dev-${DateTime.now().millisecondsSinceEpoch})';
   }
 
   /// LWW 冲突解决：返回胜出的 item
@@ -1497,7 +1680,7 @@ class SyncEngine {
       // 并让合并 manifest 改为引用修复后的纪元，避免后续每次同步重复告警/重试。
       // 遗留 blob（blobKeyEpoch==0）按向后兼容处理：能解开即接受，不强制重传，
       // 避免对存量海量 blob 造成一次性全量 churn。
-      if (item.blobKeyEpoch > 0 && item.blobKeyEpoch != vault.dataKeyEpoch) {
+      if (item.blobKeyEpoch > 0 && item.blobKeyEpoch != keyring.dataKeyEpoch) {
         // 用当前纪元重传 blob（现代化），需把 record 还原成 SafeNote 再上传
         final note = SafeNote(
           uuid: uuid,
@@ -1540,7 +1723,7 @@ class SyncEngine {
           type: SyncActionType.heal,
           uuid: uuid,
           hash: item.hash,
-          message: 'blob 纪元(${item.blobKeyEpoch})与当前(${vault.dataKeyEpoch})'
+          message: 'blob 纪元(${item.blobKeyEpoch})与当前(${keyring.dataKeyEpoch})'
               '不符，已用当前纪元重传',
         ));
         return _DownloadHealed(ManifestItem(
@@ -1551,7 +1734,7 @@ class SyncEngine {
           createdAt: item.createdAt,
           deletedAt: item.deletedAt,
           contentSize: item.contentSize,
-          blobKeyEpoch: vault.dataKeyEpoch,
+          blobKeyEpoch: keyring.dataKeyEpoch,
         ));
       }
 
@@ -1647,7 +1830,7 @@ class SyncEngine {
           updatedBy: deviceId,
           createdAt: local.createdTime.millisecondsSinceEpoch,
           contentSize: local.toContentBytes().length,
-          blobKeyEpoch: vault.dataKeyEpoch,
+          blobKeyEpoch: keyring.dataKeyEpoch,
         );
       } on Object catch (e, st) {
         // 自愈上传也失败：退化为记录失败，不抛
@@ -1698,7 +1881,7 @@ class SyncEngine {
           ));
           // hash 不变（内容相同），保留远端条目即可正确引用重传后的 blob。
           // blobKeyEpoch 更新为当前纪元（重传时已用当前纪元加密）。
-          return remoteItem.copyWith(blobKeyEpoch: vault.dataKeyEpoch);
+          return remoteItem.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
         }
       } on Object catch (e, st) {
         // 孪生自愈失败：退化为记录失败，不抛
@@ -1712,14 +1895,14 @@ class SyncEngine {
     // 经 repair 流程修复）；否则是「真损坏」不可自动修复。两种情况均记入
     // failedNoteUuids，UI 提示用户运行「修复同步数据」。
     final isOldKey = remoteItem.blobKeyEpoch > 0 &&
-        remoteItem.blobKeyEpoch != vault.dataKeyEpoch;
+        remoteItem.blobKeyEpoch != keyring.dataKeyEpoch;
     _addAction(actions, SyncAction(
       type: SyncActionType.corrupt,
       uuid: uuid,
       hash: remoteItem.hash,
       message: isOldKey
           ? 'blob 为旧密钥加密（纪元 ${remoteItem.blobKeyEpoch}≠当前'
-              ' ${vault.dataKeyEpoch}），无本地明文，需用旧密码运行修复'
+              ' ${keyring.dataKeyEpoch}），无本地明文，需用旧密码运行修复'
           : 'blob 下载失败（数据损坏且无本地明文，将重试）',
     ));
     return null;
@@ -1791,6 +1974,15 @@ class SyncEngine {
       for (final hash in orphans) {
         try {
           await backend.deleteBlobSoft(hash); // P1-2：软删除到隔离区
+          // P2 journal §3.4：软删除时记录被隔离的 hash + 时间，
+          // 与超期结算的 purged 条目共同构成可审计、可重放的自愈闭环
+          journal.append(
+            type: JournalEventType.syncGcOrphan,
+            phase: JournalPhase.isolated,
+            hash: hash,
+            dataKeyEpoch: keyring.dataKeyEpoch,
+            note: 'orphan blob moved to quarantine',
+          );
         } on Exception {
           // 单个 blob 软删除失败不阻断整体 GC
         }
@@ -1798,7 +1990,19 @@ class SyncEngine {
 
       // P1-2：清理隔离区中超过保留期的 blob（超期才真删）
       try {
+        // 先记录本轮将被结算的隔离项（purgeOrphans 之后就查不到了）
+        final beforePurge = await backend.listOrphanBlobs();
         await backend.purgeOrphans(_orphanRetention);
+        final afterPurge = (await backend.listOrphanBlobs()).toSet();
+        for (final hash in beforePurge) {
+          if (afterPurge.contains(hash)) continue;
+          journal.append(
+            type: JournalEventType.syncGcOrphan,
+            phase: JournalPhase.purged,
+            hash: hash,
+            note: 'quarantined blob purged after retention',
+          );
+        }
       } on Exception {
         // 隔离区清理失败不阻断同步
       }
@@ -1823,6 +2027,86 @@ class SyncEngine {
   void _addAction(List<SyncAction> actions, SyncAction action) {
     actions.add(action);
     _logAction(action);
+    _journalAction(action);
+  }
+
+  /// P2：把笔记级 action 投影为 journal 条目（设计 §3.5 的 _mergeAndTransfer /
+  /// _repairBlob / _healBlob 记录点）
+  ///
+  /// **为什么统一在 `_addAction` 这个漏斗里记录，而不是散落在各调用点**：
+  /// 全引擎所有笔记级事件都必须经过 `_addAction`（既有约定，见其文档注释），
+  /// 在此处一次性投影可保证覆盖率 100%，且未来新增分支自动被覆盖；
+  /// 散落式 `journal.append` 漏写不报错，覆盖率无法保证。
+  ///
+  /// 不记录 [SyncActionType.skip]（稳态下占 99%，纯噪音）与
+  /// [SyncActionType.migrate]（由 key.migrate 条目携带完整 keyState 单独记录）。
+  void _journalAction(SyncAction action) {
+    final epoch = keyring.dataKeyEpoch;
+    switch (action.type) {
+      case SyncActionType.skip:
+      case SyncActionType.migrate:
+        return;
+      case SyncActionType.upload:
+        journal.append(
+          type: JournalEventType.noteUpsert,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: 'upload${action.message == null ? '' : ': ${action.message}'}',
+        );
+      case SyncActionType.download:
+        journal.append(
+          type: JournalEventType.noteUpsert,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: 'download${action.message == null ? '' : ': ${action.message}'}',
+        );
+      case SyncActionType.delete:
+        journal.append(
+          type: JournalEventType.noteDelete,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: action.message,
+        );
+      case SyncActionType.heal:
+        journal.append(
+          type: JournalEventType.noteHeal,
+          phase: JournalPhase.done,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: action.message,
+        );
+      case SyncActionType.corrupt:
+        // 自愈尝试失败：标记 failed，供诊断与后续人工/多端修复追踪
+        journal.append(
+          type: JournalEventType.noteHeal,
+          phase: JournalPhase.failed,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: action.message,
+        );
+      case SyncActionType.uploadFailed:
+        journal.append(
+          type: JournalEventType.noteUpsert,
+          phase: JournalPhase.failed,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: action.message,
+        );
+      case SyncActionType.conflict:
+        journal.append(
+          type: JournalEventType.noteConflict,
+          uuid: action.uuid,
+          hash: action.hash,
+          dataKeyEpoch: epoch,
+          note: action.message,
+        );
+    }
   }
 
   /// 输出单条操作的日志（按类型分级别，含 uuid 和 hash）

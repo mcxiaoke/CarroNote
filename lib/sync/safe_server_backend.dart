@@ -4,7 +4,7 @@
  * 用途：
  *   - 自建轻量同步服务：用户自己部署 server/go 或 server/nodejs/server.js
  *   - 比 WebDAV 更简单：纯 HTTP API，无目录概念，无 MKCOL，Bearer Token 认证
- *   - 单用户场景：一个 server 实例服务一个 vault，无需账号系统
+ *   - 单用户场景：一个 server 实例服务一个 keyring，无需账号系统
  *
  * 协议规范：docs/server-api-spec.md v2.2
  *
@@ -21,7 +21,7 @@
  *
  * 与 WebDavBackend 的差异：
  *   - 无 MKCOL（服务端自动创建存储空间）
- *   - 无 vault-root 路径前缀（单用户，整个 server 即一个 vault）
+ *   - 无 keyring-root 路径前缀（单用户，整个 server 即一个 keyring）
  *   - Bearer Token 而非 Basic Auth
  *   - 路径前缀 /api/v2/ 为未来版本预留扩展空间
  */
@@ -53,7 +53,7 @@ const String kSafeServerApiPrefix = '/api/v2';
 /// [token] 是部署时配置的固定 Bearer Token，所有请求共用。
 ///
 /// 与 WebDavBackend 不同，客户端不在 URL 后附加子目录——
-/// 因为单用户场景下整个 server 实例就服务一个 vault。
+/// 因为单用户场景下整个 server 实例就服务一个 keyring。
 class SafeServerBackend implements SyncBackend {
   /// SafeServer 服务端 URL（不带末尾斜杠）
   final String baseUrl;
@@ -314,7 +314,7 @@ class SafeServerBackend implements SyncBackend {
   /// 备份损坏的 manifest（v2.2 资源层 move 到 `.corrupt-<ts>`）
   ///
   /// v2.2 资源层提供 `move` 操作，等价于 localFs 的 rename / webdav 的 COPY+DELETE：
-  /// 把损坏的 `manifest` 移动到 vault 根的 `.corrupt-<ts>`，让其脱离 manifest 端点，
+  /// 把损坏的 `manifest` 移动到 keyring 根的 `.corrupt-<ts>`，让其脱离 manifest 端点，
   /// 随后 SyncEngine 用本地数据重建 manifest 上传（PUT If-None-Match:* 成功）。
   ///
   /// 降级：旧版服务端未实现资源层时，退化为 DELETE /api/v2/manifest（旧行为）。
@@ -538,7 +538,7 @@ class SafeServerBackend implements SyncBackend {
 
   /// P1-1 修复：manifest 代际备份（落地到服务端 `manifest-backup/` 子目录，环形 N 份）
   ///
-  /// v2.2：用资源层在 vault 内 `manifest-backup/` 子目录维护环形备份
+  /// v2.2：用资源层在 keyring 内 `manifest-backup/` 子目录维护环形备份
   /// `manifest.bak-0`..`manifest.bak-{N-1}`（轮转位置记在 `.manifest-bak-index`），
   /// 与 localFs / webdav 后端布局一致。远端 manifest 损坏/被清空时，可从服务端
   /// 最近一代备份恢复。
@@ -592,6 +592,63 @@ class SafeServerBackend implements SyncBackend {
       utf8.encode(slot.toString()),
     );
     await _putResource('$rel/manifest.bak-$slot', bytes);
+  }
+
+  // ──────────────────────────────────────────────
+  // P2 Journal 远端副本（v2.2 资源层 `journal/` 子目录）
+  // ──────────────────────────────────────────────
+
+  /// P2：写入 journal 密文副本到服务端 `journal/<name>`
+  ///
+  /// 内容已由 Journal 用 AES-GCM(dataKey) 加密，服务端只存字节。
+  /// 旧版服务端（无资源层）静默 no-op → journal 降级为本地-only。
+  @override
+  Future<void> putJournalObject(String name, Uint8List ciphertext) async {
+    _ensureInitialized();
+    await _ensureResourcesProbed();
+    if (_resourcesSupported != true) return;
+    try {
+      await _postResource('journal', 'mkdir'); // 201 已建 / 405 已存在
+      await _putResource('journal/$name', ciphertext);
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] journal 副本上传失败 name=$name', error: e);
+    }
+  }
+
+  @override
+  Future<Uint8List?> getJournalObject(String name) async {
+    _ensureInitialized();
+    await _ensureResourcesProbed();
+    if (_resourcesSupported != true) return null;
+    try {
+      final res = await _getResource('journal/$name');
+      if (res.statusCode != 200) return null;
+      return res.bodyBytes;
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] journal 副本读取失败 name=$name', error: e);
+      return null;
+    }
+  }
+
+  @override
+  Future<List<String>> listJournalObjects() async {
+    _ensureInitialized();
+    await _ensureResourcesProbed();
+    if (_resourcesSupported != true) return [];
+    try {
+      final res = await _postResource('journal', 'propfind', depth: 1);
+      if (res.statusCode != 200) return [];
+      final List<dynamic> entries = jsonDecode(res.body);
+      final result = <String>[];
+      for (final e in entries) {
+        final name = (e is Map ? e['name'] : null)?.toString() ?? '';
+        if (name.endsWith('.json')) result.add(name);
+      }
+      return result;
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] journal 副本列举失败', error: e);
+      return [];
+    }
   }
 
   /// v2.2 资源层能力探测（懒执行，仅一次）

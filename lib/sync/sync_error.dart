@@ -216,7 +216,7 @@ class NetworkError extends SyncError {
 /// 密钥不匹配（密码错误 / 旧密钥纪元 / MK 解不开远端包裹）
 ///
 /// 与 WrongPasswordException 的关系：
-///   WrongPasswordException 是 vault 层抛出的异常类型，
+///   WrongPasswordException 是 keyring 层抛出的异常类型，
 ///   KeyMismatchError 是引擎层包装后的可观测错误。
 class KeyMismatchError extends SyncError {
   /// 本地 keyVersion

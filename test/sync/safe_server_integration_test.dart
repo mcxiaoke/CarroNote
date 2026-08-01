@@ -41,8 +41,10 @@ import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/safe_server_backend.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/vault.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+// 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
+import 'sync_test_support.dart';
 
 /// 测试用固定 Token
 const String kTestToken = 'test-token-12345';
@@ -147,7 +149,7 @@ class ServerProcess {
 
   /// 清理 server 数据目录（vaults/ 下所有内容），让每个测试从干净状态开始
   ///
-  /// 新存储布局：<dataDir>/vaults/vault-default/{manifest, blobs/}
+  /// 新存储布局：<dataDir>/vaults/keyring-default/{manifest, blobs/}
   /// 清理整个 vaults/ 目录即可重置到干净状态。
   Future<void> clearData() async {
     final vaultsDir = Directory('$dataDir\\vaults');
@@ -445,9 +447,9 @@ SyncEngine _makeEngine({
   required Uint8List dataKey,
   required String encryptedDataKey,
 }) {
-  // 与 sync_engine_test.dart 保持一致：通过 Vault 构造 SyncEngine
-  final vault = Vault(
-    vaultId: 'test-vault-id',
+  // 与 sync_engine_test.dart 保持一致：通过 Keyring 构造 SyncEngine
+  final keyring = makeTestKeyring(
+    vaultId: 'test-keyring-id',
     dataKey: dataKey,
     encryptedDataKey: encryptedDataKey,
     keyFingerprint: '',
@@ -458,8 +460,9 @@ SyncEngine _makeEngine({
   return SyncEngine(
     backend: backend,
     database: database,
-    vault: vault,
+    keyring: keyring,
     deviceId: 'test-device',
+    journal: makeTestJournal(),
   );
 }
 

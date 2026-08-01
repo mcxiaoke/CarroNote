@@ -46,7 +46,7 @@ void main() {
   });
 
   group('LocalFsBackend - 初始化', () {
-    test('init 创建 vault 根目录和 blobs 子目录', () async {
+    test('init 创建 keyring 根目录和 blobs 子目录', () async {
       // 重新创建一个 backend 验证 init 行为
       final freshDir =
           await Directory.systemTemp.createTemp('safenotes_fresh_');

@@ -33,10 +33,10 @@ import 'package:safenotes/utils/app_logger.dart';
 
 /// 本地文件系统后端
 ///
-/// [rootPath] 必须是绝对路径，由上层（SyncService/Vault）使用 path_provider
+/// [rootPath] 必须是绝对路径，由上层（SyncService/Keyring）使用 path_provider
 /// 解析后传入。LocalFsBackend 自身不依赖 path_provider，便于单元测试。
 class LocalFsBackend implements SyncBackend {
-  /// vault 根目录绝对路径
+  /// keyring 根目录绝对路径
   final String rootPath;
 
   bool _initialized = false;
@@ -51,10 +51,10 @@ class LocalFsBackend implements SyncBackend {
   String get providerKey =>
       SyncCrypto.hashString('localFs:$rootPath').substring(0, 16);
 
-  /// vault 内 manifest 文件路径
+  /// keyring 内 manifest 文件路径
   String get _manifestPath => p.join(rootPath, 'manifest.json');
 
-  /// vault 内 blobs 目录路径
+  /// keyring 内 blobs 目录路径
   String get _blobsDirPath => p.join(rootPath, 'blobs');
 
   @override
@@ -259,9 +259,9 @@ class LocalFsBackend implements SyncBackend {
     }
   }
 
-  /// P1-1 修复：manifest 代际备份（落地到 vault 的 `manifest-backup/` 子目录环形备份）
+  /// P1-1 修复：manifest 代际备份（落地到 keyring 的 `manifest-backup/` 子目录环形备份）
   ///
-  /// 把即将被覆盖的旧 manifest 密文写入 vault 下 `manifest-backup/` 子目录的环形备份
+  /// 把即将被覆盖的旧 manifest 密文写入 keyring 下 `manifest-backup/` 子目录的环形备份
   /// `manifest.bak-0`..`manifest.bak-4`（最多保留 5 代），与 webdav/safeServer 后端
   /// 布局一致（均落在各自"服务端"的 `manifest-backup/` 子目录）。
   @override
@@ -276,6 +276,49 @@ class LocalFsBackend implements SyncBackend {
     } on Exception {
       // 备份失败不阻断同步
     }
+  }
+
+  // ──────────────────────────────────────────────
+  // P2 Journal 远端副本（落在 keyring 根目录的 `journal/` 子目录）
+  // ──────────────────────────────────────────────
+
+  String get _journalDirPath => p.join(rootPath, 'journal');
+
+  /// P2：写入 journal 密文副本（内容已由 Journal 加密，这里只是落盘）
+  @override
+  Future<void> putJournalObject(String name, Uint8List ciphertext) async {
+    _ensureInitialized();
+    final dir = Directory(_journalDirPath);
+    await dir.create(recursive: true);
+    // 原子写：先 .tmp 再 rename，避免半写副本被当作有效数据
+    final target = p.join(dir.path, name);
+    final tmp = File('$target.tmp');
+    await tmp.writeAsBytes(ciphertext, flush: true);
+    await tmp.rename(target);
+  }
+
+  @override
+  Future<Uint8List?> getJournalObject(String name) async {
+    _ensureInitialized();
+    final file = File(p.join(_journalDirPath, name));
+    if (!await file.exists()) return null;
+    return await file.readAsBytes();
+  }
+
+  @override
+  Future<List<String>> listJournalObjects() async {
+    _ensureInitialized();
+    final dir = Directory(_journalDirPath);
+    if (!await dir.exists()) return [];
+    final result = <String>[];
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        // 过滤中间态 .tmp 文件
+        if (name.endsWith('.json')) result.add(name);
+      }
+    }
+    return result;
   }
 
   @override

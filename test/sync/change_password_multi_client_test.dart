@@ -14,7 +14,7 @@
  *     整体采用远端值 → 旧密码设备的同步不再回滚远端纪元，守卫持续有效，
  *     翻转战争不再发生（S1/S2 验证）。
  *
- *   BUG-3 修复（B3，sync_engine H1 分支 + vault.adoptRemoteEpoch）：
+ *   BUG-3 修复（B3，sync_engine H1 分支 + keyring.adoptRemoteEpoch）：
  *     他端改密码 + 本端新密码登录时，本地 meta 的
  *     encryptedDataKey/keyFingerprint/keyVersion 三者整体采用远端纪元，
  *     纪元收敛，epochMismatch 不再误报（S5 验证）。
@@ -26,7 +26,7 @@
  *
  *   S3（机制说明，非 bug 修复对象）：
  *     B 重启后用新密码登录 → 本地 unlockLocal 失败 → login.dart 走远端验证
- *     → fingerprint 匹配 → unlockFromRemoteManifest 把远端 vault 元数据
+ *     → fingerprint 匹配 → unlockFromRemoteManifest 把远端 keyring 元数据
  *     覆盖写入本地 meta → 旧密码从此本地解锁失败。此为预期设计
  *     （本地纪元跟随远端收敛），数据不丢失（dataKey 不变）。
  *     B4 修复后用户会在 B 关闭前就收到"密码已变更"弹窗提示。
@@ -52,14 +52,17 @@ import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/device_id.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+// 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
+import 'sync_test_support.dart';
 
 // ──────────────────────────────────────────────
 // 测试用 FakeBackend（内存实现，模拟远端）
 // ──────────────────────────────────────────────
-class FakeBackend implements SyncBackend {
+class FakeBackend with FakeJournalStore implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};
@@ -157,7 +160,7 @@ class _FlakyBackend extends FakeBackend {
 // ──────────────────────────────────────────────
 const String kOldPassword = 'old-password-123';
 const String kNewPassword = 'new-password-456';
-const String kVaultId = 'vault-under-test';
+const String kVaultId = 'keyring-under-test';
 
 late Uint8List dataKey; // 永不变化的数据主密钥
 late Uint8List salt; // per-vault salt（改密码时不变）
@@ -174,14 +177,14 @@ late int vaultCreatedAt;
 // 辅助函数
 // ──────────────────────────────────────────────
 
-/// 构造 Vault 实例（模拟不同登录会话持有的内存密钥状态）
-Vault _makeVault({
+/// 构造 Keyring 实例（模拟不同登录会话持有的内存密钥状态）
+Keyring _makeVault({
   required int keyVersion,
   required String encryptedDataKey,
   required String keyFingerprint,
   Uint8List? mk,
 }) {
-  return Vault(
+  return makeTestKeyring(
     vaultId: kVaultId,
     dataKey: dataKey,
     encryptedDataKey: encryptedDataKey,
@@ -197,15 +200,16 @@ Vault _makeVault({
 SyncEngine _makeEngine({
   required FakeBackend backend,
   required NotesDatabase database,
-  required Vault vault,
+  required Keyring keyring,
   required String deviceId,
   String? passphrase,
 }) {
   return SyncEngine(
     backend: backend,
     database: database,
-    vault: vault,
+    keyring: keyring,
     deviceId: deviceId,
+    journal: makeTestJournal(),
     passphraseProvider: passphrase != null ? () => passphrase : null,
   );
 }
@@ -226,19 +230,31 @@ Future<NotesDatabase> _makeDatabase() async {
   return NotesDatabase.instance;
 }
 
-/// 写入本地 vault 元数据（模拟设备登录前的本地持久化状态）
+/// 写入本地 keyring 账本（模拟设备登录前的本地持久化状态）
+///
+/// P2 变更：原来写 vault_id / encrypted_data_key / kdf_salt / key_fingerprint /
+/// key_version / vault_created_at 六个散落键；现在密钥态是 `keyring` 单键
+/// JSON 账本，写一次即原子（旧写法的"多键双写半成功"风险随之消失）。
 Future<void> _seedMeta(
   NotesDatabase db, {
   required String encryptedDataKey,
   required int keyVersion,
   required String keyFingerprint,
 }) async {
-  await db.setMeta(MetaKeys.vaultId, kVaultId);
-  await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-  await db.setMeta(MetaKeys.kdfSalt, base64.encode(salt));
-  await db.setMeta(MetaKeys.keyFingerprint, keyFingerprint);
-  await db.setMeta(MetaKeys.keyVersion, keyVersion.toString());
-  await db.setMeta(MetaKeys.vaultCreatedAt, vaultCreatedAt.toString());
+  await KeyringLedger(
+    vaultId: kVaultId,
+    kdf: kdf,
+    createdAt: vaultCreatedAt,
+    current: KeyringEntry(
+      keyFingerprint: keyFingerprint,
+      encryptedDataKey: encryptedDataKey,
+      keyVersion: keyVersion,
+      dataKeyEpoch: 1,
+      reason: keyVersion > 1
+          ? KeyringReason.changePassword
+          : KeyringReason.create,
+    ),
+  ).persist(db);
 }
 
 /// 读取远端 manifest 的明文 header
@@ -278,7 +294,7 @@ Future<FakeBackend> _deviceAChangesPasswordAndPushes() async {
   var engineA = _makeEngine(
     backend: backend,
     database: dbA,
-    vault: _makeVault(
+    keyring: _makeVault(
         keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
         mk: mkOld),
     deviceId: 'device-A',
@@ -288,14 +304,14 @@ Future<FakeBackend> _deviceAChangesPasswordAndPushes() async {
   final res1 = await engineA.sync();
   expect(res1.success, isTrue, reason: '前置：A 首次同步应成功');
 
-  // 2. 设备 A 改密码（等价于 vault.changePassword 的结果：
+  // 2. 设备 A 改密码（等价于 keyring.changePassword 的结果：
   //    dataKey 不变，edk/fp 更新，keyVersion 1→2，本地 meta 已持久化）
   await _seedMeta(dbA,
       encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
   engineA = _makeEngine(
     backend: backend,
     database: dbA,
-    vault: _makeVault(
+    keyring: _makeVault(
         keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
         mk: mkNew),
     deviceId: 'device-A',
@@ -328,7 +344,7 @@ Future<({NotesDatabase db, SyncEngine engine, SyncResult result})>
   final engineB = _makeEngine(
     backend: backend,
     database: dbB,
-    vault: _makeVault(
+    keyring: _makeVault(
         keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
         mk: mkOld),
     deviceId: 'device-B',
@@ -385,9 +401,9 @@ void main() {
           reason: '引擎应置位 passwordEpochMismatch，'
               'HomePage._onSyncStateChanged 消费此标志弹窗提示用户');
 
-      // —— B 本地 meta 不被动（旧密码在 B 本地仍可登录，直到用户主动换新密码）——
-      expect(await b.db.getMeta(MetaKeys.encryptedDataKey), edkOld,
-          reason: 'B 本地 meta 保持旧包裹：旧密码会话不采用新纪元'
+      // —— B 本地账本不被动（旧密码在 B 本地仍可登录，直到用户主动换新密码）——
+      expect(await persistedEncryptedDataKey(b.db), edkOld,
+          reason: 'B 本地 keyring 账本保持旧包裹：旧密码会话不采用新纪元'
               '（B 不知道新密码，无法验证新包裹），仅避免回滚远端');
 
       // —— B1-2 修复：远端密钥纪元三元组整体不被回滚 ——
@@ -446,7 +462,7 @@ void main() {
       final engineA2 = _makeEngine(
         backend: backend,
         database: dbA2,
-        vault: _makeVault(
+        keyring: _makeVault(
             keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
             mk: mkNew),
         deviceId: 'device-A',
@@ -481,14 +497,14 @@ void main() {
 
       // —— 本地 meta 未被覆盖前，旧密码仍可本地登录 ——
       final vaultViaOld =
-          await Vault.unlockLocal(password: kOldPassword, database: dbB);
+          await Keyring.unlockLocal(password: kOldPassword, database: dbB);
       expect(base64.encode(vaultViaOld.dataKey), base64.encode(dataKey),
           reason: '本地 meta 未被覆盖时旧密码仍可登录（B4 修复后，'
               '用户在此之前已收到"密码已变更"弹窗，知道要用新密码）');
 
       // —— 用户用新密码登录：本地解锁失败 → login.dart 进入远端验证分支 ——
       await expectLater(
-        Vault.unlockLocal(password: kNewPassword, database: dbB),
+        Keyring.unlockLocal(password: kNewPassword, database: dbB),
         throwsA(isA<WrongPasswordException>()),
         reason: '新密码解不开本地旧包裹 → login.dart 走远端验证',
       );
@@ -501,7 +517,7 @@ void main() {
           reason: '远端 header 是新纪元 → fingerprint 匹配新密码');
 
       // fingerprint 匹配 → unlockFromRemoteManifest 持久化远端元数据（覆盖本地）
-      await Vault.unlockFromRemoteManifest(
+      await Keyring.unlockFromRemoteManifest(
         password: kNewPassword,
         remoteVaultId: header.vaultId,
         remoteEncryptedDataKey: header.encryptedDataKey,
@@ -512,22 +528,22 @@ void main() {
         database: dbB,
       );
 
-      // —— 本地 meta 采用远端新纪元（预期设计：本地纪元跟随远端收敛）——
-      expect(await dbB.getMeta(MetaKeys.encryptedDataKey), edkNew,
-          reason: '本地 meta（encryptedDataKey）采用远端新纪元');
-      expect(await dbB.getMeta(MetaKeys.keyVersion), '2');
-      expect(await dbB.getMeta(MetaKeys.keyFingerprint), fpNew);
+      // —— 本地账本采用远端新纪元（预期设计：本地纪元跟随远端收敛）——
+      expect(await persistedEncryptedDataKey(dbB), edkNew,
+          reason: '本地 keyring 账本（encryptedDataKey）采用远端新纪元');
+      expect(await persistedKeyVersion(dbB), 2);
+      expect(await persistedKeyFingerprint(dbB), fpNew);
 
       // —— 此后旧密码本地登录失败（预期：全局只有一个有效密码）——
       await expectLater(
-        Vault.unlockLocal(password: kOldPassword, database: dbB),
+        Keyring.unlockLocal(password: kOldPassword, database: dbB),
         throwsA(isA<WrongPasswordException>()),
         reason: '纪元收敛后旧密码失效是预期行为',
       );
 
       // —— 新密码正常登录，dataKey 不变、笔记完好 ——
       final vaultViaNew =
-          await Vault.unlockLocal(password: kNewPassword, database: dbB);
+          await Keyring.unlockLocal(password: kNewPassword, database: dbB);
       expect(base64.encode(vaultViaNew.dataKey), base64.encode(dataKey),
           reason: 'dataKey 永不变化：改密码/登出/纪元覆盖都不影响笔记数据');
     });
@@ -550,7 +566,7 @@ void main() {
       expect(header.keyVersion, 2);
 
       // —— 新密码走 login.dart 远端验证 / 场景 d 判别：正确通过 ——
-      final result = await Vault.tryDeriveRemoteDataKey(
+      final result = await Keyring.tryDeriveRemoteDataKey(
         password: kNewPassword,
         remoteKdf: header.kdf,
         remoteEncryptedDataKey: header.encryptedDataKey,
@@ -563,7 +579,7 @@ void main() {
           reason: '解开的 dataKey 与原始一致');
 
       // —— 旧密码被正确拒绝（fingerprint 不匹配）——
-      final resultOld = await Vault.tryDeriveRemoteDataKey(
+      final resultOld = await Keyring.tryDeriveRemoteDataKey(
         password: kOldPassword,
         remoteKdf: header.kdf,
         remoteEncryptedDataKey: header.encryptedDataKey,
@@ -591,7 +607,7 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: dbB,
-        vault: _makeVault(
+        keyring: _makeVault(
             keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
             mk: mkNew), // 新密码派生的 MK
         deviceId: 'device-B',
@@ -601,20 +617,20 @@ void main() {
       final res = await engineB.sync();
       expect(res.success, isTrue);
 
-      // —— B3 修复：本地纪元三元组整体收敛 ——
-      expect(await dbB.getMeta(MetaKeys.encryptedDataKey), edkNew,
+      // —— B3 修复：本地纪元三元组整体收敛（P2：读 keyring 单键账本）——
+      expect(await persistedEncryptedDataKey(dbB), edkNew,
           reason: '本地 encryptedDataKey 更新为远端新值（H1 原有行为）');
-      expect(await dbB.getMeta(MetaKeys.keyVersion), '2',
+      expect(await persistedKeyVersion(dbB), 2,
           reason: 'B3 修复：本地 keyVersion 收敛到 2，'
               'B 下次同步不再误报 epochMismatch');
-      expect(await dbB.getMeta(MetaKeys.keyFingerprint), fpNew,
+      expect(await persistedKeyFingerprint(dbB), fpNew,
           reason: 'B3 修复：本地 keyFingerprint 收敛到新值');
 
-      // —— 内存 vault 同步更新（引擎与 SyncService 共享同一实例）——
-      expect(engineB.vault.keyVersion, 2,
-          reason: 'B3 修复：内存 vault.keyVersion 同步更新');
-      expect(engineB.vault.keyFingerprint, fpNew);
-      expect(engineB.vault.encryptedDataKey, edkNew);
+      // —— 内存 keyring 同步更新（引擎与 SyncService 共享同一实例）——
+      expect(engineB.keyring.keyVersion, 2,
+          reason: 'B3 修复：内存 keyring.keyVersion 同步更新');
+      expect(engineB.keyring.keyFingerprint, fpNew);
+      expect(engineB.keyring.encryptedDataKey, edkNew);
 
       // —— 远端 header 保持新纪元不被回滚 ——
       final header = await _remoteHeader(backend);
@@ -657,7 +673,7 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: dbB,
-        vault: _makeVault(
+        keyring: _makeVault(
             keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
             mk: mkNew),
         deviceId: 'device-B',
@@ -681,7 +697,7 @@ void main() {
       final engineA = _makeEngine(
         backend: backend,
         database: dbA,
-        vault: _makeVault(
+        keyring: _makeVault(
             keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
             mk: mkOld),
         deviceId: 'device-A-old',
@@ -718,7 +734,7 @@ void main() {
       db.setDataKey(dataKey);
       await _seedMeta(db,
           encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
-      final vault = _makeVault(
+      final keyring = _makeVault(
           keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
           mk: mkNew);
 
@@ -727,7 +743,7 @@ void main() {
       // 与真实"进主界面就提示"同源。捕获后服务处于"引擎已建、后端未就绪"。
       bool initThrew = false;
       try {
-        await service.initialize(vault: vault, backend: backend, database: db);
+        await service.initialize(keyring: keyring, backend: backend, database: db);
       } on BackendUnavailableException {
         initThrew = true;
       }

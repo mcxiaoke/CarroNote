@@ -41,7 +41,7 @@ abstract class SyncBackend {
   /// 初始化后端资源
   ///
   /// 在首次同步前调用一次：
-  /// - LocalFS：创建 vault 根目录和 blobs 子目录
+  /// - LocalFS：创建 keyring 根目录和 blobs 子目录
   /// - WebDAV：MKCOL 创建远端目录，测试连通性
   /// - SafeServer：测试连通性（GET /api/v2/health）
   /// 已初始化时重复调用应是幂等的。
@@ -152,7 +152,7 @@ abstract class SyncBackend {
   /// [currentManifestBytes] 即将被覆盖的远端 manifest 密文（引擎传入，避免后端
   /// 再发一次网络 GET）。首次上传（无旧 manifest）时传 null，实现应 no-op。
   /// 默认空实现（no-op）：子类按需覆盖
-  /// （LocalFS 落地到 vault 的 `manifest-backup/` 子目录；WebDAV/SafeServer
+  /// （LocalFS 落地到 keyring 的 `manifest-backup/` 子目录；WebDAV/SafeServer
   /// 落地到各自服务端（网盘 / SafeServer 资源层）的 `manifest-backup/` 子目录；
   /// 旧版 SafeServer 未实现资源层时降级为客户端本地临时目录环形备份）。
   Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
@@ -170,6 +170,29 @@ abstract class SyncBackend {
   ///
   /// [ciphertext] 损坏的 manifest 密文（仅供备份，不解析）
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
+
+  // ──────────────────────────────────────────────
+  // P2 Journal 远端副本（设计 §3.3-4 / §3.6c）
+  // ──────────────────────────────────────────────
+
+  /// P2：写入 journal 远端副本对象（防单点故障的第二数据源）
+  ///
+  /// [name] 对象名（叶子名，如 `android-xxx-archive-1000.json`），
+  ///        由 Journal 生成并按设备隔离，后端只需拼到自己的 `journal/` 目录下。
+  /// [ciphertext] **已由 Journal 用 `AES-GCM(dataKey)` 整体加密的密文**——
+  ///        后端不解析、不解密，远端永不落明文。
+  ///
+  /// 默认空实现（no-op）：不支持资源层的后端自动降级为"journal 本地-only"，
+  /// 同步主流程不受影响。
+  Future<void> putJournalObject(String name, Uint8List ciphertext) async {}
+
+  /// P2：读取 journal 远端副本对象；不存在返回 null
+  Future<Uint8List?> getJournalObject(String name) async => null;
+
+  /// P2：列举远端 journal 副本对象名（含所有设备的副本）
+  ///
+  /// 返回空列表表示后端不支持枚举，恢复流程将跳过"远端第二数据源"。
+  Future<List<String>> listJournalObjects() async => [];
 
   /// 释放后端资源（如关闭 HTTP 连接）
   ///
@@ -219,7 +242,7 @@ const int kManifestBackupRingCount = 5;
 ///
 /// 把 [bytes] 写入 [dir] 下的环形备份文件 `manifest.bak-0` ..
 /// `manifest.bak-{count - 1}`，轮转位置记录在 [dir]/.manifest-bak-index 中。
-/// 多个后端共用此函数，保证"环形 N 份"语义一致（LocalFS 传入 vault 的
+/// 多个后端共用此函数，保证"环形 N 份"语义一致（LocalFS 传入 keyring 的
 /// `manifest-backup/` 子目录；WebDAV/SafeServer 传入各自服务端的 `manifest-backup/`
 /// 子目录，旧版 SafeServer 兜底时传入客户端临时目录）。备份失败由调用方
 /// try-catch，不抛异常。

@@ -206,7 +206,7 @@ class HomePageState extends State<HomePage> {
     } on Exception catch (e) {
       // 防御层：避免任何异常（如 dataKey 不匹配、db 损坏、迁移进行中）
       // 导致 isLoading 永远为 true，UI 一直转圈。
-      // 典型场景：本地 vault 与 db 不一致，readAllNotes 解密失败抛
+      // 典型场景：本地 keyring 与 db 不一致，readAllNotes 解密失败抛
       // DataKeyNotSetException；reEncryptAllNotes 期间抛
       // MigrationInProgressException。
       // 清空笔记列表并提示用户，至少让 UI 可交互（用户可登出或进入设置）。

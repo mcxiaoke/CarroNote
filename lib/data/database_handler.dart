@@ -9,7 +9,7 @@
  *   - 不迁移旧数据（onUpgrade drop + create）
  *
  * 本地加密说明（B1 方案）：
- *   - dataKey 在首次设置密码时生成，存于 Vault，登录时注入到 NotesDatabase
+ *   - dataKey 在首次设置密码时生成，存于 Keyring，登录时注入到 NotesDatabase
  *   - title/description 写入前用 SyncCrypto.seal(dataKey, uuid, plaintext) 加密
  *   - 读取时用 SyncCrypto.open(dataKey, uuid, envelope) 解密
  *   - contentHash 为明文 hash，不加密（用于同步比对）
@@ -81,13 +81,22 @@ class MetaFields {
 
 // meta 表的已知键名
 class MetaKeys {
+  /// P2 Keyring 账本单键（唯一权威密钥态，JSON）
+  ///
+  /// 取代下方 vaultId / encryptedDataKey / kdfSalt / keyFingerprint /
+  /// keyVersion / vaultCreatedAt / dataKeyEpoch / dataKeyHistory 这 8 个散落键：
+  /// 新代码只写这一个键（单键 setMeta 原子，杜绝"多键双写半成功"）。
+  /// 旧键仅供 `KeyringLedger.fromLegacyMeta` 一次性转换时读取，不再写入。
+  static const String keyring = 'keyring';
+
+  // ── 以下为 legacy 键：P2 起不再写入，仅一次性转换时读取 ──
   static const String vaultId = 'vault_id';
   static const String encryptedDataKey = 'encrypted_data_key';
   static const String kdfSalt = 'kdf_salt'; // per-vault 随机 salt（base64）
   static const String keyFingerprint = 'key_fingerprint'; // H(MK) 十六进制
   static const String keyVersion = 'key_version'; // 密钥版本号
   static const String vaultCreatedAt =
-      'vault_created_at'; // vault 创建时间（Unix 毫秒）
+      'vault_created_at'; // keyring 创建时间（Unix 毫秒）
   // manifest version 不再使用全局 key，改为按 providerKey 隔离：
   // 'manifest_version:<providerKey>'（见 [_manifestVersionKey]）
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
@@ -123,7 +132,7 @@ class NotesDatabase {
 
   NotesDatabase._init();
 
-  /// 设置 dataKey（登录/解锁 vault 后调用）
+  /// 设置 dataKey（登录/解锁 keyring 后调用）
   void setDataKey(Uint8List key) => _dataKey = Uint8List.fromList(key);
 
   /// 清除 dataKey（登出时调用）
@@ -240,11 +249,11 @@ class NotesDatabase {
     try {
       final db = await openDatabase(
         path,
-        version: 2,
+        version: 3,
         onCreate: _createDB,
         onUpgrade: _upgradeDB,
       );
-      Log.db.i('数据库已打开: $path (version=2)');
+      Log.db.i('数据库已打开: $path (version=3)');
       return db;
     } on Object catch (e, st) {
       Log.db.f('数据库打开失败: $path', error: e, stackTrace: st);
@@ -274,6 +283,41 @@ class NotesDatabase {
     await _createDBStatic(db, version);
   }
 
+  /// 测试专用：upgradeDB 回调（供跨版本持久化测试库 onUpgrade 使用）
+  ///
+  /// 长期存续测试的 client-*.db 是文件库、跨运行复用，旧数据是 version 2
+  /// 建的（无 synced_hash 列）。测试用 openDatabase 绕过了生产 _initDB，
+  /// 因此必须显式挂上 onUpgrade，才能走到与生产 _upgradeDB 完全一致的
+  /// v2 → v3「加列 + 回填」迁移，而不是丢数据或撞上「no such column」。
+  @visibleForTesting
+  static Future<void> upgradeDBForTesting(
+      Database db, int oldVersion, int newVersion) async {
+    await _upgradeDBStatic(db, oldVersion, newVersion);
+  }
+
+  /// upgradeDB 的静态实现（测试用，逻辑与实例方法 _upgradeDB 保持一致）
+  static Future<void> _upgradeDBStatic(
+      Database db, int oldVersion, int newVersion) async {
+    Log.db.w('数据库升级（测试）$oldVersion → $newVersion');
+    if (oldVersion < 2) {
+      // v1 旧格式无法平滑迁移，只能重建
+      await db.execute('DROP TABLE IF EXISTS $tableNotes');
+      await db.execute('DROP TABLE IF EXISTS $tableMeta');
+      await _createDBStatic(db, newVersion);
+      return;
+    }
+    if (oldVersion < 3) {
+      // v2 → v3：加列 + 回填，保留全部用户数据
+      await db.execute(
+          'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedHash} TEXT');
+      final patched = await db.rawUpdate(
+        'UPDATE $tableNotes SET ${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+        'WHERE ${NoteFields.synced} = 1',
+      );
+      Log.db.i('v2 → v3 迁移完成（测试）：新增 synced_hash 列，回填 $patched 条基线');
+    }
+  }
+
   /// createDB 的静态实现（测试用）
   static Future<void> _createDBStatic(Database db, int version) async {
     await db.execute('''
@@ -286,7 +330,8 @@ class NotesDatabase {
       ${NoteFields.deleted} INTEGER NOT NULL DEFAULT 0,
       ${NoteFields.createdAt} TEXT NOT NULL,
       ${NoteFields.updatedAt} INTEGER NOT NULL,
-      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0
+      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0,
+      ${NoteFields.syncedHash} TEXT
     )
     ''');
 
@@ -305,7 +350,7 @@ class NotesDatabase {
         'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
   }
 
-  /// 创建新数据库（version 2 schema）
+  /// 创建新数据库（version 3 schema）
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
     CREATE TABLE $tableNotes (
@@ -317,7 +362,8 @@ class NotesDatabase {
       ${NoteFields.deleted} INTEGER NOT NULL DEFAULT 0,
       ${NoteFields.createdAt} TEXT NOT NULL,
       ${NoteFields.updatedAt} INTEGER NOT NULL,
-      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0
+      ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0,
+      ${NoteFields.syncedHash} TEXT
     )
     ''');
 
@@ -339,15 +385,34 @@ class NotesDatabase {
         'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
   }
 
-  /// 数据库升级：不迁移旧数据，直接重建
+  /// 数据库升级
+  ///
+  /// v1 → v2：破坏性重建（旧格式无 uuid/hash 体系，无法平滑迁移）。
+  /// v2 → v3：新增 synced_hash 列（冲突判定的共同祖先 base），**保留数据**。
+  ///          ALTER TABLE 加列后回填：已同步笔记（synced=1）的当前 content_hash
+  ///          就是它上次同步收敛时的内容 hash，即天然的 base；未同步笔记留 NULL
+  ///          （视为无基线，走保守判定）。笔记应用的用户数据不可在升级时丢弃。
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    // 破坏性 schema 变更，必须留痕
-    Log.db.w('数据库升级 $oldVersion → $newVersion（旧数据将被丢弃重建）');
+    Log.db.w('数据库升级 $oldVersion → $newVersion');
     if (oldVersion < 2) {
+      // v1 旧格式无法平滑迁移，只能重建
+      Log.db.w('v1 → v2 破坏性重建（旧数据无法迁移）');
       await db.execute('DROP TABLE IF EXISTS $tableNotes');
       await db.execute('DROP TABLE IF EXISTS $tableMeta');
       await _createDB(db, newVersion);
       Log.db.i('数据库重建完成 (version=$newVersion)');
+      return;
+    }
+    if (oldVersion < 3) {
+      // v2 → v3：加列 + 回填，保留全部用户数据
+      await db.execute(
+          'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedHash} TEXT');
+      // 已同步笔记：当前 content_hash 即上次同步收敛的 base
+      final patched = await db.rawUpdate(
+        'UPDATE $tableNotes SET ${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+        'WHERE ${NoteFields.synced} = 1',
+      );
+      Log.db.i('v2 → v3 迁移完成：新增 synced_hash 列，回填 $patched 条已同步笔记基线');
     }
   }
 
@@ -427,6 +492,24 @@ class NotesDatabase {
       return _fromEncryptedRow(maps.first);
     }
     return null;
+  }
+
+  /// 判断本机是否已存在指定 content_hash 的笔记（**含墓碑**）
+  ///
+  /// 用途：生成冲突副本标题时探测 hash 碰撞。
+  /// 必须把墓碑一并计入——若副本与某条已删除笔记同 hash，它会重新被
+  /// 孪生匹配与冲突判定卷入，等于把删除又拉回增殖循环。
+  Future<bool> existsContentHash(String contentHash) async {
+    _checkNotMigrating();
+    final db = await instance.database;
+    final maps = await db.query(
+      tableNotes,
+      columns: [NoteFields.id],
+      where: '${NoteFields.contentHash} = ?',
+      whereArgs: [contentHash],
+      limit: 1,
+    );
+    return maps.isNotEmpty;
   }
 
   /// 读取所有未删除的笔记（UI 列表用，自动解密）
@@ -690,7 +773,7 @@ class NotesDatabase {
   /// 如果在步骤 2 crash：数据库仍为旧密文，_dataKey 仍为 oldKey，状态一致。
   /// 如果在步骤 3 crash：SQLite 事务回滚，数据库仍为旧密文。
   /// 如果在步骤 4 crash：数据库已更新为新密文，但 _dataKey 还是 oldKey，
-  ///   下次登录时 Vault.unlockLocal 会用密码重新派生 dataKey，状态恢复一致。
+  ///   下次登录时 Keyring.unlockLocal 会用密码重新派生 dataKey，状态恢复一致。
   ///
   /// [oldKey] 旧的 dataKey（用于解密当前数据库内容）
   /// [newKey] 新的 dataKey（用于重新加密）
@@ -765,20 +848,29 @@ class NotesDatabase {
   }
 
   /// 标记笔记为已同步
+  ///
+  /// 同步收敛时，把 synced_hash 更新为当前 content_hash——这一刻本地与远端
+  /// 已一致，当前内容 hash 即成为下一轮冲突判定的共同祖先 base。
   Future<void> markSynced(String uuid) async {
     final db = await instance.database;
-    await db.update(
-      tableNotes,
-      {NoteFields.synced: 1},
-      where: '${NoteFields.uuid} = ?',
-      whereArgs: [uuid],
+    await db.rawUpdate(
+      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+      'WHERE ${NoteFields.uuid} = ?',
+      [uuid],
     );
   }
 
   /// 标记所有笔记为已同步（全量同步完成后用）
+  ///
+  /// 同时把每条笔记的 synced_hash 刷新为其 content_hash：同步流程结束时本地库
+  /// 已是收敛后的最终状态，此刻记下的 hash 就是下一轮判定单边/并发的 base。
   Future<void> markAllSynced() async {
     final db = await instance.database;
-    await db.update(tableNotes, {NoteFields.synced: 1});
+    await db.rawUpdate(
+      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash}',
+    );
   }
 
   // ──────────────────────────────────────────────

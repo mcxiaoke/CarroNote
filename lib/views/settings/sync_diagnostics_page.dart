@@ -2,7 +2,7 @@
  * 同步调试面板（E1）
  *
  * 五个 Tab 面板：
- *   1. 状态：同步子系统诊断快照（含后端/Vault/设备信息，可复制）
+ *   1. 状态：同步子系统诊断快照（含后端/Keyring/设备信息，可复制）
  *   2. 同步结果：最近一次同步的详细统计和失败笔记
  *   3. 操作记录：SyncAction 列表（含结构化错误详情）
  *   4. 日志：实时日志查看器（logcat 风格，可过滤/复制/导出/清空）
@@ -145,8 +145,8 @@ class _StatusTab extends StatelessWidget {
             _KV('SafeServer URL', snapshot.safeServerUrl),
           _KV('自动同步', snapshot.autoSyncEnabled.toString()),
         ]),
-        _buildSection(context, 'Vault 元数据', [
-          _KV('Vault ID', snapshot.vaultId ?? 'N/A'),
+        _buildSection(context, 'Keyring 元数据', [
+          _KV('Keyring ID', snapshot.vaultId ?? 'N/A'),
           _KV('keyVersion', snapshot.keyVersion?.toString() ?? 'N/A'),
           _KV('dataKeyEpoch', snapshot.dataKeyEpoch?.toString() ?? 'N/A'),
           _KV('keyFingerprint',

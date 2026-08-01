@@ -29,12 +29,14 @@ import 'package:safenotes/sync/local_fs_backend.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/vault.dart';
+
+// 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
+import 'sync_test_support.dart';
 
 // ──────────────────────────────────────────────
 // 测试用 FakeBackend（内存实现，支持 P1-2 隔离区与 P1-1 备份记录）
 // ──────────────────────────────────────────────
-class FakeBackend implements SyncBackend {
+class FakeBackend with FakeJournalStore implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};
@@ -150,12 +152,12 @@ SyncEngine _makeEngine({
   required NotesDatabase database,
   required Uint8List dataKey,
   String? encryptedDataKey,
-  String vaultId = 'test-vault',
+  String vaultId = 'test-keyring',
   String deviceId = 'test-device',
 }) {
   final edk = encryptedDataKey ??
       base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
-  final vault = Vault(
+  final keyring = makeTestKeyring(
     vaultId: vaultId,
     dataKey: dataKey,
     encryptedDataKey: edk,
@@ -167,8 +169,9 @@ SyncEngine _makeEngine({
   return SyncEngine(
     backend: backend,
     database: database,
-    vault: vault,
+    keyring: keyring,
     deviceId: deviceId,
+    journal: makeTestJournal(),
   );
 }
 
@@ -375,7 +378,7 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: database,
-        dataKey: engineA.vault.dataKey,
+        dataKey: engineA.keyring.dataKey,
       );
       final result = await engineB.sync();
 
@@ -413,7 +416,7 @@ void main() {
           backend: fsBackend,
           database: database,
           dataKey: fsKey,
-          vaultId: 'p1x-vault',
+          vaultId: 'p1x-keyring',
           deviceId: id,
         );
 
@@ -437,7 +440,7 @@ void main() {
       final r2 = await engine.sync();
       expect(r2.success, isTrue);
 
-      // 应存在环形备份文件 manifest.bak-*（位于 vault 的 manifest-backup/ 子目录）
+      // 应存在环形备份文件 manifest.bak-*（位于 keyring 的 manifest-backup/ 子目录）
       final backupDir = Directory(p.join(dir.path, 'manifest-backup'));
       expect(backupDir.existsSync(), isTrue,
           reason: '应创建 manifest-backup/ 子目录');
@@ -448,7 +451,7 @@ void main() {
           .toList();
       expect(bakFiles.isNotEmpty, isTrue, reason: '应生成 manifest 代际备份');
 
-      // 备份不应污染 vault 根目录（与 webdav/safeServer 子目录布局一致）
+      // 备份不应污染 keyring 根目录（与 webdav/safeServer 子目录布局一致）
       final rootBak = Directory(dir.path)
           .listSync()
           .whereType<File>()

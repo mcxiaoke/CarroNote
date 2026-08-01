@@ -27,11 +27,13 @@ import 'package:safenotes/sync/local_fs_backend.dart';
 import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/vault.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+// 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
+import 'sync_test_support.dart';
+
 /// 测试用 FakeBackend：内存实现，可模拟冲突
-class FakeBackend implements SyncBackend {
+class FakeBackend with FakeJournalStore implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};
@@ -143,12 +145,12 @@ class FakeBackend implements SyncBackend {
 
 /// 测试辅助：构造 SyncEngine
 ///
-/// Vault 构造方式：
+/// Keyring 构造方式：
 ///   - 显式传入的 dataKey/encryptedDataKey（multi-device 测试中设备 B 传设备 A 的值）
 ///   - database 已设置的 dataKey（单设备测试中 setUp 注入的 dataKey）
 ///   - 新生成的 dataKey（fallback，理论上不会触发）
 ///
-/// 注意：测试用 Vault 不缓存 MK（mk=null）。
+/// 注意：测试用 Keyring 不缓存 MK（mk=null）。
 /// 由于多设备测试中设备 B 使用与设备 A 相同的 encryptedDataKey，
 /// checkMigrationNeeded 会直接比较 encryptedDataKey 返回无需迁移，不需要 MK。
 SyncEngine _makeEngine({
@@ -163,8 +165,8 @@ SyncEngine _makeEngine({
           ? database.dataKeyForTesting
           : SyncCrypto.generateDataKey());
   final edk = encryptedDataKey ?? base64Encode(SyncCrypto.wrapDataKey(dk, dk));
-  final vid = vaultId ?? 'test-vault-id';
-  final vault = Vault(
+  final vid = vaultId ?? 'test-keyring-id';
+  final keyring = makeTestKeyring(
     vaultId: vid,
     dataKey: dk,
     encryptedDataKey: edk,
@@ -176,8 +178,9 @@ SyncEngine _makeEngine({
   return SyncEngine(
     backend: backend,
     database: database,
-    vault: vault,
+    keyring: keyring,
     deviceId: 'test-device',
+    journal: makeTestJournal(),
   );
 }
 
@@ -307,8 +310,8 @@ void main() {
 
       // 注意：设备 B 需要用相同的 dataKey 才能解密 manifest
       // 这里我们用同一个 dataKey（测试环境）
-      final dataKey = engineA.vault.dataKey;
-      final encryptedDataKey = engineA.vault.encryptedDataKey;
+      final dataKey = engineA.keyring.dataKey;
+      final encryptedDataKey = engineA.keyring.encryptedDataKey;
       final engineB = _makeEngine(
         backend: backend,
         database: database,
@@ -359,8 +362,8 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: database,
-        dataKey: engineA.vault.dataKey,
-        encryptedDataKey: engineA.vault.encryptedDataKey,
+        dataKey: engineA.keyring.dataKey,
+        encryptedDataKey: engineA.keyring.encryptedDataKey,
       );
 
       // 设备 B 同步
@@ -415,18 +418,25 @@ void main() {
       );
       NotesDatabase.setDatabaseForTesting(dbB);
 
+      // 设备 B 的共同祖先（base）= Version A：模拟 B 曾同步收敛到 Version A，
+      // 之后本地把它单边改成 Version B（updatedAt=2000 更新）。远端仍是 Version A
+      // （== base，未变），因此这是「单边编辑」而非双方分叉 —— base hash 判据
+      // 下不应另存副本，纯 LWW 上传覆盖即可。
+      // 若不设 base（syncedHash=null），会退化为「保守保留副本」，多出一次上传。
       final noteB = _makeNote(
         uuid: 'uuid-conflict',
         title: 'Version B (newer)',
         updatedAt: 2000, // 比 A 更新
+      ).copyWith(
+        syncedHash: SafeNote.computeHash('Version A', 'Test Description'),
       );
       await database.storeNote(noteB);
 
       final engineB = _makeEngine(
         backend: backend,
         database: database,
-        dataKey: engineA.vault.dataKey,
-        encryptedDataKey: engineA.vault.encryptedDataKey,
+        dataKey: engineA.keyring.dataKey,
+        encryptedDataKey: engineA.keyring.encryptedDataKey,
       );
 
       // 设备 B 同步
@@ -472,8 +482,8 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: database,
-        dataKey: engineA.vault.dataKey,
-        encryptedDataKey: engineA.vault.encryptedDataKey,
+        dataKey: engineA.keyring.dataKey,
+        encryptedDataKey: engineA.keyring.encryptedDataKey,
       );
 
       // 设备 B 同步
@@ -512,7 +522,7 @@ void main() {
       // 验证远端 manifest 里这条笔记标记为 deleted
       final remoteResponse = await backend.getManifest();
       final remoteManifest = ManifestCrypto.deserialize(
-        engine.vault.dataKey,
+        engine.keyring.dataKey,
         remoteResponse.ciphertext,
       );
       expect(remoteManifest.items['uuid-delete']!.deleted, isTrue);
@@ -548,8 +558,8 @@ void main() {
       final engineB = _makeEngine(
         backend: backend,
         database: database,
-        dataKey: engineA.vault.dataKey,
-        encryptedDataKey: engineA.vault.encryptedDataKey,
+        dataKey: engineA.keyring.dataKey,
+        encryptedDataKey: engineA.keyring.encryptedDataKey,
       );
 
       // 设备 B 同步
@@ -636,10 +646,10 @@ void main() {
       final note = _makeNote(uuid: 'uuid-e2e', title: 'E2E Test');
       await database.storeNote(note);
 
-      // 构造测试用 Vault（dataKey 独立生成，encryptedDataKey 用同一 dataKey 自包装）
+      // 构造测试用 Keyring（dataKey 独立生成，encryptedDataKey 用同一 dataKey 自包装）
       final e2eDataKey = SyncCrypto.generateDataKey();
-      final vault = Vault(
-        vaultId: 'e2e-vault',
+      final keyring = makeTestKeyring(
+        vaultId: 'e2e-keyring',
         dataKey: e2eDataKey,
         encryptedDataKey: base64Encode(
           SyncCrypto.wrapDataKey(e2eDataKey, e2eDataKey),
@@ -652,8 +662,9 @@ void main() {
       final engine = SyncEngine(
         backend: localBackend,
         database: database,
-        vault: vault,
+        keyring: keyring,
         deviceId: 'e2e-test-device',
+        journal: makeTestJournal(),
       );
 
       // 执行同步

@@ -24,13 +24,13 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:safenotes/views/authentication/login.dart';
 import 'package:safenotes/views/authentication/set_passphrase.dart';
 
-/// 启动期 vault 初始化状态(在 main() 预查询后填充)
+/// 启动期 keyring 初始化状态(在 main() 预查询后填充)
 ///
-/// 简化方案:AuthWall 不再读 passPhraseHash 判断路由,改用 Vault.isInitialized。
+/// 简化方案:AuthWall 不再读 passPhraseHash 判断路由,改用 Keyring.isInitialized。
 /// 为避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁,
 /// 在 main() 启动序列里一次性查询并缓存到此单例,AuthWall 直接读取。
 class AppBootState {
-  /// null=未就绪(启动中), true=已有 vault(走登录页), false=无 vault(走设置密码页)
+  /// null=未就绪(启动中), true=已有 keyring(走登录页), false=无 keyring(走设置密码页)
   static bool? vaultInitialized;
 }
 
@@ -46,7 +46,7 @@ class AuthWall extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 简化方案:用 Vault.isInitialized 判断路由(替代 passPhraseHash)
+    // 简化方案:用 Keyring.isInitialized 判断路由(替代 passPhraseHash)
     // AppBootState.vaultInitialized 在 main() 预初始化时填充
     return AppBootState.vaultInitialized == true
         ? EncryptionPhraseLoginPage(

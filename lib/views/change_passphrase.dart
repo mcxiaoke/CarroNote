@@ -25,7 +25,7 @@ import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
@@ -142,8 +142,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     final String inputHintOld = 'Current Passphrase'.tr();
 
     // 简化方案:validator 只做长度检查
-    // 旧密码正确性在 _finalSublmitChange 里通过 vault.changePassword 内部验证
-    // (vault.changePassword 会用旧密码派生 MK 解 dataKey,失败抛 WrongPasswordException)
+    // 旧密码正确性在 _finalSublmitChange 里通过 keyring.changePassword 内部验证
+    // (keyring.changePassword 会用旧密码派生 MK 解 dataKey,失败抛 WrongPasswordException)
     return TextFormField(
       enableIMEPersonalizedLearning: false,
       controller: _oldPassphraseController,
@@ -322,21 +322,21 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       final newPassword = _newConfirmPassphraseController.text;
 
       // 简化方案:旧密码验证前置(评审 kk27c P3)
-      // 用 vault.verifyPassword 只验证不持久化,避免先做备份/同步再发现旧密码错
-      // 验证通过后再做 _preChangeCheck(备份/同步/ping),最后调 vault.changePassword 持久化
-      final vault = SyncService.instance.vault;
-      if (vault == null) {
-        // vault 为 null 说明未登录或状态异常,中止
+      // 用 keyring.verifyPassword 只验证不持久化,避免先做备份/同步再发现旧密码错
+      // 验证通过后再做 _preChangeCheck(备份/同步/ping),最后调 keyring.changePassword 持久化
+      final keyring = SyncService.instance.keyring;
+      if (keyring == null) {
+        // keyring 为 null 说明未登录或状态异常,中止
         if (mounted) {
-          showSnackBarMessage(context, 'Vault 未初始化,请重新登录');
+          showSnackBarMessage(context, 'Keyring 未初始化,请重新登录');
         }
         return;
       }
 
       try {
-        await vault.verifyPassword(oldPassword);
+        await keyring.verifyPassword(oldPassword);
       } on WrongPasswordException {
-        // 旧密码错误(简化方案:vault 是唯一凭证,失败必须中止)
+        // 旧密码错误(简化方案:keyring 是唯一凭证,失败必须中止)
         Log.auth.e('改密码中止：旧密码错误');
         if (mounted) {
           showSnackBarMessage(context, wrongOldPassMsg);
@@ -357,9 +357,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 前置检查通过,执行改密码(验证+持久化)
       // 注意:verifyPassword 已验证过旧密码,changePassword 内部会再次验证(幂等)
-      Vault newVault;
+      Keyring newKeyring;
       try {
-        newVault = await vault.changePassword(
+        newKeyring = await keyring.changePassword(
           oldPassword: oldPassword,
           newPassword: newPassword,
           database: NotesDatabase.instance,
@@ -372,14 +372,14 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         return;
       }
 
-      // 更新 SyncService 中的 Vault(重建 SyncEngine 使用新 encryptedDataKey)
-      await SyncService.instance.updateVault(
-        vault: newVault,
+      // 更新 SyncService 中的 Keyring(重建 SyncEngine 使用新 encryptedDataKey)
+      await SyncService.instance.updateKeyring(
+        keyring: newKeyring,
         database: NotesDatabase.instance,
       );
 
       // 简化方案(评审 hy3/mmm3 A2):改密码成功后必须更新 PhraseHandler + biometric
-      // 否则 biometric secure storage 保留旧密码 → 指纹登录用旧密码解 vault 失败
+      // 否则 biometric secure storage 保留旧密码 → 指纹登录用旧密码解 keyring 失败
       Session.onPasswordSet(newPassword);
 
       // 改密码后立即同步:把新 encryptedDataKey 推送到远端
@@ -424,8 +424,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
     // 2. 若启用同步：强制 sync + 检查 clean + ping 服务器
     final backend = SyncService.instance.backend;
-    final vault = SyncService.instance.vault;
-    if (vault != null && backend != null) {
+    final keyring = SyncService.instance.keyring;
+    if (keyring != null && backend != null) {
       // 2a. ping 服务器确认在线
       final online = await backend.ping();
       if (!online && mounted) {

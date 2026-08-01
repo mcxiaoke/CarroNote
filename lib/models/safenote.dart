@@ -29,6 +29,7 @@ class NoteFields {
     createdAt,
     updatedAt,
     synced,
+    syncedHash,
   ];
 
   static const String id = '_id';
@@ -40,6 +41,10 @@ class NoteFields {
   static const String createdAt = 'created_at';
   static const String updatedAt = 'updated_at';
   static const String synced = 'synced';
+  // 共同祖先 hash：上次同步成功收敛时的 content_hash。
+  // 冲突判定用它区分「单边编辑」与「真并发冲突」（三方合并的 base）。
+  // 明文存储，不加密（与 content_hash 同性质，仅用于同步比对）。
+  static const String syncedHash = 'synced_hash';
 }
 
 class SafeNote {
@@ -53,6 +58,13 @@ class SafeNote {
   final int updatedAt; // Unix 毫秒，用于 LWW 冲突解决
   final bool synced;
 
+  /// 共同祖先 hash：上次同步成功收敛时的 [contentHash]。
+  ///
+  /// 冲突判定的三方合并 base——用它区分「本地/远端只有一方改过」（单边更新，
+  /// 直接采纳，不造副本）与「双方都偏离了共同祖先」（真并发冲突，保留副本）。
+  /// null 表示该笔记从未成功同步过（新笔记或迁移前的未同步数据）。
+  final String? syncedHash;
+
   const SafeNote({
     this.id,
     required this.uuid,
@@ -63,6 +75,7 @@ class SafeNote {
     required this.createdTime,
     required this.updatedAt,
     this.synced = false,
+    this.syncedHash,
   });
 
   /// 创建新笔记的工厂构造函数
@@ -112,6 +125,7 @@ class SafeNote {
     DateTime? createdTime,
     int? updatedAt,
     bool? synced,
+    String? syncedHash,
   }) =>
       SafeNote(
         id: id ?? this.id,
@@ -123,6 +137,7 @@ class SafeNote {
         createdTime: createdTime ?? this.createdTime,
         updatedAt: updatedAt ?? this.updatedAt,
         synced: synced ?? this.synced,
+        syncedHash: syncedHash ?? this.syncedHash,
       );
 
   /// 从数据库行构造（明文存储，无需解密）
@@ -143,6 +158,8 @@ class SafeNote {
     final updatedAt = (json[NoteFields.updatedAt] as int?) ??
         DateTime.now().millisecondsSinceEpoch;
     final synced = (json[NoteFields.synced] as int?) == 1;
+    // 共同祖先 hash：可空。旧备份格式无此字段 → null（视为未同步基线）。
+    final syncedHash = json[NoteFields.syncedHash] as String?;
 
     return SafeNote(
       id: json[NoteFields.id] as int?,
@@ -156,6 +173,7 @@ class SafeNote {
           : DateTime.now(),
       updatedAt: updatedAt,
       synced: synced,
+      syncedHash: syncedHash,
     );
   }
 
@@ -170,6 +188,7 @@ class SafeNote {
       NoteFields.createdAt: createdTime.toIso8601String(),
       NoteFields.updatedAt: updatedAt,
       NoteFields.synced: synced ? 1 : 0,
+      NoteFields.syncedHash: syncedHash,
     };
   }
 
@@ -210,5 +229,6 @@ class SafeNote {
   @override
   String toString() =>
       'SafeNote(id=$id, uuid=$uuid, title="$title", hash=$contentHash, '
-      'deleted=$deleted, updatedAt=$updatedAt, synced=$synced)';
+      'deleted=$deleted, updatedAt=$updatedAt, synced=$synced, '
+      'syncedHash=$syncedHash)';
 }

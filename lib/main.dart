@@ -36,7 +36,7 @@ import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/log_webserver.dart';
@@ -128,11 +128,11 @@ Future<void> _bootstrap() async {
 
   await PreferencesStorage.init();
 
-  // 简化方案:预初始化 db + 一次性查询 Vault.isInitialized
+  // 简化方案:预初始化 db + 一次性查询 Keyring.isInitialized
   // 避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁
   await NotesDatabase.instance.database;
   AppBootState.vaultInitialized =
-      await Vault.isInitialized(NotesDatabase.instance);
+      await Keyring.isInitialized(NotesDatabase.instance);
   Log.app.i('数据库就绪 (vaultInitialized=${AppBootState.vaultInitialized})');
 
   await SystemChrome.setPreferredOrientations([

@@ -8,7 +8,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/sync/vault.dart';
+import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/local_fs_backend.dart';
@@ -34,7 +34,7 @@ void main() {
     );
     NotesDatabase.setDatabaseForTesting(db);
 
-    final vault = await Vault.unlockFromRemoteManifest(
+    final keyring = await Keyring.unlockFromRemoteManifest(
       password: 'hello.5555',
       remoteVaultId: header.vaultId,
       remoteEncryptedDataKey: header.encryptedDataKey,
@@ -46,7 +46,7 @@ void main() {
       database: NotesDatabase.instance,
     );
 
-    final manifest = ManifestCrypto.deserialize(vault.dataKey, resp.ciphertext);
+    final manifest = ManifestCrypto.deserialize(keyring.dataKey, resp.ciphertext);
     print('baseline items=${manifest.items.length} '
         'kv=${header.keyVersion} epoch=${header.dataKeyEpoch}');
 
@@ -74,18 +74,18 @@ void main() {
         var via = 'v2-hash';
         try {
           if (item.blobKeyEpoch > 0) {
-            plain = SyncCrypto.open(vault.dataKey, item.hash, blob,
+            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob,
                 epoch: item.blobKeyEpoch);
             via = 'epoch';
           } else {
-            plain = SyncCrypto.open(vault.dataKey, item.hash, blob);
+            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob);
           }
         } on Object {
           try {
-            plain = SyncCrypto.open(vault.dataKey, item.hash, blob);
+            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob);
             via = 'v2-hash';
           } on Object {
-            plain = SyncCrypto.open(vault.dataKey, uuid, blob);
+            plain = SyncCrypto.open(keyring.dataKey, uuid, blob);
             via = 'v1-uuid';
           }
         }
