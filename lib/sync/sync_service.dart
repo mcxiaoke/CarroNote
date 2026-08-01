@@ -569,10 +569,18 @@ class SyncService {
   /// 切换后端（设置页修改同步配置后调用）
   ///
   /// 关闭旧后端，初始化新后端。
+  ///
+  /// P6 修复（DS001）：切换前检查同步互斥锁。同步/修复进行中时 `_backend.close()`
+  /// 会关闭正在被 [SyncEngine] 使用的连接或文件句柄，后续 I/O 将收到
+  /// BackendUnavailableException 或静默错误 → 同步结果不可预测。与 [sync] /
+  /// [repairRemote] 的互斥语义一致，此处拒绝切换。
   Future<void> switchBackend({
     required SyncBackend backend,
     required NotesDatabase database,
   }) async {
+    if (_syncInProgress) {
+      throw StateError('同步进行中，无法切换后端，请稍后重试');
+    }
     await _backend?.close();
     _backend = backend;
     await backend.init();

@@ -479,9 +479,15 @@ void main() {
       await File('${dir.path}/blobs/$orphanHash')
           .writeAsBytes([7, 7, 7]);
 
-      // 再次同步触发 GC（远端非空 → 不 skipGc）
-      final r = await engine.sync();
-      expect(r.success, isTrue);
+      // 首次同步：P2 两阶段 GC 只登记候选、不隔离（保护「他端正在上传」的窗口）
+      final r1 = await engine.sync();
+      expect(r1.success, isTrue);
+      expect(await File('${dir.path}/blobs/$orphanHash').exists(), isTrue,
+          reason: '两阶段 GC：首次观察只登记候选，不应立即隔离');
+
+      // 再次同步：连续第二次观察仍为孤儿 → 软删除到隔离区
+      final r2 = await engine.sync();
+      expect(r2.success, isTrue);
 
       // 孤儿 blob 不应再留在 blobs/，而应进入 blobs-orphan/
       expect(await File('${dir.path}/blobs/$orphanHash').exists(), isFalse,

@@ -707,14 +707,67 @@ void main() {
       backend._blobs[orphanHash] = orphanData;
       expect(backend._blobs.length, 2); // 1 个引用 + 1 个孤儿
 
-      // 再次同步（触发 GC）
-      final result = await engine.sync();
-      expect(result.success, isTrue);
+      // 再次同步（P2 两阶段 GC：首次观察只登记候选，不隔离——
+      // 保护「他端刚 putBlob、尚未 putManifest」的并发窗口）
+      final r1 = await engine.sync();
+      expect(r1.success, isTrue);
+      expect(backend._blobs.containsKey(orphanHash), isTrue,
+          reason: '两阶段 GC：首次观察仅登记候选，不应立即隔离');
+
+      // 再同步（连续第二次观察仍为孤儿 → 才隔离）
+      final r2 = await engine.sync();
+      expect(r2.success, isTrue);
 
       // 验证：孤儿 blob 被删除，引用的 blob 保留
       expect(backend._blobs.containsKey(orphanHash), isFalse);
       expect(backend._blobs.containsKey(note.contentHash), isTrue);
       expect(backend._blobs.length, 1);
+    });
+
+    test('两阶段 GC：候选 blob 被他端引用后不再隔离（并发窗口保护）', () async {
+      // 准备：本地有 1 条笔记，同步上传
+      final note = _makeNote(uuid: 'gc-race-uuid', title: 'GC Race');
+      await database.storeNote(note);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+      expect(backend._blobs.containsKey(note.contentHash), isTrue);
+
+      // 模拟他端「正在上传」的 blob：已 putBlob、尚未 putManifest
+      final inFlight = 'f' * 64;
+      backend._blobs[inFlight] = Uint8List.fromList([9, 9]);
+
+      // 第 1 次同步：GC 观察到孤儿候选，但不应隔离（保护上传窗口）
+      final r1 = await engine.sync();
+      expect(r1.success, isTrue);
+      expect(backend._blobs.containsKey(inFlight), isTrue,
+          reason: '首次观察不得隔离正在上传的 blob');
+
+      // 他端随后提交 manifest（引用该 blob）
+      backend._blobs[inFlight] = Uint8List.fromList([9, 9]);
+      final remoteManifest = await backend.getManifest();
+      final remote = ManifestCrypto.deserialize(
+        testDataKey,
+        remoteManifest.ciphertext,
+      );
+      final items = Map<String, ManifestItem>.from(remote.items)
+        ..['he-other'] = ManifestItem(
+          hash: inFlight,
+          deleted: false,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          updatedBy: 'other-device',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        );
+      await backend.putManifest(
+        ManifestCrypto.serialize(testDataKey, remote.copyWith(items: items)),
+        remoteManifest.etag,
+      );
+
+      // 第 2 次同步：该 blob 已被 manifest 引用 → 不再是孤儿，不得隔离
+      final r2 = await engine.sync();
+      expect(r2.success, isTrue);
+      expect(backend._blobs.containsKey(inFlight), isTrue,
+          reason: '他端已提交 manifest 引用的 blob 不得被 GC 隔离');
+      expect(backend._blobs.containsKey(note.contentHash), isTrue);
     });
 
     test('墓碑 GC：超 30 天的墓碑从 manifest 移除并硬删除', () async {

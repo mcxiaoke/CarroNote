@@ -87,6 +87,10 @@ class MetaKeys {
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
   // Layer 2a: dataKey 变更后需强制重传 blob 的笔记 uuid 列表（JSON 数组）
   static const String blobReuploadPending = 'blob_reupload_pending';
+  // P2 修复（DS002）：孤儿 blob 两阶段 GC 的候选表（JSON 对象 hash→首次观察时间戳）。
+  // 首次观察到孤儿只登记候选、不隔离；连续第二次观察仍为孤儿才隔离，
+  // 从而避开「他端刚 putBlob 尚未 putManifest」的并发窗口。
+  static const String gcOrphanCandidates = 'gc_orphan_candidates';
 }
 
 class NotesDatabase {
@@ -785,6 +789,28 @@ class NotesDatabase {
     );
   }
 
+  /// 标记所有笔记为已同步，但排除指定 uuid（P6 修复，DS002）
+  ///
+  /// 排除的笔记本轮**并未收敛**（如上传失败的笔记：本地是新内容、远端仍是旧内容，
+  /// 二者未达成一致）。若把它们也 markSynced，synced_hash 会被写成「远端没有的
+  /// 新 hash」，污染下一轮冲突判定的三方合并 base（详见 sync_engine
+  /// _mergeAndTransfer 的 shouldPreserveCopy 判定）。排除后这些笔记保持
+  /// synced=0、synced_hash 为旧 base，下次同步照常重试。
+  Future<void> markAllSyncedExcept(Set<String> exclude) async {
+    if (exclude.isEmpty) {
+      await markAllSynced();
+      return;
+    }
+    final db = await instance.database;
+    final placeholders = List.filled(exclude.length, '?').join(',');
+    await db.rawUpdate(
+      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+      'WHERE ${NoteFields.uuid} NOT IN ($placeholders)',
+      exclude.toList(),
+    );
+  }
+
   // ──────────────────────────────────────────────
   // Layer 2a: dataKey 变更后强制重传 blob
   // ──────────────────────────────────────────────────
@@ -832,6 +858,60 @@ class NotesDatabase {
       where: '${MetaFields.key} = ?',
       whereArgs: [MetaKeys.blobReuploadPending],
     );
+  }
+
+  /// 仅移除「本轮已成功重传」的待重传标记（P1 修复）
+  ///
+  /// 与 [clearAllPendingReupload] 的区别：重传**失败**的笔记保留标记，下次同步
+  /// 继续强制用新密钥重传，避免旧密钥 blob 永久残留；远程独享笔记（本机无明文）
+  /// 不属于本轮上传集合，自然保留。本机无法处理的 uuid 由其他设备重传后，
+  /// 下次同步成功上传时也会被移除。
+  Future<void> removePendingReuploadUuids(Set<String> uploadedOk) async {
+    if (uploadedOk.isEmpty) return;
+    final current = await getPendingReuploadUuids();
+    if (current.isEmpty) return;
+    final remaining = current.difference(uploadedOk);
+    if (remaining.isEmpty) {
+      await clearAllPendingReupload();
+    } else {
+      await setMeta(MetaKeys.blobReuploadPending, jsonEncode(remaining.toList()));
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // 孤儿 blob 两阶段 GC 的候选表（P2 修复，DS002）
+  // ──────────────────────────────────────────────────
+  //
+  // 背景：GC 的 listBlobs() 可能包含「他端刚 putBlob、尚未 putManifest」的 blob，
+  // 单次观察就隔离会误删正在上传的内容（manifest 引用它时已进隔离区）。
+  // 解法：首次观察只登记候选、不隔离；连续第二次观察仍为孤儿才隔离，
+  // 给他端一个完整同步周期的窗口把 blob 提交进 manifest。
+  // 候选表按设备本地持久化（hash → 首次观察时间戳），重启不丢。
+
+  /// 读取孤儿 blob 候选表（hash → 首次观察时间戳；空表示无候选）
+  Future<Map<String, int>> getGcOrphanCandidates() async {
+    final raw = await getMeta(MetaKeys.gcOrphanCandidates);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return map.map((k, v) => MapEntry(k, v as int));
+    } on Object {
+      return {};
+    }
+  }
+
+  /// 覆盖写入孤儿 blob 候选表
+  Future<void> setGcOrphanCandidates(Map<String, int> candidates) async {
+    if (candidates.isEmpty) {
+      final db = await instance.database;
+      await db.delete(
+        tableMeta,
+        where: '${MetaFields.key} = ?',
+        whereArgs: [MetaKeys.gcOrphanCandidates],
+      );
+      return;
+    }
+    await setMeta(MetaKeys.gcOrphanCandidates, jsonEncode(candidates));
   }
 
   // ──────────────────────────────────────────────
