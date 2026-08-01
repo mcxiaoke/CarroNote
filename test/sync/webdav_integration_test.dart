@@ -1187,14 +1187,14 @@ void main() {
           reason: '重传后不应再报告失败');
 
       // 断言：blob 现在用 dataKeyNew 加密（旧密钥打不开，新密钥能打开并还原内容）
-      // 协议 v2：重传后的 blob AAD = '<epoch>|内容 hash'（epoch 为当前 dataKeyEpoch）
+      // blob 纯化 v4：AAD = 内容 hash（无 epoch）
       final blob = await backend.getBlob(hash);
       expect(blob, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, hash, blob!, epoch: 1);
+      final opened = SyncCrypto.open(dataKeyNew, hash, blob!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, 'Mig');
       expect(
-        () => SyncCrypto.open(dataKeyOld, hash, blob, epoch: 1),
+        () => SyncCrypto.open(dataKeyOld, hash, blob),
         throwsA(isA<Object>()),
         reason: '旧密钥应无法再解开已被重传覆盖的 blob',
       );
@@ -1314,10 +1314,10 @@ void main() {
       );
 
       // 修复后的 blob（localHash）现在用 dataKeyNew 加密且内容为本机明文
-      // （协议 v2：AAD = '<epoch>|内容 hash'）
+      // （blob 纯化 v4：AAD = 内容 hash）
       final repaired = await backend.getBlob(localHash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!, epoch: 1);
+      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, localTitle);
 
@@ -1397,8 +1397,8 @@ void main() {
 
   });
 
-  group('容错与自愈 - Layer 3 显式密钥纪元修复', () {
-    test('blob 纪元过期被显式重传现代化（heal）', () async {
+  group('容错与自愈 - blob 纯化（v4）审计元数据', () {
+    test('item.blobKeyEpoch 声明与本地不同时仅作审计，不影响解密（无 heal）', () async {
       final dataKey = SyncCrypto.generateDataKey();
       final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
       database.setDataKey(dataKey);
@@ -1427,6 +1427,8 @@ void main() {
             updatedBy: 'seed',
             createdAt: 1700000000000,
             contentSize: 64,
+            // 声明纪元=1 与本地 dataKeyEpoch=2 不同：v4 下纯审计元数据，
+            // 解密不读它（AAD=hash），不触发任何 heal/重传
             blobKeyEpoch: 1,
           ),
         },
@@ -1434,34 +1436,33 @@ void main() {
         kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
       );
 
-      // 注入 blob：用当前 dataKey 加密但 AAD 纪元=1（可被当前 key 解开）
+      // 注入 blob：blob 纯化后 AAD=内容 hash（与纪元无关，当前 key 可直接解开）
       final content =
           _makeNote(uuid: uuid, title: title, description: description);
-      final blob =
-          SyncCrypto.seal(dataKey, hash, content.toContentBytes(), epoch: 1);
+      final blob = SyncCrypto.seal(dataKey, hash, content.toContentBytes());
       await backend.putBlob(hash, blob);
 
       final result = await engine.sync();
       expect(result.success, isTrue, reason: '同步应成功');
       expect(result.downloaded, greaterThanOrEqualTo(1));
       expect(result.failedNoteUuids, isEmpty,
-          reason: '纪元过期应被自愈而非失败');
+          reason: '声明纪元不同不是失败原因，v4 不再需要自愈');
 
-      // 应产生 heal action（纪元不匹配显式修复）
+      // v4 删除了「纪元不符→当前纪元重传」的 heal 分支，不应产生 heal action
       final healed = result.actions
           .where((a) => a.type == SyncActionType.heal && a.uuid == uuid)
           .toList();
-      expect(healed, isNotEmpty, reason: '应产生纪元修复 heal action');
+      expect(healed, isEmpty, reason: 'blob 纯化后不应有纪元修复 heal');
 
-      // 重新拉取远端 manifest，验证 item.blobKeyEpoch 已被修正为 2
+      // 重新拉取远端 manifest：item.blobKeyEpoch 保持 1（不再被强制改写）
       final resp = await backend.getManifest();
       final cur = ManifestCrypto.deserialize(dataKey, resp.ciphertext);
-      expect(cur.items[uuid]?.blobKeyEpoch, 2);
+      expect(cur.items[uuid]?.blobKeyEpoch, 1);
 
-      // 重新上传的 blob 用 v2 AAD（'<epoch>|hash'，epoch=当前 dataKeyEpoch=2）可解
+      // blob 用 AAD=hash 可直接解开，内容完整
       final repaired = await backend.getBlob(hash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKey, hash, repaired!, epoch: 2);
+      final opened = SyncCrypto.open(dataKey, hash, repaired!);
       final c = SafeNote.fromContentBytes(opened);
       expect(c.title, title);
     });
@@ -1505,13 +1506,13 @@ void main() {
       );
 
       // 坏 blob 用 dataKeyOld 加密，但本机未归档该历史密钥、也无明文
+      // （blob 纯化 v4：AAD=hash，dataKeyOld 解不开即损坏）
       final content =
           _makeNote(uuid: uuid, title: title, description: description);
       final blob = SyncCrypto.seal(
         dataKeyOld,
         hash,
         content.toContentBytes(),
-        epoch: 1,
       );
       await backend.putBlob(hash, blob);
 

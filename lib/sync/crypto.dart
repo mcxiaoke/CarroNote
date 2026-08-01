@@ -129,6 +129,25 @@ class SyncCrypto {
     return sha256.convert(masterKey).toString();
   }
 
+  /// 计算 dataKey 指纹 = H(dataKey)（v4 epoch 消除设计新增）
+  ///
+  /// 用途（item 自描述 + 只读解密，docs/epoch-elimination-design-20260801.md
+  /// §4.1 / §8.2[D]）：
+  ///   - 写入 [ManifestItem.dataKeyFingerprint]：标记「加密该 blob 的 dataKey
+  ///     身份」，本地构建时恒为当前指纹，解密端不推断、不比较、不纠正。
+  ///   - 解密失败时精确区分「旧 key 数据（可提示）」与「真损坏（不可修）」：
+  ///     `item.dataKeyFingerprint == 当前指纹` 却解不开 → 真损坏；
+  ///     不等 → 旧密钥数据，提示修复线索。
+  ///
+  /// 安全性：SHA-256 单向，仅泄露「dataKey 身份」不泄露 dataKey 本身；
+  /// 是 epoch（dataKey 的冗余别名）的替代，作为自包含的密钥身份。
+  ///
+  /// [dataKey] 32 字节的数据主密钥
+  /// 返回 SHA-256(dataKey) 的十六进制字符串
+  static String computeDataKeyFingerprint(Uint8List dataKey) {
+    return sha256.convert(dataKey).toString();
+  }
+
   /// Isolate 入口函数：执行 PBKDF2 派生
   ///
   /// 必须是顶层函数或静态方法，不能捕获外部状态。
@@ -180,17 +199,18 @@ class SyncCrypto {
 
   /// 构造信封的 AAD
   ///
-  /// blob 信封携带 dataKey 纪元，格式为 `'$epoch|$id'`，使下载方能显式判断
-  /// blob 是否被非当前 dataKey 加密。使用单调 int 纪元而非 dataKey 哈希，
-  /// 避免把 dataKey 秘密泄露给半可信服务器。
+  /// **blob 纯化（v4，epoch 消除设计）**：blob 信封是纯数据，AAD 恒为裸
+  /// `id`（内容 hash / 固定常量），**不再携带 epoch**。解密只问「dataKey 对
+  /// 不对」——能解开即当前 key，解不开即「非当前 key 或损坏」，epoch 不参与
+  /// 判定。历史教训：epoch 进 AAD（`'$epoch|$id'`）会让「同 key 解不开」的
+  /// 假性失败成为翻转事故的放大器（见 docs/epoch-elimination-design-20260801.md
+  /// §4.2）。
   ///
-  /// 非 blob 信封（manifest items / journal / 本地库字段）传 [epoch] 为 null，
-  /// AAD 即裸 `id`（如固定常量 `manifest-items` / `journal-aad` / uuid），
-  /// 这是它们各自的既有格式，与 blob 的纪元协议无关。
-  static Uint8List _blobAad(String id, int? epoch) {
-    if (epoch != null && epoch > 0) {
-      return Uint8List.fromList(utf8.encode('$epoch|$id'));
-    }
+  /// 各类信封的 AAD：
+  ///   - blob：内容 hash（v2 起的内容寻址格式，回归 07-29 原始设计）
+  ///   - manifest items / journal / 本地库字段：固定常量（`manifest-items` /
+  ///     `journal-aad` / uuid），与 blob 协议无关
+  static Uint8List _blobAad(String id) {
     return Uint8List.fromList(utf8.encode(id));
   }
 
@@ -198,16 +218,14 @@ class SyncCrypto {
   ///
   /// [id] 笔记内容 hash（内容寻址，v2 起），作为 AAD 的一部分。
   /// [plaintext] 笔记明文（UTF-8 编码后的字节）
-  /// [epoch] dataKey 纪元：AAD 携带纪元，显式标记加密所用 dataKey。
   /// 返回信封：nonce(12) ‖ ciphertext ‖ tag(16)
   static Uint8List seal(
     Uint8List dataKey,
     String id,
     Uint8List plaintext, {
-    int? epoch,
     Uint8List? nonce,
   }) {
-    final aad = _blobAad(id, epoch);
+    final aad = _blobAad(id);
     return _aesGcmEncrypt(
         dataKey, nonce ?? _secureRandom(_nonceLength), aad, plaintext);
   }
@@ -215,14 +233,12 @@ class SyncCrypto {
   /// 用 dataKey 解密笔记信封，返回明文字节
   ///
   /// [id] 必须与加密时一致（内容 hash）。
-  /// [epoch] 必须与加密时的纪元一致才能通过 GCM tag 验证。
   static Uint8List open(
     Uint8List dataKey,
     String id,
-    Uint8List envelope, {
-    int? epoch,
-  }) {
-    final aad = _blobAad(id, epoch);
+    Uint8List envelope,
+  ) {
+    final aad = _blobAad(id);
     return _aesGcmDecrypt(dataKey, aad, envelope);
   }
 

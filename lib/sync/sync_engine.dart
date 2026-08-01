@@ -735,75 +735,30 @@ class SyncEngine {
         continue;
       }
 
-      // 3a. 用当前 dataKey 解密（P6：声明纪元失败时回退探测实际纪元）
+      // 3a. 用当前 dataKey 解密（blob 纯化 v4：AAD=hash，无纪元探测）
       Uint8List? workingKey;
-      var actualEpoch = item.blobKeyEpoch;
       try {
         _openBlobEnvelope(
           uuid,
           item.hash,
           blob,
-          blobKeyEpoch: item.blobKeyEpoch,
           dataKeyOverride: _dataKey,
         );
         workingKey = _dataKey;
       } on SyncDecryptionException {
-        // 声明纪元失败：回退探测实际纪元（与 _downloadNote 的 P6 修复一致）
-        final recovered = _probeBlobEpoch(uuid, item.hash, blob);
-        if (recovered != null) {
-          workingKey = _dataKey;
-          actualEpoch = recovered.epoch;
-        }
+        // 解密失败：当前 key 解不开（非当前 key 或损坏），进入下方修复分支
       } on Object catch (e, st) {
         // 其他异常（数据损坏），记录后进入修复分支
         Log.sync.d('repairRemote: 当前密钥解密异常 uuid=$uuid', error: e, stackTrace: st);
       }
 
       if (workingKey != null) {
-        // 以实际解开 blob 的纪元判断是否需要现代化（兼容声明纪元过期）
-        final needsModernize = actualEpoch != keyring.dataKeyEpoch;
-        if (needsModernize) {
-          final plaintext = _openBlobEnvelope(
-            uuid,
-            item.hash,
-            blob,
-            blobKeyEpoch: actualEpoch,
-            dataKeyOverride: workingKey,
-          );
-          final content = SafeNote.fromContentBytes(plaintext);
-          final note = SafeNote(
-            uuid: uuid,
-            title: content.title,
-            description: content.description,
-            contentHash: item.hash,
-            deleted: false,
-            createdTime: DateTime.fromMillisecondsSinceEpoch(item.createdAt),
-            updatedAt: item.updatedAt,
-            synced: true,
-          );
-          // P1 修复：现代化重传失败时保留原条目（旧纪元，解密 AAD 正确），
-          // 避免 manifest 声明当前纪元但 blob 实为旧纪元导致他端解密失败；
-          // 下次 repairRemote 重试。
-          if (await _uploadNote(note, actions)) {
-            _addAction(actions, SyncAction(
-              type: SyncActionType.heal,
-              uuid: uuid,
-              hash: item.hash,
-              message: 'repair: blob 纪元过时，重新上传为当前纪元',
-            ));
-            repairedItems[uuid] =
-                item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
-          } else {
-            repairedItems[uuid] = item;
-          }
-        } else {
-          // blob 已是当前纪元：直接采用（纪元无需更新）
-          repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
-        }
+        // blob 能由当前 dataKey 解开：内容有效，直接采用
+        repairedItems[uuid] = item;
         continue;
       }
 
-      // 3b. 候选密钥全部失败 → 回退本机明文（同 uuid 或同内容孪生）
+      // 3b. 解密失败 → 回退本机明文（同 uuid 或同内容孪生）
       final local = await database.readNoteByUuid(uuid);
       final twin =
           local == null ? await database.readNoteByContentHash(item.hash) : null;
@@ -816,7 +771,7 @@ class SyncEngine {
       if (source != null && !source.deleted && source.contentHash == item.hash) {
         // P1 修复：重传失败不声明 heal（保持原条目 + 进入失败列表），下次重试。
         if (await _uploadNote(source, actions)) {
-          repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
+          repairedItems[uuid] = item;
           _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
@@ -1376,7 +1331,6 @@ class SyncEngine {
           uuid,
           loserItem.hash,
           envelope,
-          blobKeyEpoch: loserItem.blobKeyEpoch,
         );
         final content = SafeNote.fromContentBytes(plaintext);
 
@@ -1543,7 +1497,7 @@ class SyncEngine {
 
     // 加密笔记内容为 envelope（Layer 1：单个 blob 上传失败不应中断整次同步）
     //
-    // AAD 使用内容 hash + 当前 dataKey 纪元（与 blob 内容寻址一致，epoch 显式标记）。
+    // AAD 使用内容 hash（blob 纯化 v4：AAD=hash，不再携带 epoch）。
     // 原因：blob 按内容 hash 去重，两条内容相同的笔记共享同一个 blob 文件；
     // 若 AAD 绑定 uuid，则该 blob 只能被"上传者的 uuid"解开，
     // 其他引用同一 hash 的笔记在别的设备上永远解密失败（GCM tag 不匹配）。
@@ -1555,7 +1509,6 @@ class SyncEngine {
         _dataKey,
         note.contentHash,
         note.toContentBytes(),
-        epoch: keyring.dataKeyEpoch,
       );
       await backend.putBlob(note.contentHash, envelope);
     } on BackendUnavailableException catch (e, st) {
@@ -1604,53 +1557,20 @@ class SyncEngine {
     return true;
   }
 
-  /// 解密 blob 信封（Layer 3 纪元格式）
+  /// 解密 blob 信封（blob 纯化 v4：AAD=hash，无纪元）
   ///
-  /// AAD = '$epoch|$hash'（用 blob 自己的纪元解开，与「当前 dataKey 纪元」无关）。
-  /// 解密失败向上抛出（调用方进入 Layer 1/2b/3 容错自愈流程）。
+  /// AAD = hash（用 blob 自己的内容 hash 解开，与「当前 dataKey 纪元」无关）。
+  /// 解密失败向上抛出（调用方进入 Layer 1/2b 容错自愈流程）。
   ///
   /// [dataKeyOverride] 可选：用指定的 dataKey 解密（默认当前 _dataKey）。
   Uint8List _openBlobEnvelope(
     String uuid,
     String hash,
     Uint8List envelope, {
-    int blobKeyEpoch = 1,
     Uint8List? dataKeyOverride,
   }) {
     final key = dataKeyOverride ?? _dataKey;
-    return SyncCrypto.open(key, hash, envelope, epoch: blobKeyEpoch);
-  }
-
-  /// 探测 blob 的实际加密纪元并返回明文与所用纪元。
-  ///
-  /// P6 修复：manifest 声明的 [ManifestItem.blobKeyEpoch] 可能过期——客户端在
-  /// 崩溃窗口内可能声明当前纪元、而 blob 实为旧纪元（真实数据出现「声明 2 /
-  /// 实际 1」），用声明纪元解密失败会被误判为「真损坏」导致可恢复数据丢失。
-  /// 这里从纪元 1 递增到当前纪元逐个尝试，找到首个「解密成功且明文 hash 与
-  /// manifest 一致」的纪元即返回；全部失败返回 null。
-  ///
-  /// 安全性：AES-GCM 标签校验保证误用纪元不会放行错误明文；hash 校验进一步
-  /// 防止「用旧纪元碰巧解开但内容与 manifest 不符」被误收。
-  ({Uint8List plaintext, int epoch})? _probeBlobEpoch(
-    String uuid,
-    String hash,
-    Uint8List envelope,
-  ) {
-    for (var epoch = 1; epoch <= keyring.dataKeyEpoch; epoch++) {
-      try {
-        final plaintext =
-            _openBlobEnvelope(uuid, hash, envelope, blobKeyEpoch: epoch);
-        final content = SafeNote.fromContentBytes(plaintext);
-        if (SafeNote.computeHash(content.title, content.description) == hash) {
-          return (plaintext: plaintext, epoch: epoch);
-        }
-      } on SyncDecryptionException {
-        continue;
-      } on Object {
-        // InvalidTag 等非 Exception 错误，忽略继续探测
-      }
-    }
-    return null;
+    return SyncCrypto.open(key, hash, envelope);
   }
 
   /// 从远端下载单条笔记并写入本地数据库
@@ -1732,29 +1652,13 @@ class SyncEngine {
       return _DownloadFailed(uuid);
     }
 
-    // 解密（Layer 1 容错 + Layer 2b 自愈；Layer 3 epoch 格式）
-    // P6 修复：manifest 声明的 blobKeyEpoch 可能过期（真实数据暴露「声明当前
-    // 纪元、blob 实为旧纪元」），用声明纪元解密失败会被误判为真损坏。
-    // 声明纪元失败时回退探测实际纪元（_probeBlobEpoch），找到即可自愈恢复。
+    // 解密（blob 纯化 v4：AAD=hash，解密只问「dataKey 对不对」）
+    // 不再探测/比较 epoch（_probeBlobEpoch 已删）：用当前 dataKey 直接 open，
+    // 能解开即当前 key，解不开进入 _handleDownloadFailure 自愈/失败流程。
+    // 删除的 heal 分支曾「用当前纪元重传覆盖他人数据」——正是翻转事故的
+    // 制度性根源（见 docs/epoch-elimination-design-20260801.md §5.4）。
     try {
-      late Uint8List plaintext;
-      var actualEpoch = item.blobKeyEpoch;
-      try {
-        plaintext = _openBlobEnvelope(
-          uuid,
-          item.hash,
-          envelope,
-          blobKeyEpoch: item.blobKeyEpoch,
-        );
-      } on Object {
-        final recovered = _probeBlobEpoch(uuid, item.hash, envelope);
-        if (recovered == null) {
-          // 所有候选纪元均失败 → 抛给外层 catch，进入 _handleDownloadFailure 自愈/失败流程
-          rethrow;
-        }
-        plaintext = recovered.plaintext;
-        actualEpoch = recovered.epoch;
-      }
+      final plaintext = _openBlobEnvelope(uuid, item.hash, envelope);
       final content = SafeNote.fromContentBytes(plaintext);
 
       // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
@@ -1773,76 +1677,6 @@ class SyncEngine {
           message: 'blob 内容 hash 校验失败（内容被篡改），跳过',
         ));
         return _DownloadFailed(uuid);
-      }
-
-      // Layer 3：显式「旧密钥 blob」检测（区分「错密钥可修」与「真损坏不可修」）。
-      // 判断依据从「manifest 声明的 blobKeyEpoch」改为「实际解开 blob 的纪元」：
-      // 覆盖正常旧纪元（声明与实际一致）与 P6 的声明过期（声明当前纪元、实际
-      // 是旧纪元）两种情况。内容能解开（dataKey 实际一致）时仍用当前纪元重传
-      // 一次以现代化（自愈），并让合并 manifest 改为引用修复后的纪元。
-      if (actualEpoch != keyring.dataKeyEpoch) {
-        // 用当前纪元重传 blob（现代化），需把 record 还原成 SafeNote 再上传
-        final note = SafeNote(
-          uuid: uuid,
-          title: content.title,
-          description: content.description,
-          contentHash: item.hash,
-          deleted: false,
-          createdTime: DateTime.fromMillisecondsSinceEpoch(item.createdAt),
-          updatedAt: item.updatedAt,
-          synced: true,
-        );
-        // P1 修复：重传失败时仍物化本地（用户能读到内容），但 manifest 保留
-        // 旧纪元条目（正确选择解密 AAD 的 epoch），下次同步再尝试现代化。
-        final uploaded = await _uploadNote(note, actions);
-
-        // 物化到本地（与正常下载路径一致），避免本地库缺失该笔记，
-        // 同时让本次同步的 downloaded 计数反映已获取到的内容。
-        final existing = await database.readNoteByUuid(uuid);
-        final stored = SafeNote(
-          id: existing?.id,
-          uuid: uuid,
-          title: content.title,
-          description: content.description,
-          contentHash: item.hash,
-          deleted: false,
-          createdTime: existing?.createdTime ??
-              DateTime.fromMillisecondsSinceEpoch(item.createdAt),
-          updatedAt: item.updatedAt,
-          synced: true,
-        );
-        if (existing == null) {
-          await database.storeNote(stored);
-        } else {
-          await database.updateNoteByUuid(stored);
-        }
-        _addAction(actions, SyncAction(
-          type: SyncActionType.download,
-          uuid: uuid,
-          hash: item.hash,
-        ));
-        if (!uploaded) {
-          // 现代化重传失败：保留原条目（旧纪元，解密 AAD 正确），
-          // 避免 manifest 声明当前纪元但 blob 实为旧纪元导致他端解密失败。
-          return _DownloadSuccess(item);
-        }
-        _addAction(actions, SyncAction(
-          type: SyncActionType.heal,
-          uuid: uuid,
-          hash: item.hash,
-          message: 'blob 实际纪元($actualEpoch)与当前(${keyring.dataKeyEpoch})'
-              '不符，已用当前纪元重传',
-        ));
-        return _DownloadHealed(ManifestItem(
-          hash: item.hash,
-          deleted: item.deleted,
-          updatedAt: item.updatedAt,
-          updatedBy: deviceId,
-          createdAt: item.createdAt,
-          deletedAt: item.deletedAt,
-          contentSize: item.contentSize,
-          blobKeyEpoch: keyring.dataKeyEpoch,
-        ));
       }
 
       // 写入本地数据库（upsert）

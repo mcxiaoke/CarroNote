@@ -1,6 +1,5 @@
 // 临时诊断：校验 118 副本源数据自身的一致性（blob 内容 hash vs manifest hash）。用完即删。
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -69,33 +68,14 @@ void main() {
         continue;
       }
       try {
-        // 与引擎相同的三重兼容解密（epoch AAD → v2 AAD=hash → v1 AAD=uuid）
-        Uint8List plain;
-        var via = 'v2-hash';
-        try {
-          if (item.blobKeyEpoch > 0) {
-            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob,
-                epoch: item.blobKeyEpoch);
-            via = 'epoch';
-          } else {
-            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob);
-          }
-        } on Object {
-          try {
-            plain = SyncCrypto.open(keyring.dataKey, item.hash, blob);
-            via = 'v2-hash';
-          } on Object {
-            plain = SyncCrypto.open(keyring.dataKey, uuid, blob);
-            via = 'v1-uuid';
-          }
-        }
+        // blob 纯化 v4：与引擎一致的单格式解密（AAD=hash，无 epoch）
+        final plain = SyncCrypto.open(keyring.dataKey, item.hash, blob);
         final content = SafeNote.fromContentBytes(plain);
         final actual = SafeNote.computeHash(content.title, content.description);
         if (actual != item.hash) {
           mismatch++;
           print('MISMATCH uuid=$uuid manifestHash=${item.hash.substring(0, 10)} '
               'actualHash=${actual.substring(0, 10)} epoch=${item.blobKeyEpoch} '
-              'via=$via '
               'title=${content.title.substring(0, content.title.length > 20 ? 20 : content.title.length)}');
         } else {
           ok++;

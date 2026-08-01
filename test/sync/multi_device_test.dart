@@ -849,7 +849,7 @@ void main() {
 
       // 篡改远端 blob：用相同 dataKey 加密不同内容，但保持 hash 不变
       // （模拟服务端返回内容不一致的合法信封）。
-      // 注意：AAD 采用当前协议 `epoch|hash`，信封必须能被解开，内容 hash 才会被比对。
+      // 注意：blob 纯化 v4 后 AAD = hash，信封必须能被解开，内容 hash 才会被比对。
       final remoteManifest = ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
@@ -862,7 +862,6 @@ void main() {
           'title': 'Tampered',
           'description': 'Malicious content',
         }))),
-        epoch: 1,
       );
       backend.putTamperedBlob(originalHash, tamperedEnvelope);
 
