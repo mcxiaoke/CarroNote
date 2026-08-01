@@ -665,8 +665,9 @@ class SyncEngine {
           // P1 修复：重传失败时不声明 heal 成功（repairedItems 保持原条目、
           // 进入失败列表），下次 repairRemote 重试。
           if (await _uploadNote(source, actions)) {
-            repairedItems[uuid] =
-                item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
+            // v4：blob 纯化后 blobKeyEpoch 是纯审计元数据，重传不改写声明
+            // （item 自描述、解密端不纠正，§4）
+            repairedItems[uuid] = item;
             _addAction(actions, SyncAction(
               type: SyncActionType.heal,
               uuid: uuid,
@@ -1699,7 +1700,7 @@ class SyncEngine {
           ));
           // 返回修复后的 manifest 条目：hash 取本地明文 hash，
           // 使合并后的 manifest 指向刚重传的（好）blob，避免修复后的 blob 成孤儿。
-          // blobKeyEpoch 取当前纪元（重传时已用当前纪元加密）。
+          // v4：blob 纯化后 blobKeyEpoch 是纯审计元数据，自愈重传不改写声明（§4）。
           return ManifestItem(
             hash: local.contentHash,
             deleted: false,
@@ -1707,7 +1708,6 @@ class SyncEngine {
             updatedBy: deviceId,
             createdAt: local.createdTime.millisecondsSinceEpoch,
             contentSize: local.toContentBytes().length,
-            blobKeyEpoch: keyring.dataKeyEpoch,
           );
         }
       } on Object catch (e, st) {
@@ -1723,7 +1723,7 @@ class SyncEngine {
     // 共享同一个 blob；若本机恰好持有内容相同的孪生笔记
     // （content_hash == remoteItem.hash），则：
     //   1. 用孪生明文在本地物化该 uuid 的笔记（保留远端时间戳元数据）；
-    //   2. 用当前协议（AAD=hash+epoch）重传 blob，让所有设备都能解开。
+    //   2. 用当前 dataKey 重传 blob（blob 纯化 v4：AAD=hash），让所有设备都能解开。
     if (!remoteItem.deleted) {
       try {
         final twin = await database.readNoteByContentHash(remoteItem.hash);
@@ -1748,7 +1748,7 @@ class SyncEngine {
             await database.updateNoteByUuid(materialized);
           }
 
-          // 2) 重传 blob（_uploadNote 现用 AAD=hash+epoch，重传后全网可解）。
+          // 2) 重传 blob（_uploadNote 用当前 dataKey + AAD=hash，重传后全网可解）。
           //    P1 修复：重传失败不声明 heal（避免引用缺失 blob），
           //    退化为下方失败处理，下次同步重试。
           if (await _uploadNote(materialized, actions)) {
@@ -1759,8 +1759,8 @@ class SyncEngine {
               message: '共享 blob 解密失败，已用本机同内容孪生笔记自愈',
             ));
             // hash 不变（内容相同），保留远端条目即可正确引用重传后的 blob。
-            // blobKeyEpoch 更新为当前纪元（重传时已用当前纪元加密）。
-            return remoteItem.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
+            // v4：blob 纯化后 blobKeyEpoch 是纯审计元数据，自愈重传不改写声明（§4）。
+            return remoteItem;
           }
         }
       } on Object catch (e, st) {
