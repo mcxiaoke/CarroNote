@@ -37,7 +37,6 @@
  */
 
 // Dart 原生导入
-import 'dart:convert';
 import 'dart:typed_data';
 
 // Project 导入
@@ -108,7 +107,7 @@ class SyncEngine {
   ///
   /// 为什么必填而非可空：可空会让每个记录点都要写 `journal?.append(...)`，
   /// 漏写不报错、覆盖率无法保证。测试可传 [Journal.inMemory]（零 I/O），
-  /// 生产由 SyncService 用 [Journal.openOrMemory] 构造（沙盒不可用自动降级）。
+  /// 生产由 SyncService 用 [Journal.open] 构造。
   final Journal journal;
 
   SyncEngine({
@@ -601,18 +600,13 @@ class SyncEngine {
   /// 全面校验并修复远端 blob 数据（设置页「修复同步数据」按钮调用）。
   ///
   /// 与 [sync] 的区别：sync 是增量对账，repair 是「全量体检 + 治愈」——
-  /// 逐条验证每个远端 blob 能否被当前/历史 dataKey 解密，不能的尝试用本机
+  /// 逐条验证每个远端 blob 能否被当前 dataKey 解密，不能的尝试用本机
   /// 明文（同 uuid 或同内容孪生笔记）重传覆盖，仍不能的标记为损坏。
-  ///
-  /// 背景：用户常同时记得新旧密码。改密码在该设计中 dataKey 不变，但历史上
-  /// scenario-d 合并（两设备独立 dataKey）会产生用「非当前 dataKey」加密的旧 blob。
-  /// 提供 [oldPassword] 时，会用它派生旧 MK 解开归档的 wrappedDataKey，把历史
-  /// dataKey 加入候选集，从而能修复这些遗留坏 blob。
   ///
   /// 全程只读远端 + 必要时重传覆盖，不删除任何笔记；无法修复的只标记不丢弃。
   ///
   /// 返回 [SyncResult]：uploaded 含 heal 计数，failedNoteUuids 为仍损坏的 uuid。
-  Future<SyncResult> repairRemote({String? oldPassword}) async {
+  Future<SyncResult> repairRemote() async {
     final actions = <SyncAction>[];
     final failed = <String>[];
 
@@ -646,50 +640,7 @@ class SyncEngine {
       );
     }
 
-    // Step 2: 构建候选 dataKey 集合
-    //   - 始终包含当前 dataKey
-    //   - 提供 oldPassword 时：派生旧 MK，尝试解开归档的历史 wrappedDataKey
-    final candidates = <Uint8List>[_dataKey];
-    if (oldPassword != null && oldPassword.isNotEmpty) {
-      try {
-        final oldMk = SyncCrypto.deriveMasterKey(
-          oldPassword,
-          salt: keyring.kdf.saltBytes,
-        );
-
-        // 主路径（P2 方案 B）：keyring 账本的 history 是归档密钥的**唯一真相源**。
-        // changePassword / adoptRemoteEpoch / migrateDataKey 归档的旧条目全在这里，
-        // 旧的 data_key_history 键在 P2 之后已无任何生产写入方。
-        for (final dk in keyring.unwrapHistoryWith(oldMk)) {
-          if (!candidates.any((c) => _sameKey(c, dk))) candidates.add(dk);
-        }
-
-        // 兼容兜底：pre-P2 安装可能残留尚未被账本收编的 data_key_history 记录。
-        // 正常情况下 KeyringLedger.load 已在解锁时完成收编（fromLegacyMeta），
-        // 这里只是双保险——多读一次 meta 的代价，换"旧密码恢复"这条路不断。
-        final legacy = await database.getDataKeyHistory();
-        for (final entry in legacy) {
-          final raw = entry['wrappedDataKey'];
-          if (raw is! String || raw.isEmpty) continue;
-          try {
-            final dk = SyncCrypto.unwrapDataKey(oldMk, base64.decode(raw));
-            if (!candidates.any((c) => _sameKey(c, dk))) candidates.add(dk);
-          } on SyncDecryptionException catch (e) {
-            // 该历史条目不是用 oldPassword 的 MK 包裹的，跳过
-            Log.sync.d('repairRemote: legacy 历史条目跳过（MK 不匹配）', error: e);
-          } on Object catch (e, st) {
-            // 解包异常（base64 损坏等），跳过该条
-            Log.sync.w('repairRemote: legacy 历史条目解包异常',
-                error: e, stackTrace: st);
-          }
-        }
-      } on Object catch (e, st) {
-        // 派生失败，忽略历史候选
-        Log.sync.w('repairRemote: 派生旧 MK 失败，跳过历史候选', error: e, stackTrace: st);
-      }
-    }
-
-    // Step 3: 逐条校验/修复
+    // Step 2: 逐条校验/修复（仅使用当前 dataKey）
     final repairedItems = <String, ManifestItem>{};
     for (final entry in remoteManifest.items.entries) {
       final uuid = entry.key;
@@ -737,31 +688,26 @@ class SyncEngine {
         continue;
       }
 
-      // 3a. 用候选 dataKey 依次尝试解密
+      // 3a. 用当前 dataKey 解密
       Uint8List? workingKey;
-      for (final key in candidates) {
-        try {
-          _openBlobEnvelope(
-            uuid,
-            item.hash,
-            blob,
-            blobKeyEpoch: item.blobKeyEpoch,
-            dataKeyOverride: key,
-          );
-          workingKey = key;
-          break;
-        } on SyncDecryptionException {
-          // 试下一个候选（密钥不匹配，预期内）
-        } on Object catch (e, st) {
-          // 其他异常（数据损坏），记录后试下一个
-          Log.sync.d('repairRemote: 候选密钥解密异常 uuid=$uuid', error: e, stackTrace: st);
-        }
+      try {
+        _openBlobEnvelope(
+          uuid,
+          item.hash,
+          blob,
+          blobKeyEpoch: item.blobKeyEpoch,
+          dataKeyOverride: _dataKey,
+        );
+        workingKey = _dataKey;
+      } on SyncDecryptionException {
+        // 密钥不匹配，预期内（进入后续修复分支）
+      } on Object catch (e, st) {
+        // 其他异常（数据损坏），记录后进入修复分支
+        Log.sync.d('repairRemote: 当前密钥解密异常 uuid=$uuid', error: e, stackTrace: st);
       }
 
       if (workingKey != null) {
-        final needsModernize =
-            !_sameKey(workingKey, _dataKey) ||
-                item.blobKeyEpoch != keyring.dataKeyEpoch;
+        final needsModernize = item.blobKeyEpoch != keyring.dataKeyEpoch;
         if (needsModernize) {
           final plaintext = _openBlobEnvelope(
             uuid,
@@ -786,7 +732,7 @@ class SyncEngine {
             type: SyncActionType.heal,
             uuid: uuid,
             hash: item.hash,
-            message: 'repair: 用历史/旧密钥解密并重新上传为当前密钥',
+            message: 'repair: blob 纪元过时，重新上传为当前纪元',
           ));
         }
         repairedItems[uuid] = item.copyWith(blobKeyEpoch: keyring.dataKeyEpoch);
@@ -1306,7 +1252,6 @@ class SyncEngine {
           return;
         }
         // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
-        // v1/v2/epoch AAD 三重兼容解密
         final plaintext = _openBlobEnvelope(
           uuid,
           loserItem.hash,
@@ -1457,23 +1402,19 @@ class SyncEngine {
 
     // 加密笔记内容为 envelope（Layer 1：单个 blob 上传失败不应中断整次同步）
     //
-    // 协议 v2：AAD 使用内容 hash（与 blob 内容寻址一致）而非 uuid。
+    // AAD 使用内容 hash + 当前 dataKey 纪元（与 blob 内容寻址一致，epoch 显式标记）。
     // 原因：blob 按内容 hash 去重，两条内容相同的笔记共享同一个 blob 文件；
     // 若 AAD 绑定 uuid，则该 blob 只能被"上传者的 uuid"解开，
     // 其他引用同一 hash 的笔记在别的设备上永远解密失败（GCM tag 不匹配）。
     // AAD=hash 后任何引用该 hash 的笔记都能解开；防信封错位由下载侧的
     // "解密内容 hash == manifest 记录 hash"校验保证（manifest items 本身
     // 由 dataKey 加密认证，服务器无法伪造）。
-    //
-    // 注意：新上传的 blob 固定用 v2 AAD（hash，epoch 不写入信封），保证与
-    // 旧客户端向后兼容（旧客户端只认 v2/v1 AAD，解不开 "N|hash"）。
-    // dataKey 纪元（blobKeyEpoch）只记录在 manifest item 中作为"现代化标记"，
-    // 下载侧据此判断是否需重传，blob 信封本身始终用 v2 AAD。
     try {
       final envelope = SyncCrypto.seal(
         _dataKey,
         note.contentHash,
         note.toContentBytes(),
+        epoch: keyring.dataKeyEpoch,
       );
       await backend.putBlob(note.contentHash, envelope);
     } on BackendUnavailableException catch (e, st) {
@@ -1521,52 +1462,21 @@ class SyncEngine {
     ));
   }
 
-  /// 解密 blob 信封（Layer 3 + 协议 v1/v2 三重兼容）
+  /// 解密 blob 信封（Layer 3 纪元格式）
   ///
-  /// 尝试顺序：
-  ///   1. 若 [blobKeyEpoch] > 0（Layer 3 新格式）→ AAD = '$epoch|$hash'
-  ///      —— 用 blob 自己的纪元解开，与「当前 dataKey 纪元」无关；
-  ///   2. v2（当前）：AAD = 内容 hash —— 与 blob 内容寻址自洽；
-  ///   3. v1（存量）：AAD = 笔记 uuid —— 兼容旧客户端上传的 blob。
-  ///
-  /// 全部失败则向上抛出（调用方进入 Layer 1/2b/3 容错自愈流程）。
+  /// AAD = '$epoch|$hash'（用 blob 自己的纪元解开，与「当前 dataKey 纪元」无关）。
+  /// 解密失败向上抛出（调用方进入 Layer 1/2b/3 容错自愈流程）。
   ///
   /// [dataKeyOverride] 可选：用指定的 dataKey 解密（默认当前 _dataKey）。
-  /// repair 流程用它尝试历史密钥（旧 dataKey）。
   Uint8List _openBlobEnvelope(
     String uuid,
     String hash,
     Uint8List envelope, {
-    int blobKeyEpoch = 0,
+    int blobKeyEpoch = 1,
     Uint8List? dataKeyOverride,
   }) {
     final key = dataKeyOverride ?? _dataKey;
-    if (blobKeyEpoch > 0) {
-      try {
-        return SyncCrypto.open(key, hash, envelope, epoch: blobKeyEpoch);
-      } on SyncDecryptionException catch (e) {
-        // 该 dataKey 解不开该纪元 blob，继续尝试遗留格式兜底
-        Log.sync.d('openBlobEnvelope: 纪元格式解密失败，回退遗留格式 '
-            'hash=${hash.substring(0, 8)}… epoch=$blobKeyEpoch', error: e);
-      }
-    }
-    try {
-      return SyncCrypto.open(key, hash, envelope);
-    } on SyncDecryptionException catch (e) {
-      // 回退旧格式（AAD=uuid）
-      Log.sync.d('openBlobEnvelope: v2 格式解密失败，回退 v1 (AAD=uuid) '
-          'hash=${hash.substring(0, 8)}…', error: e);
-      return SyncCrypto.open(key, uuid, envelope);
-    }
-  }
-
-  /// 比较两个 dataKey（字节级相等）
-  static bool _sameKey(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+    return SyncCrypto.open(key, hash, envelope, epoch: blobKeyEpoch);
   }
 
   /// 从远端下载单条笔记并写入本地数据库
@@ -1645,7 +1555,7 @@ class SyncEngine {
       return _DownloadFailed(uuid);
     }
 
-    // 解密（Layer 1 容错 + Layer 2b 自愈；Layer 3 epoch + v1/v2 AAD 三重兼容）
+    // 解密（Layer 1 容错 + Layer 2b 自愈；Layer 3 epoch 格式）
     try {
       final plaintext = _openBlobEnvelope(
         uuid,
@@ -1674,13 +1584,11 @@ class SyncEngine {
       }
 
       // Layer 3：显式「旧密钥 blob」检测（区分「错密钥可修」与「真损坏不可修」）。
-      // 若 manifest 记录的 blobKeyEpoch 与当前 dataKey 纪元不符（且非遗留 0），
+      // 若 manifest 记录的 blobKeyEpoch 与当前 dataKey 纪元不符，
       // 说明该 blob 是用「非当前 dataKey」加密的旧密钥 blob（或纪元标记过期）。
       // 内容虽能解开（dataKey 实际一致），仍用当前纪元重传一次以现代化（自愈），
       // 并让合并 manifest 改为引用修复后的纪元，避免后续每次同步重复告警/重试。
-      // 遗留 blob（blobKeyEpoch==0）按向后兼容处理：能解开即接受，不强制重传，
-      // 避免对存量海量 blob 造成一次性全量 churn。
-      if (item.blobKeyEpoch > 0 && item.blobKeyEpoch != keyring.dataKeyEpoch) {
+      if (item.blobKeyEpoch != keyring.dataKeyEpoch) {
         // 用当前纪元重传 blob（现代化），需把 record 还原成 SafeNote 再上传
         final note = SafeNote(
           uuid: uuid,
@@ -1842,11 +1750,10 @@ class SyncEngine {
     // 去重自愈：本机没有该 uuid 的明文，但可能存在"内容相同"的孪生笔记。
     //
     // 场景：blob 按内容 hash 寻址去重，两条内容相同的笔记（不同 uuid）
-    // 共享同一个 blob；旧协议（AAD=uuid）下该 blob 只能被上传者的 uuid
-    // 解开，其他 uuid 在本机必然解密失败。若本机恰好持有内容相同的
-    // 孪生笔记（content_hash == remoteItem.hash），则：
+    // 共享同一个 blob；若本机恰好持有内容相同的孪生笔记
+    // （content_hash == remoteItem.hash），则：
     //   1. 用孪生明文在本地物化该 uuid 的笔记（保留远端时间戳元数据）；
-    //   2. 用当前协议（AAD=hash）重传 blob，让所有设备都能解开。
+    //   2. 用当前协议（AAD=hash+epoch）重传 blob，让所有设备都能解开。
     if (!remoteItem.deleted) {
       try {
         final twin = await database.readNoteByContentHash(remoteItem.hash);
@@ -1871,13 +1778,13 @@ class SyncEngine {
             await database.updateNoteByUuid(materialized);
           }
 
-          // 2) 重传 blob（_uploadNote 现用 AAD=hash，重传后全网可解）
+          // 2) 重传 blob（_uploadNote 现用 AAD=hash+epoch，重传后全网可解）
           await _uploadNote(materialized, actions);
           _addAction(actions, SyncAction(
             type: SyncActionType.heal,
             uuid: uuid,
             hash: remoteItem.hash,
-            message: '共享 blob 旧格式解密失败，已用本机同内容孪生笔记自愈',
+            message: '共享 blob 解密失败，已用本机同内容孪生笔记自愈',
           ));
           // hash 不变（内容相同），保留远端条目即可正确引用重传后的 blob。
           // blobKeyEpoch 更新为当前纪元（重传时已用当前纪元加密）。
@@ -1891,18 +1798,16 @@ class SyncEngine {
     }
 
     // 无本地明文可用：记录失败，保留远端条目供下次重试。
-    // Layer 3 区分：若 blob 纪元与当前不符，说明是「旧密钥 blob」（可用旧密码
-    // 经 repair 流程修复）；否则是「真损坏」不可自动修复。两种情况均记入
-    // failedNoteUuids，UI 提示用户运行「修复同步数据」。
-    final isOldKey = remoteItem.blobKeyEpoch > 0 &&
-        remoteItem.blobKeyEpoch != keyring.dataKeyEpoch;
+    // 若 blob 纪元与当前不符，说明是「旧密钥 blob」；否则是「真损坏」不可自动修复。
+    // 两种情况均记入 failedNoteUuids，UI 提示用户运行「修复同步数据」。
+    final isOldKey = remoteItem.blobKeyEpoch != keyring.dataKeyEpoch;
     _addAction(actions, SyncAction(
       type: SyncActionType.corrupt,
       uuid: uuid,
       hash: remoteItem.hash,
       message: isOldKey
           ? 'blob 为旧密钥加密（纪元 ${remoteItem.blobKeyEpoch}≠当前'
-              ' ${keyring.dataKeyEpoch}），无本地明文，需用旧密码运行修复'
+              ' ${keyring.dataKeyEpoch}），无本地明文，需运行修复'
           : 'blob 下载失败（数据损坏且无本地明文，将重试）',
     ));
     return null;

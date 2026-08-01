@@ -29,7 +29,6 @@ import 'package:http/http.dart' as http;
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/crypto.dart';
-import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/sync/sync_engine.dart';
 import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/webdav_backend.dart';
@@ -1188,14 +1187,14 @@ void main() {
           reason: '重传后不应再报告失败');
 
       // 断言：blob 现在用 dataKeyNew 加密（旧密钥打不开，新密钥能打开并还原内容）
-      // 协议 v2：重传后的 blob AAD = 内容 hash
+      // 协议 v2：重传后的 blob AAD = '<epoch>|内容 hash'（epoch 为当前 dataKeyEpoch）
       final blob = await backend.getBlob(hash);
       expect(blob, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, hash, blob!);
+      final opened = SyncCrypto.open(dataKeyNew, hash, blob!, epoch: 1);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, 'Mig');
       expect(
-        () => SyncCrypto.open(dataKeyOld, hash, blob),
+        () => SyncCrypto.open(dataKeyOld, hash, blob, epoch: 1),
         throwsA(isA<Object>()),
         reason: '旧密钥应无法再解开已被重传覆盖的 blob',
       );
@@ -1315,10 +1314,10 @@ void main() {
       );
 
       // 修复后的 blob（localHash）现在用 dataKeyNew 加密且内容为本机明文
-      // （协议 v2：AAD = 内容 hash）
+      // （协议 v2：AAD = '<epoch>|内容 hash'）
       final repaired = await backend.getBlob(localHash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!);
+      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!, epoch: 1);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, localTitle);
 
@@ -1396,155 +1395,6 @@ void main() {
       expect(n2?.title, 'Same');
     });
 
-    test('v1 存量：旧格式（AAD=uuid）blob 仍可正常下载（向后兼容）', () async {
-      final dataKey = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
-      database.setDataKey(dataKey);
-
-      final note = _makeNote(
-        uuid: 'legacy-1',
-        title: 'Legacy',
-        description: 'old aad',
-      );
-      final now = DateTime.now().millisecondsSinceEpoch;
-      // 远端 manifest + 旧格式 blob（AAD=uuid，模拟升级前客户端上传的存量数据）
-      await _uploadRemoteManifest(
-        backend: backend,
-        dataKey: dataKey,
-        items: {
-          'legacy-1': ManifestItem(
-            hash: note.contentHash,
-            deleted: false,
-            updatedAt: now,
-            updatedBy: 'old-client',
-            createdAt: now,
-            contentSize: note.toContentBytes().length,
-          ),
-        },
-        encryptedDataKey: encK,
-        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
-      );
-      await backend.putBlob(
-        note.contentHash,
-        SyncCrypto.seal(dataKey, 'legacy-1', note.toContentBytes()),
-      );
-
-      final engine = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKey,
-        encryptedDataKey: encK,
-      );
-      final result = await engine.sync();
-
-      expect(result.success, isTrue);
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '旧格式 blob 应通过 AAD=uuid 回退路径解密成功');
-      expect(result.downloaded, 1);
-      final local = await database.readNoteByUuid('legacy-1');
-      expect(local?.title, 'Legacy');
-    });
-
-    test('v1 存量共享 blob（复现线上故障）：孪生笔记自愈修复且第三台设备可下载',
-        () async {
-      final dataKey = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
-      database.setDataKey(dataKey);
-
-      // 线上场景复刻：
-      //   Android 有两条内容相同的笔记 twin-a / twin-b，共享 blob（hash 相同），
-      //   旧协议下 blob 的 AAD 绑定的是 twin-a；
-      //   Windows（本机）只有 twin-a 的明文，下载 twin-b 必然解密失败。
-      const title = 'android note 1';
-      const desc = 'dup content';
-      final sharedHash = SafeNote.computeHash(title, desc);
-      final now = DateTime.now().millisecondsSinceEpoch;
-
-      // 本机持有 twin-a（明文），且已与远端一致（同 hash 同状态 → 无需传输）
-      await database.storeNote(_makeNote(
-        uuid: 'twin-a',
-        title: title,
-        description: desc,
-        updatedAt: now,
-      ));
-
-      // 远端 manifest：twin-a 与 twin-b 引用同一个 hash
-      ManifestItem item(String by) => ManifestItem(
-            hash: sharedHash,
-            deleted: false,
-            updatedAt: now,
-            updatedBy: by,
-            createdAt: now,
-            contentSize: title.length + desc.length,
-          );
-      await _uploadRemoteManifest(
-        backend: backend,
-        dataKey: dataKey,
-        items: {'twin-a': item('android'), 'twin-b': item('android')},
-        encryptedDataKey: encK,
-        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
-      );
-      // 共享 blob 用旧协议加密：AAD 绑定 twin-a（twin-b 解不开）
-      final noteContent = _makeNote(
-        uuid: 'twin-a',
-        title: title,
-        description: desc,
-      ).toContentBytes();
-      await backend.putBlob(
-        sharedHash,
-        SyncCrypto.seal(dataKey, 'twin-a', noteContent),
-      );
-
-      final engine = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKey,
-        encryptedDataKey: encK,
-      );
-      final result = await engine.sync();
-
-      expect(result.success, isTrue);
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '本机持有同内容孪生笔记，应去重自愈而非报失败');
-      expect(
-        result.actions.any(
-            (a) => a.type == SyncActionType.heal && a.uuid == 'twin-b'),
-        isTrue,
-        reason: 'twin-b 应通过孪生笔记自愈',
-      );
-      // twin-b 已物化到本地
-      final twinB = await database.readNoteByUuid('twin-b');
-      expect(twinB, isNotNull);
-      expect(twinB!.title, title);
-
-      // 重传后的共享 blob 已是 v2 格式（AAD=hash），可直接解开
-      final repaired = await backend.getBlob(sharedHash);
-      expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKey, sharedHash, repaired!);
-      expect(SafeNote.fromContentBytes(opened).title, title);
-
-      // 端到端：第三台空设备两条都能正常下载
-      await database.close();
-      final dbC = await openDatabase(
-        ':memory:',
-        version: 2,
-        onCreate: NotesDatabase.createDBForTesting,
-      );
-      NotesDatabase.setDatabaseForTesting(dbC);
-      database.setDataKey(dataKey);
-      final engineC = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKey,
-        encryptedDataKey: encK,
-      );
-      final resultC = await engineC.sync();
-      expect(resultC.success, isTrue);
-      expect(resultC.failedNoteUuids, isEmpty);
-      expect(resultC.downloaded, 2);
-      expect((await database.readNoteByUuid('twin-a'))?.title, title);
-      expect((await database.readNoteByUuid('twin-b'))?.title, title);
-    });
   });
 
   group('容错与自愈 - Layer 3 显式密钥纪元修复', () {
@@ -1608,238 +1458,16 @@ void main() {
       final cur = ManifestCrypto.deserialize(dataKey, resp.ciphertext);
       expect(cur.items[uuid]?.blobKeyEpoch, 2);
 
-      // 重新上传的 blob 用 v2 AAD（hash）可解（不破坏旧客户端兼容）
+      // 重新上传的 blob 用 v2 AAD（'<epoch>|hash'，epoch=当前 dataKeyEpoch=2）可解
       final repaired = await backend.getBlob(hash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKey, hash, repaired!);
+      final opened = SyncCrypto.open(dataKey, hash, repaired!, epoch: 2);
       final c = SafeNote.fromContentBytes(opened);
       expect(c.title, title);
-    });
-
-    test('遗留 blob（epoch=0）向后兼容，不强制重传', () async {
-      final dataKey = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
-      database.setDataKey(dataKey);
-      final engine = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKey,
-        encryptedDataKey: encK,
-      );
-
-      const uuid = 'legacy-note';
-      const title = 'Legacy';
-      const description = 'old blob';
-      final hash = SafeNote.computeHash(title, description);
-
-      await _uploadRemoteManifest(
-        backend: backend,
-        dataKey: dataKey,
-        items: {
-          uuid: ManifestItem(
-            hash: hash,
-            deleted: false,
-            updatedAt: 1700000000000,
-            updatedBy: 'seed',
-            createdAt: 1700000000000,
-            contentSize: 64,
-            blobKeyEpoch: 0,
-          ),
-        },
-        encryptedDataKey: encK,
-        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
-      );
-
-      // 遗留 blob：AAD = uuid（旧 v1 格式）
-      final content =
-          _makeNote(uuid: uuid, title: title, description: description);
-      final blob = SyncCrypto.seal(dataKey, uuid, content.toContentBytes());
-      await backend.putBlob(hash, blob);
-
-      final result = await engine.sync();
-      expect(result.success, isTrue);
-      expect(result.failedNoteUuids, isEmpty);
-      // 遗留 blob 不应触发 heal（避免海量存量 churn）
-      expect(
-        result.actions.where((a) => a.type == SyncActionType.heal).toList(),
-        isEmpty,
-        reason: '遗留 blob 不应被强制重传',
-      );
-      expect((await database.readNoteByUuid(uuid))?.title, title);
     });
   });
 
   group('容错与自愈 - repair 全面修复远端数据', () {
-    // P2 主路径：归档密钥的唯一真相源是 keyring 账本的 history。
-    //
-    // 这个用例存在的意义：changePassword / adoptRemoteEpoch / migrateDataKey
-    // 在 P2 之后**只往 keyring.history 写**，legacy 的 data_key_history 键
-    // 已无任何生产写入方。若 repairRemote 仍只读 legacy 键，本用例会直接失败——
-    // 它锁死的是「P2 之后旧密码依然能救回旧密钥 blob」这条恢复承诺。
-    test('用 keyring 账本 history 恢复旧密钥坏 blob（P2 主路径）', () async {
-      final dataKeyNew = SyncCrypto.generateDataKey();
-      final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
-      database.setDataKey(dataKeyNew);
-      final engine = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKeyNew,
-        encryptedDataKey: encK,
-        dataKeyEpoch: 2,
-      );
-
-      const uuid = 'repair-note-ledger';
-      const title = 'RepairViaLedger';
-      const description = 'old key blob, archived in keyring ledger';
-      final hash = SafeNote.computeHash(title, description);
-
-      await _uploadRemoteManifest(
-        backend: backend,
-        dataKey: dataKeyNew,
-        items: {
-          uuid: ManifestItem(
-            hash: hash,
-            deleted: false,
-            updatedAt: 1700000000000,
-            updatedBy: 'seed',
-            createdAt: 1700000000000,
-            contentSize: 64,
-            blobKeyEpoch: 1,
-          ),
-        },
-        encryptedDataKey: encK,
-        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
-      );
-
-      // 注入坏 blob：用 dataKeyOld + epoch=1 加密（当前 dataKeyNew 解不开）
-      final content =
-          _makeNote(uuid: uuid, title: title, description: description);
-      await backend.putBlob(
-        hash,
-        SyncCrypto.seal(dataKeyOld, hash, content.toContentBytes(), epoch: 1),
-      );
-
-      // 归档旧密钥——**走 P2 账本**，不碰 legacy data_key_history 键
-      const oldPassword = 'old-pass-ledger-123';
-      final oldMk = SyncCrypto.deriveMasterKey(
-        oldPassword,
-        salt: engine.keyring.kdf.saltBytes,
-      );
-      engine.keyring.history.add(KeyringEntry(
-        keyFingerprint: SyncCrypto.computeKeyFingerprint(oldMk),
-        encryptedDataKey:
-            base64Encode(SyncCrypto.wrapDataKey(oldMk, dataKeyOld)),
-        keyVersion: 1,
-        dataKeyEpoch: 1,
-        archivedAt: 1700000000000,
-        reason: KeyringReason.changePassword,
-      ));
-      // 本机未 storeNote → 无 uuid 明文、无孪生，repair 只能靠账本历史密钥恢复
-
-      final result = await engine.repairRemote(oldPassword: oldPassword);
-      expect(result.success, isTrue, reason: 'repair 应成功');
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '账本 history 里的旧密钥必须被用上，否则这条 blob 就永久救不回来了');
-      expect(result.uploaded, greaterThanOrEqualTo(1),
-          reason: '应重传治愈至少 1 条');
-
-      // 治愈后 blob 用当前 dataKeyNew 可解，内容与原文一致（没救错东西）
-      final repaired = await backend.getBlob(hash);
-      expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, hash, repaired!);
-      expect(SafeNote.fromContentBytes(opened).title, title);
-
-      // 远端 manifest item.blobKeyEpoch 修正为当前纪元
-      final resp = await backend.getManifest();
-      final cur = ManifestCrypto.deserialize(dataKeyNew, resp.ciphertext);
-      expect(cur.items[uuid]?.blobKeyEpoch, 2);
-    });
-
-    // pre-P2 兼容路径：老安装可能残留未被账本收编的 data_key_history 记录。
-    // 保留此用例是为了锁住那条兼容兜底不被顺手删掉。
-    test('用 legacy data_key_history 恢复旧密钥坏 blob（pre-P2 兼容）', () async {
-      final dataKeyNew = SyncCrypto.generateDataKey();
-      final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
-      database.setDataKey(dataKeyNew);
-      final engine = _makeEngine(
-        backend: backend,
-        database: database,
-        dataKey: dataKeyNew,
-        encryptedDataKey: encK,
-        dataKeyEpoch: 2,
-      );
-
-      const uuid = 'repair-note';
-      const title = 'Repair';
-      const description = 'old key blob';
-      final hash = SafeNote.computeHash(title, description);
-
-      await _uploadRemoteManifest(
-        backend: backend,
-        dataKey: dataKeyNew,
-        items: {
-          uuid: ManifestItem(
-            hash: hash,
-            deleted: false,
-            updatedAt: 1700000000000,
-            updatedBy: 'seed',
-            createdAt: 1700000000000,
-            contentSize: 64,
-            blobKeyEpoch: 1,
-          ),
-        },
-        encryptedDataKey: encK,
-        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
-      );
-
-      // 注入坏 blob：用 dataKeyOld + epoch=1 加密（当前 dataKeyNew 解不开）
-      final content =
-          _makeNote(uuid: uuid, title: title, description: description);
-      final blob = SyncCrypto.seal(
-        dataKeyOld,
-        hash,
-        content.toContentBytes(),
-        epoch: 1,
-      );
-      await backend.putBlob(hash, blob);
-
-      // 归档历史 wrappedDataKey：用旧密码派生 oldMk 包裹 dataKeyOld
-      const oldPassword = 'old-pass-123';
-      final oldMk = SyncCrypto.deriveMasterKey(
-        oldPassword,
-        salt: engine.keyring.kdf.saltBytes,
-      );
-      final wrapped =
-          base64Encode(SyncCrypto.wrapDataKey(oldMk, dataKeyOld));
-      await database.appendDataKeyHistory(
-        keyVersion: 1,
-        wrappedDataKey: wrapped,
-        keyFingerprint: '',
-      );
-      // 本机未 storeNote → 无 uuid 明文、无孪生，repair 必须靠历史密钥恢复
-
-      final result = await engine.repairRemote(oldPassword: oldPassword);
-      expect(result.success, isTrue, reason: 'repair 应成功');
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '旧密钥 blob 应被历史密钥治愈');
-      expect(result.uploaded, greaterThanOrEqualTo(1),
-          reason: '应重传治愈至少 1 条');
-
-      // 治愈后 blob 用当前 dataKeyNew（v2 AAD，兼容旧客户端）可解
-      final repaired = await backend.getBlob(hash);
-      expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, hash, repaired!);
-      final c = SafeNote.fromContentBytes(opened);
-      expect(c.title, title);
-
-      // 远端 manifest item.blobKeyEpoch 修正为 2
-      final resp = await backend.getManifest();
-      final cur = ManifestCrypto.deserialize(dataKeyNew, resp.ciphertext);
-      expect(cur.items[uuid]?.blobKeyEpoch, 2);
-    });
-
     test('无密钥无明文时 repair 标记损坏（不丢数据）', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();

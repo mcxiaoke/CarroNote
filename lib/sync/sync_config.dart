@@ -41,7 +41,7 @@ enum SyncBackendType {
 class SyncConfig {
   static SharedPreferences? _prefs;
   // flutter_secure_storage 10.x：Android 默认使用自定义加密（EncryptedSharedPreferences 已弃用），
-  // 旧数据会在首次访问时自动迁移；iOS 用 Keychain，桌面用 DPAPI/libsecret。
+  // iOS 用 Keychain，桌面用 DPAPI/libsecret。
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   // SharedPreferences 键名（非敏感配置）
@@ -59,53 +59,12 @@ class SyncConfig {
   /// 初始化（应用启动时调用）
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    await _migrateCredentialsToSecureStorage();
     await _preloadCredentials();
   }
 
   /// 重新加载
   static Future<void> reload() async {
     await _prefs?.reload();
-  }
-
-  /// 一次性迁移：把旧版存在 SharedPreferences 中的凭据迁移到 SecureStorage
-  ///
-  /// 迁移策略：
-  ///   1. 检查 SecureStorage 中是否已有凭据（有则跳过）
-  ///   2. 若没有，检查 SharedPreferences 中是否有旧值
-  ///   3. 把旧值写入 SecureStorage，然后从 SharedPreferences 删除
-  ///   4. 迁移失败不影响应用启动（凭据丢失时用户重新输入）
-  static Future<void> _migrateCredentialsToSecureStorage() async {
-    try {
-      // WebDAV 密码迁移
-      final oldWebdavPassword = _prefs?.getString(_keyWebdavPassword);
-      if (oldWebdavPassword != null && oldWebdavPassword.isNotEmpty) {
-        final existing = await _secureStorage.read(key: _keyWebdavPassword);
-        if (existing == null) {
-          await _secureStorage.write(
-            key: _keyWebdavPassword,
-            value: oldWebdavPassword,
-          );
-        }
-        // 删除 SharedPreferences 中的旧值
-        await _prefs?.remove(_keyWebdavPassword);
-      }
-
-      // SafeServer Token 迁移
-      final oldToken = _prefs?.getString(_keySafeServerToken);
-      if (oldToken != null && oldToken.isNotEmpty) {
-        final existing = await _secureStorage.read(key: _keySafeServerToken);
-        if (existing == null) {
-          await _secureStorage.write(
-            key: _keySafeServerToken,
-            value: oldToken,
-          );
-        }
-        await _prefs?.remove(_keySafeServerToken);
-      }
-    } on Exception {
-      // 迁移失败不阻断启动，用户重新输入凭据即可
-    }
   }
 
   // ──────────────────────────────────────────────

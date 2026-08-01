@@ -7,7 +7,8 @@
  *   3. 容错：日志损坏、vaultId 串库、坏条目、未知事件类型
  *   4. 恢复线索：findIncompleteOperations（只报不修）、replayKeyState
  *   5. 远端加密副本：密文不落明文、跨设备去重合并、错误 dataKey 拒绝
- *   6. 降级：内存模式、沙盒目录不可用时 openOrMemory 不抛异常
+ *   6. 故障行为：沙盒目录不可用时 Journal.open 抛异常（不再降级内存模式）
+ *   7. 内存模式：裁剪到上限、不产生文件、不上传远端
  *
  * 设计立场（这些测试锁死的是"绝不能退化"的行为）：
  *   - Journal 是辅助设施，它自身的任何故障都不得抛异常打断同步主流程；
@@ -377,21 +378,20 @@ void main() {
       await j.close();
     });
 
-    test('openOrMemory：沙盒目录不可用时降级内存模式，不抛异常', () async {
+    test('Journal.open：沙盒目录不可用时抛异常（不再降级内存模式）', () async {
       // 用一个"文件"当 baseDir → 其下无法创建 journal 目录
       final blocker = File(p.join(tmp.path, 'not-a-dir'));
       await blocker.writeAsString('x');
 
-      final j = await Journal.openOrMemory(
-        baseDir: blocker.path,
-        vaultId: 'vault-1',
-        deviceId: 'dev-a',
+      // 决定：journal 故障将阻断同步初始化，open 失败应向上抛，而非静默降级
+      await expectLater(
+        Journal.open(
+          baseDir: blocker.path,
+          vaultId: 'vault-1',
+          deviceId: 'dev-a',
+        ),
+        throwsA(isA<FileSystemException>()),
       );
-      expect(j.append(type: JournalEventType.noteUpsert), 1);
-      await j.flush();
-      expect((await j.readAll()).length, 1,
-          reason: '降级后语义不变，只是不落盘');
-      await j.close();
     });
   });
 

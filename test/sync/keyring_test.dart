@@ -126,9 +126,8 @@ void main() {
         database: database,
       );
 
-      // 清空 meta 表以模拟全新状态
-      await database.setMeta(MetaKeys.vaultId, '');
-      await database.setMeta(MetaKeys.encryptedDataKey, '');
+      // 清空账本以模拟全新状态（Keyring 单键 JSON；load 对空串返回 null）
+      await database.setMeta(MetaKeys.keyring, '');
 
       final vault2 = await Keyring.createNew(
         password: 'password1',
@@ -651,7 +650,6 @@ void main() {
       final mkBefore = keyring.mk == null
           ? null
           : Uint8List.fromList(keyring.mk!);
-      final edkBefore = keyring.encryptedDataKey;
 
       await keyring.adoptRemoteEpoch(
         remoteEncryptedDataKey: 'REMOTE-EDK-BASE64',
@@ -671,10 +669,6 @@ void main() {
       expect(keyring.dataKey, dataKeyBefore,
           reason: 'adoptRemoteEpoch 只换包裹态，明文 dataKey 必须原样保留');
       expect(keyring.mk, mkBefore, reason: 'MK 同理不被触碰');
-
-      // 被替换的旧包裹进了 history（repair 时的恢复锚点）
-      expect(keyring.history.map((e) => e.encryptedDataKey), contains(edkBefore),
-          reason: '旧 wrappedDataKey 是用旧密码 repair 的唯一入口，必须归档');
     });
 
     test('原地更新会落盘（BUG-3 回归：本地纪元不能落后于内存）', () async {
@@ -698,7 +692,7 @@ void main() {
       expect(await persistedDataKeyEpoch(database), 2);
     });
 
-    test('包裹值未变化时不产生冗余 history 条目', () async {
+    test('采用与当前一致的包裹值时不抛异常且状态不变（幂等）', () async {
       final keyring = await Keyring.createNew(
         password: 'pw-adopt-3',
         database: database,
@@ -712,8 +706,9 @@ void main() {
         database: database,
       );
 
-      expect(keyring.history, isEmpty,
-          reason: '包裹没变就归档 = 白白撑大账本，还会污染 repair 的候选集');
+      // 包裹值没变：current 保持原值，落盘后读回一致
+      expect(keyring.encryptedDataKey, sameEdk);
+      expect(await persistedEncryptedDataKey(database), sameEdk);
     });
   });
 
@@ -806,8 +801,8 @@ void main() {
     });
   });
 
-  group('P2 - KeyringLedger 持久化与 legacy 转换', () {
-    test('账本 JSON round-trip 保真（含 history）', () {
+  group('P2 - KeyringLedger 持久化', () {
+    test('账本 JSON round-trip 保真', () {
       final ledger = KeyringLedger(
         vaultId: 'v-rt',
         kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
@@ -819,16 +814,6 @@ void main() {
           dataKeyEpoch: 2,
           reason: KeyringReason.changePassword,
         ),
-        history: const [
-          KeyringEntry(
-            keyFingerprint: 'fp-old',
-            encryptedDataKey: 'edk-old',
-            keyVersion: 2,
-            dataKeyEpoch: 2,
-            archivedAt: 1699999999999,
-            reason: KeyringReason.adoptRemoteEpoch,
-          ),
-        ],
       );
 
       final restored = KeyringLedger.fromJson(
@@ -837,95 +822,37 @@ void main() {
       expect(restored.toJson(), ledger.toJson());
     });
 
-    test('fromLegacyMeta：旧散落键一次性转成账本（含 history）', () async {
-      final salt = SyncCrypto.generateSalt();
-      await database.setMeta(MetaKeys.vaultId, 'legacy-vault');
-      await database.setMeta(MetaKeys.encryptedDataKey, 'legacy-edk');
-      await database.setMeta(MetaKeys.kdfSalt, base64.encode(salt));
-      await database.setMeta(MetaKeys.keyFingerprint, 'legacy-fp');
-      await database.setMeta(MetaKeys.keyVersion, '4');
-      await database.setMeta(MetaKeys.dataKeyEpoch, '2');
-      await database.setMeta(MetaKeys.vaultCreatedAt, '1690000000000');
-      await database.appendDataKeyHistory(
-        keyVersion: 3,
-        wrappedDataKey: 'legacy-old-edk',
-        keyFingerprint: 'legacy-old-fp',
+    test('load：缺失键返回 null（未初始化）', () async {
+      expect(await KeyringLedger.load(database), isNull);
+    });
+
+    test('load：写入单键后能读回（P2 单键 JSON 账本）', () async {
+      final ledger = KeyringLedger(
+        vaultId: 'v-load',
+        kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
+        createdAt: 1700000000000,
+        current: const KeyringEntry(
+          keyFingerprint: 'fp-load',
+          encryptedDataKey: 'edk-load',
+          keyVersion: 2,
+          dataKeyEpoch: 1,
+          reason: KeyringReason.changePassword,
+        ),
       );
+      await ledger.persist(database);
 
-      final ledger = await KeyringLedger.fromLegacyMeta(database);
-      expect(ledger, isNotNull);
-      expect(ledger!.vaultId, 'legacy-vault');
-      expect(ledger.createdAt, 1690000000000);
-      expect(ledger.current.encryptedDataKey, 'legacy-edk');
-      expect(ledger.current.keyFingerprint, 'legacy-fp');
-      expect(ledger.current.keyVersion, 4);
-      expect(ledger.current.dataKeyEpoch, 2);
-      expect(ledger.kdf.salt, base64.encode(salt));
-      expect(ledger.history.length, 1);
-      expect(ledger.history.first.encryptedDataKey, 'legacy-old-edk');
-      expect(ledger.history.first.archivedAt, 0,
-          reason: '旧记录无时间字段，按评审 B-L1 填 0 而非伪造 now()');
-      expect(ledger.history.first.reason, KeyringReason.unknown);
-    });
-
-    test('fromLegacyMeta：缺必需键返回 null（不半吊子构造）', () async {
-      await database.setMeta(MetaKeys.vaultId, 'only-id');
-      expect(await KeyringLedger.fromLegacyMeta(database), isNull);
-    });
-
-    test('load：新键优先；无新键时转换旧键并立即落盘', () async {
-      final salt = SyncCrypto.generateSalt();
-      await database.setMeta(MetaKeys.vaultId, 'legacy-vault-2');
-      await database.setMeta(MetaKeys.encryptedDataKey, 'legacy-edk-2');
-      await database.setMeta(MetaKeys.kdfSalt, base64.encode(salt));
-
-      // 第一次 load：走 legacy 分支并落盘新键
-      final first = await KeyringLedger.load(database);
-      expect(first, isNotNull);
+      final loaded = await KeyringLedger.load(database);
+      expect(loaded, isNotNull);
+      expect(loaded!.vaultId, 'v-load');
+      expect(loaded.current.encryptedDataKey, 'edk-load');
       expect(await database.getMeta(MetaKeys.keyring), isNotNull,
-          reason: 'load 应把转换结果立刻写入单键，避免每次启动都重转');
-
-      // 篡改旧键，再 load：应读新键（证明已切到单键路径）
-      await database.setMeta(MetaKeys.encryptedDataKey, 'TAMPERED');
-      final second = await KeyringLedger.load(database);
-      expect(second!.current.encryptedDataKey, 'legacy-edk-2');
+          reason: '账本只写 MetaKeys.keyring 单键');
     });
 
-    test('loadFromMeta：JSON 损坏返回 null 而不是抛异常', () async {
+    test('load：JSON 损坏返回 null 而不是抛异常', () async {
       await database.setMeta(MetaKeys.keyring, '{not valid json');
-      expect(await KeyringLedger.loadFromMeta(database), isNull,
+      expect(await KeyringLedger.load(database), isNull,
           reason: '账本损坏要能降级到"未初始化"，而不是让 App 崩在启动路径上');
-    });
-
-    // 注意：规范化发生在**变更点**（adoptRemoteEpoch / changePassword /
-    // migrate / fromLegacyMeta），而不是 fromJson——反序列化必须是保真的，
-    // 否则 round-trip 会悄悄改数据。所以这里走真实增长路径来验证。
-    test('history 规范化：反复采用远端纪元后去重 + 降序 + 截断到上限', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-hist',
-        database: database,
-      );
-
-      // 制造 上限+5 次密钥包裹变化（每次都会把旧 current 归档进 history）
-      for (var v = 2; v <= kKeyringHistoryLimit + 6; v++) {
-        await keyring.adoptRemoteEpoch(
-          remoteEncryptedDataKey: 'edk-$v',
-          remoteKeyFingerprint: 'fp-$v',
-          remoteKeyVersion: v,
-          database: database,
-        );
-      }
-
-      expect(keyring.history.length, kKeyringHistoryLimit,
-          reason: 'history 无上限 = 账本无限膨胀，单键 setMeta 迟早写不动');
-      final versions = keyring.history.map((e) => e.keyVersion).toList();
-      expect(versions.toSet().length, versions.length, reason: '不允许重复');
-      expect(versions, orderedEquals(List.of(versions)..sort((a, b) => b - a)),
-          reason: '按 keyVersion 降序：最近的密钥最可能被 repair 用到');
-
-      // 落盘的账本同样是规范化后的
-      final ledger = await readPersistedKeyring(database);
-      expect(ledger!.history.length, kKeyringHistoryLimit);
     });
   });
 }

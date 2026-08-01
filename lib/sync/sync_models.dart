@@ -104,12 +104,7 @@ class ManifestItem {
   /// 记录加密该笔记 blob 时使用的 dataKey 纪元。
   /// 与 [ManifestHeader] 中的当前 [Keyring.dataKeyEpoch] 比较：
   ///   - 相等 → blob 用当前 dataKey 加密，正常解密；
-  ///   - 不等且本机持有匹配的历史 dataKey → 旧密钥 blob，走显式修复路径（重传）；
-  ///   - 不等且本机无匹配密钥 → 内容已损坏/不可达，跳过并标记。
-  ///
-  /// 默认 0 表示「遗留 blob（Layer 3 之前的客户端上传）」，向后兼容：
-  /// 下载时按旧格式 AAD（contentHash / uuid）尝试解密，能解开即接受；
-  /// 仅当纪元确实不匹配时才触发修复（一次性重传代价，可接受）。
+  ///   - 不等 → blob 由「非当前 dataKey」加密（旧密钥 blob），走显式修复路径（重传）。
   final int blobKeyEpoch;
 
   const ManifestItem({
@@ -120,7 +115,7 @@ class ManifestItem {
     required this.createdAt,
     this.deletedAt,
     this.contentSize = 0,
-    this.blobKeyEpoch = 0,
+    this.blobKeyEpoch = 1,
   });
 
   ManifestItem copyWith({
@@ -315,7 +310,7 @@ class ManifestHeader {
   ///   - 不等 → blob 由「非当前 dataKey」加密（旧密钥 blob），走显式修复路径。
   ///
   /// 新设备加入时从此 header 学习当前纪元；发布 manifest 时写入本机纪元。
-  /// 默认 1（遗留服务器不发送此字段时按 1 处理）。
+  /// 默认 1。
   final int dataKeyEpoch;
 
   /// 最后修改此 manifest 的设备 ID（如 'android-xxx'）

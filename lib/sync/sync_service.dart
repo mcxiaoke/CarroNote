@@ -190,7 +190,7 @@ class SyncService {
     // 获取设备 ID（首次调用会查询系统 API，后续用缓存）
     _deviceId = await DeviceIdProvider.instance.getDeviceId();
 
-    // 打开 journal（失败自动降级为内存模式，绝不阻断初始化）
+    // 打开 journal（沙盒目录不可用时抛异常，阻断初始化）
     _journal = await _openJournal(vaultId: keyring.vaultId);
 
     _engine = SyncEngine(
@@ -221,34 +221,17 @@ class SyncService {
     // 这样未配置同步的用户同样能远程查看日志。见 HomePage.initState / main._shutdown。
   }
 
-  /// 打开 journal（沙盒目录解析 + 打开，全程失败安全）
+  /// 打开 journal（沙盒目录解析 + 打开）
   ///
-  /// 两层兜底：
-  ///   1. path_provider 解析失败（少见但在某些定制 ROM / 桌面沙盒会发生）
-  ///      → 直接返回内存模式实例
-  ///   2. 目录能拿到但文件打开失败（磁盘满、权限、日志损坏）
-  ///      → [Journal.openOrMemory] 内部降级为内存模式
-  ///
-  /// 无论如何都返回一个可用的 Journal，调用方不必判空——journal 出问题
-  /// 只应该损失可观测性，绝不能让用户同步不了笔记。
+  /// journal 打开失败直接向上抛异常，阻断同步初始化——不再有内存降级路径。
   Future<Journal> _openJournal({required String vaultId}) async {
     final deviceId = _deviceId ?? 'unknown-device';
-    try {
-      final dir = await getApplicationSupportDirectory();
-      return await Journal.openOrMemory(
-        baseDir: dir.path,
-        vaultId: vaultId,
-        deviceId: deviceId,
-      );
-    } catch (e) {
-      // 故意 catch 所有 Throwable 而非只 catch Exception：
-      // path_provider 在未初始化 binding 的环境（单测、后台 isolate）会抛
-      // FlutterError —— 它是 Error 不是 Exception，`on Exception` 抓不住。
-      // journal 是辅助设施，它的任何失败都不该让同步服务起不来。
-      Log.sync.w('[Journal] 沙盒目录解析失败，降级为内存模式',
-          error: e is Exception ? e : StateError('$e'));
-      return Journal.inMemory(vaultId: vaultId, deviceId: deviceId);
-    }
+    final dir = await getApplicationSupportDirectory();
+    return Journal.open(
+      baseDir: dir.path,
+      vaultId: vaultId,
+      deviceId: deviceId,
+    );
   }
 
   /// 启动自检：报告上次运行中未完成的两阶段操作（设计 §3.4）
@@ -489,10 +472,9 @@ class SyncService {
 
   /// 全面校验并修复远端同步数据（设置页「修复同步数据」按钮调用）。
   ///
-  /// 委托给 [SyncEngine.repairRemote]。[oldPassword] 可选：提供旧密码以尝试用
-  /// 归档的历史 dataKey 恢复遗留坏 blob（scenario-d 合并产生的旧密钥 blob）。
+  /// 委托给 [SyncEngine.repairRemote]。
   /// 返回修复结果；未初始化 / 正在同步时返回 null。
-  Future<SyncResult?> repairRemote({String? oldPassword}) async {
+  Future<SyncResult?> repairRemote() async {
     final engine = _engine;
     if (engine == null) {
       _updateState(state.copyWith(
@@ -529,7 +511,7 @@ class SyncService {
     // 与同步互斥（修复期间不应并发同步）
     if (_syncInProgress) return null;
 
-    Log.sync.i('repairRemote: 开始修复 (hasOldPassword=${oldPassword != null})');
+    Log.sync.i('repairRemote: 开始修复');
     _syncInProgress = true;
     _updateState(state.copyWith(
       status: SyncStatus.syncing,
@@ -537,7 +519,7 @@ class SyncService {
     ));
 
     try {
-      final result = await engine.repairRemote(oldPassword: oldPassword);
+      final result = await engine.repairRemote();
       Log.sync.i('repairRemote: 修复完成 (success=${result.success}, '
           'uploaded=${result.uploaded}, failed=${result.failedNoteUuids.length})');
       _updateState(state.copyWith(

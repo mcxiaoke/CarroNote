@@ -127,8 +127,7 @@ enum JournalEventType {
   /// 序列化字符串
   final String wire;
 
-  /// 从 wire 字符串解析；未知值返回 null（前向兼容：新版本写入的新类型
-  /// 在旧版本读取时被跳过而非崩溃）
+  /// 从 wire 字符串解析；未知值返回 null（健壮性：无法识别的类型跳过而非崩溃）
   static JournalEventType? fromWire(String value) {
     for (final t in JournalEventType.values) {
       if (t.wire == value) return t;
@@ -394,10 +393,7 @@ class Journal {
 
   /// 内存模式：不做任何文件 I/O
   ///
-  /// 两个用途：
-  ///   1. 单元测试免去临时目录管理（[Journal.inMemory]）；
-  ///   2. 生产环境沙盒目录不可用时降级（[Journal.openOrMemory]），
-  ///      journal 失效绝不能让同步整体不可用。
+  /// 用途：单元测试免去临时目录管理（[Journal.inMemory]）。
   final bool _memoryOnly;
 
   // 说明：Dart 不允许**私有**命名参数（`this._entries` 形式非法），
@@ -418,8 +414,7 @@ class Journal {
 
   /// 内存 journal（无文件 I/O）
   ///
-  /// 用于单元测试，以及沙盒目录不可用时的降级。语义与文件模式一致，
-  /// 只是不落盘、不归档、不上传远端。
+  /// 用于单元测试。语义与文件模式一致，只是不落盘、不归档、不上传远端。
   factory Journal.inMemory({
     String vaultId = '',
     String deviceId = 'memory',
@@ -532,31 +527,6 @@ class Journal {
     Log.sync.d('[Journal] 打开 dir=$dirPath entries=${journal._entries.length} '
         'nextSeq=${journal._nextSeq} uploadedSeq=${journal._uploadedSeq}');
     return journal;
-  }
-
-  /// 打开 journal；沙盒目录不可用时降级为内存模式（**不抛异常**）
-  ///
-  /// 生产入口应使用本方法而非 [open]：journal 是辅助设施，
-  /// 目录权限异常、磁盘满等问题绝不能让同步功能整体不可用。
-  static Future<Journal> openOrMemory({
-    required String baseDir,
-    required String vaultId,
-    required String deviceId,
-  }) async {
-    try {
-      return await open(
-        baseDir: baseDir,
-        vaultId: vaultId,
-        deviceId: deviceId,
-      );
-    } on Exception catch (e) {
-      Log.sync.w('[Journal] 打开失败，降级为内存模式（同步不受影响）', error: e);
-      return Journal.inMemory(vaultId: vaultId, deviceId: deviceId);
-    } on Error catch (e) {
-      Log.sync.w('[Journal] 打开异常，降级为内存模式（同步不受影响）',
-          error: StateError('$e'));
-      return Journal.inMemory(vaultId: vaultId, deviceId: deviceId);
-    }
   }
 
   /// 关闭：flush 残留缓冲并停掉定时器

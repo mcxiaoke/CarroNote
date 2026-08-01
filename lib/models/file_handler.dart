@@ -35,11 +35,11 @@ class FileHandler {
   /// 导出备份内容(明文 JSON)
   ///
   /// 简化方案:移除 passPhraseHash 后,backup 文件不再写密码指纹。
-  /// 当前 backup 实际是明文导出(exportAllEncrypted => exportAll 已解密),
+  /// 当前 backup 实际是明文导出(exportAll 已解密),
   /// recordHandlerHash 原本只是 owner 身份指纹,不用作加密密钥。
   /// 本次最小化:写固定标记 "plaintext-v1",完整加密改造见 docs/登录验证简化方案-20260729.md 5.2 TODO。
   static Future<String> encryptedOutputBackupContent() async {
-    String record = await NotesDatabase.instance.exportAllEncrypted();
+    String record = await NotesDatabase.instance.exportAll();
     int totalCountOfNotes = '{'.allMatches(record).length;
 
     String content =
@@ -149,7 +149,7 @@ class FileHandler {
 
   Future<void> insertNotes(List<SafeNote> imported) async {
     for (final note in imported) {
-      await NotesDatabase.instance.encryptAndStore(note);
+      await NotesDatabase.instance.storeNote(note);
     }
   }
 }

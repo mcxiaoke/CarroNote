@@ -238,8 +238,7 @@ void main() {
       // 设备 A：创建笔记并首次同步
       var db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKeyA);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKeyA);
       var engine = _makeEngine(
         backend: backend,
         database: db,
@@ -256,7 +255,7 @@ void main() {
       final mkANew = SyncCrypto.deriveMasterKey('password-A-new', salt: salt);
       final encryptedDataKeyANew =
           base64.encode(SyncCrypto.wrapDataKey(mkANew, dataKey));
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKeyANew);
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKeyANew);
       engine = _makeEngine(
         backend: backend,
         database: db,
@@ -274,8 +273,7 @@ void main() {
       //    模拟用户在设备 B 上输入新密码解锁 keyring
       db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKeyA);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKeyA);
 
       final engineB = _makeEngine(
         backend: backend,
@@ -310,8 +308,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -363,8 +360,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -417,8 +413,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -485,8 +480,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -576,8 +570,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -645,8 +638,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -720,8 +712,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -787,8 +778,7 @@ void main() {
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engine = _makeEngine(
         backend: backend,
         database: db,
@@ -846,8 +836,7 @@ void main() {
       // 设备 A：创建笔记并同步
       var db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engineA = _makeEngine(
         backend: backend,
         database: db,
@@ -859,28 +848,28 @@ void main() {
       await engineA.sync();
 
       // 篡改远端 blob：用相同 dataKey 加密不同内容，但保持 hash 不变
-      // （模拟服务端返回内容不一致的合法信封）
-      final tamperedEnvelope = SyncCrypto.seal(
-        dataKey,
-        'uuid-tamper',
-        Uint8List.fromList(utf8.encode(jsonEncode({
-          'title': 'Tampered',
-          'description': 'Malicious content',
-        }))),
-      );
-      // 获取原始 manifest 中的 hash
+      // （模拟服务端返回内容不一致的合法信封）。
+      // 注意：AAD 采用当前协议 `epoch|hash`，信封必须能被解开，内容 hash 才会被比对。
       final remoteManifest = ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
       final originalHash = remoteManifest.items['uuid-tamper']!.hash;
+      final tamperedEnvelope = SyncCrypto.seal(
+        dataKey,
+        originalHash,
+        Uint8List.fromList(utf8.encode(jsonEncode({
+          'title': 'Tampered',
+          'description': 'Malicious content',
+        }))),
+        epoch: 1,
+      );
       backend.putTamperedBlob(originalHash, tamperedEnvelope);
 
       // 设备 B：切换数据库
       db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       final engineB = _makeEngine(
         backend: backend,
         database: db,
@@ -918,8 +907,7 @@ void main() {
       // 设备 A：创建 3 条笔记
       var db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       var engine = _makeEngine(
         backend: backend,
         database: db,
@@ -936,8 +924,7 @@ void main() {
       // 设备 B：同步获取所有笔记
       db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       engine = _makeEngine(
         backend: backend,
         database: db,
@@ -964,8 +951,7 @@ void main() {
       // 设备 C：同步获取所有笔记
       db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       engine = _makeEngine(
         backend: backend,
         database: db,
@@ -985,8 +971,7 @@ void main() {
       // 设备 A：重新创建并同步获取设备 B 的修改
       db = await _makeDatabase();
       db.setDataKey(dataKey);
-      await db.setMeta(MetaKeys.encryptedDataKey, encryptedDataKey);
-      await db.setMeta(MetaKeys.vaultId, 'test-keyring-id');
+      await persistTestKeyring(db, encryptedDataKey: encryptedDataKey);
       engine = _makeEngine(
         backend: backend,
         database: db,

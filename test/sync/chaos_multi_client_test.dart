@@ -684,7 +684,7 @@ class ChaosHarness {
               '${raw.substring(0, raw.length ~/ 2)}\u0000<<CHAOS-CORRUPT>>');
         }
         await c.journal.close();
-        c.journal = await Journal.openOrMemory(
+        c.journal = await Journal.open(
           baseDir: c.journalBaseDir,
           vaultId: c.keyring.vaultId,
           deviceId: c.id,
@@ -1166,7 +1166,7 @@ void main() {
       await log.writeAsString(
           '${raw.substring(0, raw.length ~/ 2)}\u0000<<CORRUPT>>');
       await a.journal.close();
-      a.journal = await Journal.openOrMemory(
+      a.journal = await Journal.open(
         baseDir: a.journalBaseDir,
         vaultId: f.vaultId,
         deviceId: a.id,
@@ -1195,7 +1195,7 @@ void main() {
       await a.journal.close();
       await Directory(p.join(a.journalBaseDir, 'journal'))
           .delete(recursive: true);
-      a.journal = await Journal.openOrMemory(
+      a.journal = await Journal.open(
         baseDir: a.journalBaseDir,
         vaultId: f.vaultId,
         deviceId: a.id,
@@ -1296,7 +1296,7 @@ void main() {
       await a.journal.flush();
 
       // 注入：把落盘账本的 current 换成坏纪元（epoch 飞到 999，edk 是垃圾）
-      final ledger = (await KeyringLedger.loadFromMeta(NotesDatabase.instance))!;
+      final ledger = (await KeyringLedger.load(NotesDatabase.instance))!;
       final polluted = KeyringLedger(
         vaultId: ledger.vaultId,
         kdf: ledger.kdf,
@@ -1307,7 +1307,6 @@ void main() {
           dataKeyEpoch: 999,
           keyVersion: 999,
         ),
-        history: ledger.history,
       );
       await polluted.persist(NotesDatabase.instance);
 
@@ -1335,7 +1334,6 @@ void main() {
           keyVersion: replayed.keyVersion,
           dataKeyEpoch: replayed.dataKeyEpoch,
         ),
-        history: polluted.history,
       );
       await repaired.persist(NotesDatabase.instance);
       final recovered = await Keyring.unlockLocal(
@@ -1354,7 +1352,7 @@ void main() {
       // 改密前的账本快照（模拟"用户从旧备份恢复了一份 App 数据"）
       f.activate(a);
       final snapshotJson = jsonEncode(
-          (await KeyringLedger.loadFromMeta(NotesDatabase.instance))!.toJson());
+          (await KeyringLedger.load(NotesDatabase.instance))!.toJson());
 
       // A 改密码 → v2，并推到远端
       const newPw = 'p2-fault-pw-v2';

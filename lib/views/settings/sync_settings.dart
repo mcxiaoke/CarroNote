@@ -442,14 +442,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       }
     }
 
-    // 询问旧密码（可选）
-    final oldPassword = await _promptOldPassword();
-    if (oldPassword == null) return; // 用户取消
-
     _showMessage('正在校验并修复远端数据…');
-    final result = await SyncService.instance.repairRemote(
-      oldPassword: oldPassword.isEmpty ? null : oldPassword,
-    );
+    final result = await SyncService.instance.repairRemote();
 
     if (mounted) {
       setState(() {});
@@ -464,46 +458,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         _showMessage('修复完成：治愈 ${result.uploaded} 条，无残留损坏');
       }
     }
-  }
-
-  /// 弹出可选旧密码输入框
-  ///
-  /// 返回 null 表示取消；空字符串表示不提供旧密码；否则为输入的旧密码。
-  Future<String?> _promptOldPassword() async {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('修复同步数据'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('将扫描远端 blob 并尝试用当前密钥/本机明文修复。\n'
-                '若曾因多设备合并产生旧密钥 blob，可填写旧密码以恢复：'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '旧密码（可选，留空跳过）',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => Navigator.of(dialogContext).pop(controller.text),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(null),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: const Text('开始修复'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showMessage(String message) {

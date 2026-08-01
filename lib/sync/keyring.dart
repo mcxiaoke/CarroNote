@@ -3,27 +3,18 @@
  *
  * 设计文档：docs/p2-keyring-journal-design-fixed.md（v2 方案 B）
  *
- * 两层密钥架构（与旧 Vault 完全一致，不改加密格式 —— G6）：
+ * 两层密钥架构：
  *   MK      = PBKDF2-HMAC-SHA256(password, per-vault-salt, 200k)  ← 改密码时变化
  *   dataKey = 随机 32 字节                                        ← 仅 scenario-c/d 迁移时变化
  *   encryptedDataKey = AES-GCM(MK, dataKey)                       ← 存 manifest header
  *
- * 相对旧 Vault 的结构性变化：
- *   1. 【单一真相源 G1】密钥态收敛为一个账本对象：
- *        - current : 当前生效密钥条目（keyFingerprint / encryptedDataKey /
- *                    keyVersion / dataKeyEpoch）
- *        - history : 历史条目（旧 wrappedDataKey，供旧密码 repair），
- *                    local-only、按 keyVersion 去重、上限 20 条
- *      旧实现散落在 8 个 sync_meta 键 + data_key_history 键，靠 33 处 setMeta
- *      手动互相回写，是 BUG-3 / H1 的根源。
- *   2. 【运行时字段】dataKey / mk 仍是内存态（不持久化），随 Keyring 一起持有，
- *      使 Keyring 能真正取代 Vault 供 SyncEngine 加解密（解决评审 C1）。
- *   3. 【持久化 G5】只写 sync_meta 的单键 `keyring`（一个 JSON），单键 setMeta
- *      天然原子，不存在"多键双写半成功"。旧多键仅由 fromLegacyMeta 一次性读取转换。
+ * 密钥态收敛为一个账本对象（单键 `keyring` JSON，setMeta 原子，无双写不一致）：
+ *   - current : 当前生效密钥条目（keyFingerprint / encryptedDataKey /
+ *               keyVersion / dataKeyEpoch）
  *
  * 可变性约定（重要，偏离设计文档的地方，理由见下）：
  *   设计文档 §2.5 写作 `keyring = keyring.copyWithCurrent(...)`（返回新实例）。
- *   实现上 [current] / [history] 采用**可变字段 + 原地字段级更新**，因为：
+ *   实现上 [current] 采用**可变字段 + 原地字段级更新**，因为：
  *     - SyncService 与 SyncEngine 共享同一个 Keyring 实例（旧 Vault 亦然），
  *       若 adoptRemoteEpoch / updateEncryptedDataKey 返回新实例，SyncService
  *       持有的旧引用不会同步，会重新引入"本地纪元落后"的 BUG-3 类问题。
@@ -45,12 +36,6 @@ import 'package:safenotes/sync/sync_models.dart';
 
 /// keyring 持久化 JSON 的 schema 版本（未来格式迁移用）
 const int kKeyringSchemaVersion = 1;
-
-/// history 保留上限（D3 决策：最近 20 条，按 keyVersion 去重）
-///
-/// 约对应 20 次改密码 / 迁移的恢复窗口，足够 scenario-d 修复；
-/// 同时避免开发/测试阶段频繁改密码导致 meta 无限增长。
-const int kKeyringHistoryLimit = 20;
 
 /// 比较两个字节序列是否相等（dataKey 比较用，非安全敏感）
 bool _sameKey(Uint8List a, Uint8List b) {
@@ -82,11 +67,6 @@ class KeyringNotInitializedException implements Exception {
 }
 
 /// 密钥条目产生原因（枚举常量）
-///
-/// 补齐草案遗漏场景（评审 A-P2#9 / 审查 C-问题4）：
-/// 把原 `migrateVault` / `scenario-d` 合并为 [migrateDataKey]（二者都是
-/// dataKey 值真变、epoch+1）；新增 [adoptRemoteEpoch]（H1 场景）与
-/// [unknown]（legacy 数据无来源字段时的默认值）。
 class KeyringReason {
   /// 新建 keyring
   static const String create = 'create';
@@ -99,9 +79,6 @@ class KeyringReason {
 
   /// 迁移到不同 dataKey（scenario-c / scenario-d，dataKeyEpoch+1）
   static const String migrateDataKey = 'migrateDataKey';
-
-  /// legacy 数据迁移默认值（旧 data_key_history 无来源字段）
-  static const String unknown = 'unknown';
 }
 
 /// 单个密钥条目（一次密钥状态快照，包裹态，可持久化）
@@ -121,7 +98,7 @@ class KeyringEntry {
   /// dataKey 纪元，仅 dataKey 值真正变化时 +1
   final int dataKeyEpoch;
 
-  /// 归档时间（Unix 毫秒）；legacy 迁移项无时间字段，填 0（评审 B-L1）
+  /// 归档时间（Unix 毫秒）
   final int archivedAt;
 
   /// 产生原因，取值见 [KeyringReason]
@@ -133,7 +110,7 @@ class KeyringEntry {
     this.keyVersion = 1,
     this.dataKeyEpoch = 1,
     this.archivedAt = 0,
-    this.reason = KeyringReason.unknown,
+    this.reason = KeyringReason.create,
   });
 
   KeyringEntry copyWith({
@@ -168,7 +145,7 @@ class KeyringEntry {
         keyVersion: (json['keyVersion'] as num?)?.toInt() ?? 1,
         dataKeyEpoch: (json['dataKeyEpoch'] as num?)?.toInt() ?? 1,
         archivedAt: (json['archivedAt'] as num?)?.toInt() ?? 0,
-        reason: (json['reason'] as String?) ?? KeyringReason.unknown,
+        reason: (json['reason'] as String?) ?? KeyringReason.create,
       );
 
   @override
@@ -180,20 +157,18 @@ class KeyringEntry {
 /// Keyring 的持久化账本（不含运行时密钥）
 ///
 /// 与 [Keyring] 分离的原因：解锁前只能读到包裹态账本（还没有密码去解 dataKey），
-/// `isInitialized` / 诊断页 / legacy 转换等场景都只需要账本，不需要明文密钥。
+/// `isInitialized` / 诊断页等场景都只需要账本，不需要明文密钥。
 class KeyringLedger {
   final String vaultId;
   final KdfParams kdf;
   final int createdAt;
   final KeyringEntry current;
-  final List<KeyringEntry> history;
 
   const KeyringLedger({
     required this.vaultId,
     required this.kdf,
     required this.createdAt,
     required this.current,
-    this.history = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -202,7 +177,6 @@ class KeyringLedger {
         'kdf': kdf.toJson(),
         'createdAt': createdAt,
         'current': current.toJson(),
-        'history': history.map((e) => e.toJson()).toList(),
       };
 
   factory KeyringLedger.fromJson(Map<String, dynamic> json) => KeyringLedger(
@@ -214,10 +188,6 @@ class KeyringLedger {
         current: KeyringEntry.fromJson(
           Map<String, dynamic>.from(json['current'] as Map),
         ),
-        history: ((json['history'] as List?) ?? const [])
-            .whereType<Map>()
-            .map((e) => KeyringEntry.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
       );
 
   /// 写入 sync_meta 的单键 `keyring`（单键 setMeta 原子，无双写不一致）
@@ -225,7 +195,7 @@ class KeyringLedger {
       database.setMeta(MetaKeys.keyring, jsonEncode(toJson()));
 
   /// 从 sync_meta 的 `keyring` 单键读取账本；不存在或损坏返回 null
-  static Future<KeyringLedger?> loadFromMeta(NotesDatabase database) async {
+  static Future<KeyringLedger?> load(NotesDatabase database) async {
     final raw = await database.getMeta(MetaKeys.keyring);
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -233,99 +203,10 @@ class KeyringLedger {
       if (decoded is! Map) return null;
       return KeyringLedger.fromJson(Map<String, dynamic>.from(decoded));
     } on Object {
-      // JSON 损坏（混沌测试会主动制造）：视为无账本，交由 legacy 回退或报未初始化
+      // JSON 损坏（混沌测试会主动制造）：视为无账本，报未初始化
       return null;
     }
   }
-
-  /// 从旧 keyring 的多键 meta 一次性重建账本（升级路径，G5 一次性、不进长期代码）
-  ///
-  /// 旧键：vault_id / encrypted_data_key / kdf_salt / key_fingerprint /
-  ///       key_version / vault_created_at / data_key_epoch / data_key_history
-  /// 缺少必需键（vaultId / encryptedDataKey / kdfSalt）时返回 null。
-  static Future<KeyringLedger?> fromLegacyMeta(NotesDatabase database) async {
-    final vaultId = await database.getMeta(MetaKeys.vaultId);
-    final encryptedDataKey = await database.getMeta(MetaKeys.encryptedDataKey);
-    final saltBase64 = await database.getMeta(MetaKeys.kdfSalt);
-    if (vaultId == null || encryptedDataKey == null || saltBase64 == null) {
-      return null;
-    }
-
-    final keyFingerprint =
-        await database.getMeta(MetaKeys.keyFingerprint) ?? '';
-    final keyVersion =
-        int.tryParse(await database.getMeta(MetaKeys.keyVersion) ?? '1') ?? 1;
-    final dataKeyEpoch =
-        int.tryParse(await database.getMeta(MetaKeys.dataKeyEpoch) ?? '1') ?? 1;
-    final createdAt = int.tryParse(
-          await database.getMeta(MetaKeys.vaultCreatedAt) ?? '',
-        ) ??
-        DateTime.now().millisecondsSinceEpoch;
-
-    // 旧 data_key_history 仅有 {keyVersion, wrappedDataKey, keyFingerprint}，
-    // 无时间与来源 → archivedAt=0 / reason=unknown（评审 B-L1）。
-    final legacyHistory = await database.getDataKeyHistory();
-    final history = <KeyringEntry>[];
-    for (final e in legacyHistory) {
-      final wrapped = e['wrappedDataKey'];
-      if (wrapped is! String || wrapped.isEmpty) continue;
-      history.add(KeyringEntry(
-        keyFingerprint: (e['keyFingerprint'] as String?) ?? '',
-        encryptedDataKey: wrapped,
-        keyVersion: (e['keyVersion'] as num?)?.toInt() ?? 1,
-        // 旧记录不含纪元：按当前纪元记录，仅用于 repair 时解包，不参与纪元判定
-        dataKeyEpoch: dataKeyEpoch,
-        archivedAt: 0,
-        reason: KeyringReason.unknown,
-      ));
-    }
-
-    return KeyringLedger(
-      vaultId: vaultId,
-      kdf: KdfParams.create(salt: base64.decode(saltBase64)),
-      createdAt: createdAt,
-      current: KeyringEntry(
-        keyFingerprint: keyFingerprint,
-        encryptedDataKey: encryptedDataKey,
-        keyVersion: keyVersion,
-        dataKeyEpoch: dataKeyEpoch,
-        archivedAt: 0,
-        reason: KeyringReason.unknown,
-      ),
-      history: _normalizeHistory(history),
-    );
-  }
-
-  /// 读取账本：优先 `keyring` 单键，缺失时回退旧多键并**立即转换落盘**
-  ///
-  /// 返回 null 表示本地完全未初始化。
-  static Future<KeyringLedger?> load(NotesDatabase database) async {
-    final fromMeta = await loadFromMeta(database);
-    if (fromMeta != null) return fromMeta;
-
-    final legacy = await fromLegacyMeta(database);
-    if (legacy == null) return null;
-    // 一次性转换：立刻写入新单键，后续走正常路径
-    await legacy.persist(database);
-    return legacy;
-  }
-}
-
-/// history 规范化：按 keyVersion 去重 + 降序截断到上限
-///
-/// 去重沿用旧 [NotesDatabase.appendDataKeyHistory] 的语义（同 keyVersion 只留一条），
-/// 排序按 keyVersion 降序，保留最近 [kKeyringHistoryLimit] 条。
-List<KeyringEntry> _normalizeHistory(List<KeyringEntry> input) {
-  final seen = <int>{};
-  final deduped = <KeyringEntry>[];
-  for (final e in input) {
-    if (seen.add(e.keyVersion)) deduped.add(e);
-  }
-  deduped.sort((a, b) => b.keyVersion.compareTo(a.keyVersion));
-  if (deduped.length > kKeyringHistoryLimit) {
-    return deduped.sublist(0, kKeyringHistoryLimit);
-  }
-  return deduped;
 }
 
 /// dataKey 迁移结果
@@ -382,10 +263,10 @@ class MigrationResult {
       MigrationResult(needsMigration: true, success: false, error: error);
 }
 
-/// 密钥环：SyncEngine 持有的唯一密钥对象（取代旧 Vault）
+/// 密钥环：SyncEngine 持有的唯一密钥对象
 ///
 /// 同时承担两个角色：
-///   1. 持久化账本（vaultId / kdf / createdAt / current / history）
+///   1. 持久化账本（vaultId / kdf / createdAt / current）
 ///   2. 会话运行时（dataKey / mk，仅内存，logout 随实例丢弃）
 class Keyring {
   /// keyring 唯一标识（UUIDv4，仅用于标识同步组）
@@ -402,9 +283,6 @@ class Keyring {
   /// 可变：adoptRemoteEpoch / updateEncryptedDataKey 需原地字段级更新，
   /// 以保证 SyncService 与 SyncEngine 共享的同一实例状态一致（见文件头说明）。
   KeyringEntry current;
-
-  /// 历史密钥条目（local-only、去重、上限 20），供旧密码 repair 使用
-  List<KeyringEntry> history;
 
   /// 数据主密钥（32 字节明文，真正加密笔记与 blob 的钥匙）
   ///
@@ -424,12 +302,11 @@ class Keyring {
     required this.createdAt,
     required this.current,
     required this.dataKey,
-    List<KeyringEntry>? history,
     this.mk,
-  }) : history = history ?? <KeyringEntry>[];
+  });
 
   // ──────────────────────────────────────────────
-  // 便捷访问器（语义与旧 Vault 同名字段一致）
+  // 便捷访问器
   // ──────────────────────────────────────────────
 
   String get encryptedDataKey => current.encryptedDataKey;
@@ -443,7 +320,6 @@ class Keyring {
         kdf: kdf,
         createdAt: createdAt,
         current: current,
-        history: List<KeyringEntry>.unmodifiable(history),
       );
 
   /// 本地持久化：只写包裹态账本到 sync_meta 的 `keyring` 单键
@@ -473,7 +349,6 @@ class Keyring {
           dataKeyEpoch: dataKeyEpoch,
           reason: reason,
         ),
-        history: List<KeyringEntry>.from(history),
         // 关键：raw dataKey / mk 原样保留，绝不被包裹态更新抹掉（C2）
         dataKey: dataKey,
         mk: mk,
@@ -511,10 +386,6 @@ class Keyring {
 
   /// 从远端 manifest header 构建 Keyring
   ///
-  /// 注意（设计约束，评审 A-P1#2）：[ManifestHeader] 只含当前密钥三元组，
-  /// **不含 history**，因此新设备从远端加入时 history 必然为空。这不是 bug：
-  /// 新设备本就没有旧密码派生的 MK，拿到旧 wrappedDataKey 也解不开。
-  ///
   /// [dataKey] / [mk] 必须由调用方提供（远端 header 只有包裹态，解包需要密码），
   /// 这也是 C1 的同源约束：没有 raw dataKey 的 Keyring 无法工作。
   factory Keyring.fromRemoteHeader(
@@ -532,9 +403,8 @@ class Keyring {
           keyVersion: header.keyVersion,
           dataKeyEpoch: header.dataKeyEpoch,
           archivedAt: 0,
-          reason: KeyringReason.unknown,
+          reason: KeyringReason.adoptRemoteEpoch,
         ),
-        history: const [],
         dataKey: dataKey,
         mk: mk,
       );
@@ -581,17 +451,14 @@ class Keyring {
 
   /// 从本地存储解锁已有 keyring
   ///
-  /// 优先读 `keyring` 单键；缺失时由 [KeyringLedger.load] 自动做一次性
-  /// legacy 转换（旧多键 → 新单键）后继续。密码错误抛 [WrongPasswordException]。
+  /// 密码错误抛 [WrongPasswordException]。
   static Future<Keyring> unlockLocal({
     required String password,
     required NotesDatabase database,
   }) async {
     final ledger = await KeyringLedger.load(database);
     if (ledger == null) {
-      throw KeyringNotInitializedException(
-        '本地无 keyring 账本，也无可转换的旧 keyring 元数据',
-      );
+      throw KeyringNotInitializedException('本地无 keyring 账本');
     }
 
     final mk = await _deriveMk(password, salt: ledger.kdf.saltBytes);
@@ -602,7 +469,6 @@ class Keyring {
       kdf: ledger.kdf,
       createdAt: ledger.createdAt,
       current: ledger.current,
-      history: List<KeyringEntry>.from(ledger.history),
       dataKey: dataKey,
       mk: mk,
     );
@@ -636,10 +502,8 @@ class Keyring {
         keyVersion: remoteKeyVersion,
         dataKeyEpoch: remoteDataKeyEpoch,
         archivedAt: DateTime.now().millisecondsSinceEpoch,
-        reason: KeyringReason.unknown,
+        reason: KeyringReason.adoptRemoteEpoch,
       ),
-      // history 必然为空：远端 header 不含历史（设计约束，见 fromRemoteHeader）
-      history: const [],
       dataKey: dataKey,
       mk: mk,
     );
@@ -723,17 +587,6 @@ class Keyring {
       nextEpoch = dataKeyEpoch + 1;
     }
 
-    // 2. 归档旧条目（供旧密码 repair），再切换 current
-    final nextHistory = keyChanged
-        ? _normalizeHistory([
-            current.copyWith(
-              archivedAt: DateTime.now().millisecondsSinceEpoch,
-              reason: KeyringReason.migrateDataKey,
-            ),
-            ...history,
-          ])
-        : List<KeyringEntry>.from(history);
-
     final migrated = Keyring(
       vaultId: remoteVaultId,
       kdf: kdf,
@@ -744,7 +597,6 @@ class Keyring {
         archivedAt: DateTime.now().millisecondsSinceEpoch,
         reason: KeyringReason.migrateDataKey,
       ),
-      history: nextHistory,
       dataKey: remoteDataKey,
       mk: mk,
     );
@@ -807,15 +659,6 @@ class Keyring {
     }
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final nextHistory = keyChanged
-        ? _normalizeHistory([
-            current.copyWith(
-              archivedAt: now,
-              reason: KeyringReason.migrateDataKey,
-            ),
-            ...history,
-          ])
-        : List<KeyringEntry>.from(history);
 
     final migrated = Keyring(
       vaultId: remoteVaultId,
@@ -829,7 +672,6 @@ class Keyring {
         archivedAt: now,
         reason: KeyringReason.migrateDataKey,
       ),
-      history: nextHistory,
       dataKey: remoteDataKey,
       mk: remoteMk,
     );
@@ -856,7 +698,7 @@ class Keyring {
   /// 修改密码：重新 wrap dataKey + 递增 keyVersion（O(1)，不触碰笔记）
   ///
   /// 返回**新实例**（mk 变为新派生 MK），调用方必须替换持有的引用（评审 B-M3）。
-  /// dataKey 值不变 → dataKeyEpoch 不变。旧 current 压入 history 供 repair。
+  /// dataKey 值不变 → dataKeyEpoch 不变。
   Future<Keyring> changePassword({
     required String oldPassword,
     required String newPassword,
@@ -879,7 +721,7 @@ class Keyring {
     final newKeyFingerprint = SyncCrypto.computeKeyFingerprint(newMk);
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    // 3. 归档旧条目 + 生成新 current（一次 persist 取代旧实现的 4 次写）
+    // 3. 生成新 current（一次 persist 取代旧实现的 4 次写）
     final changed = Keyring(
       vaultId: vaultId,
       kdf: kdf, // salt 不变
@@ -892,13 +734,6 @@ class Keyring {
         archivedAt: now,
         reason: KeyringReason.changePassword,
       ),
-      history: _normalizeHistory([
-        current.copyWith(
-          archivedAt: now,
-          reason: KeyringReason.changePassword,
-        ),
-        ...history,
-      ]),
       dataKey: dataKey,
       mk: newMk,
     );
@@ -934,19 +769,6 @@ class Keyring {
     int remoteDataKeyEpoch = 1,
     required NotesDatabase database,
   }) async {
-    // 归档被替换的本地条目：远端换过密码时，本地旧 wrappedDataKey 仍可能是
-    // repair 的恢复锚点（用旧密码解开）。仅在包裹值确实变化时归档。
-    if (current.encryptedDataKey != remoteEncryptedDataKey &&
-        current.encryptedDataKey.isNotEmpty) {
-      history = _normalizeHistory([
-        current.copyWith(
-          archivedAt: DateTime.now().millisecondsSinceEpoch,
-          reason: KeyringReason.adoptRemoteEpoch,
-        ),
-        ...history,
-      ]);
-    }
-
     current = current.copyWith(
       encryptedDataKey: remoteEncryptedDataKey,
       keyFingerprint: remoteKeyFingerprint,
@@ -962,12 +784,9 @@ class Keyring {
   // 检查 / 工具方法
   // ──────────────────────────────────────────────
 
-  /// 本地是否已初始化（有 keyring 单键，或可从旧 meta 转换）
-  static Future<bool> isInitialized(NotesDatabase database) async {
-    final fromMeta = await KeyringLedger.loadFromMeta(database);
-    if (fromMeta != null) return true;
-    return (await KeyringLedger.fromLegacyMeta(database)) != null;
-  }
+  /// 本地是否已初始化（有 keyring 单键）
+  static Future<bool> isInitialized(NotesDatabase database) async =>
+      await KeyringLedger.load(database) != null;
 
   /// 读取 vaultId（不解锁）
   static Future<String?> getVaultId(NotesDatabase database) async =>
@@ -977,32 +796,8 @@ class Keyring {
   static Future<String?> getEncryptedDataKey(NotesDatabase database) async =>
       (await KeyringLedger.load(database))?.current.encryptedDataKey;
 
-  /// 候选历史 dataKey：用旧密码派生的 MK 逐个解开 history 中的包裹条目
-  ///
-  /// 供 `SyncEngine.repairRemote(oldPassword:)` 构建候选 dataKey 集合，
-  /// 取代旧的 `database.getDataKeyHistory()` 直读。解不开的条目静默跳过
-  /// （它们是用别的 MK 包裹的）。
-  List<Uint8List> unwrapHistoryWith(Uint8List oldMk) {
-    final result = <Uint8List>[];
-    for (final entry in history) {
-      if (entry.encryptedDataKey.isEmpty) continue;
-      try {
-        final dk = SyncCrypto.unwrapDataKey(
-          oldMk,
-          base64.decode(entry.encryptedDataKey),
-        );
-        if (!result.any((c) => _sameKey(c, dk))) result.add(dk);
-      } on Object {
-        // 该条目不是用 oldMk 包裹的（或已损坏），跳过
-        continue;
-      }
-    }
-    return result;
-  }
-
   @override
-  String toString() => 'Keyring(vaultId=$vaultId, current=$current, '
-      'history=${history.length})';
+  String toString() => 'Keyring(vaultId=$vaultId, current=$current)';
 
   // ──────────────────────────────────────────────
   // 内部辅助

@@ -8,10 +8,13 @@
  *
  * 协议规范：docs/server-api-spec.md v2.2
  *
+ * 兼容性约束：客户端要求服务端必须实现 v2.2（含资源层）且必须返回 ETag，
+ * 不兼容的服务端将抛 [BackendUnavailableException]，不做降级。
+ *
  * API 端点：
  *   GET    /api/v2/manifest           下载 manifest（带 ETag）
  *   PUT    /api/v2/manifest           上传 manifest（带 If-Match/If-None-Match 乐观锁）
- *   DELETE /api/v2/manifest           清理损坏 manifest（backupCorruptManifest 用）
+ *   DELETE /api/v2/manifest           清理损坏 manifest（backupCorruptManifest 兜底用）
  *   GET    /api/v2/blob/<hash>        下载 blob
  *   PUT    /api/v2/blob/<hash>        上传 blob（幂等）
  *   DELETE /api/v2/blob/<hash>        删除 blob（GC 用，幂等）
@@ -28,13 +31,10 @@
 
 // Dart 原生导入
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 // Package 导入
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as p;
 
 // Project 导入
 import 'package:safenotes/sync/crypto.dart';
@@ -65,15 +65,6 @@ class SafeServerBackend implements SyncBackend {
   final http.Client _client;
 
   bool _initialized = false;
-
-  /// v2.2 资源层能力探测（懒执行，缓存）
-  ///
-  /// null = 未探测；true = 服务端支持 `/api/v2/resources/<path>`（v2.2）；
-  /// false = 旧版 v2.1/v2，孤儿隔离与 manifest 备份走降级路径。
-  bool? _resourcesSupported;
-
-  /// 资源层能力是否已探测过（避免每次同步重复探测）
-  bool _resourcesProbed = false;
 
   SafeServerBackend({
     required String baseUrl,
@@ -161,11 +152,13 @@ class SafeServerBackend implements SyncBackend {
     final etag = _normalizeEtag(res.headers['etag']);
     final ciphertext = res.bodyBytes;
 
-    // 服务端必须返回 ETag（规范要求），但容错：未返回时用内容 hash 作为 fallback
-    final effectiveEtag =
-        etag.isNotEmpty ? etag : _computeContentEtag(ciphertext);
+    // 服务端必须返回 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
+    if (etag.isEmpty) {
+      throw BackendUnavailableException(
+          'GET manifest failed: server did not return ETag (SafeServer v2.2 required)');
+    }
 
-    return (ciphertext: ciphertext, etag: effectiveEtag);
+    return (ciphertext: ciphertext, etag: etag);
   }
 
   @override
@@ -211,9 +204,13 @@ class SafeServerBackend implements SyncBackend {
           'PUT manifest failed: ${res.statusCode} ${res.body}');
     }
 
-    // 服务端返回新 ETag 优先；否则用上传内容的 hash 作为 fallback
+    // 服务端必须返回新 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
     final newEtag = _normalizeEtag(res.headers['etag']);
-    return newEtag.isNotEmpty ? newEtag : _computeContentEtag(ciphertext);
+    if (newEtag.isEmpty) {
+      throw BackendUnavailableException(
+          'PUT manifest failed: server did not return ETag (SafeServer v2.2 required)');
+    }
+    return newEtag;
   }
 
   @override
@@ -273,11 +270,9 @@ class SafeServerBackend implements SyncBackend {
 
   /// 删除 blob（GC 用，幂等）
   ///
-  /// SafeServer v2.1 协议定义了 DELETE /api/v2/blob/`<hash>` 端点。
-  /// 客户端在 GC 流程中调用此端点清理孤儿 blob。
-  ///
-  /// 兼容性：若服务端为旧版 v2（未实现 DELETE 端点），返回 405 Method Not Allowed
-  /// 时静默跳过，不抛异常——GC 退化为"只标记不清理"。
+  /// SafeServer v2.2 协议定义了 DELETE /api/v2/blob/`<hash>` 端点
+  /// （在 v2.2 中委托到资源层 `blobs/<hash>`）。
+  /// 客户端要求服务端必须实现 v2.2，未实现时返回 405 视为不兼容，抛异常。
   @override
   Future<void> deleteBlob(String hash) async {
     _ensureInitialized();
@@ -289,26 +284,22 @@ class SafeServerBackend implements SyncBackend {
         headers: _authHeaders(),
       );
     } on Exception catch (e) {
-      // 网络错误：静默跳过，GC 不阻断同步
-      Log.sync.w('[SafeServer] deleteBlob 网络错误，GC 跳过 '
-          'hash=${hash.substring(0, 8)}…', error: e);
-      return;
+      throw BackendUnavailableException('DELETE blob network error: $e');
     }
 
     // 204 No Content = 删除成功
-    // 405 Method Not Allowed = 旧版服务端未实现 DELETE（兼容 v2）
     // 404 Not Found = blob 不存在（幂等删除，视为成功）
     // 401 = 认证失败（仍抛异常，提示用户检查 token）
-    if (res.statusCode == 204 ||
-        res.statusCode == 405 ||
-        res.statusCode == 404) {
+    if (res.statusCode == 204 || res.statusCode == 404) {
       return;
     }
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
           'SafeServer auth failed (401): check token');
     }
-    // 其他非 2xx 状态：静默跳过（保守不抛，GC 失败不阻断同步）
+    // 其余状态（含 405 = 旧版服务端未实现 DELETE）：v2.2 必须支持，抛异常
+    throw BackendUnavailableException(
+        'DELETE blob failed: ${res.statusCode} for hash=$hash');
   }
 
   /// 备份损坏的 manifest（v2.2 资源层 move 到 `.corrupt-<ts>`）
@@ -316,25 +307,21 @@ class SafeServerBackend implements SyncBackend {
   /// v2.2 资源层提供 `move` 操作，等价于 localFs 的 rename / webdav 的 COPY+DELETE：
   /// 把损坏的 `manifest` 移动到 keyring 根的 `.corrupt-<ts>`，让其脱离 manifest 端点，
   /// 随后 SyncEngine 用本地数据重建 manifest 上传（PUT If-None-Match:* 成功）。
-  ///
-  /// 降级：旧版服务端未实现资源层时，退化为 DELETE /api/v2/manifest（旧行为）。
+  /// 客户端要求服务端必须实现 v2.2 资源层。
   @override
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {
     _ensureInitialized();
-    await _ensureResourcesProbed();
-    if (_resourcesSupported == true) {
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final res = await _postResource(
-        'manifest',
-        'move',
-        dest: '.corrupt-$ts',
-        overwrite: false,
-      );
-      if (res.statusCode == 204 || res.statusCode == 404) {
-        return; // 已移走（manifest 端点失效）或本就不存在
-      }
-      // 其他状态：退化为 DELETE 兜底
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final res = await _postResource(
+      'manifest',
+      'move',
+      dest: '.corrupt-$ts',
+      overwrite: false,
+    );
+    if (res.statusCode == 204 || res.statusCode == 404) {
+      return; // 已移走（manifest 端点失效）或本就不存在
     }
+    // move 意外失败（如资源层异常）：退化为 DELETE 兜底
     try {
       await _client.delete(
         Uri.parse(_manifestUrl),
@@ -349,15 +336,11 @@ class SafeServerBackend implements SyncBackend {
 
   /// 列出所有 blob hash（GC 用）
   ///
-  /// SafeServer v2.1 协议定义了 GET /api/v2/blobs 端点，返回 JSON 数组
+  /// SafeServer v2.2 协议定义了 GET /api/v2/blobs 端点，返回 JSON 数组
   /// 包含所有 blob 的 hash。客户端用此列表与 manifest 引用对比，识别孤儿 blob。
-  ///
-  /// 兼容性：旧版 v2 服务端未实现此端点，返回 404/405 时退化为空列表，
-  /// GC 退化为"只标记不清理"。
-  /// 列出所有 blob hash（含隔离区项，不过滤）
-  ///
-  /// [listBlobs] 在它之上排除隔离区前缀；[listOrphanBlobs] 在它之上筛选隔离区项。
-  Future<List<String>> _listAllBlobs() async {
+  /// 客户端要求服务端必须实现 v2.2；非 200 响应视为不兼容，抛异常。
+  @override
+  Future<List<String>> listBlobs() async {
     _ensureInitialized();
 
     http.Response res;
@@ -367,35 +350,25 @@ class SafeServerBackend implements SyncBackend {
         headers: _authHeaders(),
       );
     } on Exception catch (e) {
-      // 网络错误：返回空列表，GC 不阻断同步
-      Log.sync.w('[SafeServer] _listAllBlobs 网络错误，GC 退化为只标记', error: e);
-      return [];
+      throw BackendUnavailableException('GET blobs network error: $e');
     }
 
-    // 404/405 = 旧版服务端未实现 list 端点，退化为空列表
-    if (res.statusCode == 404 || res.statusCode == 405) return [];
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
           'SafeServer auth failed (401): check token');
     }
     if (res.statusCode != 200) {
-      // 其他错误：返回空列表，GC 不阻断同步
-      return [];
+      throw BackendUnavailableException(
+          'GET blobs failed: ${res.statusCode} ${res.body}');
     }
 
     try {
       final List<dynamic> hashes = jsonDecode(res.body);
       return hashes.whereType<String>().toList();
     } on FormatException {
-      // JSON 解析失败：返回空列表，保守不抛
-      return [];
+      throw BackendUnavailableException(
+          'GET blobs failed: invalid JSON response');
     }
-  }
-
-  @override
-  Future<List<String>> listBlobs() async {
-    // P1-2：排除隔离区 blob（0rphan- 前缀），避免被 GC 再次误判为孤儿
-    return (await _listAllBlobs()).where((h) => !h.startsWith('0rphan-')).toList();
   }
 
   /// P1-2 修复：软删除 blob（移动到 `blobs-orphan/` 隔离区）
@@ -403,136 +376,94 @@ class SafeServerBackend implements SyncBackend {
   /// v2.2 资源层提供 `move` 操作，等价于 localFs 的 rename / webdav 的 COPY+DELETE：
   /// 先把原 blob `move` 到 `blobs-orphan/<hash>.<epochMs>`，保留一段时间可恢复，
   /// 避免立即物理删除的不可逆损失。这是与另两个后端一致的孤儿隔离语义。
-  ///
-  /// 降级路径：旧版 v2.1/v2 服务端未实现资源层（探测返回 404），退化为
-  /// GET+PUT（`0rphan-` 前缀副本）+DELETE 的伪隔离方案（保留旧行为）。
   @override
   Future<void> deleteBlobSoft(String hash) async {
     _ensureInitialized();
-    await _ensureResourcesProbed();
-    if (_resourcesSupported == true) {
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final dest = 'blobs-orphan/$hash.$ts';
-      // 确保隔离区目录存在（201 已建 / 405 已存在，均忽略）
-      await _postResource('blobs-orphan', 'mkdir');
-      final res = await _postResource(
-        'blobs/$hash',
-        'move',
-        dest: dest,
-        overwrite: false,
-      );
-      if (res.statusCode == 204) return; // 已移入隔离区
-      if (res.statusCode == 404) return; // 原 blob 已不存在，幂等
-      if (res.statusCode == 409) {
-        // 隔离区已存在同名项：直接删除原 blob 即可
-        try {
-          await deleteBlob(hash);
-        } on Exception catch (e) {
-          Log.sync.w('[SafeServer] deleteBlobSoft: 409 后删除原 blob 失败 '
-              'hash=${hash.substring(0, 8)}…', error: e);
-        }
-        return;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final dest = 'blobs-orphan/$hash.$ts';
+    // 确保隔离区目录存在（201 已建 / 405 已存在，均忽略）
+    await _postResource('blobs-orphan', 'mkdir');
+    final res = await _postResource(
+      'blobs/$hash',
+      'move',
+      dest: dest,
+      overwrite: false,
+    );
+    if (res.statusCode == 204) return; // 已移入隔离区
+    if (res.statusCode == 404) return; // 原 blob 已不存在，幂等
+    if (res.statusCode == 409) {
+      // 隔离区已存在同名项：直接删除原 blob 即可
+      try {
+        await deleteBlob(hash);
+      } on Exception catch (e) {
+        Log.sync.w('[SafeServer] deleteBlobSoft: 409 后删除原 blob 失败 '
+            'hash=${hash.substring(0, 8)}…', error: e);
       }
-      // 其他状态：退化到降级路径兜底
+      return;
     }
-    await _deleteBlobSoftLegacy(hash);
+    // 其余状态：v2.2 资源层必须支持 move，视为不兼容，抛异常
+    throw BackendUnavailableException(
+        'SafeServer move blob to quarantine failed: ${res.statusCode} for hash=$hash');
   }
 
   /// P1-2 修复：列出隔离区孤儿 blob 的 hash
   ///
   /// v2.2：对 `blobs-orphan/` 做 propfind（depth=1），解析 `hash.<epochMs>` 返回 hash。
-  /// 降级：旧版服务端读全量 blob，筛选 `0rphan-` 前缀项。
   @override
   Future<List<String>> listOrphanBlobs() async {
-    await _ensureResourcesProbed();
-    if (_resourcesSupported == true) {
-      final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
-      if (res.statusCode == 200) {
-        try {
-          final List<dynamic> entries = jsonDecode(res.body);
-          final result = <String>[];
-          for (final e in entries) {
-            final name = (e is Map ? e['name'] : null)?.toString() ?? '';
-            final dot = name.indexOf('.');
-            if (dot > 0) result.add(name.substring(0, dot));
-          }
-          return result;
-        } on FormatException {
-          // 解析失败：退化为降级路径
-        }
+    final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
+    if (res.statusCode != 200) {
+      throw BackendUnavailableException(
+          'SafeServer propfind blobs-orphan failed: ${res.statusCode}');
+    }
+    try {
+      final List<dynamic> entries = jsonDecode(res.body);
+      final result = <String>[];
+      for (final e in entries) {
+        final name = (e is Map ? e['name'] : null)?.toString() ?? '';
+        final dot = name.indexOf('.');
+        if (dot > 0) result.add(name.substring(0, dot));
       }
+      return result;
+    } on FormatException {
+      throw BackendUnavailableException(
+          'SafeServer propfind blobs-orphan failed: invalid JSON response');
     }
-    // 降级路径：筛选全量 blob 中的 `0rphan-` 项
-    final all = await _listAllBlobs();
-    final result = <String>[];
-    for (final name in all) {
-      if (!name.startsWith('0rphan-')) continue;
-      final stripped = name.substring('0rphan-'.length);
-      final dot = stripped.indexOf('.');
-      result.add(dot > 0 ? stripped.substring(0, dot) : stripped);
-    }
-    return result;
   }
 
   /// P1-2 修复：清理隔离区中超过保留期的 blob
   ///
   /// v2.2：对 `blobs-orphan/` 做 propfind（depth=1），解析 `hash.<epochMs>`，
   /// 早于 now-retention 的通过 `DELETE /api/v2/resources/blobs-orphan/<name>` 彻底删除。
-  /// 降级：旧版服务端筛全量 blob 的 `0rphan-` 项，DELETE 清理。
   @override
   Future<void> purgeOrphans(Duration retention) async {
-    await _ensureResourcesProbed();
-    if (_resourcesSupported == true) {
-      final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
-      if (res.statusCode == 200) {
-        final cutoff =
-            DateTime.now().subtract(retention).millisecondsSinceEpoch;
-        try {
-          final List<dynamic> entries = jsonDecode(res.body);
-          for (final e in entries) {
-            final name = (e is Map ? e['name'] : null)?.toString() ?? '';
-            final dot = name.indexOf('.');
-            if (dot > 0 && name.substring(0, dot).length == 64) {
-              final ts = int.tryParse(name.substring(dot + 1));
-              if (ts != null && ts < cutoff) {
-                try {
-                  await _deleteResource('blobs-orphan/$name');
-                } on Exception catch (e) {
-                  // 单个删除失败不阻断
-                  Log.sync.w('[SafeServer] purgeOrphans: 单个孤儿删除失败 '
-                      'name=$name', error: e);
-                }
-              }
+    final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
+    if (res.statusCode != 200) {
+      throw BackendUnavailableException(
+          'SafeServer propfind blobs-orphan failed: ${res.statusCode}');
+    }
+    final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
+    try {
+      final List<dynamic> entries = jsonDecode(res.body);
+      for (final e in entries) {
+        final name = (e is Map ? e['name'] : null)?.toString() ?? '';
+        final dot = name.indexOf('.');
+        if (dot > 0 && name.substring(0, dot).length == 64) {
+          final ts = int.tryParse(name.substring(dot + 1));
+          if (ts != null && ts < cutoff) {
+            try {
+              await _deleteResource('blobs-orphan/$name');
+            } on Exception catch (e) {
+              // 单个删除失败不阻断
+              Log.sync.w('[SafeServer] purgeOrphans: 单个孤儿删除失败 '
+                  'name=$name', error: e);
             }
           }
-          return;
-        } on FormatException {
-          // 解析失败：退化为降级路径
         }
       }
-    }
-    // 降级路径：筛选全量 blob 的 `0rphan-` 项
-    final all = await _listAllBlobs();
-    final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
-    for (final name in all) {
-      if (!name.startsWith('0rphan-')) continue;
-      final stripped = name.substring('0rphan-'.length);
-      final dot = stripped.indexOf('.');
-      if (dot > 0) {
-        final ts = int.tryParse(stripped.substring(dot + 1));
-        if (ts != null && ts < cutoff) {
-          try {
-            await _client.delete(
-              Uri.parse('$_blobUrlPrefix/$name'),
-              headers: _authHeaders(),
-            );
-          } on Exception catch (e) {
-            // 单个删除失败不阻断
-            Log.sync.w('[SafeServer] purgeOrphans(降级): 单个删除失败 '
-                'name=$name', error: e);
-          }
-        }
-      }
+    } on FormatException {
+      throw BackendUnavailableException(
+          'SafeServer propfind blobs-orphan failed: invalid JSON response');
     }
   }
 
@@ -543,31 +474,15 @@ class SafeServerBackend implements SyncBackend {
   /// 与 localFs / webdav 后端布局一致。远端 manifest 损坏/被清空时，可从服务端
   /// 最近一代备份恢复。
   ///
-  /// 降级：旧版服务端未实现资源层时，退化为客户端本地临时目录环形备份（旧行为）。
+  /// 备份失败不阻断同步（记录日志，由调用方 try-catch）。
   @override
   Future<void> backupManifest([Uint8List? currentManifestBytes]) async {
     if (currentManifestBytes == null || currentManifestBytes.isEmpty) return;
-    await _ensureResourcesProbed();
-    if (_resourcesSupported == true) {
-      try {
-        await _backupManifestOnServer(currentManifestBytes);
-        return;
-      } on Exception catch (e) {
-        // 服务端备份失败：退化为本地临时目录兜底
-        Log.sync.w('[SafeServer] 服务端 manifest 备份失败，退化为本地临时目录',
-            error: e);
-      }
-    }
     try {
-      final dir = Directory(p.join(
-        Directory.systemTemp.path,
-        'safenotes-manifest-backup',
-        providerKey,
-      ));
-      await writeRingBackup(dir, currentManifestBytes);
+      await _backupManifestOnServer(currentManifestBytes);
     } on Exception catch (e) {
-      // 备份失败不阻断同步
-      Log.sync.w('[SafeServer] 本地 manifest 备份失败', error: e);
+      // 服务端备份失败不阻断同步
+      Log.sync.w('[SafeServer] 服务端 manifest 备份失败', error: e);
     }
   }
 
@@ -601,12 +516,10 @@ class SafeServerBackend implements SyncBackend {
   /// P2：写入 journal 密文副本到服务端 `journal/<name>`
   ///
   /// 内容已由 Journal 用 AES-GCM(dataKey) 加密，服务端只存字节。
-  /// 旧版服务端（无资源层）静默 no-op → journal 降级为本地-only。
+  /// 客户端要求服务端必须实现 v2.2 资源层。
   @override
   Future<void> putJournalObject(String name, Uint8List ciphertext) async {
     _ensureInitialized();
-    await _ensureResourcesProbed();
-    if (_resourcesSupported != true) return;
     try {
       await _postResource('journal', 'mkdir'); // 201 已建 / 405 已存在
       await _putResource('journal/$name', ciphertext);
@@ -618,8 +531,6 @@ class SafeServerBackend implements SyncBackend {
   @override
   Future<Uint8List?> getJournalObject(String name) async {
     _ensureInitialized();
-    await _ensureResourcesProbed();
-    if (_resourcesSupported != true) return null;
     try {
       final res = await _getResource('journal/$name');
       if (res.statusCode != 200) return null;
@@ -633,8 +544,6 @@ class SafeServerBackend implements SyncBackend {
   @override
   Future<List<String>> listJournalObjects() async {
     _ensureInitialized();
-    await _ensureResourcesProbed();
-    if (_resourcesSupported != true) return [];
     try {
       final res = await _postResource('journal', 'propfind', depth: 1);
       if (res.statusCode != 200) return [];
@@ -648,23 +557,6 @@ class SafeServerBackend implements SyncBackend {
     } on Exception catch (e) {
       Log.sync.d('[SafeServer] journal 副本列举失败', error: e);
       return [];
-    }
-  }
-
-  /// v2.2 资源层能力探测（懒执行，仅一次）
-  ///
-  /// 通过 `MKCOL blobs-orphan` 探测资源层是否实现：
-  /// - 201/405 → 服务端支持资源层（v2.2）
-  /// - 404/其他 → 旧版 v2.1/v2，标记不支持，后续走降级路径
-  Future<void> _ensureResourcesProbed() async {
-    if (_resourcesProbed) return;
-    _resourcesProbed = true;
-    try {
-      final res = await _postResource('blobs-orphan', 'mkdir');
-      _resourcesSupported = (res.statusCode == 201 || res.statusCode == 405);
-    } on Exception catch (e) {
-      Log.sync.d('[SafeServer] 资源层探测失败，标记为不支持', error: e);
-      _resourcesSupported = false;
     }
   }
 
@@ -714,56 +606,6 @@ class SafeServerBackend implements SyncBackend {
     return _client.delete(uri, headers: _authHeaders());
   }
 
-  /// P1-2 修复（降级路径）：旧版服务端伪隔离（GET+PUT+DELETE，0rphan- 前缀）
-  Future<void> _deleteBlobSoftLegacy(String hash) async {
-    Uint8List? bytes;
-    try {
-      final res = await _client.get(
-        Uri.parse('$_blobUrlPrefix/$hash'),
-        headers: _authHeaders(),
-      );
-      if (res.statusCode == 200) bytes = res.bodyBytes;
-    } on Exception catch (e) {
-      Log.sync.d('[SafeServer] _deleteBlobSoftLegacy: GET 原 blob 失败 '
-          'hash=${hash.substring(0, 8)}…', error: e);
-      bytes = null;
-    }
-    if (bytes == null) return; // 原 blob 已不存在，幂等
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final orphanName = '0rphan-$hash.$ts';
-    try {
-      final putRes = await _client.put(
-        Uri.parse('$_blobUrlPrefix/$orphanName'),
-        headers: {
-          ..._authHeaders(),
-          'Content-Type': 'application/octet-stream',
-        },
-        body: bytes,
-      );
-      if (putRes.statusCode >= 200 && putRes.statusCode < 300) {
-        await _client.delete(
-          Uri.parse('$_blobUrlPrefix/$hash'),
-          headers: _authHeaders(),
-        );
-        return;
-      }
-    } on Exception catch (e) {
-      // 复制失败：退化为硬删除原 blob
-      Log.sync.w('[SafeServer] _deleteBlobSoftLegacy: 复制到隔离区失败，退化为硬删除 '
-          'hash=${hash.substring(0, 8)}…', error: e);
-    }
-    try {
-      await _client.delete(
-        Uri.parse('$_blobUrlPrefix/$hash'),
-        headers: _authHeaders(),
-      );
-    } on Exception catch (e) {
-      // 删除失败不抛异常（GC 不阻断同步）
-      Log.sync.w('[SafeServer] _deleteBlobSoftLegacy: 硬删除失败 '
-          'hash=${hash.substring(0, 8)}…', error: e);
-    }
-  }
-
   @override
   Future<void> close() async {
     _client.close();
@@ -808,13 +650,5 @@ class SafeServerBackend implements SyncBackend {
       result = result.substring(1, result.length - 1);
     }
     return result;
-  }
-
-  /// 计算内容的 SHA-256 作为 fallback ETag
-  ///
-  /// 仅当服务端不返回 ETag 头时使用。规范要求服务端必须返回 ETag，
-  /// 但容错处理让协议更健壮。
-  String _computeContentEtag(Uint8List bytes) {
-    return sha256.convert(bytes).toString();
   }
 }

@@ -40,10 +40,13 @@
 
 // Dart 原生导入
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 // Package 导入
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/safenote.dart';
@@ -58,6 +61,24 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // 测试公共支撑（P2：Keyring/Journal 构造 + FakeBackend journal 存储）
 import 'sync_test_support.dart';
+
+/// 测试用 PathProvider 替身：让 SyncService 的 journal 能落到真实临时目录。
+/// （SyncService._openJournal 依赖 getApplicationSupportDirectory）
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this._root);
+  final String _root;
+
+  @override
+  Future<String?> getApplicationSupportPath() async =>
+      p.join(_root, 'app-support');
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async =>
+      p.join(_root, 'app-docs');
+
+  @override
+  Future<String?> getTemporaryPath() async => p.join(_root, 'tmp');
+}
 
 // ──────────────────────────────────────────────
 // 测试用 FakeBackend（内存实现，模拟远端）
@@ -739,6 +760,9 @@ void main() {
           mk: mkNew);
 
       final service = SyncService.instance;
+      // journal 沙盒目录：注入测试替身（真实 path_provider 在纯 Dart 测试里不可用）
+      final supportRoot = await Directory.systemTemp.createTemp('sn-bug-a');
+      PathProviderPlatform.instance = _FakePathProvider(supportRoot.path);
       // 登录时离线：initialize 内部的 backend.init() 会抛错，
       // 与真实"进主界面就提示"同源。捕获后服务处于"引擎已建、后端未就绪"。
       bool initThrew = false;
@@ -776,6 +800,11 @@ void main() {
       await service.dispose();
       PhraseHandler.destroy();
       DeviceIdProvider.instance.clearTestingOverride();
+      try {
+        await supportRoot.delete(recursive: true);
+      } on Exception {
+        // 忽略清理失败
+      }
     });
   });
 }

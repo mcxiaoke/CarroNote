@@ -41,6 +41,8 @@ import 'package:safenotes/sync/sync_models.dart';
 ///   - [keyFingerprint] 默认空串，与旧测试一致（空指纹 = 不参与指纹校验分支）。
 ///
 /// [mk] 需要走改密码/迁移真实路径的测试才传。
+///
+/// 注意：Keyring 已移除 history（密钥历史归档），本函数不再接受该参数。
 Keyring makeTestKeyring({
   Uint8List? dataKey,
   String? vaultId,
@@ -49,7 +51,6 @@ Keyring makeTestKeyring({
   int keyVersion = 1,
   int dataKeyEpoch = 1,
   String reason = KeyringReason.create,
-  List<KeyringEntry>? history,
   KdfParams? kdf,
   int? createdAt,
   Uint8List? mk,
@@ -67,7 +68,6 @@ Keyring makeTestKeyring({
       dataKeyEpoch: dataKeyEpoch,
       reason: reason,
     ),
-    history: history,
     dataKey: dk,
     mk: mk,
   );
@@ -99,11 +99,42 @@ Journal makeTestJournal({
 /// P2 起密钥态只写 `MetaKeys.keyring` 一个 JSON 键（单键 setMeta 原子，
 /// 杜绝多键双写半成功），旧断言全部会读到 null。用这组 helper 替换。
 Future<KeyringLedger?> readPersistedKeyring(NotesDatabase database) =>
-    KeyringLedger.loadFromMeta(database);
+    KeyringLedger.load(database);
 
 /// 读回落盘的 current.encryptedDataKey（账本不存在返回 null）
 Future<String?> persistedEncryptedDataKey(NotesDatabase database) async =>
     (await readPersistedKeyring(database))?.current.encryptedDataKey;
+
+/// 把测试用 Keyring 账本写落到数据库（P2 单键 `keyring` JSON）
+///
+/// 替代旧测试里 `setMeta(MetaKeys.encryptedDataKey, ...)` + `setMeta(
+/// MetaKeys.vaultId, ...)` 的散落键写法——P2 起密钥态只落单键，且
+/// `createNew`/`migrateToRemote`/`adoptRemoteEpoch` 之外引擎不会自动落盘，
+/// 需要在建引擎前把初始账本持久化，后续断言 `persistedXxx` 才有意义。
+Future<void> persistTestKeyring(
+  NotesDatabase database, {
+  required String encryptedDataKey,
+  String vaultId = 'test-keyring-id',
+  String keyFingerprint = '',
+  int keyVersion = 1,
+  int dataKeyEpoch = 1,
+  String reason = KeyringReason.create,
+  KdfParams? kdf,
+  int? createdAt,
+}) async {
+  await KeyringLedger(
+    vaultId: vaultId,
+    kdf: kdf ?? KdfParams.create(salt: SyncCrypto.generateSalt()),
+    createdAt: createdAt ?? DateTime.now().millisecondsSinceEpoch,
+    current: KeyringEntry(
+      keyFingerprint: keyFingerprint,
+      encryptedDataKey: encryptedDataKey,
+      keyVersion: keyVersion,
+      dataKeyEpoch: dataKeyEpoch,
+      reason: reason,
+    ),
+  ).persist(database);
+}
 
 /// 读回落盘的 current.keyVersion（账本不存在返回 null）
 Future<int?> persistedKeyVersion(NotesDatabase database) async =>

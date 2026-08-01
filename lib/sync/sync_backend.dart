@@ -153,8 +153,7 @@ abstract class SyncBackend {
   /// 再发一次网络 GET）。首次上传（无旧 manifest）时传 null，实现应 no-op。
   /// 默认空实现（no-op）：子类按需覆盖
   /// （LocalFS 落地到 keyring 的 `manifest-backup/` 子目录；WebDAV/SafeServer
-  /// 落地到各自服务端（网盘 / SafeServer 资源层）的 `manifest-backup/` 子目录；
-  /// 旧版 SafeServer 未实现资源层时降级为客户端本地临时目录环形备份）。
+  /// 落地到各自服务端的 `manifest-backup/` 子目录）。
   Future<void> backupManifest([Uint8List? currentManifestBytes]) async {}
 
   /// D2 修复：备份损坏的 manifest 文件
@@ -182,7 +181,7 @@ abstract class SyncBackend {
   /// [ciphertext] **已由 Journal 用 `AES-GCM(dataKey)` 整体加密的密文**——
   ///        后端不解析、不解密，远端永不落明文。
   ///
-  /// 默认空实现（no-op）：不支持资源层的后端自动降级为"journal 本地-only"，
+  /// 默认空实现（no-op）：后端不支持资源层时 journal 保持本地-only，
   /// 同步主流程不受影响。
   Future<void> putJournalObject(String name, Uint8List ciphertext) async {}
 

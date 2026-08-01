@@ -330,13 +330,11 @@ class LongRunStore {
         journal: journal,
       );
 
-  // version 3：跨运行复用的文件库可能是旧 schema（version 2，无 synced_hash），
-  // 挂上 onUpgrade 走 v2 → v3 加列 + 回填迁移，保留历史数据、避免 no such column。
+  // version 3：跨运行复用的文件库统一按当前 schema（含 synced_hash）创建。
   Future<Database> _openDb(String path) => openDatabase(
         path,
         version: 3,
         onCreate: NotesDatabase.createDBForTesting,
-        onUpgrade: NotesDatabase.upgradeDBForTesting,
       );
 
   Future<Keyring> _unlockFromRemote(String pw) async {

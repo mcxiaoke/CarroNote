@@ -158,6 +158,10 @@ Authorization: Bearer <token>
 - Bearer Token 而非 Basic Auth
 - `/api/v2/` 路径前缀为未来版本预留扩展空间
 
+> **协议版本 v2.2（客户端强制）**：SafeServer 必须返回**强 ETag**（GET/PUT manifest 均需，
+> 不能是 `W/` 弱 ETag，也不能缺省）。客户端不再提供"内容哈希 fallback"，
+> ETag 缺失/非法即视为后端不可用（抛 `BackendUnavailableException`）。
+
 ### 4.4 LocalFs 后端
 
 适用于单设备离线、单元测试。直接读写文件系统，无 HTTP 协议。
@@ -219,13 +223,16 @@ manifest 在客户端用 dataKey 加密后上传。**加密前**的明文 JSON �
 | `hash` | string (hex) | 笔记内容的 SHA-256 哈希，同时是 blob 的寻址键。 |
 | `deleted` | bool | 是否已删除（墓碑标记）。true 时不需要 blob。 |
 | `updatedAt` | int (Unix ms) | 最后更新时间，用于 LWW 冲突解决。 |
+| `updatedBy` | string | 最后更新该笔记的设备 ID（仅记录，不参与冲突判定）。 |
+| `createdAt` | int (Unix ms) | 创建时间（下载时保留，避免用下载时刻覆盖）。 |
+| `blobKeyEpoch` | int | blob 加密所用 dataKey 纪元。缺失/默认 1；与当前 dataKeyEpoch 不符时触发纪元自愈（用当前纪元重传 blob）。 |
 
 ### 5.3 加密
 
 manifest 整体 JSON → UTF-8 字节 → AES-256-GCM 加密 → 密文二进制上传。
 
 - 密钥：dataKey
-- AAD（Additional Authenticated Data）：固定字符串 `"manifest"`（区别于单条笔记的 AAD=uuid）
+- AAD（Additional Authenticated Data）：固定字符串 `"manifest"`（区别于 blob 的 AAD=`<epoch>|<hash>`）
 - nonce：随机 12 字节
 - 输出格式：`nonce(12) ‖ ciphertext ‖ tag(16)`
 
@@ -239,15 +246,22 @@ manifest 整体 JSON → UTF-8 字节 → AES-256-GCM 加密 → 密文二进制
 
 ```
 envelope = nonce(12) ‖ ciphertext ‖ tag(16)
-         = AES-256-GCM(dataKey, nonce, AAD=note-uuid, plaintext)
+         = AES-256-GCM(dataKey, nonce, AAD='<epoch>|<hash>', plaintext)
 ```
 
 - 密钥：dataKey（与 manifest 同一密钥）
-- AAD：笔记的 UUID（防止重放攻击——把 A 的密文挪到 B 的位置会解密失败）
+- AAD：`'<epoch>|<hash>'`，其中：
+  - `hash` 为笔记内容的 SHA-256 哈希（内容寻址键）
+  - `epoch` 为加密时用的 dataKey 纪元（`ManifestItem.blobKeyEpoch`，缺失/默认 1）
+  - 绑定 hash 防止把 A 的密文挪到 B 的位置；绑定 epoch 显式标记所用密钥，便于纪元自愈
 - nonce：随机 12 字节
 - plaintext：笔记内容的 JSON 序列化字节
 
 服务端只存储 envelope 二进制，不解释。
+
+> **不再兼容的旧格式**：v1 时代 blob 的 AAD 为笔记 UUID（`AAD=note-uuid`），且不携带 epoch。
+> 新客户端统一按 `'<epoch>|<hash>'` 解封，不再提供 uuid-AAD / epoch=0 回退路径，
+> 存量数据需由旧版客户端完成一次重封（见 CHANGES 迁移说明）。
 
 ---
 
@@ -263,7 +277,7 @@ MK (Master Key, 32 bytes)
 encryptedDataKey (base64, 存在 manifest 里)
   ↓ 解密得到
 dataKey (32 bytes, 随机生成, 永不变化)
-  ↓ AES-256-GCM(dataKey, nonce, AAD=uuid/manifest, plaintext)
+  ↓ AES-256-GCM(dataKey, nonce, AAD=<blob: '<epoch>|<hash>' | manifest: 'manifest'), plaintext)
 envelope / manifest 密文
 ```
 
@@ -389,7 +403,7 @@ remote.updatedAt == local.updatedAt 但 hash 不同 → 保留 hash 字典序小
 3. **零知识**：服务端永远不接触明文、密钥、密码。即使数据库泄露，攻击者只能看到密文。
 4. **ETag 不泄露信息**：ETag 是密文的哈希，不泄露明文信息。
 5. **blob 不可枚举**：blob 名是内容哈希，攻击者无法通过遍历获取笔记列表（需先拿到 manifest）。SafeServer 不提供 blob 列表接口。
-6. **重放攻击**：GCM 的 AAD 绑定 uuid/manifest，防止密文挪用。
+6. **重放攻击**：GCM 的 AAD 绑定 blob hash / manifest 常量，防止密文挪用。
 7. **路径穿越**：WebDAV/SafeServer 服务端用文件系统存储时必须校验 `<hash>` 不含 `..` 或路径分隔符。
 
 ---
@@ -471,5 +485,6 @@ SafeServer 是单用户设计，整个 server 实例服务一个 vault，不需�
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v3 | 2026-08-01 | 移除遗留兼容：blob 仅支持 AAD=`'<epoch>|<hash>'`（删除 v1 uuid-AAD 与 epoch=0 回退路径）；ManifestItem 显式要求 `blobKeyEpoch`；SafeServer 强制 v2.2（ETag 必须返回，缺失视为后端不可用，删除内容 hash fallback 与 `0rphan-` 软删路径）；`repairRemote()` 移除旧密码/历史密钥归档能力 |
 | v2 | 2026-07-28 | 多后端架构：§四 按后端类型分别描述传输层；新增 §十二 后端隔离（providerKey）；移除 MKCOL 作为通用要求（改为 WebDAV 仅）；认证方式按后端区分（Basic Auth / Bearer Token） |
 | v1 | 2026-07-28 | 初版：4 个 HTTP 端点 + MKCOL + ETag 乐观锁 + manifest JSON 格式 |

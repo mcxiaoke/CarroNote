@@ -2,11 +2,11 @@
  * 数据库处理器
  *
  * 改造说明（fork 同步版）：
- *   - schema version 2，新表结构（uuid / content_hash / deleted / updated_at / synced）
+ *   - schema version 3，新表结构（uuid / content_hash / deleted / updated_at / synced / synced_hash）
  *   - 本地用 dataKey 加密存储（title/description 字段级 AES-256-GCM 加密）
  *   - 软删除（deleted=1 为墓碑，不真正删除行）
- *   - 新增 sync_meta 表（vault_id / mk_salt / manifest_version 等）
- *   - 不迁移旧数据（onUpgrade drop + create）
+ *   - 新增 sync_meta 表（vault_id / manifest_version 等）
+ *   - 不迁移旧数据：schema 升级一律视为全新安装（旧库无法打开）
  *
  * 本地加密说明（B1 方案）：
  *   - dataKey 在首次设置密码时生成，存于 Keyring，登录时注入到 NotesDatabase
@@ -82,32 +82,11 @@ class MetaFields {
 // meta 表的已知键名
 class MetaKeys {
   /// P2 Keyring 账本单键（唯一权威密钥态，JSON）
-  ///
-  /// 取代下方 vaultId / encryptedDataKey / kdfSalt / keyFingerprint /
-  /// keyVersion / vaultCreatedAt / dataKeyEpoch / dataKeyHistory 这 8 个散落键：
-  /// 新代码只写这一个键（单键 setMeta 原子，杜绝"多键双写半成功"）。
-  /// 旧键仅供 `KeyringLedger.fromLegacyMeta` 一次性转换时读取，不再写入。
   static const String keyring = 'keyring';
 
-  // ── 以下为 legacy 键：P2 起不再写入，仅一次性转换时读取 ──
-  static const String vaultId = 'vault_id';
-  static const String encryptedDataKey = 'encrypted_data_key';
-  static const String kdfSalt = 'kdf_salt'; // per-vault 随机 salt（base64）
-  static const String keyFingerprint = 'key_fingerprint'; // H(MK) 十六进制
-  static const String keyVersion = 'key_version'; // 密钥版本号
-  static const String vaultCreatedAt =
-      'vault_created_at'; // keyring 创建时间（Unix 毫秒）
-  // manifest version 不再使用全局 key，改为按 providerKey 隔离：
-  // 'manifest_version:<providerKey>'（见 [_manifestVersionKey]）
   static const String purgedUuids = 'purged_uuids'; // M1: 待清理墓碑列表
   // Layer 2a: dataKey 变更后需强制重传 blob 的笔记 uuid 列表（JSON 数组）
   static const String blobReuploadPending = 'blob_reupload_pending';
-  // Layer 3: dataKey 纪元（单调 int，仅在 dataKey 值真正变化时 +1；独立于 keyVersion）
-  static const String dataKeyEpoch = 'data_key_epoch';
-  // Layer 3 + repair: 历史 wrapped dataKey 归档（JSON 数组）
-  // 元素: { "keyVersion": int, "wrappedDataKey": base64, "keyFingerprint": hex }
-  // 每个元素用其对应 MK 包裹，repair 时由用户提供的旧密码派生 MK 解开。
-  static const String dataKeyHistory = 'data_key_history';
 }
 
 class NotesDatabase {
@@ -251,7 +230,6 @@ class NotesDatabase {
         path,
         version: 3,
         onCreate: _createDB,
-        onUpgrade: _upgradeDB,
       );
       Log.db.i('数据库已打开: $path (version=3)');
       return db;
@@ -281,41 +259,6 @@ class NotesDatabase {
   @visibleForTesting
   static Future<void> createDBForTesting(Database db, int version) async {
     await _createDBStatic(db, version);
-  }
-
-  /// 测试专用：upgradeDB 回调（供跨版本持久化测试库 onUpgrade 使用）
-  ///
-  /// 长期存续测试的 client-*.db 是文件库、跨运行复用，旧数据是 version 2
-  /// 建的（无 synced_hash 列）。测试用 openDatabase 绕过了生产 _initDB，
-  /// 因此必须显式挂上 onUpgrade，才能走到与生产 _upgradeDB 完全一致的
-  /// v2 → v3「加列 + 回填」迁移，而不是丢数据或撞上「no such column」。
-  @visibleForTesting
-  static Future<void> upgradeDBForTesting(
-      Database db, int oldVersion, int newVersion) async {
-    await _upgradeDBStatic(db, oldVersion, newVersion);
-  }
-
-  /// upgradeDB 的静态实现（测试用，逻辑与实例方法 _upgradeDB 保持一致）
-  static Future<void> _upgradeDBStatic(
-      Database db, int oldVersion, int newVersion) async {
-    Log.db.w('数据库升级（测试）$oldVersion → $newVersion');
-    if (oldVersion < 2) {
-      // v1 旧格式无法平滑迁移，只能重建
-      await db.execute('DROP TABLE IF EXISTS $tableNotes');
-      await db.execute('DROP TABLE IF EXISTS $tableMeta');
-      await _createDBStatic(db, newVersion);
-      return;
-    }
-    if (oldVersion < 3) {
-      // v2 → v3：加列 + 回填，保留全部用户数据
-      await db.execute(
-          'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedHash} TEXT');
-      final patched = await db.rawUpdate(
-        'UPDATE $tableNotes SET ${NoteFields.syncedHash} = ${NoteFields.contentHash} '
-        'WHERE ${NoteFields.synced} = 1',
-      );
-      Log.db.i('v2 → v3 迁移完成（测试）：新增 synced_hash 列，回填 $patched 条基线');
-    }
   }
 
   /// createDB 的静态实现（测试用）
@@ -383,37 +326,6 @@ class NotesDatabase {
     // 索引：按 synced 过滤（同步用，找未同步的笔记）
     await db.execute(
         'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
-  }
-
-  /// 数据库升级
-  ///
-  /// v1 → v2：破坏性重建（旧格式无 uuid/hash 体系，无法平滑迁移）。
-  /// v2 → v3：新增 synced_hash 列（冲突判定的共同祖先 base），**保留数据**。
-  ///          ALTER TABLE 加列后回填：已同步笔记（synced=1）的当前 content_hash
-  ///          就是它上次同步收敛时的内容 hash，即天然的 base；未同步笔记留 NULL
-  ///          （视为无基线，走保守判定）。笔记应用的用户数据不可在升级时丢弃。
-  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    Log.db.w('数据库升级 $oldVersion → $newVersion');
-    if (oldVersion < 2) {
-      // v1 旧格式无法平滑迁移，只能重建
-      Log.db.w('v1 → v2 破坏性重建（旧数据无法迁移）');
-      await db.execute('DROP TABLE IF EXISTS $tableNotes');
-      await db.execute('DROP TABLE IF EXISTS $tableMeta');
-      await _createDB(db, newVersion);
-      Log.db.i('数据库重建完成 (version=$newVersion)');
-      return;
-    }
-    if (oldVersion < 3) {
-      // v2 → v3：加列 + 回填，保留全部用户数据
-      await db.execute(
-          'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedHash} TEXT');
-      // 已同步笔记：当前 content_hash 即上次同步收敛的 base
-      final patched = await db.rawUpdate(
-        'UPDATE $tableNotes SET ${NoteFields.syncedHash} = ${NoteFields.contentHash} '
-        'WHERE ${NoteFields.synced} = 1',
-      );
-      Log.db.i('v2 → v3 迁移完成：新增 synced_hash 列，回填 $patched 条已同步笔记基线');
-    }
   }
 
   // ──────────────────────────────────────────────
@@ -923,54 +835,6 @@ class NotesDatabase {
   }
 
   // ──────────────────────────────────────────────
-  // Layer 3 + repair: 历史 wrapped dataKey 归档
-  // ──────────────────────────────────────────────────
-  //
-  // 背景：修复（repair）需要尝试"非当前 dataKey"解密远端 blob。
-  // 这些历史 dataKey 以 wrapped 形式（AES-GCM(MK, dataKey)）归档，
-  // 仅持有对应密码（MK）的一方才能解开——服务器拿不到明文 dataKey。
-  //
-  // 归档元素 JSON 结构：
-  //   { "keyVersion": int, "wrappedDataKey": base64, "keyFingerprint": hex }
-  // 其中 wrappedDataKey 必须用"当时活跃密码派生出的 MK"包裹，
-  // 否则后续无法用任何已知密码解开。
-
-  /// 追加一条历史 wrapped dataKey 归档（去重：同 keyVersion 不重复）
-  Future<void> appendDataKeyHistory({
-    required int keyVersion,
-    required String wrappedDataKey,
-    required String keyFingerprint,
-  }) async {
-    final list = await getDataKeyHistory();
-    if (list.any((e) => e['keyVersion'] == keyVersion)) return;
-    list.add({
-      'keyVersion': keyVersion,
-      'wrappedDataKey': wrappedDataKey,
-      'keyFingerprint': keyFingerprint,
-    });
-    await setMeta(MetaKeys.dataKeyHistory, jsonEncode(list));
-  }
-
-  /// 读取历史 wrapped dataKey 归档列表（空列表表示无）
-  Future<List<Map<String, dynamic>>> getDataKeyHistory() async {
-    final raw = await getMeta(MetaKeys.dataKeyHistory);
-    if (raw == null || raw.isEmpty) return [];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        return decoded
-            .whereType<Map<String, dynamic>>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-      }
-    } on Exception {
-      // 解析失败返回空列表
-    }
-    return [];
-  }
-
-
-  // ──────────────────────────────────────────────
   // sync_meta 表 CRUD
   // ──────────────────────────────────────────────
 
@@ -1024,7 +888,7 @@ class NotesDatabase {
       'manifest_version:$providerKey';
 
   // ──────────────────────────────────────────────
-  // 旧接口兼容（backup/import 功能用，后续重构为加密备份）
+  // 导出（backup 功能）
   // ──────────────────────────────────────────────
 
   /// 导出所有笔记为 JSON 字符串（明文，已解密）
@@ -1037,16 +901,6 @@ class NotesDatabase {
     final jsonList = notes.map((note) => note.toJson()).toList();
     return jsonEncode(jsonList).toString();
   }
-
-  /// 兼容旧调用：导出所有笔记（同 exportAll）
-  ///
-  /// TODO: backup 功能后续重构为用 passPhrase 加密导出内容
-  Future<String> exportAllEncrypted() => exportAll();
-
-  /// 兼容旧调用：存储笔记（同 storeNote）
-  ///
-  /// TODO: import 功能后续重构为补全 uuid/hash 后调用 storeNote
-  Future<SafeNote> encryptAndStore(SafeNote note) => storeNote(note);
 
   Future<void> close() async {
     final db = _database;
