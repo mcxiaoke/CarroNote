@@ -23,6 +23,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
+import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
@@ -328,6 +329,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         if (!ok) return;
         if (!mounted) return;
         Session.onPasswordSet(enteredPassphrase);
+
+        // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
+        // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
+        // 会误走"输入两次密码"的设置页而不是登录页。
+        AppBootState.vaultInitialized = true;
 
         TextInput.finishAutofillContext();
         await Navigator.pushReplacementNamed(

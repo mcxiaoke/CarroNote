@@ -454,6 +454,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     Session.login(passphrase);
     Log.auth.i('登录成功：进入主界面（密码登录）');
 
+    // BUG 修复：登录成功即 keyring 已解锁，同步刷新 AuthWall 启动缓存，
+    // 确保空闲锁定 logout 回 /authwall 时走登录页而非误进设置密码页。
+    AppBootState.vaultInitialized = true;
+
     // re-enable biometric auth
     if (forcePassphraseInput) {
       PreferencesStorage.incrementBiometricAttemptAllTimeCount();
