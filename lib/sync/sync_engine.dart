@@ -111,6 +111,17 @@ class SyncEngine {
   /// 生产由 SyncService 用 [Journal.open] 构造。
   final Journal journal;
 
+  /// B2 修复（epoch 消除 P0 五项）：迁移成功后新 keyring 的回调出口。
+  ///
+  /// dataKey 迁移（scenario-d / 场景 d）会让 SyncEngine 内部的 keyring 引用
+  /// 被替换为 migrateToRemote/migrateToRemoteVault 返回的**新实例**，但持有
+  /// 同一 Keyring 引用的上层（SyncService._keyring）不会自动同步——若不回写，
+  /// 后续「改密码 / 重新登录 / 再次迁移」会用旧 keyring（旧 dataKey 已失效）
+  /// 导致全库不可解（B2 生产事故）。
+  ///
+  /// 由 SyncService 注入 `(k) => _keyring = k`；测试可不传。
+  final void Function(Keyring keyring)? onKeyringChanged;
+
   SyncEngine({
     required this.backend,
     required this.database,
@@ -118,6 +129,7 @@ class SyncEngine {
     required this.deviceId,
     required this.journal,
     this.passphraseProvider,
+    this.onKeyringChanged,
   });
 
   /// 当前密钥状态快照（写入 key.* journal 条目）
@@ -829,6 +841,9 @@ class SyncEngine {
         result: migrationResult,
         database: database,
       );
+      // B2：迁移成功后把新 keyring 回写上层（SyncService._keyring），
+      // 消除「改密码/迁移后上层持旧 keyring → 全库不可解」窗口
+      onKeyringChanged?.call(keyring);
     } on Object {
       // 记 failed，避免 start 悬挂被 findIncompleteOperations 误判为"需重放"
       journal.append(
@@ -894,6 +909,8 @@ class SyncEngine {
         remoteMk: remoteMk,
         database: database,
       );
+      // B2：迁移成功后把新 keyring 回写上层（SyncService._keyring）
+      onKeyringChanged?.call(keyring);
     } on Object {
       journal.append(
         type: JournalEventType.keyMigrate,

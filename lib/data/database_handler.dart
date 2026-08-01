@@ -545,11 +545,9 @@ class NotesDatabase {
   /// 下次同步时 SyncEngine 会从远端 manifest 中移除这些 uuid。
   /// 这样硬删除的笔记不会在下次同步时从远端复活。
   ///
-  /// 流程：
-  ///   1. 读取笔记 uuid
-  ///   2. 从 notes 表删除行
-  ///   3. 把 uuid 追加到 meta 表的 'purged_uuids' 列表
-  ///   4. SyncEngine 同步后清理已上传的 uuid
+  /// B4 修复（epoch 消除 P0 五项）：删行 + 写 purged 列表**同一 SQLite 事务**，
+  /// 堵住「永久删除复活」——若删行成功但 purged 未写（中途崩溃），该 uuid
+  /// 会从远端 manifest 重新下载复活。
   Future<int> hardDelete(int id) async {
     final db = await instance.database;
 
@@ -567,15 +565,18 @@ class NotesDatabase {
     }
     final uuid = maps.first[NoteFields.uuid] as String;
 
-    // 2. 删除行
-    final deleted = await db.delete(
-      tableNotes,
-      where: '${NoteFields.id} = ?',
-      whereArgs: [id],
-    );
-
-    // 3. 追加到待清理列表
-    await _addPurgedUuid(uuid);
+    // 2+3. 删除行 + 追加 purged 列表（同一事务，B4）
+    var deleted = 0;
+    await db.transaction((txn) async {
+      deleted = await txn.delete(
+        tableNotes,
+        where: '${NoteFields.id} = ?',
+        whereArgs: [id],
+      );
+      if (deleted > 0) {
+        await _addPurgedUuidInTxn(txn, uuid);
+      }
+    });
 
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
@@ -586,29 +587,49 @@ class NotesDatabase {
   /// F1 修复：按 uuid 硬删除笔记（GC 墓碑清理用）
   ///
   /// 与 [hardDelete] 的区别：按 uuid 而非 id 删除，用于 GC 清理过期墓碑。
-  /// 流程：从 notes 表删除行 → 把 uuid 追加到 purged_uuids 列表。
+  /// 流程：从 notes 表删除行 → 把 uuid 追加到 purged_uuids 列表（同一事务，
+  /// B4：防止删行成功但 purged 未写导致墓碑从远端复活）。
   /// 不存在时返回 0（幂等）。
   Future<int> hardDeleteByUuid(String uuid) async {
     final db = await instance.database;
-    final deleted = await db.delete(
-      tableNotes,
-      where: '${NoteFields.uuid} = ?',
-      whereArgs: [uuid],
-    );
+    var deleted = 0;
+    await db.transaction((txn) async {
+      deleted = await txn.delete(
+        tableNotes,
+        where: '${NoteFields.uuid} = ?',
+        whereArgs: [uuid],
+      );
+      if (deleted > 0) {
+        await _addPurgedUuidInTxn(txn, uuid);
+      }
+    });
     if (deleted > 0) {
-      await _addPurgedUuid(uuid);
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
   }
 
-  /// 添加待清理的 uuid 到 meta 表
-  Future<void> _addPurgedUuid(String uuid) async {
-    final existing = await getMeta(MetaKeys.purgedUuids);
+  /// 事务版：添加待清理的 uuid 到 meta 表（供 hardDelete* 在同一事务内调用，B4）
+  Future<void> _addPurgedUuidInTxn(Transaction txn, String uuid) async {
+    final maps = await txn.query(
+      tableMeta,
+      columns: [MetaFields.value],
+      where: '${MetaFields.key} = ?',
+      whereArgs: [MetaKeys.purgedUuids],
+      limit: 1,
+    );
+    final existing = maps.isNotEmpty ? maps.first[MetaFields.value] as String? : null;
     final list = _parseUuidList(existing);
     if (!list.contains(uuid)) {
       list.add(uuid);
-      await setMeta(MetaKeys.purgedUuids, _serializeUuidList(list));
+      await txn.insert(
+        tableMeta,
+        {
+          MetaFields.key: MetaKeys.purgedUuids,
+          MetaFields.value: _serializeUuidList(list),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
   }
 
@@ -759,6 +780,108 @@ class NotesDatabase {
       rethrow;
     } finally {
       // F4 修复：无论成功或失败，清除迁移中标志
+      _isMigrating = false;
+    }
+  }
+
+  /// B1 修复（epoch 消除 P0 五项）：dataKey 迁移的原子化入口。
+  ///
+  /// 在**同一个 SQLite 事务**内完成：
+  ///   1. 全库重加密（oldKey 解密 → newKey 加密 → 逐行 UPDATE）
+  ///   2. keyring 账本 upsert（[keyringJson]：新包裹/新纪元）
+  ///   3. （可选）blob 待重传标记（[markBlobReupload]：dataKey 真变时）
+  ///
+  /// 为什么必须原子：旧的「reEncryptAllNotes 独立事务 + 账本 persist 独立写」
+  /// 存在崩溃窗口——重加密提交成功、账本尚未更新时崩溃，重启后 unlockLocal
+  /// 用旧账本解出旧 dataKey，解不开已换新 key 的密文 → **全库不可解**（B1）。
+  /// 同一事务保证：要么「新密文 + 新账本」都生效，要么都不生效。
+  ///
+  /// 调用方（keyring.migrateToRemote / migrateToRemoteVault）负责在事务
+  /// 成功后替换内存 keyring 引用并 setDataKey（事务外），事务内的账本 JSON
+  /// 由调用方用新 keyring 的 ledger 序列化生成。
+  Future<int> reEncryptAllNotesAtomically({
+    required Uint8List oldKey,
+    required Uint8List newKey,
+    required String keyringJson,
+    bool markBlobReupload = false,
+  }) async {
+    final db = await instance.database;
+
+    // F4 修复：设置迁移中标志，阻止 UI 并发读取笔记
+    _isMigrating = true;
+    Log.db.w('开始原子化 dataKey 迁移（重加密 + 账本 + 重传标记同一事务）');
+    final startedAt = DateTime.now();
+    final originalDataKey = _dataKey;
+    _dataKey = Uint8List.fromList(oldKey);
+
+    try {
+      // 1. 用 oldKey 读取所有笔记（自动解密为明文）
+      final notes = await readAllNotesIncludingDeleted();
+
+      // 2. 临时切换 dataKey 为 newKey，准备加密
+      _dataKey = Uint8List.fromList(newKey);
+
+      // 3. 在内存中用 newKey 重新加密所有笔记
+      final encryptedRows = <Map<String, dynamic>>[];
+      for (final note in notes) {
+        final row = _toEncryptedRow(note);
+        encryptedRows.add({
+          'where_uuid': note.uuid,
+          'row': row,
+        });
+      }
+
+      // 4. 需标记重传的 uuid（dataKey 真变时：非墓碑全部标记）
+      List<String>? reuploadUuids;
+      if (markBlobReupload) {
+        reuploadUuids =
+            notes.where((n) => !n.deleted).map((n) => n.uuid).toList();
+      }
+
+      // 5. 同一事务：重加密 + 账本 + 重传标记（atomic，B1）
+      await db.transaction((txn) async {
+        for (final entry in encryptedRows) {
+          final uuid = entry['where_uuid'] as String;
+          final row = entry['row'] as Map<String, dynamic>;
+          await txn.update(
+            tableNotes,
+            row,
+            where: '${NoteFields.uuid} = ?',
+            whereArgs: [uuid],
+          );
+        }
+        await txn.insert(
+          tableMeta,
+          {
+            MetaFields.key: MetaKeys.keyring,
+            MetaFields.value: keyringJson,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        if (reuploadUuids != null) {
+          await txn.insert(
+            tableMeta,
+            {
+              MetaFields.key: MetaKeys.blobReuploadPending,
+              MetaFields.value: jsonEncode(reuploadUuids),
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      });
+
+      // 6. 事务成功后更新 _dataKey（后续读写用新 key）
+      _dataKey = Uint8List.fromList(newKey);
+
+      final ms = DateTime.now().difference(startedAt).inMilliseconds;
+      Log.db.i('原子化迁移完成: ${notes.length} 条笔记, 耗时 ${ms}ms');
+      return notes.length;
+    } catch (e, st) {
+      _dataKey = originalDataKey;
+      Log.db.f('原子化迁移失败，事务已回滚并恢复原 dataKey',
+          error: e, stackTrace: st);
+      rethrow;
+    } finally {
       _isMigrating = false;
     }
   }

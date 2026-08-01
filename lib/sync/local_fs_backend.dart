@@ -152,7 +152,16 @@ class LocalFsBackend implements SyncBackend {
     _ensureInitialized();
     final file = File(p.join(_blobsDirPath, hash));
     // 幂等：相同内容覆盖写，结果一致
-    await file.writeAsBytes(data, flush: true);
+    //
+    // B5 修复（epoch 消除 P0 五项）：tmp + 原子 rename 写入，堵半写脏 blob。
+    // 直接 writeAsBytes 若中途崩溃（断电/杀进程）会在 blobs/ 留下截断文件，
+    // 后续下载该 hash 时解密成功但内容 hash 不匹配 → 永久 corrupt。
+    // 先写同目录临时文件再 rename（同文件系统内原子），保证目标文件
+    // 要么是旧完整内容、要么是新完整内容，绝不出现半写。
+    final tmp = File(
+        '${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}');
+    await tmp.writeAsBytes(data, flush: true);
+    await tmp.rename(file.path);
   }
 
   /// F1 修复：删除 blob（GC 用）

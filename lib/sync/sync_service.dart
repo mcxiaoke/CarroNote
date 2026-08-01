@@ -200,6 +200,8 @@ class SyncService {
       deviceId: _deviceId!,
       journal: _journal!,
       passphraseProvider: () => PhraseHandler.getPass,
+      // B2：迁移成功后回写 _keyring，避免上层持旧 keyring（旧 dataKey）
+      onKeyringChanged: (k) => _keyring = k,
     );
 
     // 启动自检：上次进程有没有写到一半就挂掉的两阶段操作。
@@ -309,6 +311,8 @@ class SyncService {
         deviceId: deviceId,
         journal: journal,
         passphraseProvider: () => PhraseHandler.getPass,
+        // B2：迁移成功后回写 _keyring
+        onKeyringChanged: (k) => _keyring = k,
       );
     }
   }
@@ -598,6 +602,8 @@ class SyncService {
         deviceId: deviceId,
         journal: _journal!,
         passphraseProvider: () => PhraseHandler.getPass,
+        // B2：迁移成功后回写 _keyring
+        onKeyringChanged: (k) => _keyring = k,
       );
     }
   }

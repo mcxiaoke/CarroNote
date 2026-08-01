@@ -74,6 +74,12 @@ class WebDavBackend implements SyncBackend {
   final String password;
 
   /// HTTP 客户端（可注入便于测试）
+  /// HTTP 统一超时（B3：epoch 消除 P0 五项）
+  ///
+  /// 所有 HTTP 调用统一加 .timeout，超时异常（TimeoutException 继承
+  /// Exception）由各调用点既有 catch 映射为 BackendUnavailableException。
+  static const Duration _httpTimeout = Duration(seconds: 30);
+
   final http.Client _client;
 
   bool _initialized = false;
@@ -159,7 +165,7 @@ class WebDavBackend implements SyncBackend {
         res = await _client.get(
           Uri.parse(_manifestUrl),
           headers: _authHeaders(),
-        );
+        ).timeout(_httpTimeout);
       } on Exception catch (e) {
         // 网络错误：保守假设支持，不阻断 init
         Log.sync.w('[WebDAV] ETag 探测网络错误，保守假设支持', error: e);
@@ -200,7 +206,7 @@ class WebDavBackend implements SyncBackend {
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>';
 
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) {
         // PROPFIND 失败：保守假设支持
@@ -234,7 +240,7 @@ class WebDavBackend implements SyncBackend {
       res = await _client.get(
         Uri.parse(_manifestUrl),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
     } catch (e) {
       throw BackendUnavailableException('GET manifest network error: $e');
     }
@@ -285,7 +291,7 @@ class WebDavBackend implements SyncBackend {
         Uri.parse(_manifestUrl),
         headers: headers,
         body: ciphertext,
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT manifest network error: $e');
     }
@@ -315,7 +321,7 @@ class WebDavBackend implements SyncBackend {
       res = await _client.get(
         Uri.parse('$_blobsUrl/$hash'),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
     }
@@ -341,7 +347,7 @@ class WebDavBackend implements SyncBackend {
         Uri.parse('$_blobsUrl/$hash'),
         headers: headers,
         body: data,
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT blob network error: $e');
     }
@@ -366,7 +372,7 @@ class WebDavBackend implements SyncBackend {
       res = await _client.delete(
         Uri.parse('$_blobsUrl/$hash'),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('DELETE blob network error: $e');
     }
@@ -396,7 +402,7 @@ class WebDavBackend implements SyncBackend {
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
 
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       // 207 Multi-Status = PROPFIND 成功
       if (res.statusCode != 207 && res.statusCode != 200) {
@@ -452,14 +458,14 @@ class WebDavBackend implements SyncBackend {
       copyReq.headers['Destination'] = dest;
       copyReq.headers['Depth'] = '0';
       copyReq.headers['Overwrite'] = 'T';
-      final copyRes = await _client.send(copyReq);
+      final copyRes = await _client.send(copyReq).timeout(_httpTimeout);
       final copyHttp = await http.Response.fromStream(copyRes);
       if (copyHttp.statusCode >= 200 && copyHttp.statusCode < 300) {
         // 隔离区已有副本：删除原 blob
         await _client.delete(
           Uri.parse('$_blobsUrl/$hash'),
           headers: _authHeaders(),
-        );
+        ).timeout(_httpTimeout);
         return;
       }
     } on Exception catch (e) {
@@ -471,7 +477,7 @@ class WebDavBackend implements SyncBackend {
       await _client.delete(
         Uri.parse('$_blobsUrl/$hash'),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       // 删除失败不抛异常（GC 不阻断同步）
       Log.sync.w('[WebDAV] deleteBlobSoft: 硬删除失败 '
@@ -492,7 +498,7 @@ class WebDavBackend implements SyncBackend {
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final hashRegex = RegExp(r'^[a-f0-9]{64}\.');
@@ -527,7 +533,7 @@ class WebDavBackend implements SyncBackend {
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return;
       final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
@@ -545,7 +551,7 @@ class WebDavBackend implements SyncBackend {
               await _client.delete(
                 Uri.parse('$_blobsUrl/blobs-orphan/$name'),
                 headers: _authHeaders(),
-              );
+              ).timeout(_httpTimeout);
             } on Exception catch (e) {
               // 单个删除失败不阻断
               Log.sync.w('[WebDAV] purgeOrphans: 单个孤儿删除失败 '
@@ -586,7 +592,7 @@ class WebDavBackend implements SyncBackend {
           'Content-Type': 'application/octet-stream',
         },
         body: ciphertext,
-      );
+      ).timeout(_httpTimeout);
     } on Exception catch (e) {
       // journal 副本失败不阻断同步
       Log.sync.d('[WebDAV] journal 副本上传失败 name=$name', error: e);
@@ -600,7 +606,7 @@ class WebDavBackend implements SyncBackend {
       final res = await _client.get(
         Uri.parse('$_journalUrl/$name'),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
       if (res.statusCode != 200) return null;
       return res.bodyBytes;
     } on Exception catch (e) {
@@ -619,7 +625,7 @@ class WebDavBackend implements SyncBackend {
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final result = <String>[];
@@ -675,7 +681,7 @@ class WebDavBackend implements SyncBackend {
       final idxRes = await _client.get(
         Uri.parse('$backupUrl/.manifest-bak-index'),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
       if (idxRes.statusCode == 200) {
         slot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
       }
@@ -693,7 +699,7 @@ class WebDavBackend implements SyncBackend {
         'Content-Type': 'application/octet-stream',
       },
       body: utf8.encode(slot.toString()),
-    );
+    ).timeout(_httpTimeout);
     // 写备份文件
     await _client.put(
       Uri.parse('$backupUrl/manifest.bak-$slot'),
@@ -702,7 +708,7 @@ class WebDavBackend implements SyncBackend {
         'Content-Type': 'application/octet-stream',
       },
       body: bytes,
-    );
+    ).timeout(_httpTimeout);
   }
 
   /// D2 修复：备份损坏的 manifest（WebDAV 退化实现）
@@ -716,7 +722,7 @@ class WebDavBackend implements SyncBackend {
       final res = await _client.delete(
         Uri.parse(_manifestUrl),
         headers: _authHeaders(),
-      );
+      ).timeout(_httpTimeout);
       // 204/200 = 删除成功，404 = 不存在（已删除），都视为成功
       if (res.statusCode != 204 &&
           res.statusCode != 200 &&
@@ -748,7 +754,7 @@ class WebDavBackend implements SyncBackend {
       req.body = '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
 
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       // 207 Multi-Status 是 PROPFIND 成功的标准响应
       // 200 某些非标准 WebDAV 服务也会返回
@@ -808,7 +814,7 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      final streamedRes = await _client.send(req);
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
       res = await http.Response.fromStream(streamedRes);
     } on Exception catch (e) {
       throw BackendUnavailableException('MKCOL network error: $e');

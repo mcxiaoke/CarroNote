@@ -581,14 +581,10 @@ class Keyring {
     final remoteVaultId = result.remoteVaultId ?? vaultId;
     final keyChanged = !_sameKey(dataKey, remoteDataKey);
 
-    // 1. 重新加密所有本地笔记（database 内部单事务，crash 安全）
-    await database.reEncryptAllNotes(oldKey: dataKey, newKey: remoteDataKey);
-
     // Layer 2a/3：仅当 dataKey 值真正变化时标记 blob 重传并递增纪元。
     // 改密码场景（dataKey 不变）不标记，避免无谓的全量 blob 重传。
     int nextEpoch = dataKeyEpoch;
     if (keyChanged) {
-      await database.markAllForBlobReupload();
       nextEpoch = dataKeyEpoch + 1;
     }
 
@@ -605,9 +601,19 @@ class Keyring {
       dataKey: remoteDataKey,
       mk: mk,
     );
-    await migrated.persist(database);
 
-    // 3. 更新 database 的 dataKey（后续读写用新 key）
+    // B1 修复（epoch 消除 P0 五项）：重加密 + 新账本 + 重传标记**同一事务**，
+    // 消除「重加密成功但账本未更新 → 崩溃后全库不可解」窗口。
+    // 替代旧的 reEncryptAllNotes（独立事务）+ markAllForBlobReupload +
+    // persist（独立写）三步。
+    await database.reEncryptAllNotesAtomically(
+      oldKey: dataKey,
+      newKey: remoteDataKey,
+      keyringJson: jsonEncode(migrated.ledger.toJson()),
+      markBlobReupload: keyChanged,
+    );
+
+    // 事务成功后更新 database 的 dataKey（后续读写用新 key）
     database.setDataKey(remoteDataKey);
     return migrated;
   }
@@ -655,11 +661,8 @@ class Keyring {
   }) async {
     final keyChanged = !_sameKey(dataKey, remoteDataKey);
 
-    await database.reEncryptAllNotes(oldKey: dataKey, newKey: remoteDataKey);
-
     int nextEpoch = dataKeyEpoch;
     if (keyChanged) {
-      await database.markAllForBlobReupload();
       nextEpoch = dataKeyEpoch + 1;
     }
 
@@ -680,7 +683,15 @@ class Keyring {
       dataKey: remoteDataKey,
       mk: remoteMk,
     );
-    await migrated.persist(database);
+
+    // B1 修复（epoch 消除 P0 五项）：重加密 + 新账本 + 重传标记**同一事务**，
+    // 消除「重加密成功但账本未更新 → 崩溃后全库不可解」窗口。
+    await database.reEncryptAllNotesAtomically(
+      oldKey: dataKey,
+      newKey: remoteDataKey,
+      keyringJson: jsonEncode(migrated.ledger.toJson()),
+      markBlobReupload: keyChanged,
+    );
 
     database.setDataKey(remoteDataKey);
     return migrated;
