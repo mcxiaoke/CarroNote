@@ -53,6 +53,23 @@ import 'dart:typed_data';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_error.dart';
 
+/// manifest 协议 schema 版本号（v4：epoch 消除）
+///
+/// 历史：
+///   - v1：初始（schemaVersion 从未被真实写入，恒默认 1）
+///   - v3：移除遗留兼容，blob 仅支持 AAD=`'<epoch>|<hash>'`（纸面版本）
+///   - v4：**epoch 消除**——blob 纯化 AAD=hash（去 epoch）、
+///     `blobKeyEpoch` 语义从「待现代化」变为「加密版本标签」纯审计元数据、
+///     `dataKeyEpoch` 不再驱动同步、新增 item/header 自描述元数据
+///     （`dataKeyFingerprint`/`createdBy`/`dataKeyCreatedAt`/`dataKeyCreatedBy`）。
+///
+/// 用途（§7.1 / §8.2[G]）：
+///   - 所有新写出的 manifest 显式写入此值（`Manifest.empty` / `_buildLocalManifest`
+///     / repair），替代过去「从不真实写入、恒默认 1」的纸面版本号。
+///   - 下载侧降级拒绝：`header.schemaVersion < kManifestSchemaVersion` 时拒绝
+///     解读并提示升级（业界「拒绝旧协议防降级」共识，与不兼容策略 §0 对齐）。
+const int kManifestSchemaVersion = 4;
+
 /// manifest 中单条笔记的元数据
 ///
 /// 不含笔记内容，内容通过 hash 在 blob 中寻址。
@@ -559,7 +576,8 @@ class Manifest {
   }) {
     return Manifest(
       header: ManifestHeader(
-        schemaVersion: 1,
+        // v4：schemaVersion 真值化（§7.1），不再写死 1
+        schemaVersion: kManifestSchemaVersion,
         version: 0,
         vaultId: vaultId,
         createdAt: createdAt,

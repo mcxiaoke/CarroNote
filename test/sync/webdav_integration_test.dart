@@ -294,7 +294,8 @@ Future<void> _uploadRemoteManifest({
   String expectedEtag = '',
 }) async {
   final header = ManifestHeader(
-    schemaVersion: 1,
+    // v4：schemaVersion 真值化，测试构造也写当前协议版本
+    schemaVersion: kManifestSchemaVersion,
     version: version,
     vaultId: vaultId,
     createdAt: createdAt,

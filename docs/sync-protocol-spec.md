@@ -210,10 +210,16 @@ manifest 在客户端用 dataKey 加密后上传。**加密前**的明文 JSON �
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
+| `schemaVersion` | int | **v4 起真值化**：恒为 `kManifestSchemaVersion = 4`（此前从未真实写入、恒默认 1）。下载侧校验，低于当前版本直接拒绝（[G] 协议降级拒绝，不解读/不迁移/不覆盖）。 |
 | `version` | int | manifest 版本号，每次成功 PUT 后 +1。仅用于调试，**不是乐观锁依据**。 |
 | `vaultId` | string (UUIDv4) | vault 唯一标识，所有设备共享。 |
 | `updatedAt` | int (Unix ms) | manifest 自身的更新时间。 |
 | `encryptedDataKey` | string (base64) | 用 MK 加密后的 dataKey。改密码时只更新此字段。 |
+| `keyVersion` | int | 密钥版本号，改密码 +1。v4 仅用于「谁改了密码」的方向判定（本端/他端），不驱动「采用谁的值」。 |
+| `dataKeyEpoch` | int | **v4 起不再驱动同步行为**，仅作元数据/审计。 |
+| `dataKeyFingerprint` | string (hex) | **v4 新增**：当前 dataKey 的指纹（SHA-256(dataKey)，单向）。scenario-b 精确判定「dataKey 是否相同」与审计提示的依据。 |
+| `dataKeyCreatedAt` | int? (Unix ms) | **v4 新增**：当前 dataKey 的创建时间（等同 keyring 创建时间）。 |
+| `dataKeyCreatedBy` | string? | **v4 新增**：当前 dataKey 的创建设备 ID。 |
 | `items` | object | note-uuid → ManifestItem 映射。包含墓碑。 |
 
 ### 5.2 ManifestItem 字段
@@ -225,14 +231,18 @@ manifest 在客户端用 dataKey 加密后上传。**加密前**的明文 JSON �
 | `updatedAt` | int (Unix ms) | 最后更新时间，用于 LWW 冲突解决。 |
 | `updatedBy` | string | 最后更新该笔记的设备 ID（仅记录，不参与冲突判定）。 |
 | `createdAt` | int (Unix ms) | 创建时间（下载时保留，避免用下载时刻覆盖）。 |
-| `blobKeyEpoch` | int | blob 加密所用 dataKey 纪元。缺失/默认 1；与当前 dataKeyEpoch 不符时触发纪元自愈（用当前纪元重传 blob）。 |
+| `blobKeyEpoch` | int | **v4（epoch 消除）起语义为「加密版本标签」纯审计元数据**：记录加密该 blob 时的 dataKey 纪元，解密已不读它（blob 纯化 AAD=hash），不再触发任何重传/自愈动作；两端声明不同纪元只是「标签不同」非「内容变更」，被 `_semanticItemsEqual` 排除在语义比较之外。 |
+| `dataKeyFingerprint` | string (hex) | **v4 新增**：加密该 blob 的 dataKey 的指纹（SHA-256(dataKey)，单向）。本地构建恒为当前指纹；解密失败时用于精确区分「旧 key 数据（可提示）」与「真损坏（不可修）」。 |
+| `createdBy` | string | **v4 新增**：创建此笔记的设备 ID（审计元数据）。 |
+| `dataKeyCreatedAt` | int? (Unix ms) | **v4 新增**：加密该 blob 的 dataKey 的创建时间（等同 keyring 创建时间）。 |
+| `dataKeyCreatedBy` | string? | **v4 新增**：加密该 blob 的 dataKey 的创建设备 ID。 |
 
 ### 5.3 加密
 
 manifest 整体 JSON → UTF-8 字节 → AES-256-GCM 加密 → 密文二进制上传。
 
 - 密钥：dataKey
-- AAD（Additional Authenticated Data）：固定字符串 `"manifest"`（区别于 blob 的 AAD=`<epoch>|<hash>`）
+- AAD（Additional Authenticated Data）：固定字符串 `"manifest"`（区别于 blob 的 AAD=`hash`）
 - nonce：随机 12 字节
 - 输出格式：`nonce(12) ‖ ciphertext ‖ tag(16)`
 
@@ -246,22 +256,25 @@ manifest 整体 JSON → UTF-8 字节 → AES-256-GCM 加密 → 密文二进制
 
 ```
 envelope = nonce(12) ‖ ciphertext ‖ tag(16)
-         = AES-256-GCM(dataKey, nonce, AAD='<epoch>|<hash>', plaintext)
+         = AES-256-GCM(dataKey, nonce, AAD='<hash>', plaintext)
 ```
 
 - 密钥：dataKey（与 manifest 同一密钥）
-- AAD：`'<epoch>|<hash>'`，其中：
+- AAD：`'<hash>'`——**blob 纯化（v4，epoch 消除）后 AAD 恒为内容 hash，不再携带 epoch**。
   - `hash` 为笔记内容的 SHA-256 哈希（内容寻址键）
-  - `epoch` 为加密时用的 dataKey 纪元（`ManifestItem.blobKeyEpoch`，缺失/默认 1）
-  - 绑定 hash 防止把 A 的密文挪到 B 的位置；绑定 epoch 显式标记所用密钥，便于纪元自愈
+  - 绑定 hash 防止把 A 的密文挪到 B 的位置
+  - 解密只问「dataKey 对不对」：能解开即当前 key，解不开即「非当前 key 或损坏」；
+    epoch 不参与判定（epoch 进 AAD 会让「同 key 解不开」成为翻转事故的放大器，见
+    docs/epoch-elimination-design-20260801.md §4.2）
 - nonce：随机 12 字节
 - plaintext：笔记内容的 JSON 序列化字节
 
 服务端只存储 envelope 二进制，不解释。
 
-> **不再兼容的旧格式**：v1 时代 blob 的 AAD 为笔记 UUID（`AAD=note-uuid`），且不携带 epoch。
-> 新客户端统一按 `'<epoch>|<hash>'` 解封，不再提供 uuid-AAD / epoch=0 回退路径，
-> 存量数据需由旧版客户端完成一次重封（见 CHANGES 迁移说明）。
+> **不再兼容的旧格式**：v3 时代 blob 的 AAD 为 `'<epoch>|<hash>'`；v4 起统一按
+> `AAD=hash` 解封，不保留 epoch-AAD 解码路径（不兼容策略 §0）。存量 epoch-AAD blob
+> 由 dataKey 迁移（`reEncryptAllNotes` 单事务全量重加密 + `markAllForBlobReupload`
+> 一次性重传）覆盖为新格式。
 
 ---
 
@@ -485,6 +498,7 @@ SafeServer 是单用户设计，整个 server 实例服务一个 vault，不需�
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v4 | 2026-08-01 | **epoch 消除**（docs/epoch-elimination-design-20260801.md）：blob 纯化 AAD=hash（去 epoch，解密只问 dataKey）；`blobKeyEpoch` 语义从「待现代化」变为「加密版本标签」纯审计元数据（`_semanticItemsEqual` 排除它）；`dataKeyEpoch` 不再驱动同步；新增自描述元数据 `dataKeyFingerprint`/`createdBy`/`dataKeyCreatedAt`/`dataKeyCreatedBy`；`schemaVersion` 真值化（`kManifestSchemaVersion=4`）且下载侧降级拒绝（[G]）；scenario-b（他端改密码）中止同步+强制重登录（选项 B）；删除 override 三元组/adoptRemoteEpoch/epochMismatch 状态机 |
 | v3 | 2026-08-01 | 移除遗留兼容：blob 仅支持 AAD=`'<epoch>|<hash>'`（删除 v1 uuid-AAD 与 epoch=0 回退路径）；ManifestItem 显式要求 `blobKeyEpoch`；SafeServer 强制 v2.2（ETag 必须返回，缺失视为后端不可用，删除内容 hash fallback 与 `0rphan-` 软删路径）；`repairRemote()` 移除旧密码/历史密钥归档能力 |
 | v2 | 2026-07-28 | 多后端架构：§四 按后端类型分别描述传输层；新增 §十二 后端隔离（providerKey）；移除 MKCOL 作为通用要求（改为 WebDAV 仅）；认证方式按后端区分（Basic Auth / Bearer Token） |
 | v1 | 2026-07-28 | 初版：4 个 HTTP 端点 + MKCOL + ETag 乐观锁 + manifest JSON 格式 |

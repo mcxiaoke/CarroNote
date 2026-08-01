@@ -286,6 +286,13 @@ class SyncEngine {
         );
       }
 
+      // [G] 协议降级拒绝（§8.2[G]）：远端 schemaVersion 低于当前协议版本
+      // 时拒绝解读、不迁移、不覆盖，提示升级（与不兼容策略 §0 对齐）。
+      final schemaReject = _rejectOldSchemaVersion(remoteHeader);
+      if (schemaReject != null) {
+        return SyncResult.failure(schemaReject, attempts: attempt);
+      }
+
       // 1b. v4（epoch 消除 §8.2[I]）：用 header.dataKeyFingerprint 精确判定
       // 「dataKey 是否相同」，替代旧「keyVersion 守卫 + 本地 MK 解不开 + items
       // 能解」的间接信号（原 4 分支收敛为 2 分支）。scenario-b（他端改密码）→
@@ -615,6 +622,11 @@ class SyncEngine {
     final remoteHeader = ManifestCrypto.deserializeHeaderOnly(
       remoteResponse.ciphertext,
     );
+    // [G] 协议降级拒绝：远端 schemaVersion 低于当前协议版本时拒绝解读
+    final schemaReject = _rejectOldSchemaVersion(remoteHeader);
+    if (schemaReject != null) {
+      return SyncResult.failure(schemaReject, attempts: attempt);
+    }
     final Manifest remoteManifest;
     try {
       remoteManifest = ManifestCrypto.deserialize(
@@ -757,7 +769,8 @@ class SyncEngine {
     // （否则 _repairRemoteOnce 在 manifest 解密处即失败返回），本地 keyring
     // 即权威，只读不 echo 远端（§0）。
     final header = keyring.toManifestHeader(
-      schemaVersion: remoteHeader.schemaVersion,
+      // v4：schemaVersion 真值化（§7.1），repair 也写当前协议版本
+      schemaVersion: kManifestSchemaVersion,
       version: remoteHeader.version + 1,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       lastModifiedBy: deviceId,
@@ -954,8 +967,10 @@ class SyncEngine {
 
     return Manifest(
       // P2 收敛：header 由 keyring 投影，字段完整性由 Keyring 单点保证
-      // v4：不再 override（本地包裹恒合法，只读不 echo 远端，§0）
+      // v4：不再 override（本地包裹恒合法，只读不 echo 远端，§0）；
+      // schemaVersion 真值化（§7.1），显式写入当前协议版本
       header: keyring.toManifestHeader(
+        schemaVersion: kManifestSchemaVersion,
         version: localVersion,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         lastModifiedBy: deviceId,
@@ -1186,6 +1201,8 @@ class SyncEngine {
       // P2 收敛：header 由 keyring 投影（唯一出口）
       // v4：不再 override（本地包裹恒合法，只读不 echo 远端，§0）
       header: keyring.toManifestHeader(
+        // v4：schemaVersion 真值化（§7.1），合并后 PUT 也写当前协议版本
+        schemaVersion: kManifestSchemaVersion,
         version: remote.version + 1,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         lastModifiedBy: deviceId,
@@ -2152,6 +2169,24 @@ class SyncEngine {
 
     // items 完全一致且无传输操作：无实际变更，跳过 PUT
     return false;
+  }
+
+  /// [G] 协议降级拒绝（§8.2[G] / §3.4[G]）
+  ///
+  /// 下载侧校验 `header.schemaVersion`：低于 [kManifestSchemaVersion]（当前
+  /// 协议版本）时**拒绝解读**——不迁移、不覆盖、不做任何兼容处理，返回升级提示。
+  /// 与业界「拒绝旧协议防降级」共识（Joplin 等）一致，补全不兼容策略 §0 的
+  /// 下载侧执行细节；同时堵住「老客户端写覆盖新协议」的最后窗口（老客户端
+  /// 按 §0 不共存，全量升级）。
+  ///
+  /// 返回 null 表示版本兼容（可继续）；否则返回用户可读的拒绝原因。
+  String? _rejectOldSchemaVersion(ManifestHeader header) {
+    if (header.schemaVersion < kManifestSchemaVersion) {
+      return '远端同步数据使用旧版协议（schema v${header.schemaVersion}，'
+          '当前 v$kManifestSchemaVersion）。请将全部设备升级到最新版本后重试'
+          '（旧协议数据不做兼容解读/迁移/覆盖）';
+    }
+    return null;
   }
 
   /// 常数时间比较两个字节序列是否相等
