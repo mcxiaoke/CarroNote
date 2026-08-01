@@ -102,10 +102,37 @@ class ManifestItem {
   /// blob 密钥纪元（Layer 3 显式标记）
   ///
   /// 记录加密该笔记 blob 时使用的 dataKey 纪元。
-  /// 与 [ManifestHeader] 中的当前 [Keyring.dataKeyEpoch] 比较：
-  ///   - 相等 → blob 用当前 dataKey 加密，正常解密；
-  ///   - 不等 → blob 由「非当前 dataKey」加密（旧密钥 blob），走显式修复路径（重传）。
+  /// **v4（epoch 消除）后语义变为「加密版本标签」纯审计元数据**：解密已不读它
+  /// （blob 纯化 AAD=hash），纪元数字不同不代表内容有变更，也不再驱动任何
+  /// 重传/自愈动作。「旧 key vs 损坏」的判定改由 [dataKeyFingerprint] 精确承担。
   final int blobKeyEpoch;
+
+  /// 加密该 blob 的 dataKey 的指纹（H(dataKey)，v4 新增，item 自描述）
+  ///
+  /// 标记「这条 blob 用哪把 dataKey 加密」。本地构建时恒为当前指纹
+  /// （本地 blob 全部由迁移单事务重加密为当前 dataKey，与事实相符，非乐观声明）。
+  /// 解密端不推断、不比较、不纠正，仅用于：
+  ///   - 解密失败时精确区分「旧 key 数据（可提示修复）」与「真损坏（不可修）」：
+  ///     `dataKeyFingerprint == 当前指纹` 却解不开 → 真损坏；不等 → 旧密钥数据。
+  ///   - 审计（配合 [dataKeyCreatedAt] / [dataKeyCreatedBy] 提示「由谁、何时加密」）。
+  ///
+  /// 这是 Joplin `master_key_id` 模式的等价物：item 自描述「用哪把 key 加密」，
+  /// 指纹是数据派生身份（SHA-256 单向），不依赖两端纪元历史一致，比 epoch 更强。
+  final String dataKeyFingerprint;
+
+  /// 创建此笔记的设备 ID（v4 新增，审计元数据）
+  ///
+  /// 明文存储，只读用于审计与解密失败提示，不驱动同步行为。
+  final String createdBy;
+
+  /// 加密该 blob 的 dataKey 的创建时间（Unix 毫秒，v4 新增，审计元数据）
+  ///
+  /// 等同 keyring 创建时间（dataKey 在 keyring 创建时生成）。用于解密失败时
+  /// 给出精确提示「该数据由 X 设备于某时间加密」。
+  final int? dataKeyCreatedAt;
+
+  /// 加密该 blob 的 dataKey 的创建设备 ID（v4 新增，审计元数据）
+  final String? dataKeyCreatedBy;
 
   const ManifestItem({
     required this.hash,
@@ -116,6 +143,10 @@ class ManifestItem {
     this.deletedAt,
     this.contentSize = 0,
     this.blobKeyEpoch = 1,
+    this.dataKeyFingerprint = '',
+    this.createdBy = '',
+    this.dataKeyCreatedAt,
+    this.dataKeyCreatedBy,
   });
 
   ManifestItem copyWith({
@@ -127,6 +158,10 @@ class ManifestItem {
     int? deletedAt,
     int? contentSize,
     int? blobKeyEpoch,
+    String? dataKeyFingerprint,
+    String? createdBy,
+    int? dataKeyCreatedAt,
+    String? dataKeyCreatedBy,
   }) =>
       ManifestItem(
         hash: hash ?? this.hash,
@@ -137,6 +172,11 @@ class ManifestItem {
         deletedAt: deletedAt ?? this.deletedAt,
         contentSize: contentSize ?? this.contentSize,
         blobKeyEpoch: blobKeyEpoch ?? this.blobKeyEpoch,
+        dataKeyFingerprint:
+            dataKeyFingerprint ?? this.dataKeyFingerprint,
+        createdBy: createdBy ?? this.createdBy,
+        dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
+        dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
       );
 
   /// 序列化为 JSON（用于 manifest 加密体存储）
@@ -149,6 +189,10 @@ class ManifestItem {
         if (deletedAt != null) 'deletedAt': deletedAt,
         'contentSize': contentSize,
         'blobKeyEpoch': blobKeyEpoch,
+        if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
+        if (createdBy.isNotEmpty) 'createdBy': createdBy,
+        if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
+        if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
       };
 
   /// 从 JSON 反序列化
@@ -162,13 +206,18 @@ class ManifestItem {
       deletedAt: json['deletedAt'] as int?,
       contentSize: json['contentSize'] as int? ?? 0,
       blobKeyEpoch: (json['blobKeyEpoch'] as int?) ?? 0,
+      dataKeyFingerprint: (json['dataKeyFingerprint'] as String?) ?? '',
+      createdBy: (json['createdBy'] as String?) ?? '',
+      dataKeyCreatedAt: json['dataKeyCreatedAt'] as int?,
+      dataKeyCreatedBy: json['dataKeyCreatedBy'] as String?,
     );
   }
 
   @override
   String toString() =>
       'ManifestItem(hash=$hash, deleted=$deleted, updatedAt=$updatedAt, '
-      'updatedBy=$updatedBy, contentSize=$contentSize, blobKeyEpoch=$blobKeyEpoch)';
+      'updatedBy=$updatedBy, contentSize=$contentSize, blobKeyEpoch=$blobKeyEpoch, '
+      'dataKeyFingerprint=${dataKeyFingerprint.length > 8 ? dataKeyFingerprint.substring(0, 8) : dataKeyFingerprint})';
 
   @override
   bool operator ==(Object other) =>
@@ -181,7 +230,11 @@ class ManifestItem {
           createdAt == other.createdAt &&
           deletedAt == other.deletedAt &&
           contentSize == other.contentSize &&
-          blobKeyEpoch == other.blobKeyEpoch;
+          blobKeyEpoch == other.blobKeyEpoch &&
+          dataKeyFingerprint == other.dataKeyFingerprint &&
+          createdBy == other.createdBy &&
+          dataKeyCreatedAt == other.dataKeyCreatedAt &&
+          dataKeyCreatedBy == other.dataKeyCreatedBy;
 
   @override
   int get hashCode => Object.hash(
@@ -193,6 +246,10 @@ class ManifestItem {
         deletedAt,
         contentSize,
         blobKeyEpoch,
+        dataKeyFingerprint,
+        createdBy,
+        dataKeyCreatedAt,
+        dataKeyCreatedBy,
       );
 }
 
@@ -310,8 +367,26 @@ class ManifestHeader {
   ///   - 不等 → blob 由「非当前 dataKey」加密（旧密钥 blob），走显式修复路径。
   ///
   /// 新设备加入时从此 header 学习当前纪元；发布 manifest 时写入本机纪元。
+  /// **v4（epoch 消除）后不再驱动同步行为**，仅作元数据/审计；「旧 key vs
+  /// 损坏」判定改由 [dataKeyFingerprint] 精确承担。
   /// 默认 1。
   final int dataKeyEpoch;
+
+  /// 当前 dataKey 的指纹（H(dataKey)，v4 新增，明文自描述）
+  ///
+  /// 用于 scenario-b 精确判定「dataKey 是否相同」（替代旧「本地 MK 解不开 +
+  /// items 能解」的间接信号）与解密失败时的审计提示。恒为创建方当前 dataKey
+  /// 的 SHA-256 指纹，单向不泄露 dataKey。
+  final String dataKeyFingerprint;
+
+  /// 当前 dataKey 的创建时间（Unix 毫秒，v4 新增，审计元数据）
+  ///
+  /// 等同 keyring 创建时间（dataKey 在 keyring 创建时生成）。用于解密失败时
+  /// 提示「该数据由 X 设备于某时间加密」。
+  final int? dataKeyCreatedAt;
+
+  /// 当前 dataKey 的创建设备 ID（v4 新增，审计元数据）
+  final String? dataKeyCreatedBy;
 
   /// 最后修改此 manifest 的设备 ID（如 'android-xxx'）
   ///
@@ -330,6 +405,9 @@ class ManifestHeader {
     required this.kdf,
     required this.dataKeyWrap,
     this.dataKeyEpoch = 1,
+    this.dataKeyFingerprint = '',
+    this.dataKeyCreatedAt,
+    this.dataKeyCreatedBy,
     required this.lastModifiedBy,
   });
 
@@ -345,6 +423,9 @@ class ManifestHeader {
     KdfParams? kdf,
     String? dataKeyWrap,
     int? dataKeyEpoch,
+    String? dataKeyFingerprint,
+    int? dataKeyCreatedAt,
+    String? dataKeyCreatedBy,
     String? lastModifiedBy,
   }) =>
       ManifestHeader(
@@ -359,6 +440,9 @@ class ManifestHeader {
         kdf: kdf ?? this.kdf,
         dataKeyWrap: dataKeyWrap ?? this.dataKeyWrap,
         dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
+        dataKeyFingerprint: dataKeyFingerprint ?? this.dataKeyFingerprint,
+        dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
+        dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
         lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
       );
 
@@ -374,6 +458,9 @@ class ManifestHeader {
         'kdf': kdf.toJson(),
         'dataKeyWrap': dataKeyWrap,
         'dataKeyEpoch': dataKeyEpoch,
+        if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
+        if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
+        if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
         'lastModifiedBy': lastModifiedBy,
       };
 
@@ -390,6 +477,9 @@ class ManifestHeader {
       kdf: KdfParams.fromJson(json['kdf'] as Map<String, dynamic>),
       dataKeyWrap: json['dataKeyWrap'] as String,
       dataKeyEpoch: (json['dataKeyEpoch'] as int?) ?? 1,
+      dataKeyFingerprint: (json['dataKeyFingerprint'] as String?) ?? '',
+      dataKeyCreatedAt: json['dataKeyCreatedAt'] as int?,
+      dataKeyCreatedBy: json['dataKeyCreatedBy'] as String?,
       lastModifiedBy: json['lastModifiedBy'] as String,
     );
   }

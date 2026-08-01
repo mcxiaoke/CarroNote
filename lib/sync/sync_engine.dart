@@ -810,6 +810,7 @@ class SyncEngine {
       overrideEncryptedDataKey: remoteHeader.encryptedDataKey,
       overrideKeyFingerprint: remoteHeader.keyFingerprint,
       overrideKeyVersion: remoteHeader.keyVersion,
+      dataKeyCreatedBy: deviceId,
     );
     final manifest = Manifest(header: header, items: repairedItems);
     final ciphertext = ManifestCrypto.serialize(_dataKey, manifest);
@@ -990,27 +991,15 @@ class SyncEngine {
         createdAt: note.createdTime.millisecondsSinceEpoch,
         deletedAt: note.deleted ? note.updatedAt : null,
         contentSize: note.toContentBytes().length,
-        // blobKeyEpoch 乐观标记为当前纪元（而非从 DB 持久化字段读取）。
-        //
-        // 设计意图：本地 DB 的 title/description 字段已用当前 dataKey 加密
-        // （迁移时 reEncryptAllNotes 已处理），但远端 blob 可能还是旧密钥。
-        // 这里"乐观声明当前纪元"是安全的，因为：
-        //   1. 任何 dataKey 变化（scenario-d）都会触发 markAllForBlobReupload，
-        //      所有笔记进入 pendingReupload 集合
-        //   2. _mergeAndTransfer 的 L917-L924 分支会在 hash 相同时强制重传
-        //      （pendingReupload.contains(uuid) 为真）
-        //   3. _uploadNote 用当前 _dataKey 加密 → 远端 blob 被更新为当前纪元
-        //   4. clearAllPendingReupload 只在 PUT manifest 成功后调用
-        // 这形成闭环：manifest 声称当前纪元 + blob 被重传为当前纪元 → 一致。
-        //
-        // 为什么不持久化每条笔记的实际 blobKeyEpoch 到 DB？
-        //   - 老数据迁移默认值（0）会让 manifest 回滚为旧纪元 → 其他设备
-        //     isOldKey 判定失效 → 旧密钥 blob 无法 heal → 永久 corrupt
-        //   - crash 一致性：_uploadNote 成功但字段更新失败 → manifest 与
-        //     blob 实际纪元不一致 → 可能导致无法自愈的 corrupt
-        // 当前"乐观声明 + pendingReupload 兑现"的设计避免了这些风险。
-        // 详见 2026-07-30 代码审查（docs/CHANGES-20260730.md）。
+        // v4（epoch 消除）：item 自描述字段恒为「当前 dataKey 指纹」——
+        // 本地所有 blob 均由迁移单事务重加密为当前 dataKey（§4.1），
+        // 声明即事实，不是乐观声明；解密端不比较、不纠正。
+        // blobKeyEpoch 保留为「加密版本标签」纯审计元数据（§7.1）。
         blobKeyEpoch: keyring.dataKeyEpoch,
+        dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(_dataKey),
+        createdBy: deviceId,
+        dataKeyCreatedAt: keyring.createdAt,
+        dataKeyCreatedBy: deviceId,
       );
     }
     final localVersion = await database.getManifestVersion(backend.providerKey);
@@ -1025,6 +1014,7 @@ class SyncEngine {
         overrideEncryptedDataKey: overrideEncryptedDataKey,
         overrideKeyFingerprint: overrideKeyFingerprint,
         overrideKeyVersion: overrideKeyVersion,
+        dataKeyCreatedBy: deviceId,
       ),
       items: items,
     );
@@ -1261,6 +1251,7 @@ class SyncEngine {
         overrideEncryptedDataKey: overrideEncryptedDataKey,
         overrideKeyFingerprint: overrideKeyFingerprint,
         overrideKeyVersion: overrideKeyVersion,
+        dataKeyCreatedBy: deviceId,
       ),
       items: mergedItems,
     );
@@ -1283,14 +1274,20 @@ class SyncEngine {
   ///   1. manifest version 无限攀升（D3 修复在多设备下完全失效）
   ///   2. 审计信息被每次同步的设备覆盖，失去「最后修改者」语义
   ///   3. 多设备自动同步接近并发 PUT，ETag 冲突概率上升
+  ///
+  /// **v4（epoch 消除，§7.1）同样排除 `blobKeyEpoch` 与 v4 新增的自描述元数据**
+  /// （`dataKeyFingerprint`/`createdBy`/`dataKeyCreatedAt`/`dataKeyCreatedBy`）：
+  /// 各端加密时用的纪元/指纹天然可能不同（同一数据被不同端的 key 声明标记），
+  /// 那是「标签不同」不是「内容有变更」。纳入比较会让两端声明不同标签时每次
+  /// 同步判定「有变更」→ 无条件 PUT manifest（版本空涨 + ETag 竞争）。仅比对
+  /// hash / deleted / 时间戳 / contentSize——这些才决定数据语义。
   bool _semanticItemsEqual(ManifestItem a, ManifestItem b) {
     return a.hash == b.hash &&
         a.deleted == b.deleted &&
         a.updatedAt == b.updatedAt &&
         a.createdAt == b.createdAt &&
         a.deletedAt == b.deletedAt &&
-        a.contentSize == b.contentSize &&
-        a.blobKeyEpoch == b.blobKeyEpoch;
+        a.contentSize == b.contentSize;
   }
 
   /// E1 修复：冲突副本保留
@@ -1837,16 +1834,31 @@ class SyncEngine {
     }
 
     // 无本地明文可用：记录失败，保留远端条目供下次重试。
-    // 若 blob 纪元与当前不符，说明是「旧密钥 blob」；否则是「真损坏」不可自动修复。
-    // 两种情况均记入 failedNoteUuids，UI 提示用户运行「修复同步数据」。
-    final isOldKey = remoteItem.blobKeyEpoch != keyring.dataKeyEpoch;
+    // v4（epoch 消除 §8.2[D]）用「dataKey 指纹」本地精确判定「旧 key vs 损坏」，
+    // 替代旧的 epoch 比较（item 声明本身可错，纪元比较会误分类——正是历史事故
+    // 「声明 epoch2、blob 实为 epoch1」的教训）：
+    //   - item.dataKeyFingerprint 非空且 == 当前指纹 → 本应能解，解不开 = 真损坏
+    //   - item.dataKeyFingerprint 非空且 != 当前指纹 → 旧密钥数据，提示修复线索
+    //   - 字段为空（旧协议 manifest 无此字段）→ 无判定依据，按损坏保守处理
+    // 两种情况均记入 failedNoteUuids，UI 提示用户运行「修复同步数据」；
+    // 均只读提示，绝不自动重传（§0 / §3.2 第 1 条业界共识）。
+    final currentFp = SyncCrypto.computeDataKeyFingerprint(_dataKey);
+    final declaredFp = remoteItem.dataKeyFingerprint;
+    final isOldKey =
+        declaredFp.isNotEmpty && declaredFp != currentFp;
+    final keyInfo = declaredFp.isNotEmpty
+        ? (remoteItem.dataKeyCreatedBy ?? '未知设备') +
+            (remoteItem.dataKeyCreatedAt != null
+                ? ' @ ${DateTime.fromMillisecondsSinceEpoch(remoteItem.dataKeyCreatedAt!).toIso8601String()}'
+                : '')
+        : '未知来源';
     _addAction(actions, SyncAction(
       type: SyncActionType.corrupt,
       uuid: uuid,
       hash: remoteItem.hash,
       message: isOldKey
-          ? 'blob 为旧密钥加密（纪元 ${remoteItem.blobKeyEpoch}≠当前'
-              ' ${keyring.dataKeyEpoch}），无本地明文，需运行修复'
+          ? 'blob 由更早的密钥加密（dataKey 指纹不符，由 $keyInfo），'
+              '无本地明文，需输旧密码或运行修复'
           : 'blob 下载失败（数据损坏且无本地明文，将重试）',
     ));
     return null;

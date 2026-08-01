@@ -359,6 +359,10 @@ class Keyring {
   /// [overrideEncryptedDataKey] / [overrideKeyFingerprint] /
   /// [overrideKeyVersion]：纪元不匹配时（他端改密码）传入远端三元组，
   /// 避免把远端新纪元回滚（B1-2 修复）。
+  ///
+  /// v4（epoch 消除）新增自描述元数据：dataKeyFingerprint = H(dataKey)，
+  /// dataKeyCreatedAt = keyring 创建时间（dataKey 在创建时生成）。
+  /// [dataKeyCreatedBy] 由调用方（SyncEngine）传入本机 deviceId。
   ManifestHeader toManifestHeader({
     int schemaVersion = 1,
     required int version,
@@ -368,6 +372,7 @@ class Keyring {
     String? overrideEncryptedDataKey,
     String? overrideKeyFingerprint,
     int? overrideKeyVersion,
+    String? dataKeyCreatedBy,
   }) =>
       ManifestHeader(
         schemaVersion: schemaVersion,
@@ -381,6 +386,9 @@ class Keyring {
         kdf: kdf,
         dataKeyWrap: dataKeyWrap,
         dataKeyEpoch: dataKeyEpoch,
+        dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(dataKey),
+        dataKeyCreatedAt: createdAt,
+        dataKeyCreatedBy: dataKeyCreatedBy,
         lastModifiedBy: lastModifiedBy,
       );
 
