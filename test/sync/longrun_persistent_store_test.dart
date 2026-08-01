@@ -58,6 +58,13 @@ import 'package:safenotes/sync/sync_models.dart';
 /// 持久化存储根目录（项目内 temp/longrun-store，跨运行复用，绝不清理）
 const String kStoreRootRel = 'temp/longrun-store';
 
+/// 真实流程数据集源（Android 模拟器 + Windows 应用交互产生，见 CLAUDE.md）：
+/// 全新创建时优先用它播种远端 vault，再在三端累积后续代数。
+const String kSeedVaultRel = 'temp/safenotes-vault';
+
+/// 真实数据集的候选密码（初始 testpwd.1111 → 改密 testpwd.2222，当前密码放首位）。
+const List<String> kSeedVaultPasswords = ['testpwd.2222', 'testpwd.1111'];
+
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];
 
@@ -253,10 +260,108 @@ class LongRunStore {
     freshlyCreated = !manifestExists || !dbExists;
 
     if (freshlyCreated) {
-      await _createFromScratch();
+      // 优先用真实流程数据集（temp/safenotes-vault）播种远端 vault；
+      // 找不到或打不开时回退为「从零创建空库」。
+      final seeded = await _seedFromRealVault();
+      if (!seeded) {
+        await _createFromScratch();
+      }
     } else {
       await _reopenExisting();
     }
+  }
+
+  /// 用真实流程数据集（temp/safenotes-vault）播种远端 vault 并建三端客户端。
+  ///
+  /// 流程：克隆真实 vault 作为远端 → 用候选密码解锁 keyring → 建三端库 →
+  /// 首轮同步拉取真实笔记 → 用 A 端本地库建立账本（真实 title + hash）。
+  /// 返回 false 表示源不存在或密码无法解锁（调用方回退为从零创建）。
+  Future<bool> _seedFromRealVault() async {
+    final srcRoot = p.join(Directory.current.path, kSeedVaultRel);
+    final srcDir = Directory(srcRoot);
+    if (!srcDir.existsSync()) {
+      // ignore: avoid_print
+      print('WARN: 未找到真实数据集 $srcRoot，回退为从零创建空库');
+      return false;
+    }
+
+    // 1. 克隆真实 vault → 远端目录（只动副本，绝不碰原件）
+    await _cloneVault(srcRoot, vaultDir);
+    backend = LocalFsBackend(rootPath: vaultDir);
+    await backend.init();
+
+    // 2. 候选密码打开真实 keyring（当前密码放首位）
+    String? workingPw;
+    for (final pw in kSeedVaultPasswords) {
+      try {
+        await _unlockFromRemote(pw);
+        workingPw = pw;
+        break;
+      } on WrongPasswordException {
+        continue;
+      }
+    }
+    if (workingPw == null) {
+      // ignore: avoid_print
+      print('WARN: 无法用候选密码 $kSeedVaultPasswords 打开真实 vault，'
+          '回退为从零创建空库');
+      return false;
+    }
+    state.password = workingPw;
+
+    // 3. 建三端客户端库 + keyring（真实 App 新设备入网路径）
+    for (final id in kDeviceIds) {
+      final db = await _openDb(_dbPath(id));
+      NotesDatabase.setDatabaseForTesting(db);
+      final keyring = await _unlockFromRemote(workingPw);
+      clients.add(await _mountClient(id, db, keyring));
+    }
+    state.vaultId = clients.first.keyring.vaultId;
+    final header = await remoteHeader();
+    state.createdAt = header.createdAt;
+
+    // 4. 首轮同步：把真实笔记拉到三端（含孤儿清理，收敛后满足 I5）
+    await converge(rounds: 2);
+
+    // 5. 用 A 端本地库建立账本（真实 title + contentHash，供 I2/I8 核对）
+    final all = await _readAllNotesIncludingDeleted(clients.first);
+    for (final n in all) {
+      if (n.deleted) {
+        state.deleted.add(n.uuid);
+      } else {
+        state.notes[n.uuid] = NoteFact(n.title, n.contentHash);
+      }
+    }
+
+    // ignore: avoid_print
+    print('种子数据集（真实流程）: 活跃 ${state.notes.length} 条 / '
+        '墓碑 ${state.deleted.length} 条 / keyVersion=${header.keyVersion} '
+        '/ 密码=$workingPw');
+    return true;
+  }
+
+  /// 递归复制目录（blobs / manifest.json / journal / manifest-backup 一并带走）。
+  static Future<void> _cloneVault(String src, String dst) async {
+    final srcDir = Directory(src);
+    if (!srcDir.existsSync()) {
+      throw StateError('源 vault 不存在: $src');
+    }
+    await Directory(dst).create(recursive: true);
+    await for (final entity in srcDir.list(recursive: false)) {
+      final name = p.basename(entity.path);
+      final target = p.join(dst, name);
+      if (entity is File) {
+        await File(entity.path).copy(target);
+      } else if (entity is Directory) {
+        await _cloneVault(entity.path, target);
+      }
+    }
+  }
+
+  /// 读取某端全部笔记（含软删除墓碑），供播种建账本用。
+  Future<List<SafeNote>> _readAllNotesIncludingDeleted(LongRunClient c) async {
+    activate(c);
+    return NotesDatabase.instance.readAllNotesIncludingDeleted();
   }
 
   /// 首次创建：建库者生成 keyring → 上传空 manifest → 三端各自入网

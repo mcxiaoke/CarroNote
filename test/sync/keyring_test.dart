@@ -710,6 +710,80 @@ void main() {
       expect(keyring.encryptedDataKey, sameEdk);
       expect(await persistedEncryptedDataKey(database), sameEdk);
     });
+
+    test('P7 回归：纪元实际递增时标记全部 blob 重传（adoptRemoteEpoch 生产侧根因）',
+        () async {
+      final keyring = await Keyring.createNew(
+        password: 'pw-adopt-p7',
+        database: database,
+      );
+      // 本地已有 2 条笔记（epoch 1 blob 已上传过）
+      await database.storeNote(SafeNote(
+        uuid: 'note-p7-1',
+        title: 'n1',
+        description: 'd1',
+        contentHash: SafeNote.computeHash('n1', 'd1'),
+        deleted: false,
+        createdTime: DateTime.now(),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: true,
+      ));
+      await database.storeNote(SafeNote(
+        uuid: 'note-p7-2',
+        title: 'n2',
+        description: 'd2',
+        contentHash: SafeNote.computeHash('n2', 'd2'),
+        deleted: false,
+        createdTime: DateTime.now(),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: true,
+      ));
+      expect(await database.getPendingReuploadUuids(), isEmpty);
+
+      // 远端纪元 2 > 本地 1：采用后必须触发 blob 重传标记
+      await keyring.adoptRemoteEpoch(
+        remoteEncryptedDataKey: 'EDK-P7',
+        remoteKeyFingerprint: 'fp-p7',
+        remoteKeyVersion: 8,
+        remoteDataKeyEpoch: 2,
+        database: database,
+      );
+
+      final pending = await database.getPendingReuploadUuids();
+      expect(pending, containsAll(['note-p7-1', 'note-p7-2']),
+          reason: '纪元递增必须把本地 blob 标记重传，'
+              '否则 manifest 乐观声明新纪元而 blob 仍是旧纪元（P7 根因）');
+      expect(keyring.dataKeyEpoch, 2);
+    });
+
+    test('P7 回归：纪元不变时采用不触发 blob 重传（改密码场景）', () async {
+      final keyring = await Keyring.createNew(
+        password: 'pw-adopt-p7b',
+        database: database,
+      );
+      await database.storeNote(SafeNote(
+        uuid: 'note-p7-3',
+        title: 'n3',
+        description: 'd3',
+        contentHash: SafeNote.computeHash('n3', 'd3'),
+        deleted: false,
+        createdTime: DateTime.now(),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: true,
+      ));
+
+      // 改密码场景：dataKeyEpoch 不变，只是包裹态变化 → 不该触发全量重传
+      await keyring.adoptRemoteEpoch(
+        remoteEncryptedDataKey: 'EDK-P7B',
+        remoteKeyFingerprint: 'fp-p7b',
+        remoteKeyVersion: 5,
+        remoteDataKeyEpoch: 1,
+        database: database,
+      );
+
+      expect(await database.getPendingReuploadUuids(), isEmpty,
+          reason: '纪元未变、dataKey 值未变，blob 仍是当前纪元，无需重传');
+    });
   });
 
   group('P2 - copyWithCurrent（纯函数版等价性）', () {

@@ -762,6 +762,17 @@ class Keyring {
   ///
   /// **关键：只更新包裹态与纪元字段，raw dataKey / mk 绝不触碰**
   /// （改密码场景 dataKey 值本就未变；整条目替换会抹掉 raw dataKey → C2）。
+  ///
+  /// P7 修复（生产侧根因）：纪元**实际递增**时（remoteDataKeyEpoch > 本地纪元，
+  /// 如远端做过 dataKey 迁移）必须 `markAllForBlobReupload()`。否则会出现
+  /// 「manifest 乐观声明新纪元 + 本地 blob 仍是旧纪元」的永久不一致：
+  ///   - 本端 8 条 epoch-1 blob 之前已上传，服务器上存的是旧纪元密文；
+  ///   - adoptRemoteEpoch 把本地 keyring.dataKeyEpoch 顶到新纪元；
+  ///   - 下次同步 _buildLocalManifest 乐观声明新纪元，而 blob 未重传；
+  ///   - _itemsEqual 因远端也声明新纪元而判定相等 → skip 分支 → 永不重传。
+  /// 标记重传后，_mergeAndTransfer 的 pendingReupload 分支会强制用当前纪元
+  /// 重新加密上传，服务器 blob 才能与新纪元声明收敛（与 migrateToRemote 的
+  /// keyChanged 处理一致）。dataKey 值未变，无需 reEncryptAllNotes。
   Future<void> adoptRemoteEpoch({
     required String remoteEncryptedDataKey,
     required String remoteKeyFingerprint,
@@ -769,6 +780,7 @@ class Keyring {
     int remoteDataKeyEpoch = 1,
     required NotesDatabase database,
   }) async {
+    final epochAdvanced = remoteDataKeyEpoch > current.dataKeyEpoch;
     current = current.copyWith(
       encryptedDataKey: remoteEncryptedDataKey,
       keyFingerprint: remoteKeyFingerprint,
@@ -778,6 +790,10 @@ class Keyring {
     );
     await persist(database);
     // dataKey / mk 保持原值，绝不被触碰
+    // P7：纪元递增时把本地 blob 标记为待重传（AAD 含纪元，旧 blob 必须重传）
+    if (epochAdvanced) {
+      await database.markAllForBlobReupload();
+    }
   }
 
   // ──────────────────────────────────────────────

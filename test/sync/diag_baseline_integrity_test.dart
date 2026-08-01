@@ -35,7 +35,7 @@ void main() {
     NotesDatabase.setDatabaseForTesting(db);
 
     final keyring = await Keyring.unlockFromRemoteManifest(
-      password: 'hello.5555',
+      password: 'testpwd.2222',
       remoteVaultId: header.vaultId,
       remoteEncryptedDataKey: header.encryptedDataKey,
       remoteKdf: header.kdf,

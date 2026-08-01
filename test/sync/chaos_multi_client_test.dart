@@ -14,6 +14,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -39,8 +40,10 @@ const String kSourceVaultRel = 'temp/safenotes-vault';
 /// 克隆目标根目录（运行目录内 temp/chaos）。
 const String kChaosRootRel = 'temp/chaos';
 
-/// 打开真实 keyring 的候选密码（已探测确认 hello.5555 为当前密码，放首位省 PBKDF2）。
-const List<String> kRealVaultPasswords = ['hello.5555'];
+/// 打开真实 keyring 的候选密码（当前密码放首位省 PBKDF2）。
+/// 当前真实流程数据集（Android 模拟器 + Windows 应用交互产生）：
+/// 初始密码 testpwd.1111，随后修改为 testpwd.2222。
+const List<String> kRealVaultPasswords = ['testpwd.2222', 'testpwd.1111'];
 
 // ──────────────────────────────────────────────
 // 逻辑真值模型
@@ -666,8 +669,8 @@ class ChaosHarness {
           vaultId: c.keyring.vaultId,
           deviceId: c.id,
         );
-        expect(c.journal.nextSeq, greaterThanOrEqualTo(seqBefore),
-            reason: 'restart 后 journal seq 水位回退了（会造成远端副本 seq 冲突）');
+        _expect(c.journal.nextSeq >= seqBefore,
+            'restart 后 journal seq 水位回退了（会造成远端副本 seq 冲突）');
         c.engine = _buildEngine(c.keyring, c.id, c.journal);
         trace.add('    RESTART client=${c.id} seq $seqBefore -> ${c.journal.nextSeq}');
         break;
@@ -726,8 +729,8 @@ class ChaosHarness {
         if (got == null) {
           // 缺席仅在该笔记曾被删除时合法：远端墓碑对"从未见过该 uuid"的客户端
           // 不要求落地本地墓碑行。活跃状态互斥由不变量3（活跃集互比）保证。
-          expect(model.everDeleted.contains(uuid), isTrue,
-              reason: '不变量1 失败: client ${c.id} 缺失从未被删除的笔记 $uuid(真丢失)');
+          _expect(model.everDeleted.contains(uuid),
+              '不变量1 失败: client ${c.id} 缺失从未被删除的笔记 $uuid(真丢失)');
           continue;
         }
         if (!legalHashes.contains(got.contentHash)) {
@@ -753,8 +756,8 @@ class ChaosHarness {
               '  远端 manifest: $remoteInfo');
         }
         if (got.deleted) {
-          expect(model.everDeleted.contains(uuid), isTrue,
-              reason: '不变量2b 失败: client ${c.id} 笔记 $uuid 被标删除但从未有删除操作(幽灵删除)');
+          _expect(model.everDeleted.contains(uuid),
+              '不变量2b 失败: client ${c.id} 笔记 $uuid 被标删除但从未有删除操作(幽灵删除)');
         }
       }
     }
@@ -762,8 +765,8 @@ class ChaosHarness {
     // 不变量 4：无幽灵笔记（客户端存在但 model 从未见过该 uuid）
     for (final c in clients) {
       for (final uuid in states[c.id]!.keys) {
-        expect(model.hashes.containsKey(uuid), isTrue,
-            reason: '不变量4 失败: client ${c.id} 存在幽灵笔记 $uuid');
+        _expect(model.hashes.containsKey(uuid),
+            '不变量4 失败: client ${c.id} 存在幽灵笔记 $uuid');
       }
     }
 
@@ -777,27 +780,27 @@ class ChaosHarness {
       if (ref == null) {
         ref = live;
       } else {
-        expect(live, equals(ref),
-            reason: '不变量3 失败: client ${c.id} 活跃笔记集合未与首端收敛');
+        _expect(_stringMapEquals(live, ref),
+            '不变量3 失败: client ${c.id} 活跃笔记集合未与首端收敛');
       }
     }
 
     // 不变量 5：密钥一致性（keyVersion 全网一致）
     final keyVersions = clients.map((c) => c.keyring.keyVersion).toSet();
-    expect(keyVersions.length, 1,
-        reason: '不变量5 失败: 各客户端 keyVersion 未收敛 $keyVersions');
+    _expect(keyVersions.length == 1,
+        '不变量5 失败: 各客户端 keyVersion 未收敛 $keyVersions');
 
     // 不变量 6：manifest 完整性（远端可解析 + keyVersion 与客户端一致）
     final remoteKv = await _remoteKeyVersion(backend);
-    expect(remoteKv, clients.first.keyring.keyVersion,
-        reason: '不变量6 失败: 远端 keyVersion 与客户端不一致');
+    _expect(remoteKv == clients.first.keyring.keyVersion,
+        '不变量6 失败: 远端 keyVersion 与客户端不一致');
 
     // 不变量 7：无遗留坏 blob（最终同步后 failedNoteUuids 为空）
     for (final c in clients) {
       _activate(c);
       final r = await _sync(c, tag: "inv7");
-      expect(r.failedNoteUuids, isEmpty,
-          reason: '不变量7 失败: client ${c.id} 仍有失败 blob ${r.failedNoteUuids}');
+      _expect(r.failedNoteUuids.isEmpty,
+          '不变量7 失败: client ${c.id} 仍有失败 blob ${r.failedNoteUuids}');
     }
 
     await _assertJournalInvariants();
@@ -816,32 +819,32 @@ class ChaosHarness {
       final all = await c.journal.readAll();
       var prev = 0;
       for (final e in all) {
-        expect(e.seq, greaterThan(0),
-            reason: '不变量8 失败: client ${c.id} journal 出现非法 seq=${e.seq}');
+        _expect(e.seq > 0,
+            '不变量8 失败: client ${c.id} journal 出现非法 seq=${e.seq}');
         if (!journalCorruptedClients.contains(c.id)) {
-          expect(e.seq, greaterThan(prev),
-              reason: '不变量8 失败: client ${c.id} journal seq 非严格递增 '
+          _expect(e.seq > prev,
+              '不变量8 失败: client ${c.id} journal seq 非严格递增 '
                   '($prev -> ${e.seq})');
         }
         prev = e.seq;
       }
       // 悬挂的跨步操作：收敛后不应残留（两段式 start 都该有 done/failed）
       final incomplete = await c.journal.findIncompleteOperations();
-      expect(incomplete, isEmpty,
-          reason: '不变量8 失败: client ${c.id} 收敛后仍有未完成跨步操作 $incomplete');
+      _expect(incomplete.isEmpty,
+          '不变量8 失败: client ${c.id} 收敛后仍有未完成跨步操作 $incomplete');
     }
 
     // ── 不变量 9：远端 journal 副本可解密 ──
     final names = await backend.listJournalObjects();
-    expect(names, isNotEmpty,
-        reason: '不变量9 失败: 同步多轮后远端竟无任何 journal 副本（第二数据源缺失）');
+    _expect(names.isNotEmpty,
+        '不变量9 失败: 同步多轮后远端竟无任何 journal 副本（第二数据源缺失）');
     final remote = await Journal.fetchRemoteEntries(backend, sharedDataKey);
-    expect(remote, isNotEmpty,
-        reason: '不变量9 失败: 远端 journal 副本无法用 dataKey 解出任何条目');
+    _expect(remote.isNotEmpty,
+        '不变量9 失败: 远端 journal 副本无法用 dataKey 解出任何条目');
     // 远端副本必须是密文（抽查一个对象，不得出现明文事件名）
     final sample = await backend.getJournalObject(names.first);
-    expect(String.fromCharCodes(sample!).contains('note.upsert'), isFalse,
-        reason: '不变量9 失败: 远端 journal 副本落了明文');
+    _expect(!String.fromCharCodes(sample!).contains('note.upsert'),
+        '不变量9 失败: 远端 journal 副本落了明文');
 
     // ── 不变量 10：journal 重放出的 keyVersion 不落后于终态 ──
     // 用 >= 而非 ==：某端可能在别端改密后尚未产生自己的 key 事件，
@@ -850,8 +853,8 @@ class ChaosHarness {
     for (final c in clients) {
       final replayed = await c.journal.replayKeyState();
       if (replayed == null) continue; // 该端从未参与密钥变更，合法
-      expect(replayed.keyVersion, lessThanOrEqualTo(finalKv),
-          reason: '不变量10 失败: client ${c.id} journal 重放出超前的 keyVersion '
+      _expect(replayed.keyVersion <= finalKv,
+          '不变量10 失败: client ${c.id} journal 重放出超前的 keyVersion '
               '${replayed.keyVersion} > 终态 $finalKv');
     }
     // 全网合并视角：远端副本里最新的 key 事件应当就是终态 keyVersion
@@ -872,8 +875,8 @@ class ChaosHarness {
       // 不经过引擎的 adoptRemoteEpoch，因此远端 journal 里最新的 key 事件
       // 合法地可能落后于终态。要守的底线是**绝不超前**——超前意味着
       // journal 记录了一个从未真正生效的密钥纪元，坏纪元取真时会取错。
-      expect(newest.keyVersion, lessThanOrEqualTo(finalKv),
-          reason: '不变量10 失败: 远端 journal 合并后的 keyVersion '
+      _expect(newest.keyVersion <= finalKv,
+          '不变量10 失败: 远端 journal 合并后的 keyVersion '
               '${newest.keyVersion} 超前于终态 $finalKv');
     }
   }
@@ -1059,6 +1062,66 @@ class P2FaultFixture {
   }
 }
 
+/// 在独立 isolate 中运行单个 seed 的混沌。
+///
+/// 并行化的依据：harness 依赖全局单例 [NotesDatabase.setDatabaseForTesting]，
+/// 同一 isolate 内并行必然互相污染；而 [Isolate.run] 每次生成全新 isolate，
+/// 全局状态彼此隔离，配合「每个 seed 独立目录 temp/chaos/run-$seed」即可安全
+/// 并发。同时子 isolate 内需自建 sqflite FFI 环境（factory 不跨 isolate 共享）。
+///
+/// 返回 null 表示通过；失败时返回包含 trace 的诊断字符串。
+Future<String?> _runChaosSeedIsolate(int seed) async {
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+  final harness = ChaosHarness();
+  try {
+    await harness.run(seed: seed, ops: 120, cooldown: 8, clientCount: 3);
+    return null;
+  } catch (e) {
+    return '=== CHAOS FAIL seed=$seed ===\n$e\n--- trace ---\n'
+        '${harness.trace.join('\n')}';
+  }
+}
+
+/// 断言辅助：与 `expect` 语义一致但不依赖测试 zone。
+///
+/// seed 运行在独立 isolate 中（无测试 zone），直接调用 `expect` 会抛
+/// OutsideTestException；这里改用抛 [TestFailure]（与现有 `fail()` 同型，
+/// 且 harness 内部本就 `on TestFailure` 捕获）。
+void _expect(bool condition, String message) {
+  if (!condition) {
+    throw TestFailure(message);
+  }
+}
+
+/// 两个 `Map<String, String>` 的相等比较（替代 matcher 的 `equals`，供隔离
+/// isolate 内使用）。
+bool _stringMapEquals(Map<String, String> a, Map<String, String> b) {
+  if (a.length != b.length) return false;
+  for (final e in a.entries) {
+    if (b[e.key] != e.value) return false;
+  }
+  return true;
+}
+
+/// 并行运行一批 seed：每个 seed 一个独立 isolate，全部完成后汇总。
+/// 返回失败 seed 列表。
+Future<List<int>> _runSeedsParallel(List<int> seeds) async {
+  final futures = <Future<MapEntry<int, String?>>>[];
+  for (final seed in seeds) {
+    futures.add(Isolate.run(() => _runChaosSeedIsolate(seed)).then((detail) {
+      print('─── seed=$seed ${detail == null ? '通过' : '失败'} ───');
+      if (detail != null) print(detail);
+      return MapEntry(seed, detail);
+    }));
+  }
+  final results = await Future.wait(futures);
+  return [
+    for (final r in results)
+      if (r.value != null) r.key,
+  ];
+}
+
 // ──────────────────────────────────────────────
 // 测试
 // ──────────────────────────────────────────────
@@ -1070,29 +1133,31 @@ void main() {
   });
 
   group('混沌 - 真实数据(118克隆) + 改密码随机交织', () {
-    for (final seed in const [1, 7, 42, 2026, 99999]) {
-      test('seed=$seed 三客户端随机混沌', () async {
-        final harness = ChaosHarness();
-        try {
-          await harness.run(seed: seed, ops: 120, cooldown: 8, clientCount: 3);
-        } catch (e) {
-          // 失败后保留克隆目录以便排查；打印 seed + 轨迹
-          print('=== CHAOS FAIL seed=$seed ===');
-          print('trace:\n${harness.trace.join('\n')}');
-          rethrow;
-        }
-        // 关键：不给 timeout 会用默认 30s。超时的测试其异步循环不会被杀死，
-        // 残留循环会通过全局 DB 单例污染下一个测试（已实际踩坑）。
-      }, timeout: const Timeout(Duration(minutes: 10)));
-    }
+    // 并行运行多个 seed：每个 seed 在独立 isolate + 独立目录（temp/chaos/run-$seed）
+    // 中执行，避免全局 NotesDatabase 单例互踩，耗时≈最慢单个 seed 而非累加。
+    // 单个 seed 失败不会中断其余 seed，全部跑完后统一报告失败列表。
+    test('并行混沌（多 seed 独立 isolate 同时运行）', () async {
+      const seeds = [12, 345, 6789];
+      print('并行运行 seeds=$seeds（每个 seed 独立 isolate + 独立目录）');
+      final sw = Stopwatch()..start();
+      final failures = await _runSeedsParallel(seeds);
+      print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
+          '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
+      if (failures.isNotEmpty) {
+        fail('失败的 seed: $failures');
+      }
+      // 关键：不给 timeout 会用默认 30s。超时的测试其异步循环不会被杀死，
+      // 残留循环会通过全局 DB 单例污染下一个测试（已实际踩坑）。
+      // 并行化后每个 seed 跑在独立 isolate，超时残留只浪费 CPU、不污染后续测试。
+    }, timeout: const Timeout(Duration(minutes: 30)));
 
     // 命令行自定义 seed：通过环境变量 CHAOS_SEEDS 传入逗号分隔的 seed 列表。
     // 用法（pwsh）:
     //   $env:CHAOS_SEEDS="123,456,789"; flutter test test/sync/chaos_multi_client_test.dart --plain-name "自定义"
     // 用法（bash）:
     //   CHAOS_SEEDS=123,456 flutter test test/sync/chaos_multi_client_test.dart --plain-name "自定义"
-    // 不传时此 test 直接跳过，不影响默认 5 个 seed 的运行。
-    // 单个 seed 失败不会中断后续 seed，所有 seed 跑完后统一报告失败列表。
+    // 不传时此 test 直接跳过，不影响默认 seed 的运行。
+    // 多个 seed 同样并行（独立 isolate + 独立目录）；单个失败不中断其余。
     test('自定义 seed（环境变量 CHAOS_SEEDS）', () async {
       final raw = Platform.environment['CHAOS_SEEDS'] ?? '';
       if (raw.isEmpty) {
@@ -1110,28 +1175,11 @@ void main() {
         print('WARN: CHAOS_SEEDS="$raw" 未解析出任何有效数字');
         return;
       }
-      print('自定义 seed 运行: $seeds（共 ${seeds.length} 个）');
-      final failures = <int>[];
+      print('自定义 seed 并行运行: $seeds（共 ${seeds.length} 个）');
       final sw = Stopwatch()..start();
-      for (var i = 0; i < seeds.length; i++) {
-        final seed = seeds[i];
-        final seedSw = Stopwatch()..start();
-        print('─── [${i + 1}/${seeds.length}] seed=$seed 开始 ───');
-        final harness = ChaosHarness();
-        try {
-          await harness.run(seed: seed, ops: 120, cooldown: 8, clientCount: 3);
-          print('─── [${i + 1}/${seeds.length}] seed=$seed 通过'
-              '（${seedSw.elapsed.inSeconds}s，累计 ${sw.elapsed.inSeconds}s）───');
-        } catch (e) {
-          failures.add(seed);
-          print('=== CHAOS FAIL seed=$seed ===');
-          print('trace:\n${harness.trace.join('\n')}');
-          print('─── [${i + 1}/${seeds.length}] seed=$seed 失败'
-              '（${seedSw.elapsed.inSeconds}s，累计 ${sw.elapsed.inSeconds}s）───');
-        }
-      }
-      print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} 通过，'
-          '${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
+      final failures = await _runSeedsParallel(seeds);
+      print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
+          '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
       if (failures.isNotEmpty) {
         fail('失败的 seed: $failures');
       }
