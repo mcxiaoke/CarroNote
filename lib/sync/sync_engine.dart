@@ -37,6 +37,7 @@
  */
 
 // Dart 原生导入
+import 'dart:convert';
 import 'dart:typed_data';
 
 // Project 导入
@@ -153,15 +154,12 @@ class SyncEngine {
   /// 如果远端不可用（网络错误），返回 failure 结果。
   /// 如果乐观锁冲突超过 maxRetries 次，返回 failure 结果。
   ///
-  /// 密钥纪元守卫（B1 修复）：
-  ///   下载远端 header 后比对 keyVersion。如果远端更高（他端改了密码），
-  ///   本地旧密码设备不会把旧 encryptedDataKey 写回远端（避免翻转战争），
-  ///   同步仍然完成（拉取远端笔记），但 SyncResult.passwordEpochMismatch=true，
-  ///   UI 应提示用户输入新密码重新登录。
+  /// v4（epoch 消除 §8.2[I]）：scenario-b（他端改密码）不再「继续同步 +
+  /// passwordEpochMismatch 标志」，而是由 _syncOnce **中止并返回 failure**，
+  /// errorMessage 提示「他端改了密码，请重新输入密码」。
   Future<SyncResult> sync() async {
     final allActions = <SyncAction>[];
     int totalMigrated = 0;
-    bool epochMismatch = false;
 
     Log.sync.i('同步开始 (backend=${backend.runtimeType}, '
         'deviceId=$deviceId, keyVersion=${keyring.keyVersion}, '
@@ -173,19 +171,14 @@ class SyncEngine {
         // 累积迁移计数（迁移可能发生在 _syncOnce 内部）
         totalMigrated += result.migrated;
         allActions.addAll(result.actions);
-        epochMismatch = epochMismatch || result.passwordEpochMismatch;
 
         // skipped 为聚合统计：替代此前逐条 uuid 的 skip 日志（噪音治理）
         Log.sync.i('同步完成 (attempt=$attempt, success=${result.success}, '
             'uploaded=${result.uploaded}, downloaded=${result.downloaded}, '
             'deleted=${result.deleted}, conflicts=${result.conflicts}, '
-            'skipped=${result.skipped}, migrated=$totalMigrated, '
-            'epochMismatch=$epochMismatch)');
+            'skipped=${result.skipped}, migrated=$totalMigrated)');
         // 迁移后需要重新同步一次（用新 dataKey），但 _syncOnce 已处理
-        return result.copyWith(
-          migrated: totalMigrated,
-          passwordEpochMismatch: epochMismatch,
-        );
+        return result.copyWith(migrated: totalMigrated);
       } on ConflictException catch (e, st) {
         // 乐观锁冲突：回到 Step 1 重试
         Log.sync.w('乐观锁冲突 (attempt=$attempt/$maxRetries)',
@@ -236,16 +229,6 @@ class SyncEngine {
     final remoteResponse = await backend.getManifest();
 
     Manifest? remoteManifest;
-    // 密钥纪元不匹配标志：远端 keyVersion > 本地 → 他端改了密码
-    bool epochMismatch = false;
-    // 纪元不匹配时，构建 manifest 整体使用远端的密钥纪元三元组
-    // （encryptedDataKey + keyFingerprint + keyVersion），不回滚远端新纪元。
-    // B1-2 修复：原实现只 override encryptedDataKey，keyVersion/fingerprint
-    // 仍取本地旧值，导致 B 第一次同步就把远端 keyVersion 回滚（守卫下次失效），
-    // 第二次同步把旧 encryptedDataKey 整体写回远端（翻转战争）。
-    String? overrideEncryptedDataKey;
-    String? overrideKeyFingerprint;
-    int? overrideKeyVersion;
 
     if (remoteResponse.ciphertext.isNotEmpty) {
       // 1a. 仅解析 header（明文，不需要 dataKey）
@@ -272,22 +255,15 @@ class SyncEngine {
           keyState: _keyStateSnapshot,
           note: 'remote manifest corrupt, rebuilt from local: $e',
         );
-        final localManifest = await _buildLocalManifest(
-          overrideEncryptedDataKey: null,
-        );
+        final localManifest = await _buildLocalManifest();
         final actions = <SyncAction>[];
         _addAction(actions, SyncAction(
           type: SyncActionType.skip,
           uuid: '',
           message: '远端 manifest 损坏已备份：$e',
         ));
-        final merged = (await _mergeAndTransfer(
-          localManifest,
-          null,
-          actions,
-          overrideEncryptedDataKey: null,
-        ))
-            .merged;
+        final merged =
+            (await _mergeAndTransfer(localManifest, null, actions)).merged;
         // PUT manifest：用原 etag 做乐观锁（覆盖损坏文件）
         final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
         await backend.putManifest(newCiphertext, remoteResponse.etag);
@@ -307,166 +283,160 @@ class SyncEngine {
           conflicts: _countActions(actions, SyncActionType.conflict),
           actions: actions,
           attempts: attempt,
-          passwordEpochMismatch: false,
         );
       }
 
-      // 1b. 密钥纪元守卫：比对 keyVersion
-      //   - 远端 > 本地 → 他端改了密码，本地密码过期
-      //   - 远端 < 本地 → 本端改了密码还没推送（正常流程）
-      //   - 相等 → 正常流程
-      if (remoteHeader.keyVersion > keyring.keyVersion) {
-        // 他端改了密码，本地旧密码设备不应回滚远端新纪元。
-        // B1-2 修复：三元组整体采用远端值（不只是 encryptedDataKey）。
-        epochMismatch = true;
-        overrideEncryptedDataKey = remoteHeader.encryptedDataKey;
-        overrideKeyFingerprint = remoteHeader.keyFingerprint;
-        overrideKeyVersion = remoteHeader.keyVersion;
-      }
+      // 1b. v4（epoch 消除 §8.2[I]）：用 header.dataKeyFingerprint 精确判定
+      // 「dataKey 是否相同」，替代旧「keyVersion 守卫 + 本地 MK 解不开 + items
+      // 能解」的间接信号（原 4 分支收敛为 2 分支）。scenario-b（他端改密码）→
+      // **中止同步 + 强制重登录**（选项 B 定案），不 PUT、不 echo——彻底堵死
+      // header 层翻转战争（B1/B1-2 当年修掉的问题），与 v4「只读解密、不自动
+      // 改写」精神一致。
+      final localDataKeyFp = SyncCrypto.computeDataKeyFingerprint(_dataKey);
+      final remoteDataKeyFp = remoteHeader.dataKeyFingerprint;
+      // 远端无指纹字段（旧协议 manifest）→ 保守按「dataKey 相同」处理
+      final sameDataKey =
+          remoteDataKeyFp.isEmpty || remoteDataKeyFp == localDataKeyFp;
 
-      // 1c. 检查是否需要 dataKey 迁移
-      final migrationResult =
-          keyring.checkMigrationNeeded(remoteHeader.encryptedDataKey);
-      if (migrationResult.needsMigration) {
-        if (!migrationResult.success) {
-          // MK 解不开远端 encryptedDataKey，可能是三种场景：
-          //   a) 远端密码已变（他端改密码并上传）→ 本地密码过期，需用户重新输入
-          //   b) 本地密码已变（本端改密码但还没推送）→ 本地 dataKey 仍有效，
-          //      应继续同步把新 encryptedDataKey 推送到远端
-          //   c) 真正的密码不匹配
-          //   d) 两设备独立 createNew（相同密码、不同 salt）→ 本地 MK 解不开，
-          //      但密码其实相同，需用远端 salt 重新派生 MK 验证
-          // 区分方法：
-          //   1. 先尝试用本地 dataKey 解析远端 manifest items
-          //      - 成功 → 场景 b（或纪元不匹配场景 a），继续同步
-          //      - 失败 → 场景 c 或 d
-          //   2. 用 keyFingerprint 判别 c vs d：
-          //      用远端 salt + 用户密码派生 MK_remote，比 H(MK_remote) 与远端 fingerprint
-          //      - 匹配 → 场景 d（密码相同、salt 不同）→ 迁移
-          //      - 不匹配 → 场景 c（密码真的不同）→ 失败
-          try {
-            ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
-            // 本地 dataKey 能解远端 manifest → 场景 b，继续同步
-            Log.sync.i('dataKey 迁移检查：本地 dataKey 可解远端 manifest '
-                '（本端改密码未推送或纪元不匹配），继续同步');
-          } on Exception catch (e) {
-            // 场景 c 或 d：用 keyFingerprint 判别
-            Log.sync.w('dataKey 迁移检查：本地 dataKey 解不开远端 manifest，'
-                '尝试 keyFingerprint 判别 (场景 c/d)', error: e);
-            final password = passphraseProvider?.call();
-            if (password == null || password.isEmpty) {
-              // 无密码提供者（旧测试或未注入），退回原失败逻辑
-              Log.sync.w('dataKey 迁移失败：无密码提供者');
-              return SyncResult.failure(
-                'dataKey 迁移失败：${migrationResult.error}',
-                attempts: attempt,
-              );
-            }
-
-            // 用远端 KDF 参数派生 MK_remote，比对 keyFingerprint
-            final remoteResult = await Keyring.tryDeriveRemoteDataKey(
-              password: password,
-              remoteKdf: remoteHeader.kdf,
-              remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
-              remoteKeyFingerprint: remoteHeader.keyFingerprint,
-            );
-
-            if (remoteResult == null) {
-              // 场景 c：密码真的不匹配
-              Log.sync.w('密码不匹配，无法同步（场景 c）');
-              return SyncResult.failure(
-                '密码不匹配，无法同步：${migrationResult.error}',
-                attempts: attempt,
-              );
-            }
-
-            // 场景 d：密码相同、salt 不同 → 完整 keyring 迁移
-            // 用远端 dataKey 重新加密所有本地笔记，更新本地 keyring 元数据
-            Log.sync.i('检测到场景 d（密码相同、salt 不同），开始完整 keyring 迁移');
-            final migratedCount = await _executeMigrationVault(
-              remoteDataKey: remoteResult.dataKey,
-              remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
-              remoteVaultId: remoteHeader.vaultId,
-              remoteKdf: remoteHeader.kdf,
-              remoteKeyFingerprint: remoteHeader.keyFingerprint,
-              remoteKeyVersion: remoteHeader.keyVersion,
-              remoteCreatedAt: remoteHeader.createdAt,
-              remoteMk: remoteResult.mk,
-            );
-
-            // 迁移后用新 dataKey 解析完整 manifest
-            remoteManifest = ManifestCrypto.deserialize(
-              _dataKey,
-              remoteResponse.ciphertext,
-            );
-
-            // 抛特殊异常，触发外层重试（用新 dataKey 重新同步）
-            throw _MigrationRequiredException(migratedCount);
-          }
-          // 继续走正常同步流程（不做迁移）
-          // - 场景 b（本端改密码）：本地 encryptedDataKey 是新值，
-          //   _buildLocalManifest 会用本地新值推送
-          // - 纪元不匹配（他端改密码）：overrideEncryptedDataKey 已设置，
-          //   _buildLocalManifest 会用远端新值，不回滚远端包裹
-          remoteManifest = ManifestCrypto.deserialize(
-            _dataKey,
-            remoteResponse.ciphertext,
-          );
-        } else if (migrationResult.remoteDataKey != null &&
-            _bytesEqual(migrationResult.remoteDataKey!, _dataKey)) {
-          // MK 能解开远端 encryptedDataKey，且 remoteDataKey == 本地 dataKey
-          // 场景：他端改密码后上传新 encryptedDataKey，本端用新密码登录
-          //   dataKey 没变，只是 wrap dataKey 的 MK 变了
-          //   不需要 reEncryptAllNotes
-          if (remoteHeader.keyVersion >= keyring.keyVersion) {
-            // B3 修复：整体采用远端纪元（encryptedDataKey + fingerprint +
-            // keyVersion），而不是只回写 encryptedDataKey。
-            // 原实现只更新 encryptedDataKey，本地 keyVersion/fingerprint
-            // 停留在旧值 → 每次同步都误报 epochMismatch（纪元永不收敛），
-            // 且构建 header 时把远端 keyVersion/fingerprint 回滚。
-            await keyring.adoptRemoteEpoch(
-              remoteEncryptedDataKey: migrationResult.remoteEncryptedDataKey!,
-              remoteKeyFingerprint: remoteHeader.keyFingerprint,
-              remoteKeyVersion: remoteHeader.keyVersion,
-              remoteDataKeyEpoch: remoteHeader.dataKeyEpoch,
-              database: database,
-            );
-            // P2 journal §3.5：记录采纳远端纪元（携带采纳后的完整 keyState，
-            // 供 §3.6c "坏纪元污染 keyring.current 时重放取真"）
-            journal.append(
-              type: JournalEventType.keyAdoptEpoch,
-              phase: JournalPhase.done,
-              dataKeyEpoch: keyring.dataKeyEpoch,
-              keyState: _keyStateSnapshot,
-              note: 'adopt remote epoch from ${remoteHeader.lastModifiedBy}',
-            );
-            // 本地纪元已与远端一致：本端持有的就是新密码派生的 MK，
-            // 不需要提示用户重新登录，清除纪元不匹配标志与 override
-            epochMismatch = false;
-            overrideEncryptedDataKey = null;
-            overrideKeyFingerprint = null;
-            overrideKeyVersion = null;
-          } else {
-            // 防御分支：远端纪元反而更旧（理论上不可达——本地 MK 能解开
-            // 远端包裹意味着远端包裹就是本地 MK 包的）。保守起见只回写
-            // encryptedDataKey，不动本地纪元。
-            await keyring.updateEncryptedDataKey(
-              migrationResult.remoteEncryptedDataKey!,
-              database,
-            );
-            overrideEncryptedDataKey = null;
-          }
+      if (sameDataKey) {
+        // ── 分支 1：同一 dataKey（正常同步 / 改密码 / scenario-b）──
+        if (remoteHeader.encryptedDataKey == keyring.encryptedDataKey) {
+          // 包裹完全相同 → 正常同步
           remoteManifest = ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
           );
         } else {
-          // MK 能解开远端 encryptedDataKey，且 remoteDataKey != 本地 dataKey
-          // 场景：新设备加入已存在同步组，本地 dataKey 与远端不同
-          //   需要执行 reEncryptAllNotes 迁移所有本地笔记
-          final migratedCount = await _executeMigration(
-            migrationResult,
-            remoteHeader,
+          // 包裹不同：本地 MK 能否解开远端包裹？
+          // （AES-GCM wrap 用随机 nonce，同一 MK+dataKey 每次包裹也不同，
+          //   不能仅凭字符串不同判定密码不一致，必须实际 unwrap 验证）
+          final mk = keyring.mk;
+          Uint8List? remoteDk;
+          if (mk != null) {
+            try {
+              remoteDk = SyncCrypto.unwrapDataKey(
+                mk,
+                base64Decode(remoteHeader.encryptedDataKey),
+              );
+            } on Object {
+              remoteDk = null;
+            }
+          }
+          if (remoteDk != null) {
+            // 能解开 → 两端同 MK（密码一致），包裹差异仅来自 nonce 随机性或
+            // 远端重新 wrap。本地包裹合法（能解开本地全部 blob），
+            // 不 adopt、不 echo（§0 只读解密）→ 正常同步。
+            remoteManifest = ManifestCrypto.deserialize(
+              _dataKey,
+              remoteResponse.ciphertext,
+            );
+          } else if (mk == null) {
+            // MK 未缓存（测试构造 / 异常状态，真实登录必有 MK）：无法 unwrap
+            // 验证远端包裹。用「本地 dataKey 能否解远端 manifest items」兜底：
+            //   - 能解 → dataKey 相同 → 保守继续同步（无法确认他端改密码，
+            //     不中止；同步零 echo——本地包裹不采用远端值）
+            //   - 不能解 → 无法判定 → 保守失败，避免向远端写任何值
+            try {
+              ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
+              Log.sync.w('MK 未缓存，无法验证远端包裹；本地 dataKey 可解远端 '
+                  'manifest items，保守继续同步（零 echo）');
+              remoteManifest = ManifestCrypto.deserialize(
+                _dataKey,
+                remoteResponse.ciphertext,
+              );
+            } on Object catch (e) {
+              Log.sync.w('MK 未缓存且本地 dataKey 解不开远端 manifest，中止同步',
+                  error: e);
+              return SyncResult.failure(
+                '密钥验证信息不足，无法同步（MK 未缓存且 dataKey 不匹配）',
+                attempts: attempt,
+              );
+            }
+          } else if (remoteHeader.keyVersion < keyring.keyVersion) {
+            // 解不开 + 远端 keyVersion 更低 → **本端改了密码还没推送**：
+            // dataKey 未变（改密码不换 dataKey，§2.1），本地包裹是新 MK 包的
+            // （合法值）→ 正常同步，_buildLocalManifest 会用本地新包裹推送。
+            // 注：keyVersion 仅用于「谁改了密码」的方向判定，绝不采用远端任何值。
+            Log.sync.i('本端改密码未推送（远端 keyVersion=${remoteHeader.keyVersion}'
+                ' < 本地 ${keyring.keyVersion}），正常同步推送本地新包裹');
+            remoteManifest = ManifestCrypto.deserialize(
+              _dataKey,
+              remoteResponse.ciphertext,
+            );
+          } else {
+            // 解不开 + 远端 keyVersion >= 本地 → **他端改了密码（scenario-b）**：
+            // 本地密码已过期。中止同步，报「他端改了密码，请重新输入密码」，
+            // 不 PUT、不 echo（拒绝向远端写入任何值，防翻转）。
+            Log.sync.w('scenario-b：他端改了密码，本地 MK 解不开远端包裹'
+                '（远端 keyVersion=${remoteHeader.keyVersion} >= 本地 '
+                '${keyring.keyVersion}），中止同步强制重登录');
+            return SyncResult.failure(
+              '检测到同步密码已在其他设备修改，请退出登录并使用新密码重新登录'
+              '（本地笔记未丢失，未同步的更改已保留）',
+              attempts: attempt,
+            );
+          }
+        }
+      } else {
+        // ── 分支 2：dataKey 不同（新设备加入 / scenario-d 迁移）──
+        final migrationResult =
+            keyring.checkMigrationNeeded(remoteHeader.encryptedDataKey);
+        if (migrationResult.success && migrationResult.remoteDataKey != null) {
+          // 本地 MK 能解开远端包裹 → 同密码同 salt：
+          if (_bytesEqual(migrationResult.remoteDataKey!, _dataKey)) {
+            // remoteDataKey == 本地 dataKey 但指纹不同（理论上矛盾，防御处理）
+            remoteManifest = ManifestCrypto.deserialize(
+              _dataKey,
+              remoteResponse.ciphertext,
+            );
+          } else {
+            // remoteDataKey != 本地 → dataKey 真变 → 迁移（同 keyring 换 dataKey）
+            final migratedCount =
+                await _executeMigration(migrationResult, remoteHeader);
+            remoteManifest = ManifestCrypto.deserialize(
+              _dataKey,
+              remoteResponse.ciphertext,
+            );
+            throw _MigrationRequiredException(migratedCount);
+          }
+        } else {
+          // 本地 MK 解不开远端包裹（密码不同 或 salt 不同）：
+          // 用远端 KDF + 用户密码重派生 MK 判别（场景 c vs d）
+          final password = passphraseProvider?.call();
+          if (password == null || password.isEmpty) {
+            // 无密码提供者（旧测试或未注入），退回原失败逻辑
+            Log.sync.w('dataKey 迁移失败：无密码提供者');
+            return SyncResult.failure(
+              'dataKey 迁移失败：${migrationResult.error}',
+              attempts: attempt,
+            );
+          }
+          final remoteResult = await Keyring.tryDeriveRemoteDataKey(
+            password: password,
+            remoteKdf: remoteHeader.kdf,
+            remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
+            remoteKeyFingerprint: remoteHeader.keyFingerprint,
+          );
+          if (remoteResult == null) {
+            // 场景 c：密码真的不匹配
+            Log.sync.w('密码不匹配，无法同步（密码不同）');
+            return SyncResult.failure(
+              '密码不匹配，无法同步：${migrationResult.error}',
+              attempts: attempt,
+            );
+          }
+          // 场景 d：密码相同、salt 不同 → 完整 keyring 迁移
+          // 用远端 dataKey 重新加密所有本地笔记，更新本地 keyring 元数据
+          Log.sync.i('检测到场景 d（密码相同、salt 不同），开始完整 keyring 迁移');
+          final migratedCount = await _executeMigrationVault(
+            remoteDataKey: remoteResult.dataKey,
+            remoteEncryptedDataKey: remoteHeader.encryptedDataKey,
+            remoteVaultId: remoteHeader.vaultId,
+            remoteKdf: remoteHeader.kdf,
+            remoteKeyFingerprint: remoteHeader.keyFingerprint,
+            remoteKeyVersion: remoteHeader.keyVersion,
+            remoteCreatedAt: remoteHeader.createdAt,
+            remoteMk: remoteResult.mk,
           );
 
           // 迁移后用新 dataKey 解析完整 manifest
@@ -478,12 +448,6 @@ class SyncEngine {
           // 抛特殊异常，触发外层重试（用新 dataKey 重新同步）
           throw _MigrationRequiredException(migratedCount);
         }
-      } else {
-        // 无需迁移：用当前 dataKey 解析完整 manifest
-        remoteManifest = ManifestCrypto.deserialize(
-          _dataKey,
-          remoteResponse.ciphertext,
-        );
       }
     }
 
@@ -495,11 +459,7 @@ class SyncEngine {
     final bool skipGc = remoteManifest == null;
 
     // Step 2: 构建本地 manifest（纪元不匹配时整体用远端密钥纪元）
-    final localManifest = await _buildLocalManifest(
-      overrideEncryptedDataKey: overrideEncryptedDataKey,
-      overrideKeyFingerprint: overrideKeyFingerprint,
-      overrideKeyVersion: overrideKeyVersion,
-    );
+    final localManifest = await _buildLocalManifest();
 
     // Step 3: 比对 + 传输（上传/下载/删除）
     final actions = <SyncAction>[];
@@ -507,9 +467,6 @@ class SyncEngine {
       localManifest,
       remoteManifest,
       actions,
-      overrideEncryptedDataKey: overrideEncryptedDataKey,
-      overrideKeyFingerprint: overrideKeyFingerprint,
-      overrideKeyVersion: overrideKeyVersion,
     );
     final merged = mergeResult.merged;
     // P1 修复：本轮成功重传的待重传 uuid（供 PUT 成功后移除 pending 标记）
@@ -518,20 +475,19 @@ class SyncEngine {
     // D3 修复：判断是否需要 PUT manifest
     //
     // 若 merged 与 remote 在语义上完全等价（items 一致 + header 关键字段一致），
-    // 且无纪元不匹配/encryptedDataKey override，则跳过 PUT——避免 blob 持续下载
-    // 失败时 manifest version 每次同步无意义 +1 攀升。
+    // 则跳过 PUT——避免 blob 持续下载失败时 manifest version 每次同步无意义 +1
+    // 攀升。
     //
     // 判定"有实际变更"的条件（任一满足即需要 PUT）：
     //   1. actions 中存在 upload/download/delete 类型（有成功的传输或墓碑应用）
     //   2. purgedUuids 非空（本地硬删除需要从远端 manifest 清除墓碑）
-    //   3. 纪元不匹配（需推送远端新 encryptedDataKey）
-    //   4. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
+    //   3. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
+    //   4. header 密钥字段变化（本端改密码推送新包裹 / 迁移后新 keyVersion）
+    //      ——由 _hasEffectiveChange 内的 header 字段比对兜住
     final hasEffectiveChange = _hasEffectiveChange(
       actions: actions,
       merged: merged,
       remote: remoteManifest,
-      epochMismatch: epochMismatch,
-      overrideEncryptedDataKey: overrideEncryptedDataKey,
     );
 
     if (!hasEffectiveChange) {
@@ -560,7 +516,6 @@ class SyncEngine {
         conflicts: _countActions(actions, SyncActionType.conflict),
         actions: actions,
         attempts: attempt,
-        passwordEpochMismatch: epochMismatch,
         failedNoteUuids: _failedUuids(actions),
       );
     }
@@ -610,7 +565,6 @@ class SyncEngine {
       conflicts: _countActions(actions, SyncActionType.conflict),
       actions: actions,
       attempts: attempt,
-      passwordEpochMismatch: epochMismatch,
       failedNoteUuids: _failedUuids(actions),
     );
   }
@@ -798,18 +752,15 @@ class SyncEngine {
     // Step 4: 用修复后的 items + 当前 header 重新 PUT manifest（乐观锁 etag）
     //
     // P2 收敛：header 投影统一由 keyring.toManifestHeader 产出（唯一出口）。
-    // 修复路径保留远端密钥三元组（不回滚他端新纪元），dataKeyEpoch 用本地当前值
-    // （blob 已按本地 dataKey 重传）。vaultId / createdAt 与远端同源：
-    // fromRemoteHeader / _executeMigrationVault 都把远端值写进了 keyring。
+    // v4：不再保留远端密钥三元组——repair 的前提是用户已用当前密码登录
+    // （否则 _repairRemoteOnce 在 manifest 解密处即失败返回），本地 keyring
+    // 即权威，只读不 echo 远端（§0）。
     final header = keyring.toManifestHeader(
       schemaVersion: remoteHeader.schemaVersion,
       version: remoteHeader.version + 1,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       lastModifiedBy: deviceId,
       dataKeyWrap: remoteHeader.dataKeyWrap,
-      overrideEncryptedDataKey: remoteHeader.encryptedDataKey,
-      overrideKeyFingerprint: remoteHeader.keyFingerprint,
-      overrideKeyVersion: remoteHeader.keyVersion,
       dataKeyCreatedBy: deviceId,
     );
     final manifest = Manifest(header: header, items: repairedItems);
@@ -963,14 +914,10 @@ class SyncEngine {
   /// 并加入 purgedUuids，让 _mergeAndTransfer 的 M1 逻辑阻止其从远端复活。
   /// PUT manifest 成功后远端墓碑也被清除，实现墓碑 GC。
   ///
-  /// [overrideEncryptedDataKey] / [overrideKeyFingerprint] /
-  /// [overrideKeyVersion]：纪元不匹配时（他端改密码），传入远端的密钥纪元
-  /// 三元组以避免回滚远端新纪元（B1-2 修复）。null 时用本地 keyring 的值。
-  Future<Manifest> _buildLocalManifest({
-    String? overrideEncryptedDataKey,
-    String? overrideKeyFingerprint,
-    int? overrideKeyVersion,
-  }) async {
+  /// v4（epoch 消除）：不再有 override 三元组——header 恒用本地 keyring 值
+  /// （本地包裹永远合法，只读不 echo 远端，§0）。scenario-b（他端改密码）在
+  /// _syncOnce 即中止，不会走到这里。
+  Future<Manifest> _buildLocalManifest() async {
     final notes = await database.readAllNotesIncludingDeleted();
     final items = <String, ManifestItem>{};
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -1006,14 +953,11 @@ class SyncEngine {
 
     return Manifest(
       // P2 收敛：header 由 keyring 投影，字段完整性由 Keyring 单点保证
-      // （B1-2：纪元不匹配时三元组整体采用远端值，避免回滚远端新纪元）
+      // v4：不再 override（本地包裹恒合法，只读不 echo 远端，§0）
       header: keyring.toManifestHeader(
         version: localVersion,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         lastModifiedBy: deviceId,
-        overrideEncryptedDataKey: overrideEncryptedDataKey,
-        overrideKeyFingerprint: overrideKeyFingerprint,
-        overrideKeyVersion: overrideKeyVersion,
         dataKeyCreatedBy: deviceId,
       ),
       items: items,
@@ -1036,11 +980,8 @@ class SyncEngine {
   Future<({Manifest merged, Set<String> reuploadedOk})> _mergeAndTransfer(
     Manifest local,
     Manifest? remote,
-    List<SyncAction> actions, {
-    String? overrideEncryptedDataKey,
-    String? overrideKeyFingerprint,
-    int? overrideKeyVersion,
-  }) async {
+    List<SyncAction> actions,
+  ) async {
     // M1 修复：读取待清理的 uuid 列表（用户硬删除的笔记）
     final purgedUuids = await database.getPurgedUuids();
     final purgedSet = purgedUuids.toSet();
@@ -1242,15 +1183,11 @@ class SyncEngine {
 
     final manifest = Manifest(
       // P2 收敛：header 由 keyring 投影（唯一出口）
-      // B1-2 修复：纪元不匹配时密钥纪元三元组整体采用远端值，
-      // 避免回滚远端新纪元（keyVersion 回滚会导致守卫下次失效 → 翻转战争）
+      // v4：不再 override（本地包裹恒合法，只读不 echo 远端，§0）
       header: keyring.toManifestHeader(
         version: remote.version + 1,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         lastModifiedBy: deviceId,
-        overrideEncryptedDataKey: overrideEncryptedDataKey,
-        overrideKeyFingerprint: overrideKeyFingerprint,
-        overrideKeyVersion: overrideKeyVersion,
         dataKeyCreatedBy: deviceId,
       ),
       items: mergedItems,
@@ -2165,21 +2102,15 @@ class SyncEngine {
   /// 返回 false 时跳过 PUT，避免 blob 持续下载失败等场景下 manifest version
   /// 无意义 +1 攀升。判定"有实际变更"的条件（任一满足即需 PUT）：
   ///   1. actions 中存在 upload/download/delete 类型（有成功的传输或墓碑应用）
-  ///   2. 纪元不匹配或需推送新 encryptedDataKey（overrideEncryptedDataKey != null）
-  ///   3. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
-  ///   4. header 关键字段变化（encryptedDataKey / keyFingerprint / keyVersion）
+  ///   2. merged.items 与 remote.items 不一致（键集或任一条目字段不同）
+  ///   3. header 关键字段变化（encryptedDataKey / keyFingerprint / keyVersion）
+  ///     ——兜住「本端改密码推送新包裹」「迁移后 keyVersion 变化」等无 items
+  ///     变化但 header 必须更新的场景（v4 起不再有 epochMismatch/override）
   bool _hasEffectiveChange({
     required List<SyncAction> actions,
     required Manifest merged,
     required Manifest? remote,
-    required bool epochMismatch,
-    String? overrideEncryptedDataKey,
   }) {
-    // 纪元不匹配或需推送新 encryptedDataKey：必须 PUT
-    if (epochMismatch || overrideEncryptedDataKey != null) {
-      return true;
-    }
-
     // 有成功的传输操作：必须 PUT
     for (final a in actions) {
       if (a.type == SyncActionType.upload ||

@@ -564,7 +564,16 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
+  // v4（epoch 消除）起 SKIP：该测试依赖 temp/longrun-store 与
+  // temp/safenotes-vault 的旧格式（epoch-AAD）持久化数据做跨运行累积与播种，
+  // v4 blob 纯化（AAD=hash）与其不兼容（不兼容策略 §0 不保留旧格式解码路径）。
+  // 恢复方式：删除 temp/longrun-store 与 temp/safenotes-vault 后用
+  // v4 新格式数据重建种子，再 LONGRUN_RESET=1 全量重跑。
   test('长期存续 - 真实数据库跨运行累积（永不清理）', () async {
+    // ignore: avoid_print
+    print('SKIP: 依赖旧格式真实数据（epoch-AAD），v4 不兼容，跳过'
+        '（见测试内注释：删除 temp/longrun-store + temp/safenotes-vault '
+        '并用 v4 格式重建后恢复）');
     final reset = Platform.environment['LONGRUN_RESET'] == '1';
     final gens = int.tryParse(Platform.environment['LONGRUN_GENS'] ?? '') ?? 1;
 
@@ -613,7 +622,8 @@ void main() {
     }
 
     _printGrowthTable(store.state);
-  }, timeout: const Timeout(Duration(minutes: 30)));
+  }, skip: 'v4 不兼容旧格式持久化数据，需重建种子后 LONGRUN_RESET=1 恢复',
+      timeout: const Timeout(Duration(minutes: 30)));
 }
 
 // ──────────────────────────────────────────────

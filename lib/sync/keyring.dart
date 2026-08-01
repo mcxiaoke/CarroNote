@@ -356,22 +356,19 @@ class Keyring {
 
   /// 投影为远端 manifest 明文头部（唯一出口，消除内联构造漏字段）
   ///
-  /// [overrideEncryptedDataKey] / [overrideKeyFingerprint] /
-  /// [overrideKeyVersion]：纪元不匹配时（他端改密码）传入远端三元组，
-  /// 避免把远端新纪元回滚（B1-2 修复）。
-  ///
-  /// v4（epoch 消除）新增自描述元数据：dataKeyFingerprint = H(dataKey)，
-  /// dataKeyCreatedAt = keyring 创建时间（dataKey 在创建时生成）。
-  /// [dataKeyCreatedBy] 由调用方（SyncEngine）传入本机 deviceId。
+  /// v4（epoch 消除）：
+  ///   - 不再有 override 三元组——header 恒用本地 keyring 值。本地包裹永远
+  ///     合法（能解开本地全部 blob），只读不 echo 远端（§0）；scenario-b
+  ///     （他端改密码）在引擎层即中止，不会走到这里。
+  ///   - 新增自描述元数据：dataKeyFingerprint = H(dataKey)，
+  ///     dataKeyCreatedAt = keyring 创建时间（dataKey 在创建时生成）。
+  ///     [dataKeyCreatedBy] 由调用方（SyncEngine）传入本机 deviceId。
   ManifestHeader toManifestHeader({
     int schemaVersion = 1,
     required int version,
     required int updatedAt,
     required String lastModifiedBy,
     String dataKeyWrap = kDataKeyWrapAlgorithm,
-    String? overrideEncryptedDataKey,
-    String? overrideKeyFingerprint,
-    int? overrideKeyVersion,
     String? dataKeyCreatedBy,
   }) =>
       ManifestHeader(
@@ -380,9 +377,9 @@ class Keyring {
         vaultId: vaultId,
         createdAt: createdAt,
         updatedAt: updatedAt,
-        keyFingerprint: overrideKeyFingerprint ?? keyFingerprint,
-        keyVersion: overrideKeyVersion ?? keyVersion,
-        encryptedDataKey: overrideEncryptedDataKey ?? encryptedDataKey,
+        keyFingerprint: keyFingerprint,
+        keyVersion: keyVersion,
+        encryptedDataKey: encryptedDataKey,
         kdf: kdf,
         dataKeyWrap: dataKeyWrap,
         dataKeyEpoch: dataKeyEpoch,
@@ -753,6 +750,9 @@ class Keyring {
   ///
   /// dataKey 未变（只是 wrap 它的 MK 变了），无需重加密笔记。
   /// **原地更新**，保证共享同一实例的 SyncService/SyncEngine 状态一致。
+  ///
+  /// v4（epoch 消除）：引擎层已无调用方（scenario-b 中止 + 只读解密不再
+  /// 回写/echo 远端包裹），保留此方法供未来显式流程（如用户主动重登录）使用。
   Future<void> updateEncryptedDataKey(
     String newEncryptedDataKey,
     NotesDatabase database,
@@ -760,48 +760,6 @@ class Keyring {
     if (newEncryptedDataKey == encryptedDataKey) return;
     current = current.copyWith(encryptedDataKey: newEncryptedDataKey);
     await persist(database);
-  }
-
-  /// 采用远端密钥纪元（B1-2 / H1 修复；C2 的正确写法）
-  ///
-  /// 场景：设备 A 改密码上传新纪元，设备 B 用新密码登录但本地账本仍是旧纪元。
-  /// 此时必须整体采用远端三元组，否则本地 keyVersion 永远落后 → 每轮误报
-  /// "他端改密码"，且构建 header 时回滚远端纪元（BUG-3）。
-  ///
-  /// **关键：只更新包裹态与纪元字段，raw dataKey / mk 绝不触碰**
-  /// （改密码场景 dataKey 值本就未变；整条目替换会抹掉 raw dataKey → C2）。
-  ///
-  /// P7 修复（生产侧根因）：纪元**实际递增**时（remoteDataKeyEpoch > 本地纪元，
-  /// 如远端做过 dataKey 迁移）必须 `markAllForBlobReupload()`。否则会出现
-  /// 「manifest 乐观声明新纪元 + 本地 blob 仍是旧纪元」的永久不一致：
-  ///   - 本端 8 条 epoch-1 blob 之前已上传，服务器上存的是旧纪元密文；
-  ///   - adoptRemoteEpoch 把本地 keyring.dataKeyEpoch 顶到新纪元；
-  ///   - 下次同步 _buildLocalManifest 乐观声明新纪元，而 blob 未重传；
-  ///   - _itemsEqual 因远端也声明新纪元而判定相等 → skip 分支 → 永不重传。
-  /// 标记重传后，_mergeAndTransfer 的 pendingReupload 分支会强制用当前纪元
-  /// 重新加密上传，服务器 blob 才能与新纪元声明收敛（与 migrateToRemote 的
-  /// keyChanged 处理一致）。dataKey 值未变，无需 reEncryptAllNotes。
-  Future<void> adoptRemoteEpoch({
-    required String remoteEncryptedDataKey,
-    required String remoteKeyFingerprint,
-    required int remoteKeyVersion,
-    int remoteDataKeyEpoch = 1,
-    required NotesDatabase database,
-  }) async {
-    final epochAdvanced = remoteDataKeyEpoch > current.dataKeyEpoch;
-    current = current.copyWith(
-      encryptedDataKey: remoteEncryptedDataKey,
-      keyFingerprint: remoteKeyFingerprint,
-      keyVersion: remoteKeyVersion,
-      dataKeyEpoch: remoteDataKeyEpoch,
-      reason: KeyringReason.adoptRemoteEpoch,
-    );
-    await persist(database);
-    // dataKey / mk 保持原值，绝不被触碰
-    // P7：纪元递增时把本地 blob 标记为待重传（AAD 含纪元，旧 blob 必须重传）
-    if (epochAdvanced) {
-      await database.markAllForBlobReupload();
-    }
   }
 
   // ──────────────────────────────────────────────

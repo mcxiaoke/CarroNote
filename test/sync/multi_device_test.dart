@@ -160,13 +160,14 @@ SyncEngine _makeEngine({
   String vaultId = 'test-keyring-id',
   String deviceId = 'test-device',
   Uint8List? mk,
+  int keyVersion = 1,
 }) {
   final keyring = makeTestKeyring(
     vaultId: vaultId,
     dataKey: dataKey,
     encryptedDataKey: encryptedDataKey,
     keyFingerprint: '',
-    keyVersion: 1,
+    keyVersion: keyVersion,
     kdf: KdfParams.create(salt: SyncCrypto.generateSalt()),
     createdAt: DateTime.now().millisecondsSinceEpoch,
     mk: mk,
@@ -214,17 +215,16 @@ void main() {
     }
   });
 
-  group('多设备交互 - H1: 改密码后他端同步回写 encryptedDataKey', () {
-    test('设备 A 改密码 → 设备 B 同步后本地 meta 更新为新 encryptedDataKey',
+  group('多设备交互 - H1: 改密码后他端同步（v4：scenario-b 中止 + 只读不 echo）', () {
+    test('设备 A 改密码推送成功；设备 B 旧密码同步中止；B 用新密码登录后正常',
         () async {
       // 场景：
       //   1. 设备 A 和设备 B 共享同一个 keyring（相同 dataKey + encryptedDataKey_A）
-      //   2. 设备 A 改密码 → 生成新 encryptedDataKey_B（dataKey 不变）
-      //   3. 设备 A 同步上传新 manifest（含 encryptedDataKey_B）
-      //   4. 设备 B 用新密码登录（派生新 MK），本地 meta 还是旧值 encryptedDataKey_A
-      //   5. 设备 B 同步：MK 能解开远端 encryptedDataKey，dataKey 相同
-      //      → 只更新本地 encryptedDataKey，不需要 reEncryptAllNotes
-      //   6. 验证：设备 B 的本地 meta 中 encrypted_data_key 已更新
+      //   2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变，keyVersion 2）
+      //   3. 设备 A 同步上传新 manifest（本端改密码未推送 → 推送本地新包裹）
+      //   4. 设备 B 旧密码会话同步 → v4 scenario-b：中止 + 提示重登录
+      //   5. 设备 B 用新密码登录（派生新 MK）→ 同步正常
+      //   6. v4 只读不 echo：B 本地账本保持自己的包裹（两端包裹都合法）
 
       final backend = FakeBackend();
 
@@ -251,11 +251,12 @@ void main() {
           _makeNote(uuid: 'uuid-h1', title: 'Note H1', description: 'Desc'));
       await engine.sync();
 
-      // 2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变）
+      // 2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变，keyVersion 2）
       final mkANew = SyncCrypto.deriveMasterKey('password-A-new', salt: salt);
       final encryptedDataKeyANew =
           base64.encode(SyncCrypto.wrapDataKey(mkANew, dataKey));
-      await persistTestKeyring(db, encryptedDataKey: encryptedDataKeyANew);
+      await persistTestKeyring(db,
+          encryptedDataKey: encryptedDataKeyANew, keyVersion: 2);
       engine = _makeEngine(
         backend: backend,
         database: db,
@@ -263,37 +264,51 @@ void main() {
         encryptedDataKey: encryptedDataKeyANew,
         deviceId: 'device-A',
         mk: mkANew,
+        keyVersion: 2,
       );
 
-      // 3. 设备 A 同步上传新 manifest（含新 encryptedDataKey）
+      // 3. 设备 A 同步：本端改密码未推送（远端 kv=1 < 本地 kv=2）→ 推送本地新包裹
       final resultA = await engine.sync();
       expect(resultA.success, isTrue, reason: '设备 A 改密码后同步应成功');
 
-      // 4. 设备 B：用新密码登录（派生新 MK），本地 meta 还是旧值 encryptedDataKeyA
-      //    模拟用户在设备 B 上输入新密码解锁 keyring
+      // 4. 设备 B：旧密码会话同步 → v4 scenario-b 中止（本地 MK 解不开远端新包裹）
       db = await _makeDatabase();
       db.setDataKey(dataKey);
       await persistTestKeyring(db, encryptedDataKey: encryptedDataKeyA);
-
-      final engineB = _makeEngine(
+      final engineBOld = _makeEngine(
         backend: backend,
         database: db,
         dataKey: dataKey,
         encryptedDataKey: encryptedDataKeyA,
         deviceId: 'device-B',
-        mk: mkANew, // 设备 B 用新密码派生的 MK
+        mk: mkA, // 旧密码派生的 MK
       );
+      final resultBOld = await engineBOld.sync();
+      expect(resultBOld.success, isFalse,
+          reason: 'B 旧密码会话同步应中止（scenario-b，他端改了密码）');
+      expect(resultBOld.errorMessage, contains('密码已在其他设备修改'));
 
-      // 5. 设备 B 同步：MK 能解开远端 encryptedDataKey，dataKey 相同 → 只更新本地
+      // 5. 设备 B 用新密码登录（派生新 MK），本地 meta 仍为旧包裹
+      //    模拟真实 login 流程：新密码经远端验证后覆盖本地账本为远端新包裹
+      await persistTestKeyring(db,
+          encryptedDataKey: encryptedDataKeyANew, keyVersion: 2);
+      final engineB = _makeEngine(
+        backend: backend,
+        database: db,
+        dataKey: dataKey,
+        encryptedDataKey: encryptedDataKeyANew,
+        deviceId: 'device-B',
+        mk: mkANew, // 新密码派生的 MK
+        keyVersion: 2,
+      );
       final result = await engineB.sync();
-      expect(result.success, isTrue, reason: '设备 B 同步应成功');
+      expect(result.success, isTrue, reason: '设备 B 新密码会话同步应成功');
 
-      // 6. 验证设备 B 的本地 keyring 账本已更新为新 encryptedDataKey
-      //    P2：密钥态只落 MetaKeys.keyring 单键，不再写散落的
-      //    encrypted_data_key，因此断言改读账本。
+      // 6. v4 只读不 echo：B 本地账本已是远端一致值（登录时覆盖），
+      //    同步不再回写任何东西
       final localEncryptedDataKey = await persistedEncryptedDataKey(db);
       expect(localEncryptedDataKey, equals(encryptedDataKeyANew),
-          reason: '设备 B 同步后应把远端 encryptedDataKey 回写本地 keyring 账本');
+          reason: 'B 本地账本保持登录时采用的新包裹（同步零写入）');
     });
   });
 

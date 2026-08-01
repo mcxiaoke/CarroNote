@@ -640,152 +640,6 @@ void main() {
   // P2 收敛后的新增回归组
   // ════════════════════════════════════════════
 
-  group('P2 - adoptRemoteEpoch', () {
-    test('采用远端纪元后 dataKey 原封不动（C2 回归：绝不能丢明文密钥）', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-adopt-1',
-        database: database,
-      );
-      final dataKeyBefore = Uint8List.fromList(keyring.dataKey);
-      final mkBefore = keyring.mk == null
-          ? null
-          : Uint8List.fromList(keyring.mk!);
-
-      await keyring.adoptRemoteEpoch(
-        remoteEncryptedDataKey: 'REMOTE-EDK-BASE64',
-        remoteKeyFingerprint: 'remote-fp',
-        remoteKeyVersion: 7,
-        remoteDataKeyEpoch: 3,
-        database: database,
-      );
-
-      // 三元组整体收敛到远端（B1-2：不能只改一个字段）
-      expect(keyring.encryptedDataKey, 'REMOTE-EDK-BASE64');
-      expect(keyring.keyFingerprint, 'remote-fp');
-      expect(keyring.keyVersion, 7);
-      expect(keyring.dataKeyEpoch, 3);
-
-      // 运行时明文密钥不受影响——这是本用例存在的唯一理由
-      expect(keyring.dataKey, dataKeyBefore,
-          reason: 'adoptRemoteEpoch 只换包裹态，明文 dataKey 必须原样保留');
-      expect(keyring.mk, mkBefore, reason: 'MK 同理不被触碰');
-    });
-
-    test('原地更新会落盘（BUG-3 回归：本地纪元不能落后于内存）', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-adopt-2',
-        database: database,
-      );
-
-      await keyring.adoptRemoteEpoch(
-        remoteEncryptedDataKey: 'EDK-V9',
-        remoteKeyFingerprint: 'fp-v9',
-        remoteKeyVersion: 9,
-        remoteDataKeyEpoch: 2,
-        database: database,
-      );
-
-      // 内存与磁盘必须一致：只改内存 → 重启后回退到旧纪元 → 反复误报 mismatch
-      expect(await persistedKeyVersion(database), 9);
-      expect(await persistedKeyFingerprint(database), 'fp-v9');
-      expect(await persistedEncryptedDataKey(database), 'EDK-V9');
-      expect(await persistedDataKeyEpoch(database), 2);
-    });
-
-    test('采用与当前一致的包裹值时不抛异常且状态不变（幂等）', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-adopt-3',
-        database: database,
-      );
-      final sameEdk = keyring.encryptedDataKey;
-
-      await keyring.adoptRemoteEpoch(
-        remoteEncryptedDataKey: sameEdk,
-        remoteKeyFingerprint: keyring.keyFingerprint,
-        remoteKeyVersion: keyring.keyVersion,
-        database: database,
-      );
-
-      // 包裹值没变：current 保持原值，落盘后读回一致
-      expect(keyring.encryptedDataKey, sameEdk);
-      expect(await persistedEncryptedDataKey(database), sameEdk);
-    });
-
-    test('P7 回归：纪元实际递增时标记全部 blob 重传（adoptRemoteEpoch 生产侧根因）',
-        () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-adopt-p7',
-        database: database,
-      );
-      // 本地已有 2 条笔记（epoch 1 blob 已上传过）
-      await database.storeNote(SafeNote(
-        uuid: 'note-p7-1',
-        title: 'n1',
-        description: 'd1',
-        contentHash: SafeNote.computeHash('n1', 'd1'),
-        deleted: false,
-        createdTime: DateTime.now(),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        synced: true,
-      ));
-      await database.storeNote(SafeNote(
-        uuid: 'note-p7-2',
-        title: 'n2',
-        description: 'd2',
-        contentHash: SafeNote.computeHash('n2', 'd2'),
-        deleted: false,
-        createdTime: DateTime.now(),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        synced: true,
-      ));
-      expect(await database.getPendingReuploadUuids(), isEmpty);
-
-      // 远端纪元 2 > 本地 1：采用后必须触发 blob 重传标记
-      await keyring.adoptRemoteEpoch(
-        remoteEncryptedDataKey: 'EDK-P7',
-        remoteKeyFingerprint: 'fp-p7',
-        remoteKeyVersion: 8,
-        remoteDataKeyEpoch: 2,
-        database: database,
-      );
-
-      final pending = await database.getPendingReuploadUuids();
-      expect(pending, containsAll(['note-p7-1', 'note-p7-2']),
-          reason: '纪元递增必须把本地 blob 标记重传，'
-              '否则 manifest 乐观声明新纪元而 blob 仍是旧纪元（P7 根因）');
-      expect(keyring.dataKeyEpoch, 2);
-    });
-
-    test('P7 回归：纪元不变时采用不触发 blob 重传（改密码场景）', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-adopt-p7b',
-        database: database,
-      );
-      await database.storeNote(SafeNote(
-        uuid: 'note-p7-3',
-        title: 'n3',
-        description: 'd3',
-        contentHash: SafeNote.computeHash('n3', 'd3'),
-        deleted: false,
-        createdTime: DateTime.now(),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        synced: true,
-      ));
-
-      // 改密码场景：dataKeyEpoch 不变，只是包裹态变化 → 不该触发全量重传
-      await keyring.adoptRemoteEpoch(
-        remoteEncryptedDataKey: 'EDK-P7B',
-        remoteKeyFingerprint: 'fp-p7b',
-        remoteKeyVersion: 5,
-        remoteDataKeyEpoch: 1,
-        database: database,
-      );
-
-      expect(await database.getPendingReuploadUuids(), isEmpty,
-          reason: '纪元未变、dataKey 值未变，blob 仍是当前纪元，无需重传');
-    });
-  });
-
   group('P2 - copyWithCurrent（纯函数版等价性）', () {
     test('字段级更新保留运行时 dataKey/mk', () async {
       final keyring = await Keyring.createNew(
@@ -808,7 +662,7 @@ void main() {
   });
 
   group('P2 - toManifestHeader（唯一投影点）', () {
-    test('无 override 时逐字段映射 keyring 状态', () async {
+    test('逐字段映射 keyring 状态（v4 含自描述指纹元数据）', () async {
       final keyring = await Keyring.createNew(
         password: 'pw-hdr-1',
         database: database,
@@ -817,6 +671,7 @@ void main() {
         version: 42,
         updatedAt: 1700000000000,
         lastModifiedBy: 'device-X',
+        dataKeyCreatedBy: 'device-X',
       );
 
       expect(header.vaultId, keyring.vaultId);
@@ -832,28 +687,11 @@ void main() {
       expect(header.lastModifiedBy, 'device-X');
       expect(header.schemaVersion, 1);
       expect(header.dataKeyWrap, kDataKeyWrapAlgorithm);
-    });
-
-    test('override 三元组整体生效，其余字段仍来自 keyring（B1-2 回归）', () async {
-      final keyring = await Keyring.createNew(
-        password: 'pw-hdr-2',
-        database: database,
-      );
-      final header = keyring.toManifestHeader(
-        version: 2,
-        updatedAt: 1,
-        lastModifiedBy: 'device-Y',
-        overrideEncryptedDataKey: 'EDK-REMOTE',
-        overrideKeyFingerprint: 'FP-REMOTE',
-        overrideKeyVersion: 11,
-      );
-
-      expect(header.encryptedDataKey, 'EDK-REMOTE');
-      expect(header.keyFingerprint, 'FP-REMOTE');
-      expect(header.keyVersion, 11);
-      // vaultId/kdf/createdAt/dataKeyEpoch 不在 override 范围内
-      expect(header.vaultId, keyring.vaultId);
-      expect(header.dataKeyEpoch, keyring.dataKeyEpoch);
+      // v4 自描述元数据：dataKeyFingerprint = H(dataKey)，恒等
+      expect(header.dataKeyFingerprint,
+          SyncCrypto.computeDataKeyFingerprint(keyring.dataKey));
+      expect(header.dataKeyCreatedAt, keyring.createdAt);
+      expect(header.dataKeyCreatedBy, 'device-X');
     });
 
     test('序列化→反序列化后 header 字段完全一致（防漏字段）', () async {
@@ -865,6 +703,7 @@ void main() {
         version: 3,
         updatedAt: 1700000000001,
         lastModifiedBy: 'device-Z',
+        dataKeyCreatedBy: 'device-Z',
       );
       final restored =
           ManifestHeader.fromJson(jsonDecode(jsonEncode(header.toJson())));

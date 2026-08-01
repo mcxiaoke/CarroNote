@@ -405,35 +405,31 @@ void main() {
   // S1：用户场景第一步——B 旧密码会话点同步
   // ────────────────────────────────────────────
   group('S1: A 改密码后，B 旧密码会话手动同步', () {
-    test('B 同步成功、检测到纪元不匹配，且远端新纪元不被回滚（B1-2 修复）',
+    test('B 旧密码会话同步中止并提示重登录；远端新纪元不被回滚（选项 B 定案）',
         () async {
       final backend = await _deviceAChangesPasswordAndPushes();
       final b = await _deviceBOldSessionSyncs(backend);
 
-      // —— 同步本身正常完成（笔记不受改密码影响，dataKey 不变）——
-      expect(b.result.success, isTrue,
-          reason: 'B 点同步应成功（笔记传输与密码无关）');
-      final notesOnB = await b.db.readAllNotesIncludingDeleted();
-      expect(notesOnB.map((n) => n.uuid), contains('note-1'),
-          reason: 'A 的笔记正常同步下来');
+      // —— v4（epoch 消除 §8.2[I] 选项 B）：scenario-b 中止同步、强制重登录 ——
+      expect(b.result.success, isFalse,
+          reason: 'B 旧密码会话同步应中止（他端改了密码，本地密码过期）');
+      expect(b.result.errorMessage, contains('密码已在其他设备修改'),
+          reason: 'errorMessage 接管 UI 提示（不再用 passwordEpochMismatch 标志）');
 
-      // —— 引擎检测到他端改密码，标志置位（B4 修复后 UI 会弹窗提示）——
-      expect(b.result.passwordEpochMismatch, isTrue,
-          reason: '引擎应置位 passwordEpochMismatch，'
-              'HomePage._onSyncStateChanged 消费此标志弹窗提示用户');
+      // —— 中止意味着零写入：A 的笔记未被拉取 ——
+      final notesOnB = await b.db.readAllNotesIncludingDeleted();
+      expect(notesOnB, isEmpty, reason: '同步中止，A 的笔记未拉取（零写入）');
 
       // —— B 本地账本不被动（旧密码在 B 本地仍可登录，直到用户主动换新密码）——
       expect(await persistedEncryptedDataKey(b.db), edkOld,
-          reason: 'B 本地 keyring 账本保持旧包裹：旧密码会话不采用新纪元'
-              '（B 不知道新密码，无法验证新包裹），仅避免回滚远端');
+          reason: 'B 本地 keyring 账本保持旧包裹：中止时不写任何东西');
 
       // —— B1-2 修复：远端密钥纪元三元组整体不被回滚 ——
       final header = await _remoteHeader(backend);
       expect(header.encryptedDataKey, edkNew,
           reason: 'B1 守卫：远端新密钥包裹未被 B 回滚');
       expect(header.keyVersion, 2,
-          reason: 'B1-2 修复：远端 keyVersion 保持 2 不被回滚'
-              '（守卫在 B 后续同步中持续有效）');
+          reason: 'B1-2 修复：远端 keyVersion 保持 2 不被回滚');
       expect(header.keyFingerprint, fpNew,
           reason: 'B1-2 修复：远端 fingerprint 保持新值，'
               'header 不再自相矛盾（fp 与 edk 一致，见 S4）');
@@ -444,24 +440,21 @@ void main() {
   // S2：B 继续用旧会话操作——守卫必须持续有效（原翻转战争场景）
   // ────────────────────────────────────────────
   group('S2: B 继续用旧会话新建笔记并同步（用户场景第二步）', () {
-    test('B 第二次同步守卫仍有效，远端新纪元稳定不翻转（B1-2 修复）',
-        () async {
+    test('B 旧会话继续同步仍被中止，远端新纪元稳定不翻转', () async {
       final backend = await _deviceAChangesPasswordAndPushes();
       final b = await _deviceBOldSessionSyncs(backend);
-      expect(b.result.passwordEpochMismatch, isTrue);
+      expect(b.result.success, isFalse,
+          reason: 'B 旧会话首次同步即中止（scenario-b，本地密码过期）');
 
       // —— 用户操作：在 B 上新建笔记（触发 autoSync）——
       await b.db.storeNote(_makeNote(uuid: 'note-2', title: 'New note on B'));
       final res2 = await b.engine.sync();
 
-      expect(res2.success, isTrue,
-          reason: '新建笔记正常同步（笔记传输与密码无关）');
+      expect(res2.success, isFalse,
+          reason: 'B 旧会话第二次同步同样中止（密码仍未更新）');
+      expect(res2.errorMessage, contains('密码已在其他设备修改'));
 
-      // —— B1-2 修复：远端 keyVersion 未被回滚 → 守卫第二次依然触发 ——
-      expect(res2.passwordEpochMismatch, isTrue,
-          reason: 'B1-2 修复：远端 keyVersion 保持 2 > 本地 1，'
-              '守卫持续有效，每次同步都提醒（而非被自己击穿）');
-
+      // —— B1-2 修复：远端 keyVersion 未被回滚 → 中止持续有效 ——
       final header = await _remoteHeader(backend);
       expect(header.encryptedDataKey, edkNew,
           reason: 'B1-2 修复：旧密钥包裹不再被写回远端，'
@@ -469,13 +462,13 @@ void main() {
       expect(header.keyFingerprint, fpNew);
       expect(header.keyVersion, 2);
 
-      // —— B 新建的笔记正常到达远端 manifest ——
+      // —— 中止 = 不 PUT：B 新建的笔记未到达远端 ——
       final response = await backend.getManifest();
       final manifest = ManifestCrypto.deserialize(dataKey, response.ciphertext);
-      expect(manifest.items.keys, containsAll(['note-1', 'note-2']),
-          reason: '纪元守卫不阻断笔记同步');
+      expect(manifest.items.keys, isNot(contains('note-2')),
+          reason: '同步中止，B 的本地新笔记未上传（零写入）');
 
-      // —— A 再次同步：纪元一致，无感知、无翻转 ——
+      // —— A 用新密码会话再次同步：纪元一致，无感知、无翻转 ——
       final dbA2 = await _makeDatabase();
       dbA2.setDataKey(dataKey);
       await _seedMeta(dbA2,
@@ -491,8 +484,6 @@ void main() {
       );
       final resA = await engineA2.sync();
       expect(resA.success, isTrue);
-      expect(resA.passwordEpochMismatch, isFalse,
-          reason: 'A 端纪元与远端一致（kv=2），无误报');
 
       final headerAfterA = await _remoteHeader(backend);
       expect(headerAfterA.encryptedDataKey, edkNew,
@@ -614,23 +605,25 @@ void main() {
   // ────────────────────────────────────────────
   // S5：H1 分支——本地纪元整体收敛（B3 修复）
   // ────────────────────────────────────────────
-  group('S5: B 用新密码会话同步（H1 回写分支）', () {
-    test('encryptedDataKey/keyVersion/keyFingerprint 三者整体收敛到远端纪元（B3 修复）',
+  group('S5: B 用新密码会话同步（v4：本地账本已收敛，无回写动作）', () {
+    test('B 新密码登录后同步正常，本地纪元与远端一致（v4 只读不 echo）',
         () async {
       final backend = await _deviceAChangesPasswordAndPushes();
 
-      // B：用户已用新密码登录，但本地 meta 还是旧包裹、旧纪元
-      // （对应 multi_device_test H1 场景：MK=新，能解开远端新包裹）
+      // B：用户已用新密码完成登录（login 流程 unlockFromRemoteManifest
+      // 已把本地账本覆盖为远端新纪元——S3 已验证该机制）。
+      // v4 删除了「H1 回写 adoptRemoteEpoch」分支：本地与远端一致时
+      // 无任何回写/echo 动作，正常对账即可。
       final dbB = await _makeDatabase();
       dbB.setDataKey(dataKey);
       await _seedMeta(dbB,
-          encryptedDataKey: edkOld, keyVersion: 1, keyFingerprint: fpOld);
+          encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
       final engineB = _makeEngine(
         backend: backend,
         database: dbB,
         keyring: _makeVault(
-            keyVersion: 1, encryptedDataKey: edkOld, keyFingerprint: fpOld,
-            mk: mkNew), // 新密码派生的 MK
+            keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
+            mk: mkNew),
         deviceId: 'device-B',
         passphrase: kNewPassword,
       );
@@ -638,51 +631,39 @@ void main() {
       final res = await engineB.sync();
       expect(res.success, isTrue);
 
-      // —— B3 修复：本地纪元三元组整体收敛（P2：读 keyring 单键账本）——
-      expect(await persistedEncryptedDataKey(dbB), edkNew,
-          reason: '本地 encryptedDataKey 更新为远端新值（H1 原有行为）');
-      expect(await persistedKeyVersion(dbB), 2,
-          reason: 'B3 修复：本地 keyVersion 收敛到 2，'
-              'B 下次同步不再误报 epochMismatch');
-      expect(await persistedKeyFingerprint(dbB), fpNew,
-          reason: 'B3 修复：本地 keyFingerprint 收敛到新值');
+      // —— 本地账本与远端一致（包裹完全相同），v4 无需任何回写/echo ——
+      expect(await persistedEncryptedDataKey(dbB), edkNew);
+      expect(await persistedKeyVersion(dbB), 2);
+      expect(await persistedKeyFingerprint(dbB), fpNew);
 
-      // —— 内存 keyring 同步更新（引擎与 SyncService 共享同一实例）——
-      expect(engineB.keyring.keyVersion, 2,
-          reason: 'B3 修复：内存 keyring.keyVersion 同步更新');
-      expect(engineB.keyring.keyFingerprint, fpNew);
+      // —— 内存 keyring 与远端一致 ——
+      expect(engineB.keyring.keyVersion, 2);
       expect(engineB.keyring.encryptedDataKey, edkNew);
 
       // —— 远端 header 保持新纪元不被回滚 ——
       final header = await _remoteHeader(backend);
       expect(header.keyVersion, 2,
-          reason: 'B3 修复：远端 keyVersion 不再被 H1 分支回滚');
+          reason: '远端 keyVersion 不被回滚');
       expect(header.keyFingerprint, fpNew,
-          reason: 'B3 修复：远端 fingerprint 保持新值，header 自洽');
+          reason: '远端 fingerprint 保持新值，header 自洽');
       expect(header.encryptedDataKey, edkNew);
 
-      // —— 用户已持有新密码：不误报纪元不匹配（避免"永远提示"）——
-      expect(res.passwordEpochMismatch, isFalse,
-          reason: 'B3 修复：本端已收敛到新纪元，不再误报，'
-              'UI 不会对已换新密码的用户弹"密码已变更"');
+      // —— 用户已持有新密码：无纪元不匹配提示（v4 无该标志）——
+      expect(res.passwordEpochMismatch, isFalse);
 
-      // —— 收敛后再次同步：完全正常，无任何纪元动作 ——
+      // —— 再次同步：完全正常 ——
       final res2 = await engineB.sync();
       expect(res2.success, isTrue);
-      expect(res2.passwordEpochMismatch, isFalse,
-          reason: '纪元已收敛，后续同步稳定');
     });
   });
 
   // ────────────────────────────────────────────
-  // S6：用户报告 Bug B 的根因隔离——
-  //   A 改密码后保持打开；B 用新密码新建并同步；A 点同步
-  // 断言 A 的本地 DB 能拉到 B 的笔记，证明引擎 pull 正常，
-  // "没显示"是主页 UI 未在后台同步后重查列表（见 home.dart Bug B 修复）。
+  // S6：A 改密码后保持打开；B 用新密码新建并同步；A（旧密码）点同步
+  // v4（epoch 消除 §8.2[I] 选项 B）：A 旧会话检测到他端改密码 →
+  // 同步中止 + 提示重登录（不再「继续拉取 + 标志提示」）。
   // ────────────────────────────────────────────
-  group('S6: A 改密码后保持打开，B 用新密码新建并同步，A 同步后本地 DB 含 B 的笔记', () {
-    test('A 同步把 B 新建的笔记拉入本地数据库（引擎 pull 正常，Bug B 是 UI 未刷新）',
-        () async {
+  group('S6: A 改密码后保持打开，B 用新密码新建并同步，A 旧会话同步被中止', () {
+    test('A 旧会话同步中止并提示重登录；重登录后才能拉到 B 的笔记', () async {
       // 1. A 改密码并推送（复用公共步骤：远端 kv=2，含 A 的 note-1）
       final backend = await _deviceAChangesPasswordAndPushes();
 
@@ -710,7 +691,7 @@ void main() {
       expect(manifestB.items.keys, containsAll(['note-1', 'note-B']),
           reason: 'B 的笔记已 push 上远端（push 没坏）');
 
-      // 3. A 保持旧会话（kv=1，旧密码）点同步——用户报告的"没拉下来"路径
+      // 3. A 保持旧会话（kv=1，旧密码）点同步——v4 选项 B：中止
       final dbA = await _makeDatabase();
       dbA.setDataKey(dataKey);
       await _seedMeta(dbA,
@@ -726,17 +707,42 @@ void main() {
       );
       final resA = await engineA.sync();
 
-      // —— 引擎检测到他端改密码（B4 修复后会在 UI 弹窗提示）——
-      expect(resA.passwordEpochMismatch, isTrue,
-          reason: 'A 旧会话应检测到远端 kv=2 > 本地 1');
+      // —— v4：A 旧会话检测到他端改密码 → 中止 + 提示重登录 ——
+      expect(resA.success, isFalse,
+          reason: 'A 旧会话同步应中止（远端已被新密码覆盖，本地密码过期）');
+      expect(resA.errorMessage, contains('密码已在其他设备修改'),
+          reason: 'errorMessage 提示「他端改了密码，请重新输入密码」');
 
-      // —— 关键断言：B 的笔记已被拉入 A 的本地数据库 ——
-      // 这说明 push 与 pull 都没坏；Bug B 的"没显示"纯粹是主页 UI
-      // 没有在后台同步完成后重查列表（主页用普通数组而非 MVVM/Provider 驱动）。
+      // —— 中止意味着零拉取：A 本地 DB 不含 B 的笔记 ——
       final notesOnA = await dbA.readAllNotesIncludingDeleted();
-      expect(notesOnA.map((n) => n.uuid), containsAll(['note-1', 'note-B']),
-          reason: 'A 同步后本地 DB 应已含 B 新建的 note-B'
-              '（引擎 pull 正常，Bug B 根因是 UI 未刷新而非同步失败）');
+      expect(notesOnA.map((n) => n.uuid), isNot(contains('note-B')),
+          reason: 'scenario-b 中止同步，A 不拉取任何笔记（选项 B 零写入）');
+
+      // —— 远端不被回滚（翻转战争彻底消除）——
+      final headerAfterA = await _remoteHeader(backend);
+      expect(headerAfterA.encryptedDataKey, edkNew);
+      expect(headerAfterA.keyVersion, 2);
+
+      // 4. A 用新密码重登录后同步：正常拉到 B 的笔记（验证恢复路径）
+      final dbA2 = await _makeDatabase();
+      dbA2.setDataKey(dataKey);
+      await _seedMeta(dbA2,
+          encryptedDataKey: edkNew, keyVersion: 2, keyFingerprint: fpNew);
+      final engineA2 = _makeEngine(
+        backend: backend,
+        database: dbA2,
+        keyring: _makeVault(
+            keyVersion: 2, encryptedDataKey: edkNew, keyFingerprint: fpNew,
+            mk: mkNew),
+        deviceId: 'device-A-new',
+        passphrase: kNewPassword,
+      );
+      final resA2 = await engineA2.sync();
+      expect(resA2.success, isTrue,
+          reason: 'A 用新密码重登录后同步正常');
+      final notesOnA2 = await dbA2.readAllNotesIncludingDeleted();
+      expect(notesOnA2.map((n) => n.uuid), containsAll(['note-1', 'note-B']),
+          reason: '重登录后 A 正常拉到 B 的笔记（恢复路径完整）');
     });
   });
 
