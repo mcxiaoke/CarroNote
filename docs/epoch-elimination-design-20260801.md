@@ -67,19 +67,59 @@ epoch 被当成**全局状态机**（两端必须收敛到同一数值），由�
 - 解密失败从「自动修复」变为「提示 + 手动 repair」——UX 略降。
 - 迁移（scenario-d / scenario-c）仍是显式一次性动作，代码保留，不属本次删减范围。
 
-## 4. 协议影响
+## 4. 关键 Q&A（epoch 语义澄清）
+
+### Q1：怎么检测「dataKey 不同」？
+
+不直接比较 dataKey（它只在本地），而是通过「能否解开远端 encryptedDataKey」间接判断
+（`keyring.dart checkMigrationNeeded` L531-560）：
+
+```
+比较本地/远端 encryptedDataKey
+  ├─ 完全相同 → 无需迁移（同 vault）
+  └─ 不同 → 用本地 MK（密码派生）解远端 encryptedDataKey
+           ├─ 解开 → 密码相同，直接采用远端 dataKey（迁移）
+           └─ 解不开 → 密码不同(scenario-c) 或 salt 不同(scenario-d)
+```
+
+dataKey 从不在线比较；比较的是「密码派生的 MK 能否解开对方的包裹」。
+
+### Q2：迁移后 dataKey 已一致，blobKeyEpoch 还有意义吗？
+
+有意义，但只剩一个：**加密格式版本标签（AAD 绑定）**。
+AAD = `'$epoch|$hash'`，epoch 参与解密校验，防止密文错位被误收（内容 hash 校验外的
+额外保险）。迁移完成后它退化为「与具体 blob 绑定的自描述标签」，**不再承担密钥区分、
+不参与收敛、不驱动同步行为**——这正是本方案要的语义。
+
+### Q3：第三个设备加入，epoch 1/2/3 到底是什么？
+
+epoch 递增的唯一时机 = **dataKey 值真正变化**（`migrateToRemote` L584-587
+`keyChanged → nextEpoch = dataKeyEpoch + 1`）。
+
+```
+epoch=1 → 初始 dataKey
+epoch=2 → 某次迁移生成了新 dataKey（旧 dataKey 退役）
+epoch=3 → 又一次迁移（如忘记密码→重置→全库重加密）
+```
+
+**新设备加入 = 采用当前全局 dataKey + 跟随其 epoch，不产生新 epoch**（C 用密码解开
+A/B 的包裹即采用同一 dataKey，epoch 继承自远端 header 不 +1）。所有正常设备汇聚在
+同一 epoch；混编（部分 item=1、部分=2）只出现在「一代旧 dataKey 的 blob 尚未被重
+加密」的过渡期——改后方案中完全无害，解密端按各自标签解，不强求统一。
+
+## 5. 协议影响
 
 - **`ManifestItem.blobKeyEpoch` 保留**（item 自描述），但语义从「待现代化」变为「加密版本标签」。
 - `ManifestHeader.dataKeyEpoch` 保留，仅作元数据，不再驱动同步行为。
 - 需同步更新 `docs/sync-protocol-spec.md`（§blobKeyEpoch 语义）与相关测试。
 
-## 5. 风险
+## 6. 风险
 
 - 老设备（升级前）可能用旧 heal 逻辑覆盖新设备的数据 → 需**所有客户端同步升级**后才生效。
 - 删除 `_probeBlobEpoch` 后，旧格式 blob（epoch=0 / v1 uuid-AAD）解密路径需保留只读兼容。
 - 测试：删减的 heal/翻转分支对应测试改为「解密失败→corrupt+提示」断言。
 
-## 6. 实施顺序建议
+## 7. 实施顺序建议
 
 1. 先落地本设计（epoch 自愈消除）。
 2. 全量测试 + `make valid`。
