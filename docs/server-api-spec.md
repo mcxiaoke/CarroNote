@@ -49,7 +49,7 @@ SafeNotes 客户端支持三种同步后端类型，各自独立的协议：
 5. **单点真相**：整个 server 只有一个 manifest 资源，由 ETag 乐观锁保护全局一致性。
 6. **无目录概念（便利接口层）**：`manifest` 与 `blob` 端点（§5.2–§5.9）本身无目录概念，URL 路径直接对应单个资源。
 
-   > **v2.2 补充**：通用资源层 `/api/v2/resources/<path>`（§5.10）**允许子目录**，以对齐 `localFs`/`webdav` 后端的软删除隔离能力（孤儿 blob 移入 `blobs-orphan/` 子目录）。资源层内的路径必须做严格穿越防护（§9.7），禁止 `..` 逃逸与绝对路径。
+   > **v2.2 补充**：通用资源层 `/api/v2/resources/<path>`（§5.10）**允许子目录**，以对齐 `localFs`/`webdav` 后端的软删除隔离能力（孤儿 blob 移入 `blobs-orphan/`，与 `blobs/` 同为 vault 根下兄弟目录）。资源层内的路径必须做严格穿越防护（§9.7），禁止 `..` 逃逸与绝对路径。
 
 ---
 
@@ -603,10 +603,10 @@ v2.2 起，资源层可在 vault 命名空间内创建子目录（典型用途�
 ```
 <dataDir>/
 ├── manifest
-└── blobs/
-    ├── <hash-1>
-    └── blobs-orphan/        # 孤儿 blob 隔离区（v2.2 资源层使用）
-        └── <hash>.<epochMs>
+├── blobs/
+│   └── <hash-1>            # 按 hash 命名的 blob 文件
+└── blobs-orphan/           # 孤儿 blob 隔离区（与 blobs/ 同级）
+    └── <hash>.<epochMs>
 ```
 
 其他存储后端应保持等价的逻辑隔离。
@@ -692,7 +692,7 @@ v2.2 资源层消除该倒置，使 `safeServer` 与另两个后端能力对齐�
 | 备份损坏 manifest | `rename` → `.corrupt-<ts>` | `COPY`+`DELETE` | `POST {op:"move", dest:".corrupt-<ts>"}` |
 
 **要点**：
-- `blobs-orphan/` 是 `blobs/` 的子目录，不影响 `GET /api/v2/blobs` 的列目录结果（该端点只列 `blobs/` 的直接文件）。
+- `blobs-orphan/` 与 `blobs/` 同为 vault 根下的**兄弟目录**，不影响 `GET /api/v2/blobs` 的列目录结果（该端点只列 `blobs/` 的直接文件）。
 - `move` 等价于 `localFs rename`：单次 `rename`（跨设备时退化为 copy+unlink），比旧方案的 `GET`+`PUT`+`DELETE` 节省一次往返与一倍流量。
 - 客户端对旧版 v2.1/v2 服务端仍走降级路径（伪造 `0rphan-` 前缀），保证向后兼容。
 

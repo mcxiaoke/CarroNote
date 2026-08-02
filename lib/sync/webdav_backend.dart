@@ -137,6 +137,12 @@ class WebDavBackend implements SyncBackend {
   /// blobs 目录 URL
   String get _blobsUrl => '$baseUrl/blobs';
 
+  /// 孤儿 blob 隔离区目录 URL
+  ///
+  /// 与 `blobs/` 为 vault 根下的兄弟目录（与 localFs / safeServer 后端一致），
+  /// 隔离区不属于活跃 blob 命名空间，避免被 [listBlobs] 枚举。
+  String get _orphanUrl => '$baseUrl/blobs-orphan';
+
   /// manifest 代际备份目录 URL（服务端 `manifest-backup/` 子目录）
   String get _manifestBackupUrl => '$baseUrl/manifest-backup';
 
@@ -437,16 +443,16 @@ class WebDavBackend implements SyncBackend {
   /// P1-2 修复：软删除 blob（COPY 到 blobs-orphan/ 隔离区，再删原 blob）
   ///
   /// WebDAV 无"移动"语义，用 COPY + DELETE 模拟：先把 blob COPY 到隔离区
-  /// （文件名附时间戳 `hash.<epochMs>`），再删除原 blob。COPY 失败时退化为
-  /// 直接 DELETE 原 blob（硬删除），不阻断 GC。
+  /// （`blobs-orphan/`，与 `blobs/` 同级；文件名附时间戳 `hash.<epochMs>`），
+  /// 再删除原 blob。COPY 失败时退化为直接 DELETE 原 blob（硬删除），不阻断 GC。
   @override
   Future<void> deleteBlobSoft(String hash) async {
     _ensureInitialized();
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final dest = '$_blobsUrl/blobs-orphan/$hash.$ts';
+    final dest = '$_orphanUrl/$hash.$ts';
     // 确保隔离区目录存在（已存在返回 405，忽略）
     try {
-      await _mkcol('$_blobsUrl/blobs-orphan');
+      await _mkcol(_orphanUrl);
     } on Exception catch (e) {
       // MKCOL 失败（目录已存在或无权限），忽略继续
       Log.sync.d('[WebDAV] deleteBlobSoft: MKCOL blobs-orphan 失败（可能已存在）',
@@ -492,7 +498,7 @@ class WebDavBackend implements SyncBackend {
   Future<List<String>> listOrphanBlobs() async {
     _ensureInitialized();
     try {
-      final req = http.Request('PROPFIND', Uri.parse('$_blobsUrl/blobs-orphan'));
+      final req = http.Request('PROPFIND', Uri.parse(_orphanUrl));
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
@@ -527,7 +533,7 @@ class WebDavBackend implements SyncBackend {
   Future<void> purgeOrphans(Duration retention) async {
     _ensureInitialized();
     try {
-      final req = http.Request('PROPFIND', Uri.parse('$_blobsUrl/blobs-orphan'));
+      final req = http.Request('PROPFIND', Uri.parse(_orphanUrl));
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
@@ -549,7 +555,7 @@ class WebDavBackend implements SyncBackend {
           if (ts != null && ts < cutoff) {
             try {
               await _client.delete(
-                Uri.parse('$_blobsUrl/blobs-orphan/$name'),
+                Uri.parse('$_orphanUrl/$name'),
                 headers: _authHeaders(),
               ).timeout(_httpTimeout);
             } on Exception catch (e) {

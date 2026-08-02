@@ -321,7 +321,7 @@ Vault（单 vault 操作句柄）
 单用户场景使用 DefaultVaultID（"vault-default"）：
 <rootDir>/vaults/vault-default/manifest
 <rootDir>/vaults/vault-default/blobs/<hash>
-<rootDir>/vaults/vault-default/blobs/blobs-orphan/<hash>.<epochMs>  # v2.2 孤儿 blob 隔离区（资源层用）
+<rootDir>/vaults/vault-default/blobs-orphan/<hash>.<epochMs>  # v2.2 孤儿 blob 隔离区（与 blobs/ 同级，资源层用）
 ```
 
 不再使用空字符串 `vaultID=""`，这样：

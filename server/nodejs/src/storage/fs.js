@@ -5,6 +5,7 @@
 //	所有 vault 统一在 vaults/ 目录下按 vaultID 隔离：
 //	  <rootDir>/vaults/<vaultID>/manifest     # manifest 密文
 //	  <rootDir>/vaults/<vaultID>/blobs/<hash> # blob 密文
+//	  <rootDir>/vaults/<vaultID>/blobs-orphan/<hash>.<epochMs>  # 孤儿 blob 隔离区（与 blobs/ 同级）
 //
 //	单用户场景使用 DefaultVaultID（"vault-default"）：
 //	  <rootDir>/vaults/vault-default/manifest
@@ -157,8 +158,8 @@ class FsVault extends Vault {
   // listBlobs 列出所有 blob 的 hash
   //
   // 返回 blobs/ 目录下所有文件名（即 hash），跳过 .tmp 临时文件和子目录。
-  // 注意：blobs-orphan/ 子目录不会被列入（孤儿 blob 由资源层 PropFind 单独管理）。
-  // blobs 目录不存在时返回空数组。
+  // 注意：blobs-orphan/ 与 blobs/ 同级，天然不会进入此目录（孤儿 blob 由资源层
+  // PropFind 单独管理）。blobs 目录不存在时返回空数组。
   async listBlobs() {
     try {
       const entries = await fs.promises.readdir(this.blobsDir(), { withFileTypes: true });

@@ -170,8 +170,8 @@ func (v *fsVault) DeleteBlob(hash string) error {
 // ListBlobs 列出所有 blob 的 hash
 //
 // 返回 blobs/ 目录下所有文件名（即 hash），跳过 .tmp 临时文件和子目录。
-// 注意：blobs-orphan/ 子目录不会被列入（孤儿 blob 由资源层 PropFind 单独管理）。
-// blobs 目录不存在时返回空数组。
+// 注意：blobs-orphan/ 与 blobs/ 同级，天然不会进入此目录（孤儿 blob 由资源层
+// PropFind 单独管理）。blobs 目录不存在时返回空数组。
 func (v *fsVault) ListBlobs() ([]string, error) {
 	entries, err := os.ReadDir(v.blobsDir())
 	if err != nil {
