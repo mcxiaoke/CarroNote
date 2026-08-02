@@ -160,6 +160,51 @@ class SyncEngine {
     }
   }
 
+  /// P3-a：blob 操作重试退避（网络抖动鲁棒性）
+  ///
+  /// 对 backend.putBlob / getBlob 调用做指数退避重试。仅对
+  /// [BackendUnavailableException] 重试（网络/存储临时不可用），其他异常
+  /// （加密失败、格式错误等）与 getBlob 返回 null 的合法语义都不重试。
+  ///
+  /// 设计要点：
+  ///   - **仅重试 BackendUnavailableException**：ConflictException 是 manifest
+  ///     层语义，不应在 blob 层吞掉；其他 Object 异常直接抛出，避免把不可重试
+  ///     的逻辑错误掩盖成「网络问题」。
+  ///   - **重试次数 2 次（共 3 次尝试）**：与 [sync] 的 [maxRetries] 对齐，
+  ///     单 blob 失败不应让整次同步被一个偶发抖动阻塞太久。
+  ///   - **指数退避 200ms → 400ms**：小步长避免同步时长被放大太多；WebDAV
+  ///     请求本身一般几百 ms，200ms 等待足够让瞬时连接重置恢复。
+  ///   - **putBlob 幂等**：[SyncBackend.putBlob] 契约保证相同 hash+data 多次
+  ///     调用结果一致，重试覆盖写安全。
+  ///   - **getBlob null 不重试**：null 是「blob 不存在」的合法语义，重试无意义。
+  ///
+  /// 不改变上层 catch 行为：仍把最终失败抛给 [_uploadNote] / [_downloadNote]
+  /// 的现有 catch 分支，由它们映射为 uploadFailed / skip 动作。
+  Future<T> _withBlobRetry<T>(
+    Future<T> Function() op, {
+    required String opName,
+    required String hash,
+  }) async {
+    const maxAttempts = 3; // 1 次初试 + 2 次重试
+    const baseDelay = Duration(milliseconds: 200);
+    Object? lastError;
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await op();
+      } on BackendUnavailableException catch (e) {
+        lastError = e;
+        if (attempt == maxAttempts) break;
+        final delay = baseDelay * (1 << (attempt - 1)); // 200ms, 400ms
+        Log.sync.w('blob $opName 临时不可用，${delay.inMilliseconds}ms 后重试 '
+            '(attempt=$attempt/$maxAttempts, hash=${hash.substring(0, 8)}…)',
+            error: e);
+        await Future<void>.delayed(delay);
+      }
+    }
+    // 重试耗尽，抛回原始 BackendUnavailableException 由上层 catch 处理
+    throw lastError!;
+  }
+
   /// 执行一次完整同步
   ///
   /// 返回 [SyncResult]，包含上传/下载/删除/冲突/迁移统计。
@@ -195,6 +240,12 @@ class SyncEngine {
         // 乐观锁冲突：回到 Step 1 重试
         Log.sync.w('乐观锁冲突 (attempt=$attempt/$maxRetries)',
             error: e, stackTrace: st);
+        // P3-c：记录乐观锁重试，便于诊断多设备高并发写入竞争
+        journal.append(
+          type: JournalEventType.syncOptimisticLockRetry,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note: 'attempt=$attempt/$maxRetries: $e',
+        );
         if (attempt == maxRetries) {
           return SyncResult.failure(
             '乐观锁冲突超过 $maxRetries 次：$e',
@@ -239,6 +290,10 @@ class SyncEngine {
   Future<SyncResult> _syncOnce(int attempt) async {
     // Step 1: GET 远端 manifest
     final remoteResponse = await backend.getManifest();
+    // P3-log：manifest GET 结果（debug 级，稳态噪音治理）
+    Log.sync.d('GET manifest empty=${remoteResponse.ciphertext.isEmpty} '
+        'etag=${remoteResponse.etag.isEmpty ? "-" : "present"} '
+        'attempt=$attempt');
 
     Manifest? remoteManifest;
 
@@ -279,6 +334,15 @@ class SyncEngine {
         // PUT manifest：用原 etag 做乐观锁（覆盖损坏文件）
         final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
         await backend.putManifest(newCiphertext, remoteResponse.etag);
+        // P3-c：损坏重建路径的 manifest PUT（与正常路径区分）
+        Log.sync.i('PUT manifest ok (rebuild after corrupt, '
+            'items=${merged.items.length})');
+        journal.append(
+          type: JournalEventType.syncManifestPut,
+          phase: JournalPhase.done,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note: 'rebuild-after-corrupt items=${merged.items.length}',
+        );
         await _updateLocalState(
           merged,
           excludeSynced:
@@ -549,6 +613,17 @@ class SyncEngine {
       newCiphertext,
       remoteResponse.etag,
     );
+    // P3-c：manifest PUT 成功——同步流程最关键的落地点，留 log + journal
+    Log.sync.i('PUT manifest ok (version=${merged.header.version}, '
+        'attempt=$attempt, items=${merged.items.length})');
+    journal.append(
+      type: JournalEventType.syncManifestPut,
+      phase: JournalPhase.done,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      note: 'version=${merged.header.version} attempt=$attempt '
+          'items=${merged.items.length} '
+          'backedUp=${remoteResponse.ciphertext.isNotEmpty}',
+    );
 
     // Step 5: 更新本地状态
     await _updateLocalState(
@@ -671,7 +746,12 @@ class SyncEngine {
         continue;
       }
 
-      final blob = await backend.getBlob(item.hash);
+      // P3-a：getBlob 加重试退避（仅对网络错误重试，null 不重试）
+      final blob = await _withBlobRetry(
+        () => backend.getBlob(item.hash),
+        opName: 'getBlob(repair)',
+        hash: item.hash,
+      );
       if (blob == null) {
         // P0-3 修复：blob 缺失时先尝试本机明文/孪生兜底重传，而不是直接跳过。
         // 本机持有该笔记的明文（同 uuid 且 hash 一致，或同内容孪生）→ 用当前
@@ -796,6 +876,19 @@ class SyncEngine {
       await backend.backupManifest(remoteResponse.ciphertext);
     }
     await backend.putManifest(ciphertext, remoteResponse.etag);
+    // P3-c：repair 路径的 manifest PUT 也留痕，与正常 sync 路径区分
+    // （phase=done；note 中标 repair，便于 replay 时识别这是「修复」落地，
+    // 而非常规同步推进——repair 跳过 LWW 直接收敛，统计口径不同）
+    Log.sync.i('PUT manifest ok (repair, version=${header.version}, '
+        'attempt=$attempt, items=${manifest.items.length})');
+    journal.append(
+      type: JournalEventType.syncManifestPut,
+      phase: JournalPhase.done,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      note: 'repair version=${header.version} attempt=$attempt '
+          'items=${manifest.items.length} '
+          'backedUp=${remoteResponse.ciphertext.isNotEmpty}',
+    );
 
     return SyncResult.success(
       uploaded: _countActions(actions, SyncActionType.upload) +
@@ -820,6 +913,9 @@ class SyncEngine {
     MigrationResult migrationResult,
     ManifestHeader remoteHeader,
   ) async {
+    // P3-log：迁移入口（全库重加密是高风险操作，sync.log 应能独立还原迁移路径）
+    Log.sync.i('_executeMigration: 开始 dataKey 迁移（同 vault）');
+
     // P2 journal §3.6b 两段式：**先记意图**再动手。
     // 注意职责边界：reEncryptAllNotes 自身的原子性由 SQLite 单事务保证，
     // journal 不替代事务；这里记录的是"跨边界步骤"（本地重加密 + 远端
@@ -844,8 +940,9 @@ class SyncEngine {
       // B2：迁移成功后把新 keyring 回写上层（SyncService._keyring），
       // 消除「改密码/迁移后上层持旧 keyring → 全库不可解」窗口
       onKeyringChanged?.call(keyring);
-    } on Object {
+    } on Object catch (e, st) {
       // 记 failed，避免 start 悬挂被 findIncompleteOperations 误判为"需重放"
+      Log.sync.e('_executeMigration: 迁移失败', error: e, stackTrace: st);
       journal.append(
         type: JournalEventType.keyMigrate,
         phase: JournalPhase.failed,
@@ -866,6 +963,9 @@ class SyncEngine {
 
     // 读取迁移的笔记数量（用于结果统计）
     final notes = await database.readAllNotesIncludingDeleted();
+    // P3-log：迁移出口（携带新纪元与笔记数，便于审计）
+    Log.sync.i('_executeMigration: 完成，迁移笔记数=${notes.length} '
+        '(new epoch=${keyring.dataKeyEpoch})');
     return notes.length;
   }
 
@@ -885,6 +985,10 @@ class SyncEngine {
     required int remoteCreatedAt,
     required Uint8List remoteMk,
   }) async {
+    // P3-log：scenario-d 入口（整库改嫁到远端 vault，风险最高的一步）
+    Log.sync.i('_executeMigrationVault: 开始 scenario-d 整库迁移 '
+        '(vaultId=$remoteVaultId, keyVersion=$remoteKeyVersion)');
+
     // P2 journal §3.6b 两段式（场景 d：整库改嫁到远端 vault，风险最高的一步）
     final opId = journal.newOpId();
     journal.append(
@@ -911,7 +1015,10 @@ class SyncEngine {
       );
       // B2：迁移成功后把新 keyring 回写上层（SyncService._keyring）
       onKeyringChanged?.call(keyring);
-    } on Object {
+    } on Object catch (e, st) {
+      // P3-log：scenario-d 迁移失败
+      Log.sync.e('_executeMigrationVault: scenario-d 迁移失败',
+          error: e, stackTrace: st);
       journal.append(
         type: JournalEventType.keyMigrate,
         phase: JournalPhase.failed,
@@ -932,6 +1039,9 @@ class SyncEngine {
 
     // 读取迁移的笔记数量（用于结果统计）
     final notes = await database.readAllNotesIncludingDeleted();
+    // P3-log：scenario-d 出口
+    Log.sync.i('_executeMigrationVault: 完成，迁移笔记数=${notes.length} '
+        '(new vaultId=$remoteVaultId, new epoch=${keyring.dataKeyEpoch})');
     return notes.length;
   }
 
@@ -1328,7 +1438,12 @@ class SyncEngine {
     try {
       if (localIsWinner) {
         // 败方是远端：下载远端内容，存为新笔记
-        final envelope = await backend.getBlob(loserItem.hash);
+        // P3-a：getBlob 加重试退避（null 不重试，仅网络错误重试）
+        final envelope = await _withBlobRetry(
+          () => backend.getBlob(loserItem.hash),
+          opName: 'getBlob(conflict-copy)',
+          hash: loserItem.hash,
+        );
         if (envelope == null) {
           // blob 不存在：无法保留副本，跳过
           return;
@@ -1517,7 +1632,12 @@ class SyncEngine {
         note.contentHash,
         note.toContentBytes(),
       );
-      await backend.putBlob(note.contentHash, envelope);
+      // P3-a：putBlob 加重试退避，吸收瞬时网络抖动；幂等覆盖写，重试安全
+      await _withBlobRetry(
+        () => backend.putBlob(note.contentHash, envelope),
+        opName: 'putBlob',
+        hash: note.contentHash,
+      );
     } on BackendUnavailableException catch (e, st) {
       // 网络/存储不可用（可重试）
       Log.sync.w('uploadNote: blob 上传失败（后端不可用）uuid=${note.uuid}',
@@ -1619,7 +1739,12 @@ class SyncEngine {
     }
 
     // 下载 blob
-    final envelope = await backend.getBlob(item.hash);
+    // P3-a：getBlob 加重试退避（null 不重试，仅网络错误重试）
+    final envelope = await _withBlobRetry(
+      () => backend.getBlob(item.hash),
+      opName: 'getBlob(download)',
+      hash: item.hash,
+    );
     if (envelope == null) {
       // P0-4 修复：blob 在远端缺失（被静默删除/损坏）时，先尝试本机明文兜底重传。
       // 本机持有该笔记的明文（同 uuid 且内容 hash 一致，或同内容孪生）→ 用当前
@@ -1940,6 +2065,15 @@ class SyncEngine {
         await database.removePurgedUuids(cleaned);
       }
     }
+
+    // P3-log：本地状态落地结果（同步流程的最后一步，决定哪些笔记被标记 synced）
+    // debug 级，避免稳态噪音；converged < localNotes 时可能同步期间被编辑，
+    // 调试时可据此判断 P1-A 白名单逻辑是否正常工作
+    final excluded = localNotes.length - converged.length;
+    Log.sync.d('_updateLocalState: version=${merged.version}, '
+        'local=${localNotes.length}, converged=${converged.length}, '
+        'skipped=$excluded (excluded=${excludeSynced.length}, '
+        'purged=${purged.where((u) => !merged.items.containsKey(u)).length})');
   }
 
   /// F1 修复：孤儿 blob 垃圾回收
@@ -1988,6 +2122,11 @@ class SyncEngine {
       // 孤儿 = 远端有但 manifest 不引用的
       final orphans = remoteBlobs.where((h) => !referenced.contains(h)).toSet();
 
+      // P3-log：GC 入口与扫描结果（GC 是删除远端数据的唯一路径，必须留痕）
+      Log.sync.i('_gcOrphanBlobs: 扫描完成 '
+          '(remote=${remoteBlobs.length}, referenced=${referenced.length}, '
+          'orphans=${orphans.length})');
+
       // 两阶段 GC：更新候选表
       final candidates = await database.getGcOrphanCandidates();
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -2011,6 +2150,12 @@ class SyncEngine {
         await database.setGcOrphanCandidates(nextCandidates);
       }
 
+      // P3-log：隔离决策（debug 级，稳态可能频繁）
+      if (toQuarantine.isNotEmpty) {
+        Log.sync.d('_gcOrphanBlobs: 本轮隔离 ${toQuarantine.length} 个孤儿 blob '
+            '(候选表剩 ${nextCandidates.length})');
+      }
+
       for (final hash in toQuarantine) {
         try {
           await backend.deleteBlobSoft(hash); // P1-2：软删除到隔离区
@@ -2023,8 +2168,10 @@ class SyncEngine {
             dataKeyEpoch: keyring.dataKeyEpoch,
             note: 'orphan blob moved to quarantine',
           );
-        } on Exception {
-          // 单个 blob 软删除失败不阻断整体 GC
+        } on Exception catch (e) {
+          // P3-log：单个 blob 软删除失败不阻断整体 GC，但需留痕便于排查
+          Log.sync.w('_gcOrphanBlobs: 单个 blob 软删除失败 '
+              'hash=${hash.substring(0, 8)}…', error: e);
         }
       }
 
@@ -2034,6 +2181,13 @@ class SyncEngine {
         final beforePurge = await backend.listOrphanBlobs();
         await backend.purgeOrphans(_orphanRetention);
         final afterPurge = (await backend.listOrphanBlobs()).toSet();
+        final purgedCount = beforePurge.length - afterPurge.length;
+        // P3-log：purge 结算结果（info 级，超期才删的关键事件）
+        if (beforePurge.isNotEmpty) {
+          Log.sync.i('_gcOrphanBlobs: 隔离区结算 '
+              '(before=${beforePurge.length}, purged=$purgedCount, '
+              'remaining=${afterPurge.length})');
+        }
         for (final hash in beforePurge) {
           if (afterPurge.contains(hash)) continue;
           journal.append(
@@ -2043,11 +2197,13 @@ class SyncEngine {
             note: 'quarantined blob purged after retention',
           );
         }
-      } on Exception {
-        // 隔离区清理失败不阻断同步
+      } on Exception catch (e) {
+        // P3-log：隔离区清理失败不阻断同步，但需留痕
+        Log.sync.w('_gcOrphanBlobs: purgeOrphans 失败（下次同步重试）', error: e);
       }
-    } on Exception {
-      // GC 失败不阻断同步，下次同步重试
+    } on Exception catch (e) {
+      // P3-log：整体 GC 失败不阻断同步，下次同步重试，但需留痕
+      Log.sync.w('_gcOrphanBlobs: 整体 GC 失败（下次同步重试）', error: e);
     }
   }
 
