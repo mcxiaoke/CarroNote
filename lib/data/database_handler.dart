@@ -116,35 +116,32 @@ class NotesDatabase {
   /// 解密结果缓存（P1 性能优化，根因 4）。
   ///
   /// 缓存「含墓碑的全量笔记」明文列表，避免每次列表刷新 / 同步都重新
-  /// 对所有 41 条笔记做 AES-GCM 解密（主线程冻结 ~2s）。
-  /// 任何会改变正文 / 标题 / 删除态的写操作都会令缓存失效（见 [_invalidateCache]）；
+  /// 对所有笔记做 AES-GCM 解密（主线程冻结 ~2s）。
   /// 仅修改 synced 标记等不影响明文的写操作（markSynced 系列）不会失效 ——
   /// 这样同步完成后主页 [refreshNotes] 在未发生内容变更时直接命中缓存，
   /// 消除日志里反复出现的全量解密卡顿。
-  static List<SafeNote>? _notesCache;
+  ///
+  /// **轻量收敛（本版）**：所有缓存维护收口到下方 4 个私有方法，任何写路径
+  /// 只调其中之一，缓存语义内聚、杜绝散落式维护导致的一致性 bug。缓存是 DB 的
+  /// **强一致镜像**：每条写都先落 DB、再用同一份内存对象更新缓存，因此缓存里
+  /// 的 updatedAt/deleted/synced 必与 DB 一致（见 [_upsertCacheEntry] / 写路径）。
+  ///
+  /// **实例字段（非 static）**：避免多 DB 实例（测试里反复 setDatabaseForTesting
+  /// 重建库）共享同一份缓存的隐性耦合。更换数据库连接时由 [setDatabaseForTesting]
+  /// 一并清空（见 [_invalidateCache]）。
+  List<SafeNote>? _notesCache;
 
-  /// 使解密缓存失效（内容发生变更时调用）。
-  static void _invalidateCache() => _notesCache = null;
+  /// 使解密缓存整体失效（内容语义整体变化：reEncryptAllNotes* / close /
+  /// logout / 新数据库连接 时调用）。
+  void _invalidateCache() => _notesCache = null;
 
-  /// markSynced* 只改 synced 标记、不改正文；直接刷新缓存里对应条目的标记，
-  /// 避免下次读取又重新解密（P1 优化）。
-  static void _markCachedSynced(Set<String> uuids) {
-    final cache = _notesCache;
-    if (cache == null || uuids.isEmpty) return;
-    for (var i = 0; i < cache.length; i++) {
-      final n = cache[i];
-      if (n.synced || !uuids.contains(n.uuid)) continue;
-      cache[i] = n.copyWith(
-        synced: true,
-        syncedHash: n.contentHash,
-        syncedDeleted: n.deleted,
-      );
-    }
-  }
-
-  /// 单条内容变更：直接用内存中的明文 [note] 替换/插入缓存条目，
-  /// 避免为「一条笔记改动」而重解密全部 41 条（P1 优化延伸）。
-  static void _upsertCacheEntry(SafeNote note) {
+  /// 单条明文覆盖（按 uuid 插或替）。
+  ///
+  /// storeNote / updateNote / updateNoteByUuid（以及 softDelete/restoreNote
+  /// 先取缓存旧条目 + 增量重建完整对象后）都走它。用**完整 SafeNote 对象**
+  /// 覆盖，updatedAt 等字段天然随对象带入，写路径无法「漏传」某字段 ——
+  /// 从结构上消灭「改 DB 忘了同步缓存」类 bug。
+  void _upsertCacheEntry(SafeNote note) {
     final cache = _notesCache;
     if (cache == null) return; // 缓存未建：下次读取自然重建（已含本条）
     final idx = cache.indexWhere((n) => n.uuid == note.uuid);
@@ -155,38 +152,40 @@ class NotesDatabase {
     }
   }
 
-  /// 按 id 局部修改缓存条目的删除/同步态（软删除/恢复用，正文不变）。
+  /// 按 id 或 uuid 从缓存移除条目（hardDelete / hardDeleteByUuid 用）。
+  void _removeCacheEntry({int? id, String? uuid}) {
+    if (id != null) {
+      _notesCache?.removeWhere((n) => n.id == id);
+    } else if (uuid != null) {
+      _notesCache?.removeWhere((n) => n.uuid == uuid);
+    }
+  }
+
+  /// 刷新缓存里若干条目的 synced 标记（markSynced* 系列用，不改明文）。
   ///
-  /// 必须同步更新 [updatedAt]：softDelete/restoreNote 在 DB 里写入了新的
-  /// updatedAt(=now)，缓存若不跟进会让读路径（同步引擎 _buildLocalManifest）
-  /// 拿到**过期的 updatedAt**，导致远端墓碑/冲突 LWW 按错误时间戳判定，
-  /// 出现"删除墓碑未生效"等回归（见 sync_engine_test 远端墓碑用例）。
-  static void _patchCacheEntryById(
-    int id, {
-    bool? deleted,
-    bool? synced,
-    int? updatedAt,
-  }) {
+  /// [exclude]=false：只标记 [uuids] 集合内条目为已同步；
+  /// [exclude]=true ：标记**除** [uuids] 之外的全部条目为已同步
+  /// （[markAllSynced] 传空集即「全部标记」；[markAllSyncedExcept] 传排除集）。
+  /// 同步收敛时 synced_hash 刷新为当前 content_hash、synced_deleted 刷新为
+  /// 当前 deleted——这一刻本地与远端已一致，该 (hash,deleted) 即下一轮判定 base。
+  void _applySyncedToCache({required Set<String> uuids, required bool exclude}) {
     final cache = _notesCache;
-    if (cache == null) return;
-    final idx = cache.indexWhere((n) => n.id == id);
-    if (idx < 0) return;
-    cache[idx] = cache[idx].copyWith(
-      deleted: deleted,
-      synced: synced,
-      updatedAt: updatedAt,
-    );
+    if (cache == null || (uuids.isEmpty && !exclude)) return;
+    _notesCache = [
+      for (final n in cache)
+        _shouldMarkSynced(n, uuids, exclude)
+            ? n.copyWith(
+                synced: true,
+                syncedHash: n.contentHash,
+                syncedDeleted: n.deleted,
+              )
+            : n,
+    ];
   }
 
-  /// 按 id 从缓存移除条目（硬删除用）。
-  static void _removeCacheEntryById(int id) {
-    _notesCache?.removeWhere((n) => n.id == id);
-  }
-
-  /// 按 uuid 从缓存移除条目（GC 硬删除用）。
-  static void _removeCacheEntryByUuid(String uuid) {
-    _notesCache?.removeWhere((n) => n.uuid == uuid);
-  }
+  /// [_applySyncedToCache] 的判定辅助：条目是否应被标记为已同步。
+  static bool _shouldMarkSynced(SafeNote n, Set<String> uuids, bool exclude) =>
+      exclude ? !uuids.contains(n.uuid) : uuids.contains(n.uuid);
 
   NotesDatabase._init();
 
@@ -337,7 +336,7 @@ class NotesDatabase {
   @visibleForTesting
   static void setDatabaseForTesting(Database db) {
     _database = db;
-    _invalidateCache(); // 替换为新数据库连接：旧解密缓存失效
+    instance._notesCache = null; // 替换为新数据库连接：旧解密缓存失效（实例字段）
   }
 
   /// 测试专用：createDB 回调（供 in-memory 数据库 onCreate 使用）
@@ -666,7 +665,16 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
-      _patchCacheEntryById(id, deleted: true, synced: false, updatedAt: now); // 软删除：标记缓存条目为已删除，并同步 updatedAt
+      // 软删除：取缓存旧条目 → 叠加增量重建完整对象 → 整条覆盖回缓存。
+      // updatedAt 随对象带入，结构杜绝「漏改时间戳」导致的同步 LWW 误判。
+      if (_notesCache != null) {
+        final i = _notesCache!.indexWhere((n) => n.id == id);
+        if (i >= 0) {
+          _upsertCacheEntry(
+            _notesCache![i].copyWith(deleted: true, synced: false, updatedAt: now),
+          );
+        }
+      }
       Log.note.i('删除笔记（软删除，移入回收站）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
@@ -714,7 +722,7 @@ class NotesDatabase {
       }
     });
 
-    _removeCacheEntryById(id); // 笔记被删除：从缓存移除该条目
+    _removeCacheEntry(id: id); // 笔记被删除：从缓存移除该条目
 
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
@@ -742,7 +750,7 @@ class NotesDatabase {
       }
     });
     if (deleted > 0) {
-      _removeCacheEntryByUuid(uuid); // 笔记被删除：从缓存移除该条目
+      _removeCacheEntry(uuid: uuid); // 笔记被删除：从缓存移除该条目
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -826,7 +834,16 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
-      _patchCacheEntryById(id, deleted: false, synced: false, updatedAt: now); // 恢复：标记缓存条目为未删除，并同步 updatedAt
+      // 恢复：取缓存旧条目 → 叠加增量重建完整对象 → 整条覆盖回缓存。
+      // updatedAt 随对象带入，结构杜绝「漏改时间戳」导致的同步 LWW 误判。
+      if (_notesCache != null) {
+        final i = _notesCache!.indexWhere((n) => n.id == id);
+        if (i >= 0) {
+          _upsertCacheEntry(
+            _notesCache![i].copyWith(deleted: false, synced: false, updatedAt: now),
+          );
+        }
+      }
       Log.note.i('恢复笔记（撤回删除）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
@@ -1044,7 +1061,7 @@ class NotesDatabase {
       'WHERE ${NoteFields.uuid} = ?',
       [uuid],
     );
-    if (_notesCache != null) _markCachedSynced({uuid});
+    if (_notesCache != null) _applySyncedToCache(uuids: {uuid}, exclude: false);
   }
 
   /// 标记所有笔记为已同步（全量同步完成后用）
@@ -1060,14 +1077,7 @@ class NotesDatabase {
       '${NoteFields.syncedDeleted} = ${NoteFields.deleted}',
     );
     Log.db.i('标记全部笔记为已同步: $rows 条');
-    if (_notesCache != null) {
-      _notesCache = [
-        for (final n in _notesCache!)
-          n.synced
-              ? n
-              : n.copyWith(synced: true, syncedHash: n.contentHash, syncedDeleted: n.deleted),
-      ];
-    }
+    _applySyncedToCache(uuids: {}, exclude: true);
   }
 
   /// 标记所有笔记为已同步，但排除指定 uuid（P6 修复，DS002）
@@ -1092,14 +1102,7 @@ class NotesDatabase {
       exclude.toList(),
     );
     Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
-    if (_notesCache != null) {
-      _notesCache = [
-        for (final n in _notesCache!)
-          (n.synced || exclude.contains(n.uuid))
-              ? n
-              : n.copyWith(synced: true, syncedHash: n.contentHash, syncedDeleted: n.deleted),
-      ];
-    }
+    _applySyncedToCache(uuids: exclude, exclude: true);
   }
 
   /// P1-A 修复：按 uuid 集合标记已同步（白名单模式）
@@ -1129,7 +1132,7 @@ class NotesDatabase {
       uuids.toList(),
     );
     Log.db.i('按 uuid 集合标记已同步: $rows 条已标记 (请求 ${uuids.length} 个)');
-    if (_notesCache != null) _markCachedSynced(uuids);
+    _applySyncedToCache(uuids: uuids, exclude: false);
   }
 
   // ──────────────────────────────────────────────
