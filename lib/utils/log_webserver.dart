@@ -49,6 +49,17 @@ class LogWebServer {
   /// 默认端口
   static const int defaultPort = 8888;
 
+  /// 平台标签（用于日志面板标题展示，便于区分日志来源设备）
+  String get _platformLabel {
+    if (Platform.isAndroid) return 'Android';
+    if (Platform.isIOS) return 'iOS';
+    if (Platform.isWindows) return 'Windows';
+    if (Platform.isLinux) return 'Linux';
+    if (Platform.isMacOS) return 'macOS';
+    if (Platform.isFuchsia) return 'Fuchsia';
+    return 'Unknown';
+  }
+
   HttpServer? _server;
   StreamSubscription<AppLogEntry>? _logSub;
   final List<WebSocket> _websockets = [];
@@ -202,7 +213,7 @@ class LogWebServer {
   /// 纯文本日志（内存缓冲全量）
   Future<void> _serveLogsText(HttpRequest request) async {
     final buffer = StringBuffer()
-      ..writeln('=== SafeNotes 应用日志（内存缓冲） ===')
+      ..writeln('=== SafeNotes 应用日志（内存缓冲 · $_platformLabel） ===')
       ..writeln('导出时间: ${DateTime.now()}')
       ..writeln('日志目录: ${AppLogFile.dirPath ?? "N/A"}')
       ..writeln('条目数: ${AppLogBuffer.instance.all().length}')
@@ -338,7 +349,7 @@ class LogWebServer {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SafeNotes 应用日志</title>
+<title>SafeNotes 应用日志 ($_platformLabel)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
