@@ -142,12 +142,14 @@ class BuildInfo {{
   static const String buildDateReadable = '{build_date_readable}';
 
   /// 单行版本详情，供启动日志直接打印
-  static String get summary => '$versionString '
+  static String get summary =>
+      '$versionString '
       '| git $gitHashShort${{gitDirty ? " (dirty)" : ""}} @ $gitBranch '
       '| built $buildDateReadable';
 
   /// 多行版本详情，供「关于 / 调试」面板展示
-  static String get detail => '''
+  static String get detail =>
+      '''
 version      : $versionString
 git commit   : $gitHash
 git short    : $gitHashShort

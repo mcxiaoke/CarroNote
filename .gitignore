@@ -53,6 +53,9 @@ app.*.map.json
 #Ignore Some local Devlopment File
 _local_temp/
 
+#Generated build info (recreated by scripts/generate_build_info.py)
+lib/utils/build_info.dart
+
 #Sync reference servers (not committed, for local testing only)
 
 temp/

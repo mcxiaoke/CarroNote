@@ -28,6 +28,9 @@ jobs:
           flutter-version-file: pubspec.yaml
           architecture: x64
 
+      - name: Generate build info
+        run: python scripts/generate_build_info.py
+
       - name: Get flutter dependencies
         run: flutter pub get
 
