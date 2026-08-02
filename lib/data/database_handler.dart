@@ -113,13 +113,45 @@ class NotesDatabase {
   /// 迁移是否进行中（UI 可监听此状态显示遮罩）
   bool get isMigrating => _isMigrating;
 
+  /// 解密结果缓存（P1 性能优化，根因 4）。
+  ///
+  /// 缓存「含墓碑的全量笔记」明文列表，避免每次列表刷新 / 同步都重新
+  /// 对所有 41 条笔记做 AES-GCM 解密（主线程冻结 ~2s）。
+  /// 任何会改变正文 / 标题 / 删除态的写操作都会令缓存失效（见 [_invalidateCache]）；
+  /// 仅修改 synced 标记等不影响明文的写操作（markSynced 系列）不会失效 ——
+  /// 这样同步完成后主页 [refreshNotes] 在未发生内容变更时直接命中缓存，
+  /// 消除日志里反复出现的全量解密卡顿。
+  static List<SafeNote>? _notesCache;
+
+  /// 使解密缓存失效（内容发生变更时调用）。
+  static void _invalidateCache() => _notesCache = null;
+
+  /// markSynced* 只改 synced 标记、不改正文；直接刷新缓存里对应条目的标记，
+  /// 避免下次读取又重新解密（P1 优化）。
+  static void _markCachedSynced(Set<String> uuids) {
+    final cache = _notesCache;
+    if (cache == null || uuids.isEmpty) return;
+    for (var i = 0; i < cache.length; i++) {
+      final n = cache[i];
+      if (n.synced || !uuids.contains(n.uuid)) continue;
+      cache[i] = n.copyWith(
+        synced: true,
+        syncedHash: n.contentHash,
+        syncedDeleted: n.deleted,
+      );
+    }
+  }
+
   NotesDatabase._init();
 
   /// 设置 dataKey（登录/解锁 keyring 后调用）
   void setDataKey(Uint8List key) => _dataKey = Uint8List.fromList(key);
 
   /// 清除 dataKey（登出时调用）
-  void clearDataKey() => _dataKey = null;
+  void clearDataKey() {
+    _dataKey = null;
+    _invalidateCache(); // 登出即丢弃解密缓存，避免下次登录命中旧会话明文
+  }
 
   /// dataKey 是否已设置
   bool get isEncryptionEnabled => _dataKey != null;
@@ -165,6 +197,7 @@ class NotesDatabase {
 
     final newDb = await _initDB('safenotes_sync.db');
     _database = newDb;
+    _invalidateCache(); // 新数据库连接：旧解密缓存失效
     return newDb;
   }
 
@@ -258,6 +291,7 @@ class NotesDatabase {
   @visibleForTesting
   static void setDatabaseForTesting(Database db) {
     _database = db;
+    _invalidateCache(); // 替换为新数据库连接：旧解密缓存失效
   }
 
   /// 测试专用：createDB 回调（供 in-memory 数据库 onCreate 使用）
@@ -371,6 +405,7 @@ class NotesDatabase {
     final db = await instance.database;
     try {
       final id = await db.insert(tableNotes, _toEncryptedRow(note));
+      _invalidateCache(); // 内容变更，使解密缓存失效
       // 只记录元数据，不记录标题 / 正文（见文件顶部隐私红线说明）
       Log.note.i('新增笔记 uuid=${note.uuid} id=$id '
           'hash=${_hashBrief(note.contentHash)} '
@@ -458,20 +493,17 @@ class NotesDatabase {
   }
 
   /// 读取所有未删除的笔记（UI 列表用，自动解密）
+  ///
+  /// 复用 [_notesCache]（含墓碑全量）按需过滤；缓存命中时跳过解密。
   Future<List<SafeNote>> readAllNotes() async {
     _checkNotMigrating();
-    final sw = Stopwatch()..start();
-    final db = await instance.database;
-    final result = await db.query(
-      tableNotes,
-      columns: NoteFields.values,
-      where: '${NoteFields.deleted} = 0',
-      orderBy: '${NoteFields.createdAt} ASC',
-    );
-    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    final cacheHit = _notesCache != null;
+    final all = await readAllNotesIncludingDeleted();
+    final notes = all.where((n) => !n.deleted).toList()
+      ..sort((a, b) => a.createdTime.compareTo(b.createdTime));
     // 数据加载条数是排障关键信息（启动/刷新时都会打印）
-    Log.db.i('加载笔记列表: ${notes.length} 条（未删除）, '
-        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    Log.db.i('加载笔记列表: ${notes.length} 条（未删除）'
+        '${cacheHit ? '（缓存命中，跳过解密）' : ''}');
     return notes;
   }
 
@@ -506,11 +538,17 @@ class NotesDatabase {
   }
 
   /// 读取所有笔记（含墓碑，同步引擎全量对账用，自动解密）
+  ///
+  /// 结果写入 [_notesCache]；命中缓存时直接返回副本，避免重复解密。
   Future<List<SafeNote>> readAllNotesIncludingDeleted() async {
+    if (_notesCache != null) {
+      return List.of(_notesCache!);
+    }
     final sw = Stopwatch()..start();
     final db = await instance.database;
     final result = await db.query(tableNotes, columns: NoteFields.values);
     final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    _notesCache = notes;
     final tombstones = notes.where((n) => n.deleted).length;
     Log.db.d('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
         '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
@@ -529,6 +567,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [note.id],
       );
+      _invalidateCache(); // 内容变更，使解密缓存失效
       Log.note.i('修改笔记 uuid=${note.uuid} id=${note.id} '
           'hash=${_hashBrief(note.contentHash)} '
           'len=${note.title.length}+${note.description.length} rows=$rows');
@@ -551,6 +590,7 @@ class NotesDatabase {
         where: '${NoteFields.uuid} = ?',
         whereArgs: [note.uuid],
       );
+      _invalidateCache(); // 内容变更，使解密缓存失效
       Log.note.i('按 uuid 更新笔记 uuid=${note.uuid} '
           'hash=${_hashBrief(note.contentHash)} '
           'deleted=${note.deleted} rows=$rows');
@@ -577,6 +617,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
+      _invalidateCache(); // 内容变更，使解密缓存失效
       Log.note.i('删除笔记（软删除，移入回收站）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
@@ -624,6 +665,8 @@ class NotesDatabase {
       }
     });
 
+    _invalidateCache(); // 笔记被删除，使解密缓存失效
+
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
         '已加入 purged 列表待同步清理');
@@ -650,6 +693,7 @@ class NotesDatabase {
       }
     });
     if (deleted > 0) {
+      _invalidateCache(); // 笔记被删除，使解密缓存失效
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -733,6 +777,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
+      _invalidateCache(); // 内容变更，使解密缓存失效
       Log.note.i('恢复笔记（撤回删除）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
@@ -810,9 +855,11 @@ class NotesDatabase {
             whereArgs: [uuid],
           );
         }
-      });
+          });
 
-      // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
+    _invalidateCache(); // 全库密文已更新，使解密缓存失效
+
+    // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
@@ -916,6 +963,8 @@ class NotesDatabase {
         }
       });
 
+      _invalidateCache(); // 全库密文已更新，使解密缓存失效
+
       // 6. 事务成功后更新 _dataKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
@@ -946,6 +995,7 @@ class NotesDatabase {
       'WHERE ${NoteFields.uuid} = ?',
       [uuid],
     );
+    if (_notesCache != null) _markCachedSynced({uuid});
   }
 
   /// 标记所有笔记为已同步（全量同步完成后用）
@@ -961,6 +1011,14 @@ class NotesDatabase {
       '${NoteFields.syncedDeleted} = ${NoteFields.deleted}',
     );
     Log.db.i('标记全部笔记为已同步: $rows 条');
+    if (_notesCache != null) {
+      _notesCache = [
+        for (final n in _notesCache!)
+          n.synced
+              ? n
+              : n.copyWith(synced: true, syncedHash: n.contentHash, syncedDeleted: n.deleted),
+      ];
+    }
   }
 
   /// 标记所有笔记为已同步，但排除指定 uuid（P6 修复，DS002）
@@ -985,6 +1043,14 @@ class NotesDatabase {
       exclude.toList(),
     );
     Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
+    if (_notesCache != null) {
+      _notesCache = [
+        for (final n in _notesCache!)
+          (n.synced || exclude.contains(n.uuid))
+              ? n
+              : n.copyWith(synced: true, syncedHash: n.contentHash, syncedDeleted: n.deleted),
+      ];
+    }
   }
 
   /// P1-A 修复：按 uuid 集合标记已同步（白名单模式）
@@ -1014,6 +1080,7 @@ class NotesDatabase {
       uuids.toList(),
     );
     Log.db.i('按 uuid 集合标记已同步: $rows 条已标记 (请求 ${uuids.length} 个)');
+    if (_notesCache != null) _markCachedSynced(uuids);
   }
 
   // ──────────────────────────────────────────────
@@ -1194,6 +1261,7 @@ class NotesDatabase {
       await db.close();
       _database = null;
     }
+    _invalidateCache(); // 关闭数据库连接后丢弃解密缓存
   }
 
   /// 删除 db 文件（忘记密码逃生通道使用）
@@ -1215,6 +1283,7 @@ class NotesDatabase {
     } finally {
       _database = null;
       _dataKey = null;
+      _invalidateCache();
     }
   }
 }
