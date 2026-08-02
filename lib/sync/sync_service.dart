@@ -218,6 +218,9 @@ class SyncService {
     Log.sync.i('后端初始化成功 (providerKey=${backend.providerKey})');
     _updateState(state.copyWith(status: SyncStatus.idle));
 
+    // P3-log：initialize 整体完成（与 dispose 对称，便于排查初始化是否走完）
+    Log.sync.i('SyncService 初始化完成 (status=idle, backendReady=true)');
+
     // 注意：日志 Web 服务器不再由 SyncService 启动。
     // 它是应用级能力（不只服务于同步），改为进入主界面时启动、应用退出时停止，
     // 这样未配置同步的用户同样能远程查看日志。见 HomePage.initState / main._shutdown。
@@ -315,6 +318,12 @@ class SyncService {
         onKeyringChanged: (k) => _keyring = k,
       );
     }
+
+    // P3-log：updateKeyring 完成（改密码 / 迁移后的关键节点，便于追踪密钥状态切换）
+    final prevVersion = previous?.keyVersion;
+    Log.sync.i('updateKeyring: keyring 已更新 '
+        '(keyVersion: ${prevVersion ?? "null"} → ${keyring.keyVersion}, '
+        'dataKeyEpoch: ${keyring.dataKeyEpoch}), SyncEngine ${backend != null ? "已重建" : "未重建（backend=null）"}');
   }
 
   /// 销毁同步服务（应用退出时调用）
@@ -324,6 +333,7 @@ class SyncService {
   Future<void> dispose() async {
     Log.sync.i('SyncService dispose');
     _autoSyncTimer?.cancel();
+    _autoSyncFailureRetried = false; // P3-b：清理重试状态
     LogWebServer.instance.diagnosticsProvider = null;
     // 先关 journal（内部会 flush 未落盘的缓冲），再关后端
     await _closeJournal();
@@ -364,6 +374,7 @@ class SyncService {
   ///   - SyncConfig（后端配置持久化在 SharedPreferences）
   Future<void> logout() async {
     _autoSyncTimer?.cancel();
+    _autoSyncFailureRetried = false; // P3-b：清理重试状态
     // journal 与金库绑定，登出后可能换金库登录，必须关掉（并 flush）
     await _closeJournal();
     await _backend?.close();
@@ -551,6 +562,18 @@ class SyncService {
   ///
   /// L3 修复：如果调用时已有同步在进行中，会重新排程一次（debounce），
   /// 确保连续编辑触发的最后一次变更不会因为"正在同步"而被丢弃。
+  ///
+  /// P3-b 互斥增强：
+  ///   - **race 修复**：sync 完成后的 L3 re-schedule 不能覆盖用户在 sync 期间
+  ///     新触发的 debounce timer。检查 `_autoSyncTimer?.isActive`，若已有
+  ///     pending timer 则让用户的 debounce 继续，避免「T6 完成的 sync 覆盖
+  ///     T4 用户编辑排程的 timer」导致用户最新编辑被立即基于旧状态同步、
+  ///     多余一次同步开销。
+  ///   - **失败可重试**：sync 返回非 null 但 success=false 时（网络抖动等），
+  ///     排程一次重试；为避免失败死循环，限制最多 1 次失败重试，下一次失败
+  ///     交给用户下次编辑或手动 sync 触发。
+  ///   - **状态可见**：在 timer 触发/被跳过/re-schedule 各路径补 debug 日志，
+  ///     便于排查「改了笔记怎么没同步」类问题。
   void autoSync() {
     if (_engine == null) return;
 
@@ -558,16 +581,53 @@ class SyncService {
     Log.sync.d('autoSync: 已排程 (${_autoSyncDelay.inSeconds}s 后触发)');
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer(_autoSyncDelay, () {
+      Log.sync.d('autoSync: timer 触发，调用 sync()');
       sync().then((result) {
         // L3 兜底：如果本次同步因"正在同步"被跳过（返回 null），
         // 重新排程一次，确保最新变更不丢失
         if (result == null && _engine != null) {
-          Log.sync.d('autoSync: 上次同步被跳过，重新排程一次');
-          _autoSyncTimer = Timer(_autoSyncDelay, () => sync());
+          // P3-b：re-schedule 前先检查是否已有用户在 sync 期间新排程的
+          // timer；若有，让用户的 debounce 继续，不覆盖
+          if (_autoSyncTimer?.isActive ?? false) {
+            Log.sync.d('autoSync: 上次被跳过，已有 pending timer，不覆盖');
+          } else {
+            Log.sync.d('autoSync: 上次同步被跳过，重新排程一次');
+            _autoSyncTimer = Timer(_autoSyncDelay, () => sync());
+          }
+          return;
+        }
+        // P3-b：sync 失败（result.success=false，如网络抖动）时排程一次重试。
+        // 限制最多 1 次失败重试：用 _autoSyncFailureRetried 标志位防死循环，
+        // 重试成功或再次失败后清零，下次 autoSync 触发的 sync 失败仍可重试一次
+        if (result != null && !result.success && _engine != null) {
+          if (_autoSyncFailureRetried) {
+            Log.sync.d('autoSync: 上次失败已重试过，等待用户下次触发');
+            _autoSyncFailureRetried = false;
+          } else if (_autoSyncTimer?.isActive ?? false) {
+            // 用户已新排程 timer，让用户的 debounce 接管
+            Log.sync.d('autoSync: sync 失败但已有 pending timer，不重试');
+          } else {
+            Log.sync.d('autoSync: sync 失败，排程一次重试');
+            _autoSyncFailureRetried = true;
+            _autoSyncTimer = Timer(_autoSyncDelay, () {
+              _autoSyncFailureRetried = false; // 进入重试即清零，允许后续重试
+              sync();
+            });
+          }
+        } else if (result != null && result.success) {
+          // 成功时清零重试标志
+          _autoSyncFailureRetried = false;
         }
       });
     });
   }
+
+  /// P3-b：autoSync 失败重试标志位（防死循环）
+  ///
+  /// 语义：true 表示「上一次 autoSync 触发的 sync 失败，已排程了一次重试」。
+  /// 重试 timer 触发或下次成功 sync 时清零，限制单次失败只重试一次。
+  /// 不暴露给外部，仅 autoSync 内部维护。
+  bool _autoSyncFailureRetried = false;
 
   // ──────────────────────────────────────────────
   // 后端管理
@@ -586,6 +646,8 @@ class SyncService {
     required NotesDatabase database,
   }) async {
     if (_syncInProgress) {
+      // P3-log：拒绝切换（避免 StateError 抛出后从日志看不出原因）
+      Log.sync.w('switchBackend 被拒绝（同步进行中），抛 StateError');
       throw StateError('同步进行中，无法切换后端，请稍后重试');
     }
     final oldType = _backend?.runtimeType.toString() ?? 'null';
@@ -611,6 +673,10 @@ class SyncService {
         onKeyringChanged: (k) => _keyring = k,
       );
     }
+
+    // P3-log：切换完成（含 SyncEngine 重建状态，便于排查切换后状态不一致）
+    Log.sync.i('switchBackend 完成 (providerKey=${backend.providerKey}, '
+        'engine=${keyring != null && deviceId != null ? "已重建" : "未重建（keyring/deviceId=null）"})');
   }
 
   /// 获取当前后端（供 UI 显示配置信息）
