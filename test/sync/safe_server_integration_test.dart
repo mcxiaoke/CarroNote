@@ -543,7 +543,7 @@ void main() {
     testDataKey = SyncCrypto.generateDataKey();
     database.setDataKey(testDataKey);
     testEncryptedDataKey = base64Encode(
-      SyncCrypto.wrapDataKey(testDataKey, testDataKey),
+      await SyncCrypto.wrapDataKey(testDataKey, testDataKey),
     );
   });
 

@@ -842,7 +842,7 @@ class ManifestCrypto {
   ///   1. header → JSON → UTF-8 字节
   ///   2. items → JSON → UTF-8 字节 → AES-GCM(dataKey, AAD='manifest-items')
   ///   3. 拼接：[4字节 header 长度][header 字节][加密 items 字节]
-  static Uint8List serialize(Uint8List dataKey, Manifest manifest) {
+  static Future<Uint8List> serialize(Uint8List dataKey, Manifest manifest) async {
     // 1. header JSON
     final headerJson = jsonEncode(manifest.header.toJson());
     final headerBytes = Uint8List.fromList(utf8.encode(headerJson));
@@ -853,7 +853,7 @@ class ManifestCrypto {
           .map((k, v) => MapEntry(k, v.toJson())),
     });
     final itemsBytes = Uint8List.fromList(utf8.encode(itemsJson));
-    final encryptedItems = SyncCrypto.seal(dataKey, _itemsAad, itemsBytes);
+    final encryptedItems = await SyncCrypto.seal(dataKey, _itemsAad, itemsBytes);
 
     // 3. 拼接
     final headerLenBytes = _encodeUint32(headerBytes.length);
@@ -869,7 +869,7 @@ class ManifestCrypto {
   ///   2. 用 dataKey 解密 items
   ///
   /// 如果 dataKey 不正确，items 解密会抛 GCM tag 验证异常。
-  static Manifest deserialize(Uint8List dataKey, Uint8List bytes) {
+  static Future<Manifest> deserialize(Uint8List dataKey, Uint8List bytes) async {
     if (bytes.length < 4) {
       throw FormatException('manifest 数据过短：${bytes.length} 字节');
     }
@@ -893,7 +893,7 @@ class ManifestCrypto {
       return Manifest(header: header, items: {});
     }
 
-    final itemsBytes = SyncCrypto.open(dataKey, _itemsAad, encryptedItems);
+    final itemsBytes = await SyncCrypto.open(dataKey, _itemsAad, encryptedItems);
     final itemsJson = jsonDecode(utf8.decode(itemsBytes)) as Map<String, dynamic>;
     final itemsRaw = itemsJson['items'] as Map<String, dynamic>;
     final items = itemsRaw.map((k, v) =>

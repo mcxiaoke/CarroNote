@@ -376,7 +376,7 @@ Future<({NotesDatabase db, SyncEngine engine, SyncResult result})>
 }
 
 void main() {
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
 
@@ -384,10 +384,10 @@ void main() {
     dataKey = SyncCrypto.generateDataKey();
     salt = SyncCrypto.generateSalt();
     kdf = KdfParams.create(salt: salt);
-    mkOld = SyncCrypto.deriveMasterKey(kOldPassword, salt: salt);
-    mkNew = SyncCrypto.deriveMasterKey(kNewPassword, salt: salt);
-    edkOld = base64.encode(SyncCrypto.wrapDataKey(mkOld, dataKey));
-    edkNew = base64.encode(SyncCrypto.wrapDataKey(mkNew, dataKey));
+    mkOld = await SyncCrypto.deriveMasterKey(kOldPassword, salt: salt);
+    mkNew = await SyncCrypto.deriveMasterKey(kNewPassword, salt: salt);
+    edkOld = base64.encode(await SyncCrypto.wrapDataKey(mkOld, dataKey));
+    edkNew = base64.encode(await SyncCrypto.wrapDataKey(mkNew, dataKey));
     fpOld = SyncCrypto.computeKeyFingerprint(mkOld);
     fpNew = SyncCrypto.computeKeyFingerprint(mkNew);
     vaultCreatedAt = DateTime.now().millisecondsSinceEpoch;
@@ -467,7 +467,7 @@ void main() {
 
       // —— 中止 = 不 PUT：B 新建的笔记未到达远端 ——
       final response = await backend.getManifest();
-      final manifest = ManifestCrypto.deserialize(dataKey, response.ciphertext);
+      final manifest = await ManifestCrypto.deserialize(dataKey, response.ciphertext);
       expect(manifest.items.keys, isNot(contains('note-2')),
           reason: '同步中止，B 的本地新笔记未上传（零写入）');
 
@@ -526,7 +526,7 @@ void main() {
 
       // —— login.dart._tryVerifyPassphraseViaRemote 的行为 ——
       final header = await _remoteHeader(backend);
-      final mkTry = SyncCrypto.deriveMasterKey(kNewPassword,
+      final mkTry = await SyncCrypto.deriveMasterKey(kNewPassword,
           salt: header.kdf.saltBytes);
       expect(SyncCrypto.computeKeyFingerprint(mkTry), header.keyFingerprint,
           reason: '远端 header 是新纪元 → fingerprint 匹配新密码');
@@ -690,7 +690,7 @@ void main() {
       expect(resB.success, isTrue, reason: 'B 用新密码同步应成功');
       // 远端现在同时持有 note-1 与 note-B
       final respB = await backend.getManifest();
-      final manifestB = ManifestCrypto.deserialize(dataKey, respB.ciphertext);
+      final manifestB = await ManifestCrypto.deserialize(dataKey, respB.ciphertext);
       expect(manifestB.items.keys, containsAll(['note-1', 'note-B']),
           reason: 'B 的笔记已 push 上远端（push 没坏）');
 

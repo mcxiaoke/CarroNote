@@ -903,7 +903,7 @@ class Journal {
         final bytes = await File(_archivePath(seq)).readAsBytes();
         await backend.putJournalObject(
           remoteArchiveName(seq),
-          SyncCrypto.seal(dataKey, kJournalAad, bytes),
+          await SyncCrypto.seal(dataKey, kJournalAad, bytes),
         );
         _uploadedSeq = seq;
       }
@@ -913,7 +913,7 @@ class Journal {
         final bytes = await File(_logPath).readAsBytes();
         await backend.putJournalObject(
           remoteCurrentName,
-          SyncCrypto.seal(dataKey, kJournalAad, bytes),
+          await SyncCrypto.seal(dataKey, kJournalAad, bytes),
         );
         _uploadedSeq = _entries.last.seq;
       }
@@ -962,7 +962,7 @@ class Journal {
       try {
         final sealed = await backend.getJournalObject(name);
         if (sealed == null || sealed.isEmpty) continue;
-        final plain = SyncCrypto.open(dataKey, kJournalAad, sealed);
+        final plain = await SyncCrypto.open(dataKey, kJournalAad, sealed);
         final raw = jsonDecode(utf8.decode(plain));
         final parsed = _parseLogMap(raw, expectVaultId: null);
         for (final e in parsed.entries) {

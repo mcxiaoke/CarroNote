@@ -332,7 +332,7 @@ class SyncEngine {
         final merged =
             (await _mergeAndTransfer(localManifest, null, actions)).merged;
         // PUT manifest：用原 etag 做乐观锁（覆盖损坏文件）
-        final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
+        final newCiphertext = await ManifestCrypto.serialize(_dataKey, merged);
         await backend.putManifest(newCiphertext, remoteResponse.etag);
         // P3-c：损坏重建路径的 manifest PUT（与正常路径区分）
         Log.sync.i('PUT manifest ok (rebuild after corrupt, '
@@ -385,7 +385,7 @@ class SyncEngine {
         // ── 分支 1：同一 dataKey（正常同步 / 改密码 / scenario-b）──
         if (remoteHeader.encryptedDataKey == keyring.encryptedDataKey) {
           // 包裹完全相同 → 正常同步
-          remoteManifest = ManifestCrypto.deserialize(
+          remoteManifest = await ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
           );
@@ -397,7 +397,7 @@ class SyncEngine {
           Uint8List? remoteDk;
           if (mk != null) {
             try {
-              remoteDk = SyncCrypto.unwrapDataKey(
+              remoteDk = await SyncCrypto.unwrapDataKey(
                 mk,
                 base64Decode(remoteHeader.encryptedDataKey),
               );
@@ -409,7 +409,7 @@ class SyncEngine {
             // 能解开 → 两端同 MK（密码一致），包裹差异仅来自 nonce 随机性或
             // 远端重新 wrap。本地包裹合法（能解开本地全部 blob），
             // 不 adopt、不 echo（§0 只读解密）→ 正常同步。
-            remoteManifest = ManifestCrypto.deserialize(
+            remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
               remoteResponse.ciphertext,
             );
@@ -420,10 +420,10 @@ class SyncEngine {
             //     不中止；同步零 echo——本地包裹不采用远端值）
             //   - 不能解 → 无法判定 → 保守失败，避免向远端写任何值
             try {
-              ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
+              await ManifestCrypto.deserialize(_dataKey, remoteResponse.ciphertext);
               Log.sync.w('MK 未缓存，无法验证远端包裹；本地 dataKey 可解远端 '
                   'manifest items，保守继续同步（零 echo）');
-              remoteManifest = ManifestCrypto.deserialize(
+              remoteManifest = await ManifestCrypto.deserialize(
                 _dataKey,
                 remoteResponse.ciphertext,
               );
@@ -442,7 +442,7 @@ class SyncEngine {
             // 注：keyVersion 仅用于「谁改了密码」的方向判定，绝不采用远端任何值。
             Log.sync.i('本端改密码未推送（远端 keyVersion=${remoteHeader.keyVersion}'
                 ' < 本地 ${keyring.keyVersion}），正常同步推送本地新包裹');
-            remoteManifest = ManifestCrypto.deserialize(
+            remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
               remoteResponse.ciphertext,
             );
@@ -466,12 +466,12 @@ class SyncEngine {
       } else {
         // ── 分支 2：dataKey 不同（新设备加入 / scenario-d 迁移）──
         final migrationResult =
-            keyring.checkMigrationNeeded(remoteHeader.encryptedDataKey);
+            await keyring.checkMigrationNeeded(remoteHeader.encryptedDataKey);
         if (migrationResult.success && migrationResult.remoteDataKey != null) {
           // 本地 MK 能解开远端包裹 → 同密码同 salt：
           if (_bytesEqual(migrationResult.remoteDataKey!, _dataKey)) {
             // remoteDataKey == 本地 dataKey 但指纹不同（理论上矛盾，防御处理）
-            remoteManifest = ManifestCrypto.deserialize(
+            remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
               remoteResponse.ciphertext,
             );
@@ -479,7 +479,7 @@ class SyncEngine {
             // remoteDataKey != 本地 → dataKey 真变 → 迁移（同 keyring 换 dataKey）
             final migratedCount =
                 await _executeMigration(migrationResult, remoteHeader);
-            remoteManifest = ManifestCrypto.deserialize(
+            remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
               remoteResponse.ciphertext,
             );
@@ -527,7 +527,7 @@ class SyncEngine {
           );
 
           // 迁移后用新 dataKey 解析完整 manifest
-          remoteManifest = ManifestCrypto.deserialize(
+          remoteManifest = await ManifestCrypto.deserialize(
             _dataKey,
             remoteResponse.ciphertext,
           );
@@ -608,7 +608,7 @@ class SyncEngine {
     }
 
     // Step 4: 加密 + PUT manifest（乐观锁）
-    final newCiphertext = ManifestCrypto.serialize(_dataKey, merged);
+    final newCiphertext = await ManifestCrypto.serialize(_dataKey, merged);
     // P1-1 修复：覆盖远端前先备份"即将被覆盖的旧 manifest"（环形 N 份）
     if (remoteResponse.ciphertext.isNotEmpty) {
       await backend.backupManifest(remoteResponse.ciphertext);
@@ -720,7 +720,7 @@ class SyncEngine {
     }
     final Manifest remoteManifest;
     try {
-      remoteManifest = ManifestCrypto.deserialize(
+      remoteManifest = await ManifestCrypto.deserialize(
         _dataKey,
         remoteResponse.ciphertext,
       );
@@ -801,7 +801,7 @@ class SyncEngine {
       // 3a. 用当前 dataKey 解密（blob 纯化 v4：AAD=hash，无纪元探测）
       Uint8List? workingKey;
       try {
-        _openBlobEnvelope(
+        await _openBlobEnvelope(
           uuid,
           item.hash,
           blob,
@@ -874,7 +874,7 @@ class SyncEngine {
       dataKeyCreatedBy: deviceId,
     );
     final manifest = Manifest(header: header, items: repairedItems);
-    final ciphertext = ManifestCrypto.serialize(_dataKey, manifest);
+    final ciphertext = await ManifestCrypto.serialize(_dataKey, manifest);
     // P1-1 修复：覆盖远端前先备份"即将被覆盖的旧 manifest"（环形 N 份）
     if (remoteResponse.ciphertext.isNotEmpty) {
       await backend.backupManifest(remoteResponse.ciphertext);
@@ -1453,7 +1453,7 @@ class SyncEngine {
           return;
         }
         // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
-        final plaintext = _openBlobEnvelope(
+        final plaintext = await _openBlobEnvelope(
           uuid,
           loserItem.hash,
           envelope,
@@ -1631,7 +1631,7 @@ class SyncEngine {
     // "解密内容 hash == manifest 记录 hash"校验保证（manifest items 本身
     // 由 dataKey 加密认证，服务器无法伪造）。
     try {
-      final envelope = SyncCrypto.seal(
+      final envelope = await SyncCrypto.seal(
         _dataKey,
         note.contentHash,
         note.toContentBytes(),
@@ -1694,14 +1694,14 @@ class SyncEngine {
   /// 解密失败向上抛出（调用方进入 Layer 1/2b 容错自愈流程）。
   ///
   /// [dataKeyOverride] 可选：用指定的 dataKey 解密（默认当前 _dataKey）。
-  Uint8List _openBlobEnvelope(
+  Future<Uint8List> _openBlobEnvelope(
     String uuid,
     String hash,
     Uint8List envelope, {
     Uint8List? dataKeyOverride,
-  }) {
+  }) async {
     final key = dataKeyOverride ?? _dataKey;
-    return SyncCrypto.open(key, hash, envelope);
+    return await SyncCrypto.open(key, hash, envelope);
   }
 
   /// 从远端下载单条笔记并写入本地数据库
@@ -1794,7 +1794,7 @@ class SyncEngine {
     // 删除的 heal 分支曾「用当前纪元重传覆盖他人数据」——正是翻转事故的
     // 制度性根源（见 docs/epoch-elimination-design-20260801.md §5.4）。
     try {
-      final plaintext = _openBlobEnvelope(uuid, item.hash, envelope);
+      final plaintext = await _openBlobEnvelope(uuid, item.hash, envelope);
       final content = SafeNote.fromContentBytes(plaintext);
 
       // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致

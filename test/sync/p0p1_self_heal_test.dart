@@ -156,7 +156,7 @@ SyncEngine _makeEngine({
   String deviceId = 'test-device',
 }) {
   final edk = encryptedDataKey ??
-      base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
   final keyring = makeTestKeyring(
     vaultId: vaultId,
     dataKey: dataKey,
@@ -463,7 +463,7 @@ void main() {
       expect(bakBytes.length, greaterThan(0));
 
       // 备份内容应是"上一代"（含 p11-note 且版本较旧）的有效 manifest，可反序列化
-      final oldManifest = ManifestCrypto.deserialize(fsKey, bakBytes);
+      final oldManifest = await ManifestCrypto.deserialize(fsKey, bakBytes);
       expect(oldManifest.items.containsKey('p11-note'), isTrue);
     });
 

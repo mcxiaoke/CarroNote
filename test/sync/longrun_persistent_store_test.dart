@@ -474,7 +474,7 @@ class LongRunStore {
     );
     final manifest = Manifest(header: header, items: <String, ManifestItem>{});
     await backend.putManifest(
-      ManifestCrypto.serialize(keyring.dataKey, manifest),
+      await ManifestCrypto.serialize(keyring.dataKey, manifest),
       '',
     );
   }
@@ -529,7 +529,7 @@ class LongRunStore {
   /// 读远端 manifest（解密 items）
   Future<Manifest> remoteManifest() async {
     final resp = await backend.getManifest();
-    return ManifestCrypto.deserialize(dataKey, resp.ciphertext);
+    return await ManifestCrypto.deserialize(dataKey, resp.ciphertext);
   }
 
   Future<ManifestHeader> remoteHeader() async {

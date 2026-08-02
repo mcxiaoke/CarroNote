@@ -457,7 +457,7 @@ class Keyring {
     final kdf = KdfParams.create(salt: salt);
     final mk = await _deriveMk(password, salt: salt);
     final keyFingerprint = SyncCrypto.computeKeyFingerprint(mk);
-    final encryptedDataKey = base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+    final encryptedDataKey = base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
     final createdAt = DateTime.now().millisecondsSinceEpoch;
 
     final keyring = Keyring(
@@ -498,7 +498,7 @@ class Keyring {
     }
 
     final mk = await _deriveMk(password, salt: ledger.kdf.saltBytes);
-    final dataKey = _unwrapOrThrow(mk, ledger.current.encryptedDataKey);
+    final dataKey = await _unwrapOrThrow(mk, ledger.current.encryptedDataKey);
 
     Log.crypto.i('本地 Keyring 解锁成功: vaultId=${ledger.vaultId} '
         'keyVersion=${ledger.current.keyVersion} '
@@ -535,7 +535,7 @@ class Keyring {
         'keyVersion=$remoteKeyVersion epoch=$remoteDataKeyEpoch '
         'fp=${_fpBrief(remoteKeyFingerprint)}');
     final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
-    final dataKey = _unwrapOrThrow(mk, remoteEncryptedDataKey);
+    final dataKey = await _unwrapOrThrow(mk, remoteEncryptedDataKey);
 
     final keyring = Keyring(
       vaultId: remoteVaultId,
@@ -559,9 +559,12 @@ class Keyring {
   }
 
   /// 解包 dataKey，失败统一转为 [WrongPasswordException]
-  static Uint8List _unwrapOrThrow(Uint8List mk, String encryptedDataKey) {
+  static Future<Uint8List> _unwrapOrThrow(
+    Uint8List mk,
+    String encryptedDataKey,
+  ) async {
     try {
-      return SyncCrypto.unwrapDataKey(mk, base64.decode(encryptedDataKey));
+      return await SyncCrypto.unwrapDataKey(mk, base64.decode(encryptedDataKey));
     } on Exception catch (e) {
       // GCM tag 验证失败 = 密码错误
       Log.crypto.w('解包 dataKey 失败(通常为密码错误): $e');
@@ -576,10 +579,10 @@ class Keyring {
   /// 检查是否需要迁移到远端 dataKey
   ///
   /// 用本地 MK 尝试解开远端 encryptedDataKey，得到 remoteDataKey 与本地比较。
-  MigrationResult checkMigrationNeeded(
+  Future<MigrationResult> checkMigrationNeeded(
     String remoteEncryptedDataKey, {
     String? remoteVaultId,
-  }) {
+  }) async {
     // 完全相同 → 无需迁移（不需要 MK）
     if (remoteEncryptedDataKey == encryptedDataKey) {
       Log.crypto.d('dataKey 迁移检查: 本地与远端包裹一致, 无需迁移');
@@ -593,7 +596,7 @@ class Keyring {
     }
 
     try {
-      final remoteDataKey = SyncCrypto.unwrapDataKey(
+      final remoteDataKey = await SyncCrypto.unwrapDataKey(
         mk,
         base64.decode(remoteEncryptedDataKey),
       );
@@ -694,7 +697,7 @@ class Keyring {
       return null; // 密码不匹配 → 场景 c
     }
     try {
-      final dataKey = SyncCrypto.unwrapDataKey(
+      final dataKey = await SyncCrypto.unwrapDataKey(
         mk,
         base64.decode(remoteEncryptedDataKey),
       );
@@ -778,7 +781,7 @@ class Keyring {
     final sw = Stopwatch()..start();
     final probe = await _deriveMk(password, salt: kdf.saltBytes);
     try {
-      SyncCrypto.unwrapDataKey(probe, base64.decode(encryptedDataKey));
+      await SyncCrypto.unwrapDataKey(probe, base64.decode(encryptedDataKey));
       Log.crypto.d('密码校验通过 (耗时 ${sw.elapsedMilliseconds}ms)');
     } on Exception catch (e) {
       Log.crypto.w('密码校验失败: $e (耗时 ${sw.elapsedMilliseconds}ms)');
@@ -803,7 +806,7 @@ class Keyring {
     // 1. 验证旧密码
     final oldMk = await _deriveMk(oldPassword, salt: salt);
     try {
-      SyncCrypto.unwrapDataKey(oldMk, base64.decode(encryptedDataKey));
+      await SyncCrypto.unwrapDataKey(oldMk, base64.decode(encryptedDataKey));
       Log.crypto.d('Keyring 改密码: 旧密码验证通过');
     } on Exception catch (e) {
       Log.crypto.w('Keyring 改密码中止: 旧密码错误: $e');
@@ -813,7 +816,7 @@ class Keyring {
     // 2. 新 MK 重新 wrap（dataKey 本身不变）
     final newMk = await _deriveMk(newPassword, salt: salt);
     final newEncryptedDataKey =
-        base64.encode(SyncCrypto.wrapDataKey(newMk, dataKey));
+        base64.encode(await SyncCrypto.wrapDataKey(newMk, dataKey));
     final newKeyFingerprint = SyncCrypto.computeKeyFingerprint(newMk);
     final now = DateTime.now().millisecondsSinceEpoch;
 

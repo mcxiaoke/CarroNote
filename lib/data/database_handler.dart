@@ -255,11 +255,11 @@ class NotesDatabase {
   /// [uuid] 作为 AAD 绑定（防止信封从一条笔记移到另一条）
   /// [plaintext] 明文文本
   /// 返回 base64(nonce + ciphertext + tag)
-  String _encryptField(String uuid, String plaintext) {
+  Future<String> _encryptField(String uuid, String plaintext) async {
     if (plaintext.isEmpty) return plaintext;
     final dataKey = _requireDataKey;
     final bytes = Uint8List.fromList(utf8.encode(plaintext));
-    final envelope = SyncCrypto.seal(dataKey, uuid, bytes);
+    final envelope = await SyncCrypto.seal(dataKey, uuid, bytes);
     return base64.encode(envelope);
   }
 
@@ -268,12 +268,12 @@ class NotesDatabase {
   /// [uuid] 必须与加密时一致
   /// [fieldValue] base64 编码的信封
   /// 返回明文文本
-  String _decryptField(String uuid, String fieldValue) {
+  Future<String> _decryptField(String uuid, String fieldValue) async {
     if (fieldValue.isEmpty) return fieldValue;
     final dataKey = _requireDataKey;
     try {
       final envelope = base64.decode(fieldValue);
-      final bytes = SyncCrypto.open(dataKey, uuid, envelope);
+      final bytes = await SyncCrypto.open(dataKey, uuid, envelope);
       return utf8.decode(bytes);
     } catch (e) {
       // 解密失败：dataKey 不匹配或数据损坏
@@ -285,21 +285,22 @@ class NotesDatabase {
   }
 
   /// 将明文 SafeNote 转为加密的数据库行（用于 insert/update）
-  Map<String, dynamic> _toEncryptedRow(SafeNote note) {
+  Future<Map<String, dynamic>> _toEncryptedRow(SafeNote note) async {
     final json = note.toJson();
-    json[NoteFields.title] = _encryptField(note.uuid, note.title);
-    json[NoteFields.description] = _encryptField(note.uuid, note.description);
+    json[NoteFields.title] = await _encryptField(note.uuid, note.title);
+    json[NoteFields.description] =
+        await _encryptField(note.uuid, note.description);
     return json;
   }
 
   /// 从加密的数据库行构造明文 SafeNote（用于 query 结果）
-  SafeNote _fromEncryptedRow(Map<String, dynamic> json) {
+  Future<SafeNote> _fromEncryptedRow(Map<String, dynamic> json) async {
     final uuid = json[NoteFields.uuid] as String? ?? '';
     final encryptedTitle = json[NoteFields.title] as String? ?? '';
     final encryptedDesc = json[NoteFields.description] as String? ?? '';
     final decrypted = Map<String, dynamic>.from(json);
-    decrypted[NoteFields.title] = _decryptField(uuid, encryptedTitle);
-    decrypted[NoteFields.description] = _decryptField(uuid, encryptedDesc);
+    decrypted[NoteFields.title] = await _decryptField(uuid, encryptedTitle);
+    decrypted[NoteFields.description] = await _decryptField(uuid, encryptedDesc);
     return SafeNote.fromJson(decrypted);
   }
 
@@ -449,7 +450,7 @@ class NotesDatabase {
     _checkNotMigrating();
     final db = await instance.database;
     try {
-      final id = await db.insert(tableNotes, _toEncryptedRow(note));
+      final id = await db.insert(tableNotes, await _toEncryptedRow(note));
       _upsertCacheEntry(note.copyWith(id: id)); // 单条新增：直接更新缓存，避免全量重解密
       // 只记录元数据，不记录标题 / 正文（见文件顶部隐私红线说明）
       Log.note.i('新增笔记 uuid=${note.uuid} id=$id '
@@ -474,7 +475,7 @@ class NotesDatabase {
     );
 
     if (maps.isNotEmpty) {
-      return _fromEncryptedRow(maps.first);
+      return await _fromEncryptedRow(maps.first);
     } else {
       throw Exception('ID $id not found');
     }
@@ -492,7 +493,7 @@ class NotesDatabase {
       limit: 1,
     );
     if (maps.isNotEmpty) {
-      return _fromEncryptedRow(maps.first);
+      return await _fromEncryptedRow(maps.first);
     }
     return null;
   }
@@ -514,7 +515,7 @@ class NotesDatabase {
       limit: 1,
     );
     if (maps.isNotEmpty) {
-      return _fromEncryptedRow(maps.first);
+      return await _fromEncryptedRow(maps.first);
     }
     return null;
   }
@@ -563,7 +564,9 @@ class NotesDatabase {
       where: '${NoteFields.deleted} = 1',
       orderBy: '${NoteFields.updatedAt} DESC',
     );
-    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = await Future.wait(
+      result.map((json) => _fromEncryptedRow(json)).toList(),
+    );
     Log.db.i('加载回收站笔记: ${notes.length} 条（已删除）, '
         '解密耗时 ${sw.elapsedMilliseconds}ms');
     return notes;
@@ -577,7 +580,9 @@ class NotesDatabase {
       columns: NoteFields.values,
       where: '${NoteFields.synced} = 0',
     );
-    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = await Future.wait(
+      result.map((json) => _fromEncryptedRow(json)).toList(),
+    );
     Log.db.d('加载待同步笔记: ${notes.length} 条（synced=0）');
     return notes;
   }
@@ -593,7 +598,9 @@ class NotesDatabase {
     final sw = Stopwatch()..start();
     final db = await instance.database;
     final result = await db.query(tableNotes, columns: NoteFields.values);
-    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = await Future.wait(
+      result.map((json) => _fromEncryptedRow(json)).toList(),
+    );
     _notesCache = notes;
     final tombstones = notes.where((n) => n.deleted).length;
     Log.db.i('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
@@ -611,7 +618,7 @@ class NotesDatabase {
     try {
       final rows = await db.update(
         tableNotes,
-        _toEncryptedRow(note),
+        await _toEncryptedRow(note),
         where: '${NoteFields.id} = ?',
         whereArgs: [note.id],
       );
@@ -634,7 +641,7 @@ class NotesDatabase {
     try {
       final rows = await db.update(
         tableNotes,
-        _toEncryptedRow(note),
+        await _toEncryptedRow(note),
         where: '${NoteFields.uuid} = ?',
         whereArgs: [note.uuid],
       );
@@ -901,7 +908,7 @@ class NotesDatabase {
       //    不直接修改数据库，先收集所有要写入的行
       final encryptedRows = <Map<String, dynamic>>[];
       for (final note in notes) {
-        final row = _toEncryptedRow(note);
+        final row = await _toEncryptedRow(note);
         // 保留 id 和 uuid 用于 UPDATE WHERE 条件
         encryptedRows.add({
           'where_uuid': note.uuid,
@@ -983,7 +990,7 @@ class NotesDatabase {
       // 3. 在内存中用 newKey 重新加密所有笔记
       final encryptedRows = <Map<String, dynamic>>[];
       for (final note in notes) {
-        final row = _toEncryptedRow(note);
+        final row = await _toEncryptedRow(note);
         encryptedRows.add({
           'where_uuid': note.uuid,
           'row': row,

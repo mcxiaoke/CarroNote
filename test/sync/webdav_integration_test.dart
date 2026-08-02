@@ -308,7 +308,7 @@ Future<void> _uploadRemoteManifest({
     lastModifiedBy: 'seed',
   );
   final manifest = Manifest(header: header, items: items);
-  final bytes = ManifestCrypto.serialize(dataKey, manifest);
+  final bytes = await ManifestCrypto.serialize(dataKey, manifest);
   await backend.putManifest(bytes, expectedEtag);
 }
 
@@ -396,7 +396,7 @@ void main() {
     testDataKey = SyncCrypto.generateDataKey();
     database.setDataKey(testDataKey);
     testEncryptedDataKey = base64Encode(
-      SyncCrypto.wrapDataKey(testDataKey, testDataKey),
+      await SyncCrypto.wrapDataKey(testDataKey, testDataKey),
     );
   });
 
@@ -1044,7 +1044,7 @@ void main() {
     test('远端一个 blob 用错误密钥加密，同步不抛异常且报告失败 uuid', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyWrong = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
       database.setDataKey(dataKeyNew);
 
       // 1. 设备 A：上传一条正常笔记，建立干净的远端状态
@@ -1073,7 +1073,7 @@ void main() {
         contentSize: badTitle.length + badDesc.length,
       );
       final remoteResp = await backend.getManifest();
-      final cur = ManifestCrypto.deserialize(dataKeyNew, remoteResp.ciphertext);
+      final cur = await ManifestCrypto.deserialize(dataKeyNew, remoteResp.ciphertext);
       final newItems = Map<String, ManifestItem>.from(cur.items)
         ..['note-bad'] = badItem;
       await _uploadRemoteManifest(
@@ -1088,7 +1088,7 @@ void main() {
       // 用错误密钥覆盖 note-bad 的 blob（解密必失败）
       await backend.putBlob(
         badHashForManifest,
-        SyncCrypto.seal(
+        await SyncCrypto.seal(
           dataKeyWrong,
           'note-bad',
           Uint8List.fromList(utf8.encode('garbage')),
@@ -1133,7 +1133,7 @@ void main() {
         () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
       database.setDataKey(dataKeyNew);
 
       // 1. 本地有一条笔记（用 dataKeyNew 存储），内容与 hash 记为 H
@@ -1166,7 +1166,7 @@ void main() {
       // 3. 注入"旧密钥残留 blob"：用 dataKeyOld 加密、同名 hash，模拟密钥变更前的遗留
       await backend.putBlob(
         hash,
-        SyncCrypto.seal(dataKeyOld, 'note-mig', note.toContentBytes()),
+        await SyncCrypto.seal(dataKeyOld, 'note-mig', note.toContentBytes()),
       );
 
       // 4. 标记需重传（生产环境由 migrateToRemote 在 dataKey 变更时设置）
@@ -1191,11 +1191,11 @@ void main() {
       // blob 纯化 v4：AAD = 内容 hash（无 epoch）
       final blob = await backend.getBlob(hash);
       expect(blob, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, hash, blob!);
+      final opened = await SyncCrypto.open(dataKeyNew, hash, blob!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, 'Mig');
-      expect(
-        () => SyncCrypto.open(dataKeyOld, hash, blob),
+      await expectLater(
+        SyncCrypto.open(dataKeyOld, hash, blob),
         throwsA(isA<Object>()),
         reason: '旧密钥应无法再解开已被重传覆盖的 blob',
       );
@@ -1208,10 +1208,10 @@ void main() {
       final localSalt = SyncCrypto.generateSalt();
       final L = SyncCrypto.generateDataKey();
       final R = SyncCrypto.generateDataKey();
-      final localMk = SyncCrypto.deriveMasterKey(password, salt: localSalt);
-      final localEdk = base64Encode(SyncCrypto.wrapDataKey(localMk, L));
+      final localMk = await SyncCrypto.deriveMasterKey(password, salt: localSalt);
+      final localEdk = base64Encode(await SyncCrypto.wrapDataKey(localMk, L));
       // 用 localMk 包裹 R，使 checkMigrationNeeded 能解开并拿到 remoteDataKey=R
-      final remoteEdk = base64Encode(SyncCrypto.wrapDataKey(localMk, R));
+      final remoteEdk = base64Encode(await SyncCrypto.wrapDataKey(localMk, R));
 
       final keyring = makeTestKeyring(
         vaultId: 'v-test',
@@ -1229,7 +1229,7 @@ void main() {
       await database.storeNote(_makeNote(uuid: 'u1', title: 'One'));
       await database.storeNote(_makeNote(uuid: 'u2', title: 'Two'));
 
-      final migration = keyring.checkMigrationNeeded(remoteEdk);
+      final migration = await keyring.checkMigrationNeeded(remoteEdk);
       expect(migration.needsMigration, isTrue);
       expect(migration.success, isTrue);
       expect(migration.remoteDataKey, isNotNull);
@@ -1245,7 +1245,7 @@ void main() {
     test('本地持有明文、远端 blob 损坏：自愈重传且后续设备可正常下载', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyWrong = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
       database.setDataKey(dataKeyNew);
 
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -1296,7 +1296,7 @@ void main() {
       // 远端 blob 用错误密钥加密（损坏），但 hash 对得上 manifest
       await backend.putBlob(
         remoteHash,
-        SyncCrypto.seal(
+        await SyncCrypto.seal(
           dataKeyWrong,
           'note-heal',
           Uint8List.fromList(utf8.encode('garbage')),
@@ -1336,7 +1336,7 @@ void main() {
       // （blob 纯化 v4：AAD = 内容 hash）
       final repaired = await backend.getBlob(localHash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKeyNew, localHash, repaired!);
+      final opened = await SyncCrypto.open(dataKeyNew, localHash, repaired!);
       final content = SafeNote.fromContentBytes(opened);
       expect(content.title, localTitle);
 
@@ -1368,7 +1368,7 @@ void main() {
   group('容错与自愈 - 共享 blob（相同内容多条笔记）', () {
     test('v2 协议：两条内容相同的笔记共享一个 blob，新设备两条都能下载', () async {
       final dataKey = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKey, dataKey));
       database.setDataKey(dataKey);
 
       // 设备 A：两条内容完全相同的笔记（不同 uuid，contentHash 相同 → 共享 blob）
@@ -1419,7 +1419,7 @@ void main() {
   group('容错与自愈 - blob 纯化（v4）审计元数据', () {
     test('item.blobKeyEpoch 声明与本地不同时仅作审计，不影响解密（无 heal）', () async {
       final dataKey = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKey, dataKey));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKey, dataKey));
       database.setDataKey(dataKey);
       // 引擎处于第 2 纪元（模拟一次 dataKey 值变更后的状态）
       final engine = _makeEngine(
@@ -1458,7 +1458,7 @@ void main() {
       // 注入 blob：blob 纯化后 AAD=内容 hash（与纪元无关，当前 key 可直接解开）
       final content =
           _makeNote(uuid: uuid, title: title, description: description);
-      final blob = SyncCrypto.seal(dataKey, hash, content.toContentBytes());
+      final blob = await SyncCrypto.seal(dataKey, hash, content.toContentBytes());
       await backend.putBlob(hash, blob);
 
       final result = await engine.sync();
@@ -1475,13 +1475,13 @@ void main() {
 
       // 重新拉取远端 manifest：item.blobKeyEpoch 保持 1（不再被强制改写）
       final resp = await backend.getManifest();
-      final cur = ManifestCrypto.deserialize(dataKey, resp.ciphertext);
+      final cur = await ManifestCrypto.deserialize(dataKey, resp.ciphertext);
       expect(cur.items[uuid]?.blobKeyEpoch, 1);
 
       // blob 用 AAD=hash 可直接解开，内容完整
       final repaired = await backend.getBlob(hash);
       expect(repaired, isNotNull);
-      final opened = SyncCrypto.open(dataKey, hash, repaired!);
+      final opened = await SyncCrypto.open(dataKey, hash, repaired!);
       final c = SafeNote.fromContentBytes(opened);
       expect(c.title, title);
     });
@@ -1491,7 +1491,7 @@ void main() {
     test('无密钥无明文时 repair 标记损坏（不丢数据）', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
       database.setDataKey(dataKeyNew);
       final engine = _makeEngine(
         backend: backend,
@@ -1528,7 +1528,7 @@ void main() {
       // （blob 纯化 v4：AAD=hash，dataKeyOld 解不开即损坏）
       final content =
           _makeNote(uuid: uuid, title: title, description: description);
-      final blob = SyncCrypto.seal(
+      final blob = await SyncCrypto.seal(
         dataKeyOld,
         hash,
         content.toContentBytes(),

@@ -56,7 +56,11 @@ Keyring makeTestKeyring({
   Uint8List? mk,
 }) {
   final dk = dataKey ?? SyncCrypto.generateDataKey();
-  final edk = encryptedDataKey ?? base64Encode(SyncCrypto.wrapDataKey(dk, dk));
+  // wrapDataKey 已是异步 API。这里默认用一个稳定的假信封（60 字节 = 12+32+16）
+  // 作为 encryptedDataKey：测试语义不变——多设备共用同一 edk 时
+  // checkMigrationNeeded 按字符串相等直接判定「无需迁移」，不真正解包。
+  final edk = encryptedDataKey ??
+      base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
   return Keyring(
     vaultId: vaultId ?? 'test-keyring-id',
     kdf: kdf ?? KdfParams.create(salt: SyncCrypto.generateSalt()),

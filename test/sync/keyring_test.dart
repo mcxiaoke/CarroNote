@@ -496,7 +496,7 @@ void main() {
       // 用 dataKey 加密一条笔记
       final plaintext =
           Uint8List.fromList(utf8.encode('{"title":"Test","description":"Hello"}'));
-      final envelope = SyncCrypto.seal(
+      final envelope = await SyncCrypto.seal(
         keyring.dataKey,
         'note-uuid-1',
         plaintext,
@@ -510,7 +510,7 @@ void main() {
       );
 
       // 用新 keyring 的 dataKey（应与旧 dataKey 相同）解密信封
-      final decrypted = SyncCrypto.open(
+      final decrypted = await SyncCrypto.open(
         newKeyring.dataKey,
         'note-uuid-1',
         envelope,
@@ -540,7 +540,7 @@ void main() {
         createdAt: keyring.createdAt,
       );
 
-      final result = vaultNoMk.checkMigrationNeeded(keyring.encryptedDataKey);
+      final result = await vaultNoMk.checkMigrationNeeded(keyring.encryptedDataKey);
       expect(result.needsMigration, isFalse);
       expect(result.success, isTrue);
     });
@@ -554,10 +554,10 @@ void main() {
       // 用相同 MK 包装一个不同的 dataKey（模拟远端换了 dataKey）
       final remoteDataKey = SyncCrypto.generateDataKey();
       final remoteEncryptedDataKey = base64.encode(
-        SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
+        await SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
       );
 
-      final result = keyring.checkMigrationNeeded(remoteEncryptedDataKey);
+      final result = await keyring.checkMigrationNeeded(remoteEncryptedDataKey);
       expect(result.needsMigration, isTrue);
       expect(result.success, isTrue);
       expect(result.remoteDataKey, remoteDataKey);
@@ -582,7 +582,7 @@ void main() {
       );
 
       // 远端 encryptedDataKey 不同，但本地无 MK → 失败
-      final result = vaultNoMk.checkMigrationNeeded('different-encrypted-key');
+      final result = await vaultNoMk.checkMigrationNeeded('different-encrypted-key');
       expect(result.needsMigration, isTrue);
       expect(result.success, isFalse);
       expect(result.error, contains('MK 未缓存'));
@@ -606,10 +606,10 @@ void main() {
       // 生成远端 dataKey 并用本地 MK 包装
       final remoteDataKey = SyncCrypto.generateDataKey();
       final remoteEncryptedDataKey = base64.encode(
-        SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
+        await SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
       );
 
-      final migrationResult = keyring.checkMigrationNeeded(remoteEncryptedDataKey);
+      final migrationResult = await keyring.checkMigrationNeeded(remoteEncryptedDataKey);
       expect(migrationResult.needsMigration, isTrue);
 
       // 执行迁移

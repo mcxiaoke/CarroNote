@@ -158,7 +158,7 @@ class ChaosHarness {
       lastModifiedBy: 'chaos-seed',
     );
     final manifest = Manifest(header: header, items: <String, ManifestItem>{});
-    final bytes = ManifestCrypto.serialize(keyring.dataKey, manifest);
+    final bytes = await ManifestCrypto.serialize(keyring.dataKey, manifest);
     await backend.putManifest(bytes, '');
   }
 
@@ -334,7 +334,7 @@ class ChaosHarness {
       final probeVault = (await _openRealVault(backend, [workingPassword])).keyring;
       sharedDataKey = probeVault.dataKey;
       final baseline =
-          ManifestCrypto.deserialize(sharedDataKey, probeResp.ciphertext);
+          await ManifestCrypto.deserialize(sharedDataKey, probeResp.ciphertext);
       for (final entry in baseline.items.entries) {
         model.addHash(entry.key, entry.value.hash);
         if (entry.value.deleted) model.markDeleted(entry.key);
@@ -463,7 +463,7 @@ class ChaosHarness {
           final rm = await backend.getManifest();
           try {
             final rmManifest =
-                ManifestCrypto.deserialize(sharedDataKey, rm.ciphertext);
+                await ManifestCrypto.deserialize(sharedDataKey, rm.ciphertext);
             trace.add('  backendPath=${backend.rootPath} '
                 'remoteItems=${rmManifest.items.length}');
           } on Object catch (de) {
@@ -507,7 +507,7 @@ class ChaosHarness {
       // 必须落在该 uuid 的合法写入集合内（或是引擎冲突副本的新 uuid）。
       // 第一时间抓住"跨 uuid 内容错位"被写上远端的精确 step + 客户端。
       try {
-        final rm = ManifestCrypto.deserialize(
+        final rm = await ManifestCrypto.deserialize(
             sharedDataKey, (await backend.getManifest()).ciphertext);
         for (final e in rm.items.entries) {
           final prev = _shadowRemote[e.key];
@@ -743,7 +743,7 @@ class ChaosHarness {
           // 远端 manifest 对该 uuid 的记录
           String remoteInfo = '?';
           try {
-            final rm = ManifestCrypto.deserialize(
+            final rm = await ManifestCrypto.deserialize(
                 sharedDataKey, (await backend.getManifest()).ciphertext);
             final ri = rm.items[uuid];
             remoteInfo = ri == null
@@ -1613,7 +1613,7 @@ void main() {
 
       // 远端条目仍在（新设备下次仍会尝试，其他设备仍有机会自愈）
       final resp = await f.backend.getManifest();
-      final m = ManifestCrypto.deserialize(f.dataKey, resp.ciphertext);
+      final m = await ManifestCrypto.deserialize(f.dataKey, resp.ciphertext);
       expect(m.items.length, 1,
           reason: '救不回来就删条目 = 用"修复"的名义造成永久数据丢失，绝对禁止');
       expect(m.items.values.single.deleted, isFalse,
@@ -1643,7 +1643,7 @@ void main() {
       expect(await f.liveTitles(b), {'keep-me'}, reason: '删除应先正常同步到 B');
 
       // 墓碑此刻是"近期的"：必须还留在 manifest 里（离线设备还没来取）
-      var m = ManifestCrypto.deserialize(
+      var m = await ManifestCrypto.deserialize(
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );
@@ -1666,7 +1666,7 @@ void main() {
 
       // A 同步 → 超期墓碑被 GC：本地硬删 + 远端 manifest 条目消失
       await f.sync(a);
-      m = ManifestCrypto.deserialize(
+      m = await ManifestCrypto.deserialize(
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );
@@ -1685,7 +1685,7 @@ void main() {
           reason: 'GC 后不得复活为活跃笔记');
       expect(await f.liveTitles(b), {'keep-me'},
           reason: 'GC 后不得复活为活跃笔记');
-      m = ManifestCrypto.deserialize(
+      m = await ManifestCrypto.deserialize(
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );

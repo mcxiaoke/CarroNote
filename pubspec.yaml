@@ -51,6 +51,8 @@ dependencies:
     git:
       url: https://github.com/keshav-space/safenotes-nord-theme.git
       ref: main
+  cryptography: ^2.9.0
+  cryptography_flutter: ^2.3.4
     
 
 dev_dependencies:

@@ -41,12 +41,13 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   /// 控制 putManifest 是否第一次抛冲突（用于测试乐观锁重试）
   int _conflictOnNextPuts = 0;
 
-  /// P1-B 测试钩子：putManifest 写入前同步调用的回调。
+  /// P1-B 测试钩子：putManifest 写入前**等待完成**的回调。
   ///
   /// 此时 _mergeAndTransfer 已完成、merged 快照已构建，但 _updateLocalState
-  /// 尚未执行——模拟「同步期间用户编辑笔记」的竞态窗口。回调里编辑笔记后，
-  /// _updateLocalState 的白名单比对应跳过该笔记（当前 hash ≠ merged 快照）。
-  void Function()? onBeforePutManifestWrite;
+  /// 尚未执行——模拟「同步期间用户编辑笔记」的竞态窗口。回调被 await 确保
+  /// 编辑先落盘，_updateLocalState 的白名单比对应跳过该笔记（当前 hash ≠
+  /// merged 快照），避免 fire-and-forget 的时序不确定性。
+  Future<void> Function()? onBeforePutManifestWrite;
 
   @override
   String get displayName => 'FakeBackend';
@@ -78,8 +79,9 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
     }
 
     // P1-B：在乐观锁检查通过、实际写入前触发回调（模拟同步期竞态）
+    // await 回调：确保同步期间编辑先落盘，_updateLocalState 白名单比对才确定
     if (onBeforePutManifestWrite != null) {
-      onBeforePutManifestWrite!();
+      await onBeforePutManifestWrite!();
     }
 
     if (expectedEtag.isEmpty) {
@@ -176,7 +178,8 @@ SyncEngine _makeEngine({
       (database.isEncryptionEnabled
           ? database.dataKeyForTesting
           : SyncCrypto.generateDataKey());
-  final edk = encryptedDataKey ?? base64Encode(SyncCrypto.wrapDataKey(dk, dk));
+  final edk = encryptedDataKey ??
+      base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
   final vid = vaultId ?? 'test-keyring-id';
   final keyring = makeTestKeyring(
     vaultId: vid,
@@ -613,7 +616,7 @@ void main() {
 
       // 验证远端 manifest 标记为 deleted
       final remoteResponse = await backend.getManifest();
-      final remoteManifest = ManifestCrypto.deserialize(
+      final remoteManifest = await ManifestCrypto.deserialize(
         engine.keyring.dataKey,
         remoteResponse.ciphertext,
       );
@@ -774,7 +777,7 @@ void main() {
 
       // 验证远端也是 V2
       final remoteResponse = await backend.getManifest();
-      final remoteManifest = ManifestCrypto.deserialize(
+      final remoteManifest = await ManifestCrypto.deserialize(
         engine.keyring.dataKey,
         remoteResponse.ciphertext,
       );
@@ -829,7 +832,7 @@ void main() {
 
       // 验证远端 manifest 里这条笔记标记为 deleted
       final remoteResponse = await backend.getManifest();
-      final remoteManifest = ManifestCrypto.deserialize(
+      final remoteManifest = await ManifestCrypto.deserialize(
         engine.keyring.dataKey,
         remoteResponse.ciphertext,
       );
@@ -960,7 +963,7 @@ void main() {
         vaultId: 'e2e-keyring',
         dataKey: e2eDataKey,
         encryptedDataKey: base64Encode(
-          SyncCrypto.wrapDataKey(e2eDataKey, e2eDataKey),
+          await SyncCrypto.wrapDataKey(e2eDataKey, e2eDataKey),
         ),
         keyFingerprint: '',
         keyVersion: 1,
@@ -1053,7 +1056,7 @@ void main() {
       // 他端随后提交 manifest（引用该 blob）
       backend._blobs[inFlight] = Uint8List.fromList([9, 9]);
       final remoteManifest = await backend.getManifest();
-      final remote = ManifestCrypto.deserialize(
+      final remote = await ManifestCrypto.deserialize(
         testDataKey,
         remoteManifest.ciphertext,
       );
@@ -1066,7 +1069,7 @@ void main() {
           createdAt: DateTime.now().millisecondsSinceEpoch,
         );
       await backend.putManifest(
-        ManifestCrypto.serialize(testDataKey, remote.copyWith(items: items)),
+        await ManifestCrypto.serialize(testDataKey, remote.copyWith(items: items)),
         remoteManifest.etag,
       );
 
@@ -1115,7 +1118,7 @@ void main() {
 
       // 验证：远端 manifest 不含旧墓碑
       final remoteManifest = await backend.getManifest();
-      final manifest = ManifestCrypto.deserialize(
+      final manifest = await ManifestCrypto.deserialize(
         testDataKey,
         remoteManifest.ciphertext,
       );

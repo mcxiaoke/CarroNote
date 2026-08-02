@@ -231,9 +231,9 @@ void main() {
       // 1. 共享 keyring 初始化
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mkA = SyncCrypto.deriveMasterKey('password-A', salt: salt);
+      final mkA = await SyncCrypto.deriveMasterKey('password-A', salt: salt);
       final encryptedDataKeyA =
-          base64.encode(SyncCrypto.wrapDataKey(mkA, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mkA, dataKey));
 
       // 设备 A：创建笔记并首次同步
       var db = await _makeDatabase();
@@ -252,9 +252,9 @@ void main() {
       await engine.sync();
 
       // 2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变，keyVersion 2）
-      final mkANew = SyncCrypto.deriveMasterKey('password-A-new', salt: salt);
+      final mkANew = await SyncCrypto.deriveMasterKey('password-A-new', salt: salt);
       final encryptedDataKeyANew =
-          base64.encode(SyncCrypto.wrapDataKey(mkANew, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mkANew, dataKey));
       await persistTestKeyring(db,
           encryptedDataKey: encryptedDataKeyANew, keyVersion: 2);
       engine = _makeEngine(
@@ -317,9 +317,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -338,7 +338,7 @@ void main() {
       await engine.sync();
 
       // 验证远端 manifest 有 2 条
-      var remoteManifest = ManifestCrypto.deserialize(
+      var remoteManifest = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
@@ -352,7 +352,7 @@ void main() {
       await engine.sync();
 
       // 验证远端 manifest 中 uuid-purge 被移除
-      remoteManifest = ManifestCrypto.deserialize(
+      remoteManifest = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
@@ -369,9 +369,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -422,9 +422,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -460,7 +460,7 @@ void main() {
               '${live.map((n) => n.uuid).toList()}');
 
       // 4) 远端 manifest 里只应有这一条墓碑，不得多出活跃条目
-      final remote = ManifestCrypto.deserialize(
+      final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
@@ -489,9 +489,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -579,9 +579,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -647,9 +647,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -721,9 +721,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -767,7 +767,7 @@ void main() {
       expect(all.any((n) => n.uuid == 'uuid-alive'), isTrue,
           reason: '未超期的活跃笔记不得被误删');
 
-      final remote = ManifestCrypto.deserialize(
+      final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
@@ -787,9 +787,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -830,7 +830,7 @@ void main() {
       ));
       await engine.sync();
 
-      final remote = ManifestCrypto.deserialize(
+      final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
@@ -844,9 +844,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       // 设备 A：创建笔记并同步
       var db = await _makeDatabase();
@@ -865,12 +865,12 @@ void main() {
       // 篡改远端 blob：用相同 dataKey 加密不同内容，但保持 hash 不变
       // （模拟服务端返回内容不一致的合法信封）。
       // 注意：blob 纯化 v4 后 AAD = hash，信封必须能被解开，内容 hash 才会被比对。
-      final remoteManifest = ManifestCrypto.deserialize(
+      final remoteManifest = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
       final originalHash = remoteManifest.items['uuid-tamper']!.hash;
-      final tamperedEnvelope = SyncCrypto.seal(
+      final tamperedEnvelope = await SyncCrypto.seal(
         dataKey,
         originalHash,
         Uint8List.fromList(utf8.encode(jsonEncode({
@@ -914,9 +914,9 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = SyncCrypto.deriveMasterKey('shared-password', salt: salt);
+      final mk = await SyncCrypto.deriveMasterKey('shared-password', salt: salt);
       final encryptedDataKey =
-          base64.encode(SyncCrypto.wrapDataKey(mk, dataKey));
+          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
 
       // 设备 A：创建 3 条笔记
       var db = await _makeDatabase();
@@ -1106,7 +1106,7 @@ void main() {
 
       // 验证：远端 manifest 现在包含 3 条笔记
       final remoteManifest = await backend.getManifest();
-      final manifest = ManifestCrypto.deserialize(
+      final manifest = await ManifestCrypto.deserialize(
         vaultADataKey,
         remoteManifest.ciphertext,
       );
