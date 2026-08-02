@@ -95,6 +95,18 @@ class SafeNote {
     this.syncedDeleted = false,
   });
 
+  /// 卡片列表展示用的摘要文本（P0 性能优化）。
+  ///
+  /// 只取正文前 [abstractMaxLength] 个字符，避免把整篇大文本送入 [sanitize]、
+  /// AutoSizeText 排版与 RTL 检测。点开详情时再读取完整 [description]。
+  static const int abstractMaxLength = 200;
+
+  String get abstractText {
+    if (description.length <= abstractMaxLength) return description;
+    return description.substring(0, abstractMaxLength);
+  }
+
+
   /// 创建新笔记的工厂构造函数
   ///
   /// 自动生成 UUIDv4、计算 contentHash、设置 updatedAt 为当前时间。

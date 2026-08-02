@@ -38,7 +38,7 @@ class NoteTileWidgetCompact extends StatelessWidget {
     // Pick colors from the accent colors based on index
     final color = NotesColor.getNoteColor(notIndex: index);
     final fontColor = getFontColorForBackground(color);
-    final previewText = note.title == ' ' ? note.description : note.title;
+    final previewText = note.title == ' ' ? note.abstractText : note.title;
 
     return Container(
       padding: const EdgeInsets.all(10),

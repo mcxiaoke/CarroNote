@@ -92,8 +92,8 @@ class NoteCardWidget extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             AutoSizeText(
-              sanitize(note.description),
-              textDirection: getTextDirecton(note.description),
+              sanitize(note.abstractText),
+              textDirection: getTextDirecton(note.abstractText),
               style: TextStyle(
                 color: fontColor,
                 fontSize: 16,

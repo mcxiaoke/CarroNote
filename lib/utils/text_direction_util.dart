@@ -14,10 +14,8 @@
 // Dart imports:
 import 'dart:ui' as ui;
 
-// Package imports:
-import 'package:intl/intl.dart' as intl;
+// RTL 检测暂时禁用：完整正文检测成本过高（根因 3），且当前不支持 RTL 排版。
+// 统一返回 LTR，避免对每条笔记正文做 Bidi 全文扫描。
+bool isRTL(String text) => false;
 
-bool isRTL(String text) => intl.Bidi.detectRtlDirectionality(text);
-
-ui.TextDirection getTextDirecton(String text) =>
-    isRTL(text) ? ui.TextDirection.rtl : ui.TextDirection.ltr;
+ui.TextDirection getTextDirecton(String text) => ui.TextDirection.ltr;

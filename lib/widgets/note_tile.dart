@@ -90,8 +90,8 @@ class NoteTileWidget extends StatelessWidget {
           ),
           const SizedBox.square(dimension: 5),
           AutoSizeText(
-            sanitize(note.description),
-            textDirection: getTextDirecton(note.description),
+            sanitize(note.abstractText),
+            textDirection: getTextDirecton(note.abstractText),
             style: TextStyle(
               color: fontColor,
               fontSize: 16,
