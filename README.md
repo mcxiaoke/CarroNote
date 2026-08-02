@@ -39,11 +39,16 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
 │  Flutter 客户端                               │
 │  ├─ UI 层 (views / widgets / dialogs)        │
 │  ├─ 状态管理 Provider (models)               │
-│  ├─ 数据层 SQLite (data/database_handler)    │
-│  ├─ 加密层 (encryption / sync/crypto)        │
+│  └─ 状态装配 / 平台注入 (main)               │
+└──────────────┬───────────────────────────────┘
+               ▼
+┌──────────────────────────────────────────────┐
+│  packages/core（纯 Dart 核心包，无 Flutter）  │
+│  ├─ 数据层 SQLite (db/database_handler)      │
+│  ├─ 加密层 (crypto/*)                        │
+│  ├─ 模型层 (models/*)                        │
 │  └─ 同步层 SyncEngine (sync/*)               │
 │         │ 依赖 SyncBackend 抽象接口           │
-│         ▼                                    │
 └──────────────┬───────────────────────────────┘
                │ SyncBackend（可插拔）
    ┌───────────┼───────────────┬──────────────┐
@@ -52,38 +57,50 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
  (云盘)     (Go / Node.js)   (单设备/测试)
 ```
 
-### 目录结构（`lib/`）
+核心逻辑（加密 / 数据库 / 同步引擎）独立为纯 Dart 包 `packages/core`（禁止 Flutter 依赖，由 pub workspace 编译器强制），App 侧只保留 UI 与状态装配，通过 `package:core/core.dart` 单一出口导入。另提供纯 Dart CLI `bin/safenotes_cli.dart`（无需 Flutter SDK 即可读写加密笔记数据库）。
+
+### 目录结构（App 侧 `lib/`）
 
 | 目录 / 文件 | 职责 |
 |------|------|
-| `lib/main.dart` | 应用入口：初始化 Provider、数据库、同步服务 |
+| `lib/main.dart` | 应用入口：初始化 Provider、数据库、同步服务；注入平台能力（数据库工厂 / 日志目录） |
 | `lib/app.dart` | `MaterialApp` 根，路由与主题装配 |
 | `lib/authwall.dart` | 认证闸门：未解锁时显示密码 / 生物识别登录页 |
-| `lib/data/` | `database_handler.dart`（SQLite CRUD）、`preference_and_config.dart`（偏好 / 配置持久化） |
-| `lib/encryption/` | `aes_encryption.dart`：笔记本地加密（AES-256-GCM / CBC） |
-| `lib/models/` | 数据模型：`safenote`、`session`、`app_theme`、`editor_state`、`biometric_auth`、`file_handler`、`parse_import` |
+| `lib/data/` | App 侧偏好 / 配置持久化（核心数据库逻辑已在 `packages/core`） |
+| `lib/models/` | App 侧状态模型：session、app_theme、editor_state、biometric_auth 等 |
 | `lib/routes/` | `route_generator.dart`：路由表与页面跳转 |
-| `lib/sync/` | **同步子系统**（见下文） |
+| `lib/sync/` | App 侧同步装配：`sync_service.dart`（互斥 / 状态广播）、`sync_config.dart`（配置） |
 | `lib/dialogs/` | 通用对话框：备份导入 / 导出、删除确认、退出登录等 |
 | `lib/widgets/` | 复用组件：笔记卡片 / 磁贴、搜索框、抽屉、登录按钮等 |
 | `lib/views/` | 页面：`home`、`add_edit_note`、`note_view`、`deleted_notes`、`change_passphrase`、认证页、设置页（含同步设置 / 诊断页） |
-| `lib/utils/` | 工具：设备信息、缓存、生命周期、样式、时间、密码强度等 |
+| `lib/utils/` | App 侧工具：设备信息、生命周期、样式、时间、密码强度等 |
 
-### 同步子系统（`lib/sync/`）
+### 核心包（`packages/core/`）
+
+| 目录 / 文件 | 职责 |
+|------|------|
+| `lib/core.dart` | 核心包唯一公开出口（统一 `import 'package:core/core.dart'`） |
+| `lib/src/ports.dart` | 平台能力注入点：PathProvider / KeyValueStore / SecretStore / LogSink |
+| `lib/src/crypto/` | 加密层：`aes_encryption.dart`（本地 AES-256-GCM / CBC）、`crypto.dart`（PBKDF2 / AES / dataKey wrap-unwrap） |
+| `lib/src/db/` | `database_handler.dart`：SQLite CRUD（`dbFactoryOverride` / `dbPathOverride` 注入） |
+| `lib/src/models/` | 数据模型：`safenote`、`parse_import` |
+| `lib/src/logger/` | 统一日志：`app_logger.dart`（`logDirResolverOverride` 注入）、`log_webserver.dart` |
+| `lib/src/sync/` | 同步核心（见下文） |
+| `bin/../` | （CLI 在根 `bin/safenotes_cli.dart`） |
+
+### 同步子系统（`packages/core/lib/src/sync/`）
 
 | 文件 | 职责 |
 |------|------|
 | `crypto.dart` | **密钥核心**：PBKDF2-HMAC-SHA256 派生 MK（600k 迭代）、AES-256-GCM、dataKey 的 wrap / unwrap |
-| `vault.dart` | Vault 管理：vault_id、salt、manifest 版本、改密码、多设备重新认证协调 |
+| `keyring.dart` | Keyring 管理：vault_id、salt、manifest 版本、改密码、多设备重新认证协调 |
 | `sync_models.dart` | 远端 manifest / item 数据模型（hash、deleted、updatedAt） |
 | `sync_backend.dart` | **SyncBackend 抽象接口**：`getManifest / putManifest / getBlob / putBlob` |
 | `sync_engine.dart` | 同步引擎：5 步流程、manifest 比对、LWW 冲突、乐观锁重试 |
-| `sync_service.dart` | 同步服务：触发、互斥、状态广播（Provider） |
-| `sync_config.dart` | 同步配置（后端类型、连接参数、开关） |
-| `local_fs_backend.dart` | 后端实现：本地文件系统（单设备 / 测试） |
-| `webdav_backend.dart` | 后端实现：WebDAV（坚果云 / NextCloud，RFC4918 `If-Match` 乐观锁） |
-| `safe_server_backend.dart` | 后端实现：自建 SafeServer HTTP（Bearer Token + ETag） |
-| `sync_logging.dart` / `sync_log_webserver.dart` | 同步日志（内存 / 文件 + 可选上报） |
+| `journal.dart` | 同步事件日志（跨进程续接、崩溃自愈） |
+| `backends/local_fs_backend.dart` | 后端实现：本地文件系统（单设备 / 测试） |
+| `backends/webdav_backend.dart` | 后端实现：WebDAV（坚果云 / NextCloud，RFC4918 `If-Match` 乐观锁） |
+| `backends/safe_server_backend.dart` | 后端实现：自建 SafeServer HTTP（Bearer Token + ETag） |
 
 ### 加密与密钥（两层架构）
 
@@ -130,7 +147,7 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
 
 ## 日志系统
 
-Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。
+Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。日志核心在 `packages/core/lib/src/logger/`，平台目录由 App 侧经 `logDirResolverOverride` 注入。
 
 ### 核心设计
 - **统一入口**：`Log.app` / `Log.note` / `Log.db` / `Log.auth` / `Log.sync` / `Log.backup` / `Log.settings` / `Log.crypto` / `Log.web` / `Log.ui` 十类分级日志（trace / debug / info / warn / error / fatal）。
@@ -153,9 +170,10 @@ Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业�
 ## 技术栈
 
 - **框架**：Flutter ≥ 3.44.0 / Dart ≥ 3.12
-- **本地存储**：`sqflite`（移动端）、`sqflite_common_ffi`（桌面端 / 测试）
+- **核心包**：`packages/core`（纯 Dart，pub workspace，禁止 Flutter 依赖；编译器强制）
+- **本地存储**：`sqflite`（移动端）、`sqflite_common_ffi`（桌面端 / 测试 / CLI）
 - **安全存储**：`flutter_secure_storage`（密码 / MK 缓存于系统钥匙串）
-- **加密**：`pointycastle`（AES-256-GCM / PBKDF2-SHA256）、`crypto`
+- **加密**：`pointycastle`（AES-256-GCM / PBKDF2-SHA256）、`crypto`、`cryptography`
 - **网络**：`http`（WebDAV 客户端）
 - **状态管理**：`provider`
 - **生物识别**：`local_auth`；**本地化**：`easy_localization`
@@ -233,19 +251,22 @@ Dart: 3.44.8
 
 ## 测试
 
+核心逻辑为纯 Dart 包，**无需 Flutter SDK 即可跑核心测试**；App 侧测试需要 Flutter。
+
 ```bash
+# 运行全部测试（核心 + App）
+make test                # = dart test packages/core/test + flutter test
 
-# 运行全部测试
+# 仅运行核心包测试（纯 Dart，无需 Flutter SDK）
+make test-core           # dart test packages/core/test
+dart test packages/core/test/encryption          # 仅加密
+dart test packages/core/test/sync                # 仅同步引擎 / 多设备 / 长期存续
+
+# 运行 App 侧测试（需 Flutter）
 flutter test
-
-# 仅运行加密单元测试
-flutter test test/encryption
-
-# 仅运行同步引擎单元测试（内存 FakeBackend，纯本地可跑）
-flutter test test/sync/sync_engine_test.dart
 ```
 
-**同步集成测试**（`test/sync/safe_server_integration_test.dart`）需要启动 SafeServer：
+**同步集成测试**（`packages/core/test/sync/safe_server_integration_test.dart`）需要启动 SafeServer：
 - 默认使用 **Go** 实现（测试 `setUpAll` 会自动构建 `server/go` 二进制并启动）
 - 切换为 **Node.js** 实现：`$env:SN_SERVER="node"`（PowerShell）后运行 `flutter test`
 - 覆盖：首次同步、新设备同步、增量同步、LWW 冲突、墓碑同步、幂等性、HTTP 协议（404 / 401 / 412 / ETag）、v2.2 资源层、速率限制
@@ -259,6 +280,7 @@ flutter test test/sync/sync_engine_test.dart
 - `docs/sync-protocol-spec.md` / `docs/server-api-spec.md`：客户端 / 服务端协议规范
 - `docs/simplified-sync-design.md` / `docs/sync-feature-design.md`：同步架构设计
 - `docs/server-implementation.md`：SafeServer 实现文档
+- `docs/pure-dart-core-extraction-research-20260802.md`：核心逻辑纯 Dart 化抽取设计
 - `docs/CHANGES-YYYYMMDD.md`：每日变更日志（按日期归档）
 
 ---
@@ -270,7 +292,8 @@ flutter test test/sync/sync_engine_test.dart
 | 同步 | 无（纯本地） | 完整 E2EE 多设备同步子系统 |
 | 服务端 | 无 | Go / Node.js SafeServer v2.2 参考实现 |
 | 加密 | 本地 AES 加密 | 本地加密 + 同步层 MK + dataKey 两层密钥 |
-| 测试 | 基础 widget 测试 | 新增加密向量、SyncEngine、多设备 / 混沌 / 集成测试 |
+| 核心分层 | 与 UI 混编 | 核心逻辑抽为纯 Dart 包 `packages/core`（无 Flutter 依赖，可 CLI / 测试独立驱动） |
+| 测试 | 基础 widget 测试 | 新增加密向量、SyncEngine、多设备 / 混沌 / 集成测试（核心测试可脱离 Flutter SDK 运行） |
 | 设置页 | 基础 | 新增同步设置、同步诊断页、最近删除 |
 
 ---
