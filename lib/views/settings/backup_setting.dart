@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/storage_permission.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -303,6 +304,8 @@ class BackupSettingState extends State<BackupSetting> {
   }
 
   Future<void> onBackupNow() async {
+    // 用户主动点击「立即备份」，是数据安全的关键人工动作，需明确留痕
+    Log.backup.i('用户触发手动备份 (isBackupOn=$isBackupOn)');
     if (Platform.isAndroid) {
       await handleBackupPermissionAndLocation();
     }
@@ -314,6 +317,7 @@ class BackupSettingState extends State<BackupSetting> {
 Future<void> onShowIosBackupDir() async {
   Directory documentsDirectory = await getApplicationDocumentsDirectory();
   String documentsPath = documentsDirectory.path;
+  Log.backup.d('打开 iOS 备份目录: $documentsPath');
   Uri uri = Uri.parse('shareddocuments://$documentsPath');
 
   await launchUrl(uri);

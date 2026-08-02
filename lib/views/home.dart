@@ -204,6 +204,7 @@ class HomePageState extends State<HomePage> {
     try {
       await _sortAndStoreNotes();
     } on Exception catch (e) {
+      Log.ui.e('刷新笔记列表失败, 已清空列表以保持界面可交互', error: e);
       // 防御层：避免任何异常（如 dataKey 不匹配、db 损坏、迁移进行中）
       // 导致 isLoading 永远为 true，UI 一直转圈。
       // 典型场景：本地 keyring 与 db 不一致，readAllNotes 解密失败抛
@@ -239,6 +240,9 @@ class HomePageState extends State<HomePage> {
     setState(() {
       allnotes = notes = tmpNotes;
     });
+    // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
+    Log.ui.i('主界面笔记列表已装载: ${tmpNotes.length} 条, '
+        '排序=${isNewFirst ? "新→旧" : "旧→新"}');
   }
 
   @override
@@ -303,6 +307,8 @@ class HomePageState extends State<HomePage> {
                       : null),
           tooltip: _syncTooltip(state.status),
           onPressed: () async {
+            Log.ui.i('界面切换: 主界面 → 同步设置(/syncSettings), '
+                '当前同步状态=${state.status.name}');
             await Navigator.pushNamed(context, '/syncSettings');
             if (mounted) refreshNotes();
           },
@@ -350,7 +356,9 @@ class HomePageState extends State<HomePage> {
       icon: const Icon(Icons.bug_report_outlined),
       tooltip: '调试面板',
       onPressed: () async {
+        Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics)');
         await Navigator.pushNamed(context, '/diagnostics');
+        Log.ui.d('界面返回: 调试面板 → 主界面');
       },
     );
   }
@@ -416,11 +424,13 @@ class HomePageState extends State<HomePage> {
     return FloatingActionButton(
       child: const Icon(Icons.add),
       onPressed: () async {
+        Log.ui.i('界面切换: 主界面 → 新建笔记(/addnote)');
         await Navigator.pushNamed(
           context,
           '/addnote',
           arguments: widget.sessionStateStream,
         );
+        Log.ui.d('界面返回: 新建笔记 → 主界面, 触发列表刷新');
         refreshNotes();
       },
     );
@@ -439,26 +449,31 @@ class HomePageState extends State<HomePage> {
   Widget _buildDrawer(BuildContext context) {
     return HomeDrawer(
       onImportCallback: () async {
+        Log.ui.i('用户从侧边栏发起导入笔记流程');
         Navigator.of(context).pop();
         widget.sessionStateStream.add(SessionState.stopListening);
         await showImportDialog(context, homeRefresh: refreshNotes);
         widget.sessionStateStream.add(SessionState.startListening);
+        Log.ui.d('导入流程结束, 已恢复会话超时监听');
       },
       onChangePassCallback: () async {
         // 先关抽屉再跳转：不要 await 返回后再 pop。若目标页触发了
         // pushNamedAndRemoveUntil 清栈（如退出登录），残留的 pop() 会把
         // 栈中唯一剩余的路由弹掉，触发 Navigator _history.isNotEmpty 断言崩溃。
         Navigator.of(context).pop();
+        Log.ui.i('界面切换: 主界面 → 修改密码(/changepassphrase)');
         await Navigator.pushNamed(context, '/changepassphrase');
       },
       onLogoutCallback: () async {
         // F3 修复：顺序与 settings.dart / main.dart 超时退出保持一致，
         // 具体顺序说明见 _logoutToLogin 注释。
+        Log.auth.i('用户从侧边栏主动登出');
         await _logoutToLogin();
       },
       onSettingsCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
         Navigator.of(context).pop();
+        Log.ui.i('界面切换: 主界面 → 设置(/settings)');
         await Navigator.pushNamed(
           context,
           '/settings',
@@ -475,6 +490,7 @@ class HomePageState extends State<HomePage> {
       onBiometricsCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
         Navigator.of(context).pop();
+        Log.ui.i('界面切换: 主界面 → 生物识别设置(/biometricSetting)');
         await Navigator.pushNamed(
           context,
           '/biometricSetting',
@@ -483,6 +499,7 @@ class HomePageState extends State<HomePage> {
       onDeletedNotesCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
         Navigator.of(context).pop();
+        Log.ui.i('界面切换: 主界面 → 回收站(/deletedNotes)');
         await Navigator.pushNamed(context, '/deletedNotes');
         // 同 onSettingsCallback：路由若被清栈移除（如无操作超时登出），
         // 需跳过 refresh。
@@ -493,6 +510,7 @@ class HomePageState extends State<HomePage> {
       onDiagnosticsCallback: () async {
         // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
         Navigator.of(context).pop();
+        Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics, 来自侧边栏)');
         await Navigator.pushNamed(context, '/diagnostics');
       },
     );
@@ -506,6 +524,9 @@ class HomePageState extends State<HomePage> {
         final note = notes[index];
         return GestureDetector(
           onTap: () async {
+            // 只记录 uuid 与序号，不记录标题正文（隐私红线）
+            Log.ui.i('界面切换: 主界面(列表) → 查看笔记(/viewnote) '
+                'uuid=${note.uuid} index=$index');
             await Navigator.pushNamed(
               context,
               '/viewnote',
@@ -541,6 +562,8 @@ class HomePageState extends State<HomePage> {
         final note = notes[index];
         return GestureDetector(
           onTap: () async {
+            Log.ui.i('界面切换: 主界面(网格) → 查看笔记(/viewnote) '
+                'uuid=${note.uuid} index=$index');
             await Navigator.pushNamed(
               context,
               '/viewnote',
@@ -575,6 +598,9 @@ class HomePageState extends State<HomePage> {
         this.notes = notes;
       },
     );
+    // 只记录关键词长度与命中数，绝不记录关键词内容（可能含敏感信息）
+    Log.ui.d('笔记搜索: 关键词长度=${query.trim().length}, '
+        '命中 ${notes.length}/${allnotes.length} 条');
   }
 
   void dismissKeyboard([Object? _]) {

@@ -309,12 +309,19 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   void _finalSublmitChange() async {
-    Log.auth.i('开始修改密码（旧密码校验通过后执行变更）');
+    Log.auth.i('用户发起修改密码请求');
+    final startedAt = DateTime.now();
     final form = formKey.currentState!;
     final String passChangedSnackMsg = 'Passphrase changed!'.tr();
     final String wrongOldPassMsg = 'Wrong passphrase!'.tr();
 
-    if (form.validate()) {
+    // 注意：validate() 有副作用（刷新错误提示），只能调用一次
+    final isFormValid = form.validate();
+    if (!isFormValid) {
+      // 表单校验未过（新密码太短/太弱/两次不一致），不进入变更流程
+      Log.auth.w('改密码中止：新密码表单校验未通过');
+    }
+    if (isFormValid) {
       // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
       final navigator = Navigator.of(context);
 
@@ -327,6 +334,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       final keyring = SyncService.instance.keyring;
       if (keyring == null) {
         // keyring 为 null 说明未登录或状态异常,中止
+        Log.auth.e('改密码中止：Keyring 未初始化（未登录或状态异常）');
         if (mounted) {
           showSnackBarMessage(context, 'Keyring 未初始化,请重新登录');
         }
@@ -334,16 +342,19 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       }
 
       try {
+        Log.auth.d('改密码步骤 1/5：校验旧密码 (新密码 len=${newPassword.length})');
         await keyring.verifyPassword(oldPassword);
+        Log.auth.i('改密码步骤 1/5：旧密码校验通过');
       } on WrongPasswordException {
         // 旧密码错误(简化方案:keyring 是唯一凭证,失败必须中止)
-        Log.auth.e('改密码中止：旧密码错误');
+        Log.auth.w('改密码中止：旧密码错误');
         if (mounted) {
           showSnackBarMessage(context, wrongOldPassMsg);
         }
         return;
-      } on Exception catch (e) {
+      } on Exception catch (e, st) {
         // 其他异常(简化方案:失败必须中止)
+        Log.auth.e('改密码中止：校验旧密码时发生异常', error: e, stackTrace: st);
         if (mounted) {
           showSnackBarMessage(context, '验证旧密码失败:$e');
         }
@@ -352,20 +363,30 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 旧密码验证通过,继续前置检查(备份/同步/ping)
       // 返回 false 表示用户取消或检查未通过,中止改密码
+      Log.auth.d('改密码步骤 2/5：执行前置检查（强制备份 / 同步 / ping）');
       final proceed = await _preChangeCheck();
-      if (!proceed) return;
+      if (!proceed) {
+        Log.auth.w('改密码中止：前置检查未通过或用户取消');
+        return;
+      }
+      Log.auth.i('改密码步骤 2/5：前置检查通过');
 
       // 前置检查通过,执行改密码(验证+持久化)
       // 注意:verifyPassword 已验证过旧密码,changePassword 内部会再次验证(幂等)
       Keyring newKeyring;
       try {
+        Log.auth.i('改密码步骤 3/5：重新包裹 dataKey 并持久化新 keyring');
         newKeyring = await keyring.changePassword(
           oldPassword: oldPassword,
           newPassword: newPassword,
           database: NotesDatabase.instance,
         );
-      } on Exception catch (e) {
+        // 密钥版本号推进是多端识别「他端已改密码」的依据，必须留痕
+        Log.crypto.i('主密钥已轮换: keyVersion=${newKeyring.keyVersion} '
+            'fingerprint=${newKeyring.keyFingerprint}');
+      } on Exception catch (e, st) {
         // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
+        Log.auth.e('改密码失败：持久化新 keyring 时异常', error: e, stackTrace: st);
         if (mounted) {
           showSnackBarMessage(context, '改密码失败:$e');
         }
@@ -373,6 +394,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       }
 
       // 更新 SyncService 中的 Keyring(重建 SyncEngine 使用新 encryptedDataKey)
+      Log.auth.d('改密码步骤 4/5：刷新 SyncService 的 keyring 与同步引擎');
       await SyncService.instance.updateKeyring(
         keyring: newKeyring,
         database: NotesDatabase.instance,
@@ -386,10 +408,16 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       // 避免他端在本地推送前拉到旧 encryptedDataKey,触发不必要的 dataKey 迁移逻辑
       // 同步失败不阻断改密码流程(本地密码已变更成功),仅提示用户
       try {
+        Log.auth.d('改密码步骤 5/5：推送新密钥到远端');
         await SyncService.instance.sync();
-      } on Exception {
+        Log.auth.i('改密码步骤 5/5：新密钥已推送到远端');
+      } on Exception catch (e) {
         // 同步失败:本地 encryptedDataKey 已更新,下次 sync 会自动推送
+        Log.auth.w('改密码后推送新密钥失败（本地已生效，下次同步会重试）', error: e);
       }
+
+      final ms = DateTime.now().difference(startedAt).inMilliseconds;
+      Log.auth.i('修改密码完成, 总耗时 ${ms}ms');
 
       // 使用 if (!mounted) return; 模式,让 analyzer 识别 mounted 守卫
       if (!mounted) return;

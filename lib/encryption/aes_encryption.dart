@@ -21,6 +21,9 @@ import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
 import 'package:tuple/tuple.dart';
 
+// Project imports:
+import 'package:safenotes/utils/app_logger.dart';
+
 String generateRandString(int len) {
   var randomNumber = Random.secure(); // cryptographically secure number random
   return String.fromCharCodes(
@@ -49,6 +52,8 @@ String encryptAES(String plainText, String passphrase) {
         createUint8ListFromString(randomString) + salt + ciphertext);
     return base64.encode(encryptedBytesWithSalt);
   } catch (error) {
+    // 旧格式（AES-CBC）加密失败极为罕见，属于严重错误
+    Log.crypto.e('旧格式 AES-CBC 加密失败: 明文 ${plainText.length} 字符: $error');
     rethrow;
   }
 }
@@ -69,6 +74,9 @@ String decryptAES(String encrypted, String passphrase) {
     );
     return utf8.decode(plainBytes);
   } catch (error) {
+    // 批量导入旧备份时可能连续失败，用 debug 避免刷屏（上层会聚合成 warning）
+    Log.crypto.d('旧格式 AES-CBC 解密失败(密码错误或数据损坏): '
+        '密文 ${encrypted.length} 字符: $error');
     rethrow;
   }
 }

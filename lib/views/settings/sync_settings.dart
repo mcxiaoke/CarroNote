@@ -20,6 +20,7 @@ import 'package:settings_ui/settings_ui.dart';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 class SyncSettingsPage extends StatefulWidget {
   const SyncSettingsPage({super.key});
@@ -396,6 +397,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   // ──────────────────────────────────────────────
 
   Future<void> _triggerSync() async {
+    // 用户从设置页主动触发同步，是重要人工动作，需明确留痕
+    Log.sync.i('用户触发手动同步（同步设置页）');
     // 如果同步服务未初始化，尝试用内存中 keyring 初始化后端
     // （登录时 keyring 已缓存，配置完后端即可直接初始化）
     if (!SyncService.instance.state.isInitialized) {
@@ -428,6 +431,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   /// 可选输入旧密码（用于恢复 scenario-d 合并产生的旧密钥 blob）；
   /// 留空则仅用当前 dataKey + 本机明文尝试修复。
   Future<void> _triggerRepair() async {
+    // 用户主动触发「修复同步数据」，重要人工动作
+    Log.sync.i('用户触发修复同步数据（同步设置页）');
     if (!SyncService.instance.state.isInitialized) {
       if (SyncService.instance.keyring == null) {
         _showMessage('Keyring 未初始化，请重新登录');

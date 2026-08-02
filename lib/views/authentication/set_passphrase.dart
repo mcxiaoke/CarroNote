@@ -31,6 +31,7 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/sync/keyring.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -60,6 +61,13 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   final _focusSecond = FocusNode();
   bool _isHiddenFirst = true;
   bool _isHiddenConfirm = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // 界面切换埋点：首次设置密码页
+    Log.ui.i('进入设置密码页面 (首次初始化保险库)');
+  }
 
   @override
   void dispose() {
@@ -300,10 +308,13 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
   void _loginController() async {
     final form = _formKey.currentState!;
+    final sw = Stopwatch()..start();
+    Log.auth.i('用户提交首次密码设置请求');
 
     if (form.validate()) {
       final enteredPassphrase = _passPhraseController.text;
       final enteredPassphraseConfirm = _passPhraseControllerConfirm.text;
+      Log.auth.d('设置密码步骤 1/4：表单校验通过 (长度=${enteredPassphrase.length})');
 
       if (enteredPassphrase == enteredPassphraseConfirm) {
         showSnackBarMessage(context, 'Passphrase set!'.tr());
@@ -326,24 +337,36 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // biometric 副作用）。PhraseHandler.getPass 为空会导致 biometric 存空
         // 字符串 → 指纹登录必失败（评审 hy3/mmm3 A1）。
         final ok = await _initKeyring(enteredPassphrase);
-        if (!ok) return;
-        if (!mounted) return;
+        if (!ok) {
+          Log.auth.w('设置密码中止：Keyring 初始化失败, 停留在设置密码页');
+          return;
+        }
+        if (!mounted) {
+          Log.auth.w('设置密码中止：页面已卸载, 不再继续导航');
+          return;
+        }
         Session.onPasswordSet(enteredPassphrase);
 
         // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
         // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
         // 会误走"输入两次密码"的设置页而不是登录页。
         AppBootState.vaultInitialized = true;
+        Log.auth.i('设置密码步骤 4/4：保险库初始化标记已刷新 (vaultInitialized=true)');
 
         TextInput.finishAutofillContext();
+        Log.auth.i('首次密码设置完成, 总耗时 ${sw.elapsedMilliseconds}ms');
+        Log.ui.i('界面切换: 设置密码页 → 主界面(/home)');
         await Navigator.pushReplacementNamed(
           context,
           '/home',
           arguments: widget.sessionStream,
         );
       } else {
+        Log.auth.w('设置密码失败：两次输入的密码不一致');
         showSnackBarMessage(context, 'Passphrase mismatch!'.tr());
       }
+    } else {
+      Log.auth.w('设置密码中止：密码表单校验未通过(长度不足/强度过低/不匹配)');
     }
   }
 
@@ -362,19 +385,28 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   Future<bool> _initKeyring(String passphrase) async {
     // 守卫：keyring 已初始化说明路由错误（应走 login 而非 set_passphrase），
     // 直接拒绝 createNew，避免覆盖已有 keyring 元数据导致数据丢失。
+    Log.crypto.d('设置密码步骤 2/4：检查 Keyring 是否已初始化');
     if (await Keyring.isInitialized(NotesDatabase.instance)) {
+      // 路由异常场景：已有 keyring 却走到设置页，拒绝覆盖以防数据丢失
+      Log.crypto.e('拒绝创建新 Keyring：检测到已存在的加密元数据(应走登录流程)');
       if (mounted) {
         showSnackBarMessage(context, '检测到已有加密数据,请返回登录');
       }
       return false;
     }
 
+    final swKeyring = Stopwatch()..start();
+    Log.crypto.i('设置密码步骤 3/4：开始生成 dataKey 并派生主密钥 (PBKDF2)');
     final result = await SyncService.instance.initKeyringFromPassword(
       password: passphrase,
       database: NotesDatabase.instance,
     );
 
     if (!result.success) {
+      Log.crypto.e(
+        '新建 Keyring 失败: ${result.error ?? "未知错误"} '
+        '(耗时 ${swKeyring.elapsedMilliseconds}ms)',
+      );
       if (mounted) {
         showSnackBarMessage(
           context,
@@ -383,13 +415,21 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       }
       return false;
     }
+    Log.crypto.i('新建 Keyring 成功, dataKey 已注入数据库 '
+        '(耗时 ${swKeyring.elapsedMilliseconds}ms)');
 
     // 如果已配置同步后端，顺带初始化后端
     await SyncConfig.init();
     if (SyncConfig.isSyncEnabled) {
+      Log.sync.i('同步已启用, 开始初始化后端 (type=${SyncConfig.backendType})');
       final backendResult = await SyncService.instance.initBackend(
         database: NotesDatabase.instance,
       );
+      if (!backendResult.success) {
+        Log.sync.w('同步后端初始化失败: ${backendResult.error ?? "未知错误"} (不阻断进入主界面)');
+      } else {
+        Log.sync.i('同步后端初始化成功');
+      }
       if (!backendResult.success && mounted) {
         showSnackBarMessage(
           context,
@@ -397,6 +437,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         );
       }
       // 后端失败不阻断进入 home——keyring 已就绪，用户可在设置页修复后端
+    } else {
+      Log.sync.d('同步未启用, 跳过后端初始化');
     }
     return true;
   }

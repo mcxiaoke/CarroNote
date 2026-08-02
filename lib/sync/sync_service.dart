@@ -554,12 +554,15 @@ class SyncService {
   void autoSync() {
     if (_engine == null) return;
 
+    // 笔记变更后触发自动同步（debounce）：记录排程，便于排查"改了没同步"
+    Log.sync.d('autoSync: 已排程 (${_autoSyncDelay.inSeconds}s 后触发)');
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer(_autoSyncDelay, () {
       sync().then((result) {
         // L3 兜底：如果本次同步因"正在同步"被跳过（返回 null），
         // 重新排程一次，确保最新变更不丢失
         if (result == null && _engine != null) {
+          Log.sync.d('autoSync: 上次同步被跳过，重新排程一次');
           _autoSyncTimer = Timer(_autoSyncDelay, () => sync());
         }
       });
@@ -585,6 +588,8 @@ class SyncService {
     if (_syncInProgress) {
       throw StateError('同步进行中，无法切换后端，请稍后重试');
     }
+    final oldType = _backend?.runtimeType.toString() ?? 'null';
+    Log.sync.i('切换同步后端: $oldType → ${backend.runtimeType}');
     await _backend?.close();
     _backend = backend;
     await backend.init();
@@ -753,6 +758,8 @@ class SyncService {
   }) async {
     try {
       final isInitialized = await Keyring.isInitialized(database);
+      Log.sync.i('登录密钥环准备: 本地是否已初始化=$isInitialized, '
+          '${isInitialized ? "将解锁(密码解密 dataKey)" : "将新建(生成 dataKey)"}');
 
       final Keyring keyring;
       if (isInitialized) {
@@ -802,6 +809,8 @@ class SyncService {
       return (success: false, error: '后端配置不完整');
     }
 
+    Log.sync.i('启用同步: 后端类型=${SyncConfig.backendType.name}'
+        ' (${SyncConfig.backendDisplayName}), 开始初始化');
     try {
       await initialize(
         keyring: keyring,

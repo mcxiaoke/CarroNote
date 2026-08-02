@@ -22,6 +22,9 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Project imports:
+import 'package:safenotes/utils/app_logger.dart';
+
 /// 同步后端类型
 enum SyncBackendType {
   /// 未配置同步
@@ -78,7 +81,10 @@ class SyncConfig {
   }
 
   static Future<void> setBackendType(SyncBackendType type) async {
+    final old = backendType;
     await _prefs?.setInt(_keyBackendType, type.index);
+    // 同步后端类型变更是配置核心动作，info 级留痕
+    Log.sync.i('同步后端类型变更: ${old.name} → ${type.name}');
   }
 
   /// 是否已配置同步
@@ -94,6 +100,7 @@ class SyncConfig {
 
   static Future<void> setLocalFsPath(String path) async {
     await _prefs?.setString(_keyLocalFsPath, path);
+    Log.sync.d('本地同步目录已设置: $path');
   }
 
   // ──────────────────────────────────────────────
@@ -108,6 +115,7 @@ class SyncConfig {
 
   static Future<void> setWebdavUrl(String url) async {
     await _prefs?.setString(_keyWebdavUrl, url);
+    Log.sync.d('WebDAV URL 已设置: $url');
   }
 
   /// WebDAV 用户名
@@ -116,6 +124,7 @@ class SyncConfig {
 
   static Future<void> setWebdavUsername(String username) async {
     await _prefs?.setString(_keyWebdavUsername, username);
+    Log.sync.d('WebDAV 用户名已设置: $username');
   }
 
   /// WebDAV 密码（应用专用密码，如坚果云的第三方密码）
@@ -130,6 +139,8 @@ class SyncConfig {
   static Future<void> setWebdavPassword(String password) async {
     await _secureStorage.write(key: _keyWebdavPassword, value: password);
     _webdavPasswordCache = password;
+    // 隐私红线：只记长度/状态，绝不记密码明文
+    Log.sync.d('WebDAV 密码已更新 (len=${password.length})');
   }
 
   /// 应用启动时预加载凭据到缓存（init() 内部调用）
@@ -158,6 +169,7 @@ class SyncConfig {
 
   static Future<void> setSafeServerUrl(String url) async {
     await _prefs?.setString(_keySafeServerUrl, url);
+    Log.sync.d('SafeServer URL 已设置: $url');
   }
 
   /// SafeServer Bearer Token（部署时配置的固定 Token）
@@ -170,6 +182,8 @@ class SyncConfig {
   static Future<void> setSafeServerToken(String token) async {
     await _secureStorage.write(key: _keySafeServerToken, value: token);
     _safeServerTokenCache = token;
+    // 隐私红线：只记长度/状态，绝不记 Token 明文
+    Log.sync.d('SafeServer Token 已更新 (len=${token.length})');
   }
 
   // ──────────────────────────────────────────────
@@ -182,6 +196,7 @@ class SyncConfig {
 
   static Future<void> setAutoSyncEnabled(bool enabled) async {
     await _prefs?.setBool(_keyAutoSync, enabled);
+    Log.sync.i('自动同步开关: ${enabled ? "开启" : "关闭"}');
   }
 
   // ──────────────────────────────────────────────

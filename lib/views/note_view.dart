@@ -27,6 +27,7 @@ import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
 class NoteDetailPage extends StatefulWidget {
@@ -54,6 +55,9 @@ class NoteDetailPageState extends State<NoteDetailPage> {
   Future refreshNote() async {
     setState(() => isLoading = true);
     note = await NotesDatabase.instance.readNote(widget.noteId);
+    // 只记录元数据（uuid/长度），不记录标题正文
+    Log.ui.i('笔记详情页已加载: uuid=${note.uuid} id=${widget.noteId} '
+        'len=${note.title.length}+${note.description.length}');
     setState(() => isLoading = false);
   }
 
@@ -110,6 +114,7 @@ class NoteDetailPageState extends State<NoteDetailPage> {
       icon: const Icon(Icons.edit_outlined),
       onPressed: () async {
         if (isLoading) return;
+        Log.ui.i('界面切换: 笔记详情 → 编辑笔记(/editnote) uuid=${note.uuid}');
         await Navigator.pushNamed(
           context,
           '/editnote',
@@ -127,6 +132,7 @@ class NoteDetailPageState extends State<NoteDetailPage> {
     return IconButton(
       icon: const Icon(Icons.delete),
       onPressed: () async {
+        Log.ui.i('用户点击删除笔记, 弹出确认对话框 uuid=${note.uuid}');
         await confirmAndDeleteDialog(context);
       },
     );
@@ -141,8 +147,11 @@ class NoteDetailPageState extends State<NoteDetailPage> {
           callback: () async {
             var childNavigator = Navigator.of(contextChild);
             var navigator = Navigator.of(context);
+            Log.note.i('用户确认删除笔记(移入回收站): uuid=${note.uuid} '
+                'id=${widget.noteId}');
             await NotesDatabase.instance.softDelete(widget.noteId);
             // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
+            Log.sync.d('笔记软删除后触发自动同步');
             SyncService.instance.autoSync();
             childNavigator.pop();
             navigator.pop();

@@ -25,16 +25,34 @@ import 'package:safenotes/utils/app_logger.dart';
 
 class ScheduledTask {
   static Future<void> backup() async {
-    Log.backup.i('开始本地备份（Android/iOS）');
+    // 记录触发条件：便于排查「为什么这次没有产生备份文件」
     if (PreferencesStorage.isBackupOn == false ||
         PreferencesStorage.isBackupNeeded == false) {
+      Log.backup.d('跳过自动备份: 开关 isBackupOn='
+          '${PreferencesStorage.isBackupOn}, '
+          '待备份 isBackupNeeded=${PreferencesStorage.isBackupNeeded}');
       return;
     }
 
     int maxAttempt = PreferencesStorage.maxBackupRetryAttempts;
+    Log.backup.i('开始自动备份 平台=${Platform.operatingSystem} '
+        '最大重试=$maxAttempt 上次备份=${PreferencesStorage.lastBackupTime}');
+    final startedAt = DateTime.now();
+
     for (var attempt = 1; attempt <= maxAttempt; attempt++) {
-      if (await unitBackupAttempt() == true) break;
+      if (await unitBackupAttempt() == true) {
+        final ms = DateTime.now().difference(startedAt).inMilliseconds;
+        Log.backup.i('自动备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
+        return;
+      }
+      Log.backup.w('自动备份第 $attempt/$maxAttempt 次尝试失败: '
+          '${lastBackupError ?? "未知原因"}');
     }
+
+    final ms = DateTime.now().difference(startedAt).inMilliseconds;
+    // 备份是数据安全的最后防线，全部重试耗尽必须以 ERROR 留痕
+    Log.backup.e('自动备份失败：$maxAttempt 次尝试全部失败, 耗时 ${ms}ms, '
+        '最后错误=${lastBackupError ?? "未知原因"}');
   }
 
   static Future<bool> unitBackupAttempt() async {
@@ -43,6 +61,8 @@ class ScheduledTask {
     } else if (Platform.isIOS) {
       return iosBackup();
     }
+    // 桌面端无自动备份通道（仅移动端实现），记录以免被误认为「备份成功」
+    Log.backup.d('当前平台 ${Platform.operatingSystem} 无自动备份实现，视为跳过');
     return true;
   }
 
@@ -56,6 +76,7 @@ class ScheduledTask {
       final String jsonOutputContent =
           await FileHandler.encryptedOutputBackupContent();
       final String fileName = SafeNotesConfig.backupFileName;
+      final int bytes = jsonOutputContent.length;
 
       lastBackupError = null;
       bool wrote = false;
@@ -68,10 +89,15 @@ class ScheduledTask {
           jsonFile.writeAsStringSync(jsonOutputContent, mode: FileMode.write);
           MediaScanner.loadMedia(path: jsonFile.path);
           wrote = true;
-        } on FileSystemException {
+          // 备份落盘的关键信息：写到哪、多大，便于用户核对备份文件
+          Log.backup.i('Android 备份已写入首选目录: ${jsonFile.path} '
+              '($bytes 字节)');
+        } on FileSystemException catch (e) {
           // 目录不可用（权限不足/不存在）：记录失败原因，随后回退到私有目录
           lastBackupError =
               '默认备份目录不可用（权限不足或目录不存在），已回退到应用私有目录。';
+          Log.backup.w('首选备份目录不可写，回退到应用私有目录: '
+              '$chosenDirectory/$fileName', error: e);
         }
       }
 
@@ -81,13 +107,17 @@ class ScheduledTask {
         final jsonFile = File('${dir.path}/$fileName');
         jsonFile.writeAsStringSync(jsonOutputContent, mode: FileMode.write);
         wrote = true;
+        Log.backup.i('Android 备份已写入应用私有目录: ${jsonFile.path} '
+            '($bytes 字节)');
       }
 
       await PreferencesStorage.setLastBackupTime();
       await PreferencesStorage.setIsBackupNeeded(false);
       return true;
-    } catch (err) {
+    } catch (err, st) {
       lastBackupError = _simplifyBackupError(err);
+      Log.backup.e('Android 备份写入失败: $lastBackupError',
+          error: err, stackTrace: st);
       return false;
     }
   }
@@ -116,9 +146,13 @@ class ScheduledTask {
       final jsonFile = File('$validChosenDirectory/$fileName');
 
       jsonFile.writeAsStringSync(jsonOutputContent);
+      Log.backup.i('iOS 备份已写入: ${jsonFile.path} '
+          '(${jsonOutputContent.length} 字节)');
 
       await PreferencesStorage.setLastBackupTime();
       await PreferencesStorage.setIsBackupNeeded(false);
+    } else {
+      Log.backup.w('iOS 备份跳过：应用文档目录路径为空');
     }
     return true;
   }
@@ -132,9 +166,24 @@ class ScheduledTask {
   /// 返回 true 表示备份成功，false 表示失败（调用方可据此决定是否继续操作）。
   static Future<bool> forceBackup() async {
     int maxAttempt = PreferencesStorage.maxBackupRetryAttempts;
+    // 强制备份通常发生在改密码等高风险操作前，起止必须留痕
+    Log.backup.i('开始强制备份（绕过开关）平台=${Platform.operatingSystem} '
+        '最大重试=$maxAttempt');
+    final startedAt = DateTime.now();
+
     for (var attempt = 1; attempt <= maxAttempt; attempt++) {
-      if (await unitBackupAttempt() == true) return true;
+      if (await unitBackupAttempt() == true) {
+        final ms = DateTime.now().difference(startedAt).inMilliseconds;
+        Log.backup.i('强制备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
+        return true;
+      }
+      Log.backup.w('强制备份第 $attempt/$maxAttempt 次尝试失败: '
+          '${lastBackupError ?? "未知原因"}');
     }
+
+    final ms = DateTime.now().difference(startedAt).inMilliseconds;
+    Log.backup.e('强制备份失败：$maxAttempt 次尝试全部失败, 耗时 ${ms}ms, '
+        '最后错误=${lastBackupError ?? "未知原因"}');
     return false;
   }
 }

@@ -431,6 +431,7 @@ class NotesDatabase {
   /// 读取所有未删除的笔记（UI 列表用，自动解密）
   Future<List<SafeNote>> readAllNotes() async {
     _checkNotMigrating();
+    final sw = Stopwatch()..start();
     final db = await instance.database;
     final result = await db.query(
       tableNotes,
@@ -438,12 +439,17 @@ class NotesDatabase {
       where: '${NoteFields.deleted} = 0',
       orderBy: '${NoteFields.createdAt} ASC',
     );
-    return result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    // 数据加载条数是排障关键信息（启动/刷新时都会打印）
+    Log.db.i('加载笔记列表: ${notes.length} 条（未删除）, '
+        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    return notes;
   }
 
   /// 读取所有已删除的笔记（最近删除视图用，自动解密）
   Future<List<SafeNote>> readDeletedNotes() async {
     _checkNotMigrating();
+    final sw = Stopwatch()..start();
     final db = await instance.database;
     final result = await db.query(
       tableNotes,
@@ -451,7 +457,10 @@ class NotesDatabase {
       where: '${NoteFields.deleted} = 1',
       orderBy: '${NoteFields.updatedAt} DESC',
     );
-    return result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    Log.db.i('加载回收站笔记: ${notes.length} 条（已删除）, '
+        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    return notes;
   }
 
   /// 读取所有未同步的笔记（同步引擎用，自动解密）
@@ -462,14 +471,22 @@ class NotesDatabase {
       columns: NoteFields.values,
       where: '${NoteFields.synced} = 0',
     );
-    return result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    Log.db.d('加载待同步笔记: ${notes.length} 条（synced=0）');
+    return notes;
   }
 
   /// 读取所有笔记（含墓碑，同步引擎全量对账用，自动解密）
   Future<List<SafeNote>> readAllNotesIncludingDeleted() async {
+    final sw = Stopwatch()..start();
     final db = await instance.database;
     final result = await db.query(tableNotes, columns: NoteFields.values);
-    return result.map((json) => _fromEncryptedRow(json)).toList();
+    final notes = result.map((json) => _fromEncryptedRow(json)).toList();
+    final tombstones = notes.where((n) => n.deleted).length;
+    Log.db.d('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
+        '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
+        '耗时 ${sw.elapsedMilliseconds}ms');
+    return notes;
   }
 
   /// 更新笔记（title/description 加密后存储）
@@ -906,10 +923,11 @@ class NotesDatabase {
   /// 已是收敛后的最终状态，此刻记下的 hash 就是下一轮判定单边/并发的 base。
   Future<void> markAllSynced() async {
     final db = await instance.database;
-    await db.rawUpdate(
+    final rows = await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
       '${NoteFields.syncedHash} = ${NoteFields.contentHash}',
     );
+    Log.db.i('标记全部笔记为已同步: $rows 条');
   }
 
   /// 标记所有笔记为已同步，但排除指定 uuid（P6 修复，DS002）
@@ -926,12 +944,13 @@ class NotesDatabase {
     }
     final db = await instance.database;
     final placeholders = List.filled(exclude.length, '?').join(',');
-    await db.rawUpdate(
+    final rows = await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
       '${NoteFields.syncedHash} = ${NoteFields.contentHash} '
       'WHERE ${NoteFields.uuid} NOT IN ($placeholders)',
       exclude.toList(),
     );
+    Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
   }
 
   // ──────────────────────────────────────────────
@@ -955,6 +974,7 @@ class NotesDatabase {
     );
     final uuids = maps.map((m) => m[NoteFields.uuid] as String).toList();
     await setMeta(MetaKeys.blobReuploadPending, jsonEncode(uuids));
+    Log.db.w('密钥变更后标记 blob 待重传: ${uuids.length} 条笔记');
   }
 
   /// 读取待重传 blob 的 uuid 集合（空集合表示无）

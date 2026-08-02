@@ -22,6 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/models/file_handler.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 
@@ -123,6 +124,8 @@ Future<void> showImportDialog(BuildContext context,
       return FileImportDialog(
         callback: () async {
           Navigator.of(contextChild).pop();
+          // 用户从导入对话框确认，开始选择备份文件
+          Log.backup.i('用户触发导入备份：开始选择备份文件');
           String? snackMessage =
               await FileHandler().selectFileAndImport(context);
           if (homeRefresh != null) homeRefresh();

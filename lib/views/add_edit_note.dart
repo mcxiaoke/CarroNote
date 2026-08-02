@@ -26,6 +26,7 @@ import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/safenote.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 
 class AddEditNotePage extends StatefulWidget {
@@ -52,6 +53,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     title = title == ' ' ? '' : title;
     description = description == ' ' ? '' : description;
     NoteEditorState.setSaveAttempted(false);
+    // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
+    Log.ui.i('进入笔记编辑页: 模式=${widget.note == null ? "新建" : "编辑"} '
+        'uuid=${widget.note?.uuid ?? "(未生成)"} '
+        'len=${title.length}+${description.length}');
   }
 
   @override
@@ -62,6 +67,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       canPop: true,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop && isNoteNewOrContentChanged()) {
+          Log.note.i('退出编辑页时检测到内容变更, 自动保存 '
+              'uuid=${widget.note?.uuid ?? "(新建)"}');
           NoteEditorState().addOrUpdateNote();
         }
       },
@@ -135,6 +142,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   }
 
   Future<void> onSaveCallback() async {
+    Log.note.i('用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
+        'len=${title.length}+${description.length}');
     // TODO: refactor without using BuildContexts across async gap
     var navigator = Navigator.of(context);
     await NoteEditorState()

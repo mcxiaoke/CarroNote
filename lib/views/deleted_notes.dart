@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class DeletedNotesPage extends StatefulWidget {
@@ -37,12 +38,14 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   @override
   void initState() {
     super.initState();
+    Log.ui.i('进入回收站页面（最近删除）');
     _refresh();
   }
 
   Future<void> _refresh() async {
     setState(() => _isLoading = true);
     final notes = await NotesDatabase.instance.readDeletedNotes();
+    Log.ui.i('回收站列表已装载: ${notes.length} 条已删除笔记');
     if (mounted) {
       setState(() {
         _deletedNotes = notes;
@@ -104,6 +107,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   // ──────────────────────────────────────────────
 
   Future<void> _restoreNote(SafeNote note) async {
+    Log.note.i('用户从回收站恢复笔记: uuid=${note.uuid} id=${note.id}');
     await NotesDatabase.instance.restoreNote(note.id!);
     // 触发自动同步（如果已启用）
     SyncService.instance.autoSync();
@@ -116,6 +120,8 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   }
 
   Future<void> _permanentDelete(SafeNote note) async {
+    // 不可恢复的破坏性操作，用 warning 级别突出显示
+    Log.note.w('用户从回收站永久删除笔记(不可恢复): uuid=${note.uuid} id=${note.id}');
     await NotesDatabase.instance.hardDelete(note.id!);
     // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
     SyncService.instance.autoSync();
@@ -134,6 +140,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   // ──────────────────────────────────────────────
 
   void _confirmClearAll() {
+    Log.ui.i('用户请求清空回收站, 待确认条数=${_deletedNotes.length}');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -146,7 +153,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Log.ui.i('用户取消清空回收站');
+              Navigator.pop(context);
+            },
             child: const Text('取消'),
           ),
           TextButton(
@@ -163,9 +173,14 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   }
 
   Future<void> _clearAll() async {
+    final sw = Stopwatch()..start();
+    final total = _deletedNotes.length;
+    // 批量不可恢复删除：起止都必须留痕（条数 + 耗时）
+    Log.note.w('开始清空回收站(不可恢复): 共 $total 条');
     for (final note in _deletedNotes) {
       await NotesDatabase.instance.hardDelete(note.id!);
     }
+    Log.note.w('清空回收站完成: 已永久删除 $total 条, 耗时 ${sw.elapsedMilliseconds}ms');
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
     SyncService.instance.autoSync();
     if (mounted) {

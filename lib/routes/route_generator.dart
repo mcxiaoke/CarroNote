@@ -26,6 +26,7 @@ import 'package:page_transition/page_transition.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/main.dart';
 import 'package:safenotes/models/safenote.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/authentication/login.dart';
@@ -50,6 +51,8 @@ class RouteGenerator {
     // Getting arguments passed in while calling Navigator.pushNamed
     var args = settings.arguments;
     final String? routeName = settings.name;
+    // 集中记录每一次路由解析(界面切换的底层入口),便于全链路追踪
+    Log.ui.d('路由解析: $routeName');
     const transitionDuration = 300;
     const transitionType = PageTransitionType.leftToRight;
 
@@ -247,6 +250,9 @@ class RouteGenerator {
 
   static Route<dynamic> _errorRoute(
       {required String? route, String? argsType}) {
+    // 路由解析失败是异常情况,需以 warning 级别暴露(参数缺失或路由不存在)
+    Log.ui.w('路由解析失败: route=$route'
+        '${argsType != null ? ", 期望参数类型=$argsType" : ""}');
     return MaterialPageRoute(builder: (_) {
       return Scaffold(
         appBar: AppBar(title: Text('Route Error'.tr())),

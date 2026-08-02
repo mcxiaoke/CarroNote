@@ -33,9 +33,15 @@ import 'dart:typed_data';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_models.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 /// keyring 持久化 JSON 的 schema 版本（未来格式迁移用）
 const int kKeyringSchemaVersion = 1;
+
+/// 指纹脱敏：日志中只输出前 8 位，便于比对又不泄露完整指纹
+String _fpBrief(String fingerprint) => fingerprint.length > 8
+    ? '${fingerprint.substring(0, 8)}…'
+    : (fingerprint.isEmpty ? '(空)' : fingerprint);
 
 /// 比较两个字节序列是否相等（dataKey 比较用，非安全敏感）
 bool _sameKey(Uint8List a, Uint8List b) {
@@ -191,19 +197,36 @@ class KeyringLedger {
       );
 
   /// 写入 sync_meta 的单键 `keyring`（单键 setMeta 原子，无双写不一致）
-  Future<void> persist(NotesDatabase database) =>
-      database.setMeta(MetaKeys.keyring, jsonEncode(toJson()));
+  Future<void> persist(NotesDatabase database) {
+    // 密钥账本落盘是关键状态变化，记录版本/纪元/指纹前缀（不含任何密钥明文）
+    Log.crypto.i('持久化 keyring 账本: vaultId=$vaultId '
+        'keyVersion=${current.keyVersion} epoch=${current.dataKeyEpoch} '
+        'fp=${_fpBrief(current.keyFingerprint)} reason=${current.reason}');
+    return database.setMeta(MetaKeys.keyring, jsonEncode(toJson()));
+  }
 
   /// 从 sync_meta 的 `keyring` 单键读取账本；不存在或损坏返回 null
   static Future<KeyringLedger?> load(NotesDatabase database) async {
     final raw = await database.getMeta(MetaKeys.keyring);
-    if (raw == null || raw.isEmpty) return null;
+    if (raw == null || raw.isEmpty) {
+      Log.crypto.d('加载 keyring 账本: 本地无记录(未初始化)');
+      return null;
+    }
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
-      return KeyringLedger.fromJson(Map<String, dynamic>.from(decoded));
-    } on Object {
+      if (decoded is! Map) {
+        Log.crypto.e('加载 keyring 账本失败: 顶层不是 JSON 对象 (${raw.length} 字节)');
+        return null;
+      }
+      final ledger = KeyringLedger.fromJson(Map<String, dynamic>.from(decoded));
+      Log.crypto.d('已加载 keyring 账本: vaultId=${ledger.vaultId} '
+          'keyVersion=${ledger.current.keyVersion} '
+          'epoch=${ledger.current.dataKeyEpoch} '
+          'fp=${_fpBrief(ledger.current.keyFingerprint)}');
+      return ledger;
+    } on Object catch (e) {
       // JSON 损坏（混沌测试会主动制造）：视为无账本，报未初始化
+      Log.crypto.e('加载 keyring 账本失败(视为未初始化): $e');
       return null;
     }
   }
@@ -426,6 +449,8 @@ class Keyring {
     required String password,
     required NotesDatabase database,
   }) async {
+    final sw = Stopwatch()..start();
+    Log.crypto.i('创建新 Keyring: 生成 vaultId/dataKey/salt 并派生 MK (PBKDF2)');
     final vaultId = _generateVaultId();
     final dataKey = SyncCrypto.generateDataKey();
     final salt = SyncCrypto.generateSalt();
@@ -451,6 +476,9 @@ class Keyring {
       mk: mk,
     );
     await keyring.persist(database);
+    Log.crypto.i('新 Keyring 创建完成: vaultId=$vaultId '
+        'fp=${_fpBrief(keyFingerprint)} keyVersion=1 epoch=1 '
+        '(耗时 ${sw.elapsedMilliseconds}ms)');
     return keyring;
   }
 
@@ -461,14 +489,22 @@ class Keyring {
     required String password,
     required NotesDatabase database,
   }) async {
+    final sw = Stopwatch()..start();
+    Log.crypto.d('解锁本地 Keyring: 开始读取账本');
     final ledger = await KeyringLedger.load(database);
     if (ledger == null) {
+      Log.crypto.w('解锁本地 Keyring 失败: 本地无 keyring 账本(未初始化)');
       throw KeyringNotInitializedException('本地无 keyring 账本');
     }
 
     final mk = await _deriveMk(password, salt: ledger.kdf.saltBytes);
     final dataKey = _unwrapOrThrow(mk, ledger.current.encryptedDataKey);
 
+    Log.crypto.i('本地 Keyring 解锁成功: vaultId=${ledger.vaultId} '
+        'keyVersion=${ledger.current.keyVersion} '
+        'epoch=${ledger.current.dataKeyEpoch} '
+        'fp=${_fpBrief(ledger.current.keyFingerprint)} '
+        '(耗时 ${sw.elapsedMilliseconds}ms)');
     return Keyring(
       vaultId: ledger.vaultId,
       kdf: ledger.kdf,
@@ -494,6 +530,10 @@ class Keyring {
     required int remoteCreatedAt,
     required NotesDatabase database,
   }) async {
+    final sw = Stopwatch()..start();
+    Log.crypto.i('从远端 manifest 解锁 Keyring: vaultId=$remoteVaultId '
+        'keyVersion=$remoteKeyVersion epoch=$remoteDataKeyEpoch '
+        'fp=${_fpBrief(remoteKeyFingerprint)}');
     final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
     final dataKey = _unwrapOrThrow(mk, remoteEncryptedDataKey);
 
@@ -513,6 +553,8 @@ class Keyring {
       mk: mk,
     );
     await keyring.persist(database);
+    Log.crypto.i('远端 Keyring 解锁并落盘完成: vaultId=$remoteVaultId '
+        '(耗时 ${sw.elapsedMilliseconds}ms)');
     return keyring;
   }
 
@@ -522,6 +564,7 @@ class Keyring {
       return SyncCrypto.unwrapDataKey(mk, base64.decode(encryptedDataKey));
     } on Exception catch (e) {
       // GCM tag 验证失败 = 密码错误
+      Log.crypto.w('解包 dataKey 失败(通常为密码错误): $e');
       throw WrongPasswordException('无法解密 dataKey（GCM tag 验证失败）：$e');
     }
   }
@@ -539,11 +582,13 @@ class Keyring {
   }) {
     // 完全相同 → 无需迁移（不需要 MK）
     if (remoteEncryptedDataKey == encryptedDataKey) {
+      Log.crypto.d('dataKey 迁移检查: 本地与远端包裹一致, 无需迁移');
       return MigrationResult.noMigrationNeeded();
     }
 
     final mk = this.mk;
     if (mk == null) {
+      Log.crypto.w('dataKey 迁移检查失败: MK 未缓存(会话可能已登出)');
       return MigrationResult.failed('MK 未缓存，无法检查迁移');
     }
 
@@ -552,12 +597,15 @@ class Keyring {
         mk,
         base64.decode(remoteEncryptedDataKey),
       );
+      Log.crypto.i('dataKey 迁移检查: 远端包裹可解开, 需要迁移到远端 dataKey '
+          '(远端 vaultId=${remoteVaultId ?? vaultId})');
       return MigrationResult.migrated(
         remoteDataKey: remoteDataKey,
         remoteEncryptedDataKey: remoteEncryptedDataKey,
         remoteVaultId: remoteVaultId ?? vaultId,
       );
     } on Exception catch (e) {
+      Log.crypto.e('dataKey 迁移检查失败: 无法解密远端 encryptedDataKey: $e');
       return MigrationResult.failed(
         '无法解密远端 encryptedDataKey（密码不匹配或数据损坏）：$e',
       );
@@ -571,11 +619,16 @@ class Keyring {
     required MigrationResult result,
     required NotesDatabase database,
   }) async {
-    if (!result.needsMigration) return this;
+    if (!result.needsMigration) {
+      Log.crypto.d('执行 dataKey 迁移: 无需迁移, 直接返回当前 Keyring');
+      return this;
+    }
     if (!result.success || result.remoteDataKey == null) {
+      Log.crypto.e('执行 dataKey 迁移失败: ${result.error ?? "远端 dataKey 不可用"}');
       throw WrongPasswordException(result.error ?? '迁移失败：远端 dataKey 不可用');
     }
 
+    final sw = Stopwatch()..start();
     final remoteDataKey = result.remoteDataKey!;
     final remoteEncryptedDataKey = result.remoteEncryptedDataKey!;
     final remoteVaultId = result.remoteVaultId ?? vaultId;
@@ -587,6 +640,10 @@ class Keyring {
     if (keyChanged) {
       nextEpoch = dataKeyEpoch + 1;
     }
+    Log.crypto.i('执行 dataKey 迁移(同 vault): vaultId=$vaultId → $remoteVaultId, '
+        'dataKey ${keyChanged ? "已变化" : "未变化"}, '
+        'epoch $dataKeyEpoch → $nextEpoch, '
+        'blob 重传标记=${keyChanged ? "是" : "否"}');
 
     final migrated = Keyring(
       vaultId: remoteVaultId,
@@ -615,6 +672,8 @@ class Keyring {
 
     // 事务成功后更新 database 的 dataKey（后续读写用新 key）
     database.setDataKey(remoteDataKey);
+    Log.crypto.i('dataKey 迁移完成(同 vault): 全库已重加密并切换 dataKey, '
+        'epoch=$nextEpoch (耗时 ${sw.elapsedMilliseconds}ms)');
     return migrated;
   }
 
@@ -630,6 +689,8 @@ class Keyring {
   }) async {
     final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
     if (SyncCrypto.computeKeyFingerprint(mk) != remoteKeyFingerprint) {
+      Log.crypto.i('远端密码判别: 指纹不匹配(场景 c, 远端与本地密码不同) '
+          'remoteFp=${_fpBrief(remoteKeyFingerprint)}');
       return null; // 密码不匹配 → 场景 c
     }
     try {
@@ -637,9 +698,11 @@ class Keyring {
         mk,
         base64.decode(remoteEncryptedDataKey),
       );
+      Log.crypto.i('远端密码判别: 指纹匹配(场景 d, 密码相同), 已解出远端 dataKey');
       return (mk: mk, dataKey: dataKey);
-    } on Exception {
+    } on Exception catch (e) {
       // fingerprint 匹配但 unwrap 失败（理论上不应发生，防御性处理）
+      Log.crypto.e('远端密码判别异常: 指纹匹配但解包 dataKey 失败: $e');
       return null;
     }
   }
@@ -659,12 +722,18 @@ class Keyring {
     required Uint8List remoteMk,
     required NotesDatabase database,
   }) async {
+    final sw = Stopwatch()..start();
     final keyChanged = !_sameKey(dataKey, remoteDataKey);
 
     int nextEpoch = dataKeyEpoch;
     if (keyChanged) {
       nextEpoch = dataKeyEpoch + 1;
     }
+
+    Log.crypto.i('执行 vault 整体迁移(场景 d): vaultId=$vaultId → $remoteVaultId, '
+        'kdf/salt 切换为远端, keyVersion=$remoteKeyVersion, '
+        'dataKey ${keyChanged ? "已变化" : "未变化"}, epoch $dataKeyEpoch → $nextEpoch, '
+        'fp=${_fpBrief(remoteKeyFingerprint)}');
 
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -694,6 +763,9 @@ class Keyring {
     );
 
     database.setDataKey(remoteDataKey);
+    Log.crypto.i('vault 整体迁移完成(场景 d): 全库已重加密, '
+        'vaultId=$remoteVaultId epoch=$nextEpoch '
+        '(耗时 ${sw.elapsedMilliseconds}ms)');
     return migrated;
   }
 
@@ -703,10 +775,13 @@ class Keyring {
 
   /// 验证密码是否正确（不持久化，不改状态）
   Future<void> verifyPassword(String password) async {
+    final sw = Stopwatch()..start();
     final probe = await _deriveMk(password, salt: kdf.saltBytes);
     try {
       SyncCrypto.unwrapDataKey(probe, base64.decode(encryptedDataKey));
+      Log.crypto.d('密码校验通过 (耗时 ${sw.elapsedMilliseconds}ms)');
     } on Exception catch (e) {
+      Log.crypto.w('密码校验失败: $e (耗时 ${sw.elapsedMilliseconds}ms)');
       throw WrongPasswordException('密码错误：$e');
     }
   }
@@ -720,13 +795,18 @@ class Keyring {
     required String newPassword,
     required NotesDatabase database,
   }) async {
+    final sw = Stopwatch()..start();
     final salt = kdf.saltBytes;
+    Log.crypto.i('Keyring 改密码开始: vaultId=$vaultId '
+        '当前 keyVersion=$keyVersion epoch=$dataKeyEpoch');
 
     // 1. 验证旧密码
     final oldMk = await _deriveMk(oldPassword, salt: salt);
     try {
       SyncCrypto.unwrapDataKey(oldMk, base64.decode(encryptedDataKey));
+      Log.crypto.d('Keyring 改密码: 旧密码验证通过');
     } on Exception catch (e) {
+      Log.crypto.w('Keyring 改密码中止: 旧密码错误: $e');
       throw WrongPasswordException('旧密码错误：$e');
     }
 
@@ -754,6 +834,10 @@ class Keyring {
       mk: newMk,
     );
     await changed.persist(database);
+    Log.crypto.i('Keyring 改密码完成: keyVersion $keyVersion → ${keyVersion + 1}, '
+        'fp ${_fpBrief(keyFingerprint)} → ${_fpBrief(newKeyFingerprint)}, '
+        'dataKey 未变(epoch=$dataKeyEpoch, 无需重加密笔记) '
+        '(耗时 ${sw.elapsedMilliseconds}ms)');
     return changed;
   }
 
@@ -768,7 +852,11 @@ class Keyring {
     String newEncryptedDataKey,
     NotesDatabase database,
   ) async {
-    if (newEncryptedDataKey == encryptedDataKey) return;
+    if (newEncryptedDataKey == encryptedDataKey) {
+      Log.crypto.t('更新 encryptedDataKey: 与当前值一致, 跳过');
+      return;
+    }
+    Log.crypto.i('更新 encryptedDataKey: 采用新的包裹值(dataKey 未变, 无需重加密)');
     current = current.copyWith(encryptedDataKey: newEncryptedDataKey);
     await persist(database);
   }

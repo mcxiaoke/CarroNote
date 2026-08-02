@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:safenotes/data/database_handler.dart';
 import 'package:safenotes/models/safenote.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 class NoteEditorState {
   static SafeNote? original;
@@ -47,6 +48,10 @@ class NoteEditorState {
     // without user opting for saving or discarding
     if (wasNoteSaveAttempted == false &&
         (title.isNotEmpty || description.isNotEmpty)) {
+      // 超时锁定导致的非正常退出：自动保存草稿，属于需要关注的事件
+      Log.note.w('编辑器非正常退出(会话超时): 自动保存未提交内容 '
+          'uuid=${original?.uuid ?? "(新建)"} '
+          'len=${title.length}+${description.length}');
       await addOrUpdateNote();
     }
   }
@@ -62,13 +67,18 @@ class NoteEditorState {
       if (isUpdating) {
         if (original!.title != title || original!.description != description) {
           await updateNote();
+        } else {
+          Log.note.d('笔记内容未变化, 跳过保存 uuid=${original!.uuid}');
         }
       } else {
         await addNote();
       }
       // 笔记新增/编辑后触发自动同步（debounce 3 秒，非阻塞）
       // 确保本地变更能及时上传到远端，避免多端数据不一致
+      Log.sync.d('笔记变更后触发自动同步(debounce 3 秒)');
       SyncService.instance.autoSync();
+    } else {
+      Log.note.d('编辑器内容为空, 不保存笔记');
     }
     destroyValue();
   }
@@ -78,10 +88,15 @@ class NoteEditorState {
       title: title,
       description: description,
     );
+    // 只记录长度，正文内容不入日志（隐私红线）
+    Log.note.i('保存新建笔记: uuid=${note.uuid} '
+        'len=${title.length}+${description.length}');
     await NotesDatabase.instance.storeNote(note);
   }
 
   Future updateNote() async {
+    Log.note.i('保存编辑后的笔记: uuid=${original!.uuid} '
+        'len=${title.length}+${description.length}');
     final now = DateTime.now();
     final note = original!.copyWith(
       title: title,

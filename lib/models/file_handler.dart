@@ -28,6 +28,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/models/parse_import.dart';
 import 'package:safenotes/models/safenote.dart';
+import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 
@@ -44,6 +45,9 @@ class FileHandler {
 
     String content =
         '{ "records" : $record, "recordHandlerHash" : "plaintext-v1", "total" : ${totalCountOfNotes.toString()} }';
+    // 备份内容构造完成：记录条数与体积，与后续「写入到哪个路径」的日志配对
+    Log.backup.i('已生成备份内容: $totalCountOfNotes 条笔记, '
+        '${content.length} 字节');
     return content;
   }
 
@@ -54,13 +58,17 @@ class FileHandler {
     本次最小化:直接解析并插入笔记,完整加密改造见
     docs/登录验证简化方案-20260729.md 5.2 TODO。
     */
+    Log.backup.i('开始导入备份：等待用户选择文件');
     String? dataFromFileAsString = await getFileAsString();
 
     if (dataFromFileAsString == null) {
+      Log.backup.i('导入取消：用户未选择文件');
       return "File not picked!".tr();
     } else if (dataFromFileAsString == "unrecognized") {
+      Log.backup.w('导入失败：文件无法识别或读取失败');
       return "Unrecognized File!".tr();
     }
+    Log.backup.d('已读取备份文件内容 ${dataFromFileAsString.length} 字节，开始解析');
 
     try {
       var jsonDecodedData = jsonDecode(dataFromFileAsString);
@@ -69,6 +77,8 @@ class FileHandler {
       destroyImportCredentials();
 
       final parsedImportData = ImportParser.fromJson(jsonDecodedData);
+      Log.backup.i('备份文件解析成功：共 ${parsedImportData.totalNotes} 条笔记，'
+          '等待用户确认导入');
 
       bool importConfirmed = false;
       // TODO: refactor without using BuildContexts across async gap
@@ -79,9 +89,12 @@ class FileHandler {
       if (importConfirmed) {
         await insertNotes(parsedImportData.getAllNotes());
       } else {
+        Log.backup.i('导入取消：用户在确认对话框中放弃 '
+            '(${parsedImportData.totalNotes} 条笔记未导入)');
         return "Import cancelled!".tr();
       }
-    } catch (e) {
+    } catch (e, st) {
+      Log.backup.e('导入失败：解析或写入过程异常', error: e, stackTrace: st);
       return "Failed to import file!".tr();
     }
     return "Notes successfully imported!".tr();
@@ -148,8 +161,14 @@ class FileHandler {
   }
 
   Future<void> insertNotes(List<SafeNote> imported) async {
+    Log.backup.i('开始写入导入的笔记: 共 ${imported.length} 条');
+    final startedAt = DateTime.now();
+    var ok = 0;
     for (final note in imported) {
       await NotesDatabase.instance.storeNote(note);
+      ok++;
     }
+    final ms = DateTime.now().difference(startedAt).inMilliseconds;
+    Log.backup.i('导入完成: 成功写入 $ok/${imported.length} 条笔记, 耗时 ${ms}ms');
   }
 }

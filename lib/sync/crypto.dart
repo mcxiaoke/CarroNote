@@ -36,6 +36,7 @@ import 'package:pointycastle/export.dart';
 
 // 项目导入
 import 'package:safenotes/sync/sync_error.dart';
+import 'package:safenotes/utils/app_logger.dart';
 
 // 信封各部分的固定长度
 const int _nonceLength = 12; // AES-GCM 推荐 12 字节 nonce
@@ -110,10 +111,16 @@ class SyncCrypto {
     required Uint8List salt,
     int iterations = kPbkdf2Iterations,
   }) async {
+    // KDF 是低频高耗时操作（1-2 秒），记录耗时便于定位登录卡顿
+    final sw = Stopwatch()..start();
+    Log.crypto.d('开始派生主密钥 MK: 算法=$kMkKdfAlgorithm 迭代=$iterations '
+        'salt=${salt.length}字节 (后台 Isolate)');
     final result = await compute(
       _deriveMasterKeyIsolate,
       _DeriveParams(password, salt, iterations),
     );
+    Log.crypto.i('主密钥 MK 派生完成: ${result.length} 字节, '
+        '耗时 ${sw.elapsedMilliseconds}ms');
     return result;
   }
 
@@ -309,6 +316,9 @@ class SyncCrypto {
     } on Object catch (e) {
       // pointycastle 的 InvalidTag（密钥错误/AAD 不匹配/数据篡改）
       // 包装为 Exception 子类，上层可用 on SyncDecryptionException 精确捕获。
+      // 用 debug 级别：批量解密失败时由上层聚合成 warning/error，此处避免刷屏
+      Log.crypto.d('AES-GCM 解密失败: 信封 ${envelope.length} 字节, '
+          'AAD ${aad.length} 字节 (密钥不匹配/AAD 不符/数据损坏): $e');
       throw wrapDecryptionError(e);
     }
   }
