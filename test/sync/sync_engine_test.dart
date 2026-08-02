@@ -398,7 +398,7 @@ void main() {
   });
 
   group('SyncEngine - LWW 冲突解决', () {
-    test('远端 updatedAt 更大时，远端胜出覆盖本地', () async {
+    test('单边编辑已同步笔记（base 存在）：fast-forward 上传覆盖，不记 conflict', () async {
       // 准备：设备 A 同步 note1（updatedAt=1000）
       final noteA = _makeNote(
         uuid: 'uuid-conflict',
@@ -442,17 +442,18 @@ void main() {
       // 设备 B 同步
       final result = await engineB.sync();
 
-      // 验证：本地版本胜出（updatedAt=2000 > 1000），上传覆盖远端
+      // P0-B 修复：base 存在且远端未偏离 base → 单边编辑走 fast-forward，
+      // 上传覆盖远端，不记 conflict（原实现误报 conflict=1）
       expect(result.success, isTrue);
       expect(result.uploaded, 1);
-      expect(result.conflicts, 1);
+      expect(result.conflicts, 0);
 
       // 验证本地内容仍是 Version B
       final local = await database.readNoteByUuid('uuid-conflict');
       expect(local!.title, 'Version B (newer)');
     });
 
-    test('本地 updatedAt 更大时，本地胜出保留本地内容', () async {
+    test('base=null 退化真冲突：LWW 远端胜下载覆盖本地', () async {
       // 准备：设备 A 同步 note1（updatedAt=2000，较新）
       final noteA = _makeNote(
         uuid: 'uuid-conflict',
@@ -497,6 +498,182 @@ void main() {
       // 验证本地内容被覆盖为 Version A
       final local = await database.readNoteByUuid('uuid-conflict');
       expect(local!.title, 'Version A (newer)');
+    });
+
+    test('真双方冲突（双方都偏离 base）：LWW + 记 conflict', () async {
+      // 场景：A 与 B 都从同一 base (V1) 出发分别改成 V2 / V3 → 真并发冲突
+      //
+      // 1. A 同步 V1 → 远端=V1，A 的 base=V1hash
+      // 2. A 本地改 V1→V2 (updatedAt=2000)，A 同步：本地 V2 vs 远端 V1
+      //    base=V1，localChanged=true、remoteChanged=false → fast-forward
+      //    A 单边，上传 V2 覆盖远端，A 的 base 更新为 V2hash
+      // 3. B 曾同步收敛到 V1（base=V1hash），离线把 V1 改成 V3 (updatedAt=3000)
+      // 4. B 上线同步：本地 V3 vs 远端 V2，base=V1
+      //    localChanged=true (V3≠V1)、remoteChanged=true (V2≠V1) → 真冲突
+      //    LWW: B 的 3000 > A 的 2000 → B 胜，上传 V3 覆盖远端
+      final noteA1 = _makeNote(
+        uuid: 'uuid-real-conflict',
+        title: 'V1',
+        updatedAt: 1000,
+      );
+      await database.storeNote(noteA1);
+      final engineA = _makeEngine(backend: backend, database: database);
+      await engineA.sync();
+
+      // A 的 base = V1hash（同步收敛后写入）
+      final v1Hash = SafeNote.computeHash('V1', 'Test Description');
+
+      // A 本地编辑 V1→V2，保持 syncedHash=V1hash（base 不变）
+      final syncedA = await database.readNoteByUuid('uuid-real-conflict');
+      final noteA2 = syncedA!.copyWith(
+        title: 'V2',
+        contentHash: SafeNote.computeHash('V2', 'Test Description'),
+        updatedAt: 2000,
+        synced: false,
+      );
+      await database.updateNote(noteA2);
+      await engineA.sync(); // fast-forward A 单边，远端变 V2
+
+      // B：新库，模拟曾同步收敛到 V1（base=V1hash），离线改成 V3
+      await database.close();
+      final dbB = await openDatabase(
+        ':memory:',
+        version: 2,
+        onCreate: NotesDatabase.createDBForTesting,
+      );
+      NotesDatabase.setDatabaseForTesting(dbB);
+      final noteB = _makeNote(
+        uuid: 'uuid-real-conflict',
+        title: 'V3',
+        updatedAt: 3000,
+      ).copyWith(syncedHash: v1Hash);
+      await database.storeNote(noteB);
+
+      final engineB = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: engineA.keyring.dataKey,
+        encryptedDataKey: engineA.keyring.encryptedDataKey,
+      );
+
+      final result = await engineB.sync();
+
+      // 真冲突：B 更新（3000>2000）胜出，上传 V3 覆盖远端，记 conflict。
+      // uploaded=2：胜方 V3 上传 + 败方 V2 保留为冲突副本上传（新 UUID）
+      expect(result.success, isTrue);
+      expect(result.conflicts, 1);
+      expect(result.uploaded, 2);
+
+      // 验证本地是 V3（B 胜保留本地内容）
+      final local = await database.readNoteByUuid('uuid-real-conflict');
+      expect(local!.title, 'V3');
+    });
+  });
+
+  group('SyncEngine - fast-forward 单边变更（P0-B 修复）', () {
+    // P0-B 修复目标：单客户端删除/编辑已同步笔记时，远端从未改动，
+    // 应走 fast-forward 分支（上传/下载覆盖），不应误记 conflict。
+    // 详见 docs/conflict-analysis-20260802.md
+
+    test('单边软删除已同步笔记：fast-forward 上传墓碑，不记 conflict', () async {
+      // 准备：同步一条笔记，建立 base (hash, deleted=false)
+      final note = _makeNote(uuid: 'uuid-ff-del', title: 'To delete');
+      await database.storeNote(note);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      // 验证 base 已建立
+      final synced = await database.readNoteByUuid('uuid-ff-del');
+      expect(synced!.synced, isTrue);
+      expect(synced.syncedHash, note.contentHash);
+      expect(synced.syncedDeleted, isFalse);
+
+      // 本地软删除（模拟用户操作：softDelete 不动 syncedHash/syncedDeleted）
+      await database.softDelete(synced.id!);
+
+      // 再次同步：本地 deleted=true 偏离 base(deleted=false)，远端未动
+      // → fast-forward 本地单边变更，上传墓碑，不记 conflict
+      final result = await engine.sync();
+
+      expect(result.success, isTrue);
+      expect(result.deleted, 1);
+      expect(result.conflicts, 0); // P0-B：单边删除不再误报 conflict
+
+      // 验证远端 manifest 标记为 deleted
+      final remoteResponse = await backend.getManifest();
+      final remoteManifest = ManifestCrypto.deserialize(
+        engine.keyring.dataKey,
+        remoteResponse.ciphertext,
+      );
+      expect(remoteManifest.items['uuid-ff-del']!.deleted, isTrue);
+
+      // 验证本地 base 已更新为 deleted=true（下一轮判定的 base）
+      final after = await database.readNoteByUuid('uuid-ff-del');
+      expect(after!.synced, isTrue);
+      expect(after.syncedDeleted, isTrue);
+      expect(after.syncedHash, note.contentHash);
+    });
+
+    test('单边编辑已同步笔记：fast-forward 上传覆盖，不记 conflict', () async {
+      // 准备：同步 V1，建立 base
+      final noteV1 = _makeNote(
+        uuid: 'uuid-ff-edit',
+        title: 'V1',
+        updatedAt: 1000,
+      );
+      await database.storeNote(noteV1);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      // 本地编辑 V1→V2，保持 syncedHash=V1hash（base 不变）
+      final synced = await database.readNoteByUuid('uuid-ff-edit');
+      final noteV2 = synced!.copyWith(
+        title: 'V2',
+        contentHash: SafeNote.computeHash('V2', 'Test Description'),
+        updatedAt: 2000,
+        synced: false,
+      );
+      await database.updateNote(noteV2);
+
+      // 再次同步：本地 V2 偏离 base V1，远端仍是 V1（未动）→ fast-forward
+      final result = await engine.sync();
+
+      expect(result.success, isTrue);
+      expect(result.uploaded, 1);
+      expect(result.conflicts, 0); // P0-B：单边编辑不再误报 conflict
+
+      // 验证本地内容是 V2，base 更新为 V2hash
+      final local = await database.readNoteByUuid('uuid-ff-edit');
+      expect(local!.title, 'V2');
+      expect(local.synced, isTrue);
+      expect(local.syncedHash, noteV2.contentHash);
+    });
+
+    test('单边变更后再次同步：base 已更新，无变化全部跳过', () async {
+      // 验证 fast-forward 后 base 正确更新，避免「重复上传」或「误判冲突」
+      final noteV1 = _makeNote(uuid: 'uuid-ff-stable', title: 'V1', updatedAt: 1000);
+      await database.storeNote(noteV1);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      // 单边编辑 + 同步（fast-forward）
+      final synced = await database.readNoteByUuid('uuid-ff-stable');
+      final noteV2 = synced!.copyWith(
+        title: 'V2',
+        contentHash: SafeNote.computeHash('V2', 'Test Description'),
+        updatedAt: 2000,
+        synced: false,
+      );
+      await database.updateNote(noteV2);
+      await engine.sync();
+
+      // 第三次同步：本地 V2 == base V2 == 远端 V2 → 全部跳过
+      final result = await engine.sync();
+
+      expect(result.success, isTrue);
+      expect(result.uploaded, 0);
+      expect(result.downloaded, 0);
+      expect(result.conflicts, 0);
     });
   });
 

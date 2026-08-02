@@ -30,6 +30,7 @@ class NoteFields {
     updatedAt,
     synced,
     syncedHash,
+    syncedDeleted,
   ];
 
   static const String id = '_id';
@@ -45,6 +46,14 @@ class NoteFields {
   // 冲突判定用它区分「单边编辑」与「真并发冲突」（三方合并的 base）。
   // 明文存储，不加密（与 content_hash 同性质，仅用于同步比对）。
   static const String syncedHash = 'synced_hash';
+  // 共同祖先 deleted：上次同步成功收敛时的 deleted 状态。
+  //
+  // 单独存这一列的原因：softDelete 不改 content_hash，只把 deleted 置 1。
+  // 若 base 只比 hash，软删除会被判为「未偏离 base」→ fast-forward 误判
+  // 为「双方都没改」，导致删除不传播。把 deleted 维度纳入 base 后，
+  // 软删除时 localChanged=true、remoteChanged=false，正确走 fast-forward
+  // 的「本地单边变更」分支（上传墓碑、不记 conflict）。
+  static const String syncedDeleted = 'synced_deleted';
 }
 
 class SafeNote {
@@ -65,6 +74,13 @@ class SafeNote {
   /// null 表示该笔记从未成功同步过（新笔记或迁移前的未同步数据）。
   final String? syncedHash;
 
+  /// 共同祖先 deleted：上次同步成功收敛时的 [deleted] 状态。
+  ///
+  /// 与 [syncedHash] 配合，让 base 完整描述「上次收敛时的 (hash, deleted) 二元组」，
+  /// 解决软删除不改 hash 导致 base 比对失效的问题。详见 [NoteFields.syncedDeleted]。
+  /// 默认 false（与数据库 DEFAULT 0 一致），未同步过的笔记视为「未删除」。
+  final bool syncedDeleted;
+
   const SafeNote({
     this.id,
     required this.uuid,
@@ -76,6 +92,7 @@ class SafeNote {
     required this.updatedAt,
     this.synced = false,
     this.syncedHash,
+    this.syncedDeleted = false,
   });
 
   /// 创建新笔记的工厂构造函数
@@ -126,6 +143,7 @@ class SafeNote {
     int? updatedAt,
     bool? synced,
     String? syncedHash,
+    bool? syncedDeleted,
   }) =>
       SafeNote(
         id: id ?? this.id,
@@ -138,6 +156,7 @@ class SafeNote {
         updatedAt: updatedAt ?? this.updatedAt,
         synced: synced ?? this.synced,
         syncedHash: syncedHash ?? this.syncedHash,
+        syncedDeleted: syncedDeleted ?? this.syncedDeleted,
       );
 
   /// 从数据库行构造（明文存储，无需解密）
@@ -160,6 +179,8 @@ class SafeNote {
     final synced = (json[NoteFields.synced] as int?) == 1;
     // 共同祖先 hash：可空。旧备份格式无此字段 → null（视为未同步基线）。
     final syncedHash = json[NoteFields.syncedHash] as String?;
+    // 共同祖先 deleted：兼容旧备份（无此字段 → false，与 DEFAULT 0 一致）
+    final syncedDeleted = (json[NoteFields.syncedDeleted] as int?) == 1;
 
     return SafeNote(
       id: json[NoteFields.id] as int?,
@@ -174,6 +195,7 @@ class SafeNote {
       updatedAt: updatedAt,
       synced: synced,
       syncedHash: syncedHash,
+      syncedDeleted: syncedDeleted,
     );
   }
 
@@ -189,6 +211,7 @@ class SafeNote {
       NoteFields.updatedAt: updatedAt,
       NoteFields.synced: synced ? 1 : 0,
       NoteFields.syncedHash: syncedHash,
+      NoteFields.syncedDeleted: syncedDeleted ? 1 : 0,
     };
   }
 

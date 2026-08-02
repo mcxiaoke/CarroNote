@@ -2,11 +2,11 @@
  * 数据库处理器
  *
  * 改造说明（fork 同步版）：
- *   - schema version 3，新表结构（uuid / content_hash / deleted / updated_at / synced / synced_hash）
+ *   - schema version 4，新表结构（uuid / content_hash / deleted / updated_at / synced / synced_hash / synced_deleted）
  *   - 本地用 dataKey 加密存储（title/description 字段级 AES-256-GCM 加密）
  *   - 软删除（deleted=1 为墓碑，不真正删除行）
  *   - 新增 sync_meta 表（vault_id / manifest_version 等）
- *   - 不迁移旧数据：schema 升级一律视为全新安装（旧库无法打开）
+ *   - version 3→4 走 onUpgrade（ALTER TABLE 加 synced_deleted 列，老库原地升级）
  *
  * 本地加密说明（B1 方案）：
  *   - dataKey 在首次设置密码时生成，存于 Keyring，登录时注入到 NotesDatabase
@@ -232,10 +232,11 @@ class NotesDatabase {
     try {
       final db = await openDatabase(
         path,
-        version: 3,
+        version: 4,
         onCreate: _createDB,
+        onUpgrade: _onUpgrade,
       );
-      Log.db.i('数据库已打开: $path (version=3)');
+      Log.db.i('数据库已打开: $path (version=4)');
       return db;
     } on Object catch (e, st) {
       Log.db.f('数据库打开失败: $path', error: e, stackTrace: st);
@@ -278,7 +279,8 @@ class NotesDatabase {
       ${NoteFields.createdAt} TEXT NOT NULL,
       ${NoteFields.updatedAt} INTEGER NOT NULL,
       ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0,
-      ${NoteFields.syncedHash} TEXT
+      ${NoteFields.syncedHash} TEXT,
+      ${NoteFields.syncedDeleted} INTEGER NOT NULL DEFAULT 0
     )
     ''');
 
@@ -297,7 +299,7 @@ class NotesDatabase {
         'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
   }
 
-  /// 创建新数据库（version 3 schema）
+  /// 创建新数据库（version 4 schema）
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
     CREATE TABLE $tableNotes (
@@ -310,7 +312,8 @@ class NotesDatabase {
       ${NoteFields.createdAt} TEXT NOT NULL,
       ${NoteFields.updatedAt} INTEGER NOT NULL,
       ${NoteFields.synced} INTEGER NOT NULL DEFAULT 0,
-      ${NoteFields.syncedHash} TEXT
+      ${NoteFields.syncedHash} TEXT,
+      ${NoteFields.syncedDeleted} INTEGER NOT NULL DEFAULT 0
     )
     ''');
 
@@ -330,6 +333,32 @@ class NotesDatabase {
     // 索引：按 synced 过滤（同步用，找未同步的笔记）
     await db.execute(
         'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
+  }
+
+  /// schema 升级回调（version 3 → 4：新增 synced_deleted 列）
+  ///
+  /// 历史背景：
+  ///   - version 2/3：表结构含 synced_hash 但无 synced_deleted
+  ///   - version 4：新增 synced_deleted 列，让冲突判定的 base 完整描述
+  ///     (hash, deleted) 二元组，解决软删除不改 hash 导致 fast-forward
+  ///     误判「双方都没改」的 bug（详见 sync_engine _mergeAndTransfer 注释）
+  ///
+  /// 老库升级策略：ALTER TABLE ADD COLUMN ... DEFAULT 0
+  ///   - 老数据的 synced_deleted 全部初始化为 0（未删除）
+  ///   - 已同步且 synced=1 的笔记：synced_deleted 应等于当前 deleted，
+  ///     但因 synced_hash 已是收敛 hash，对应 deleted 状态也是 false
+  ///     （删除会触发 synced=0），所以默认 0 与实际语义一致
+  ///   - 未同步的笔记（synced=0）：synced_deleted 取何值都不影响判定
+  ///     （base = synced_hash==null 时直接退化为「保守冲突」分支）
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    Log.db.i('数据库升级: $oldVersion → $newVersion');
+    if (oldVersion < 4) {
+      await db.execute(
+        'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedDeleted} '
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+      Log.db.i('已添加列: ${NoteFields.syncedDeleted}');
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -905,13 +934,15 @@ class NotesDatabase {
 
   /// 标记笔记为已同步
   ///
-  /// 同步收敛时，把 synced_hash 更新为当前 content_hash——这一刻本地与远端
-  /// 已一致，当前内容 hash 即成为下一轮冲突判定的共同祖先 base。
+  /// 同步收敛时，把 synced_hash 更新为当前 content_hash、synced_deleted 更新为
+  /// 当前 deleted——这一刻本地与远端已一致，当前 (hash, deleted) 二元组即成为
+  /// 下一轮冲突判定的共同祖先 base。
   Future<void> markSynced(String uuid) async {
     final db = await instance.database;
     await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
-      '${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+      '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
       'WHERE ${NoteFields.uuid} = ?',
       [uuid],
     );
@@ -919,13 +950,15 @@ class NotesDatabase {
 
   /// 标记所有笔记为已同步（全量同步完成后用）
   ///
-  /// 同时把每条笔记的 synced_hash 刷新为其 content_hash：同步流程结束时本地库
-  /// 已是收敛后的最终状态，此刻记下的 hash 就是下一轮判定单边/并发的 base。
+  /// 同时把每条笔记的 synced_hash 刷新为 content_hash、synced_deleted 刷新为
+  /// deleted：同步流程结束时本地库已是收敛后的最终状态，此刻记下的
+  /// (hash, deleted) 就是下一轮判定单边/并发的 base。
   Future<void> markAllSynced() async {
     final db = await instance.database;
     final rows = await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
-      '${NoteFields.syncedHash} = ${NoteFields.contentHash}',
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+      '${NoteFields.syncedDeleted} = ${NoteFields.deleted}',
     );
     Log.db.i('标记全部笔记为已同步: $rows 条');
   }
@@ -946,7 +979,8 @@ class NotesDatabase {
     final placeholders = List.filled(exclude.length, '?').join(',');
     final rows = await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
-      '${NoteFields.syncedHash} = ${NoteFields.contentHash} '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+      '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
       'WHERE ${NoteFields.uuid} NOT IN ($placeholders)',
       exclude.toList(),
     );

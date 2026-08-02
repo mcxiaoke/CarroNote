@@ -1124,86 +1124,124 @@ class SyncEngine {
             _addAction(actions, SyncAction(type: SyncActionType.skip, uuid: uuid));
           }
         } else {
-          // 冲突：LWW 解决
-          final winner = _resolveConflict(localItem, remoteItem);
-          // BUG-P0（二次修复）：冲突副本保留判定改用「共同祖先」，弃用时间差。
+          // 不一致：用三方合并（base = synced_hash + synced_deleted）判定
+          // 是 fast-forward（单边变更）还是真冲突（双方都偏离 base）。
           //
-          // 旧实现用 updatedAt 差值 > 5 分钟判「真冲突」。但时间差衡量的是
-          // 内容「新旧」，冲突与否取决于「双方是否都偏离了上次同步的共同版本」。
-          // 判据整个用反了，造成两个方向的严重缺陷：
-          //   · 单边更新误判为冲突：一端编辑老笔记、其他端没动，编辑后 updatedAt
-          //     与远端老时间戳天然相差远超 5 分钟 → 每台设备各把手里的旧版本
-          //     另存成一条新 uuid 副本 → 无限增殖（长期测试实测每代 +3 副本）。
-          //   · 真并发误判为并发编辑：两端几乎同时改，时间差小 → 走 LWW 覆盖，
-          //     败方编辑被静默丢弃（实测 A 写的 v2 同步后凭空消失）。
+          // BUG-P0（三次修复，2026-08）：原实现 _itemsEqual 返回 false 即走
+          // 「冲突：LWW 解决」分支并**无条件**记 conflict action。但单客户端
+          // 删除/编辑已同步笔记时，远端从未改动，本属于 fast-forward，被误
+          // 标为 conflict 导致：
+          //   · 同步日志/journal 满屏 WARN，淹没真冲突
+          //   · SyncResult.conflicts 计数虚高，UI 误报
+          //   · docs/conflict-analysis-20260802.md 详述
           //
-          // 正解：以本地 syncedHash（上次同步收敛时的 content_hash）为三方合并
-          // 的 base，判断双方各自是否真的偏离了共同祖先：
+          // 正解：先算 localChanged/remoteChanged（含 deleted 维度——softDelete
+          // 不改 content_hash，必须用 synced_deleted 才能识别本地删除为变更），
+          // 据此三分流：
+          //   1. localChanged && !remoteChanged → 本地单边变更，直接上传覆盖
+          //   2. !localChanged && remoteChanged → 远端单边变更，直接下载
+          //   3. 双方都偏离 base 或 base==null → 真冲突，沿用 LWW + 副本保留
           final localNote = await database.readNoteByUuid(uuid);
           final base = localNote?.syncedHash;
+          final baseDeleted = localNote?.syncedDeleted ?? false;
           // base==null：本地无同步基线（新笔记 / 迁移前未同步）。保守视为双方
           // 都可能改过，退化为「内容不同即保留副本」——绝不丢数据（顶多多留一份，
           // 且仍要求双方活跃），也绝不复活删除。
-          final localChanged = base == null || localItem.hash != base;
-          final remoteChanged = base == null || remoteItem.hash != base;
-          // 保留副本四条缺一不可：
-          //   1. 本地偏离 base（本地确实改过）
-          //   2. 远端偏离 base（远端确实改过）—— 与 1 合起来才是「双方都改」的真并发
-          //   3. 双方都活跃：一端删一端活是删除传播，交给 LWW，绝不另存副本
-          //      （否则被删内容以新 uuid 复活并每端各复活一份 → 无限增殖）
-          //   4. 内容确实不同：hash 相同则无败方内容需要保留
-          final shouldPreserveCopy = localChanged &&
-              remoteChanged &&
-              !localItem.deleted &&
-              !remoteItem.deleted &&
-              localItem.hash != remoteItem.hash;
-          if (shouldPreserveCopy) {
-            await _preserveConflictCopy(
-              uuid: uuid,
-              winner: winner,
-              localItem: localItem,
-              remoteItem: remoteItem,
-              actions: actions,
-              mergedItems: mergedItems,
-            );
-          }
-          if (winner == localItem) {
-            // 本地胜：上传覆盖远端（复用上面已读的 localNote，避免二次读库）
-            final note = localNote;
-            if (note != null) {
-              // P1 修复：上传失败时保留远端条目（旧的有效 blob）进 merged，
-              // 避免该笔记从 manifest 消失（他端保留旧内容，无数据抖动）；
-              // 下次同步 LWW 本地仍胜出 → 自动重试上传。
-              if (await _uploadNote(note, actions)) {
+          final localChanged = base == null ||
+              localItem.hash != base || localItem.deleted != baseDeleted;
+          final remoteChanged = base == null ||
+              remoteItem.hash != base || remoteItem.deleted != baseDeleted;
+
+          if (base != null && localChanged && !remoteChanged) {
+            // Fast-forward：本地单边变更（编辑或删除），远端未动
+            // 直接上传覆盖，不记 conflict。_uploadNote 内部对墓碑/普通笔记
+            // 分别记 delete/upload action；失败时保留旧条目进 merged（P1 修复）。
+            if (localNote != null) {
+              if (await _uploadNote(localNote, actions)) {
                 mergedItems[uuid] = localItem;
               } else {
                 mergedItems[uuid] = remoteItem;
               }
+            } else {
+              // localNote 为 null（已被硬删除但未进 purgedSet 的边缘场景）：
+              // 保留远端条目，避免本地无效状态污染 manifest。
+              mergedItems[uuid] = remoteItem;
             }
-          } else {
-            // 远端胜：下载覆盖本地
+          } else if (base != null && !localChanged && remoteChanged) {
+            // Fast-forward：远端单边变更，本地未动
+            // 直接下载覆盖，不记 conflict。_downloadNote 内部对远端墓碑/普通
+            // 笔记分别记 delete/download action；失败时保留远端条目（D3 修复）。
             final outcome = await _downloadNote(uuid, remoteItem, actions);
             if (outcome is _DownloadHealed) {
-              // Layer 2b：远端 blob 损坏但本机有明文，自愈后 manifest 改用本地 hash
               mergedItems[uuid] = outcome.healedItem;
             } else if (outcome is _DownloadSuccess && outcome.item != null) {
               mergedItems[uuid] = outcome.item!;
             } else {
-              // D3 修复：下载失败时保留 remoteItem 进 merged，不回滚到本地旧版本。
-              // 原实现用 localItem 覆盖远端会导致远端较新数据被回滚。
-              // 保留 remoteItem 让下次同步可重试下载，本地旧版本暂时保留不动。
               mergedItems[uuid] = remoteItem;
             }
+          } else {
+            // 真冲突：双方都偏离 base，或 base==null（保守退化）
+            // 沿用原 LWW + shouldPreserveCopy + conflict action 逻辑
+            final winner = _resolveConflict(localItem, remoteItem);
+            // 保留副本四条缺一不可：
+            //   1. 本地偏离 base（本地确实改过）
+            //   2. 远端偏离 base（远端确实改过）—— 与 1 合起来才是「双方都改」的真并发
+            //   3. 双方都活跃：一端删一端活是删除传播，交给 LWW，绝不另存副本
+            //      （否则被删内容以新 uuid 复活并每端各复活一份 → 无限增殖）
+            //   4. 内容确实不同：hash 相同则无败方内容需要保留
+            final shouldPreserveCopy = localChanged &&
+                remoteChanged &&
+                !localItem.deleted &&
+                !remoteItem.deleted &&
+                localItem.hash != remoteItem.hash;
+            if (shouldPreserveCopy) {
+              await _preserveConflictCopy(
+                uuid: uuid,
+                winner: winner,
+                localItem: localItem,
+                remoteItem: remoteItem,
+                actions: actions,
+                mergedItems: mergedItems,
+              );
+            }
+            if (winner == localItem) {
+              // 本地胜：上传覆盖远端（复用上面已读的 localNote，避免二次读库）
+              final note = localNote;
+              if (note != null) {
+                // P1 修复：上传失败时保留远端条目（旧的有效 blob）进 merged，
+                // 避免该笔记从 manifest 消失（他端保留旧内容，无数据抖动）；
+                // 下次同步 LWW 本地仍胜出 → 自动重试上传。
+                if (await _uploadNote(note, actions)) {
+                  mergedItems[uuid] = localItem;
+                } else {
+                  mergedItems[uuid] = remoteItem;
+                }
+              }
+            } else {
+              // 远端胜：下载覆盖本地
+              final outcome = await _downloadNote(uuid, remoteItem, actions);
+              if (outcome is _DownloadHealed) {
+                // Layer 2b：远端 blob 损坏但本机有明文，自愈后 manifest 改用本地 hash
+                mergedItems[uuid] = outcome.healedItem;
+              } else if (outcome is _DownloadSuccess && outcome.item != null) {
+                mergedItems[uuid] = outcome.item!;
+              } else {
+                // D3 修复：下载失败时保留 remoteItem 进 merged，不回滚到本地旧版本。
+                // 原实现用 localItem 覆盖远端会导致远端较新数据被回滚。
+                // 保留 remoteItem 让下次同步可重试下载，本地旧版本暂时保留不动。
+                mergedItems[uuid] = remoteItem;
+              }
+            }
+            _addAction(actions, SyncAction(
+              type: SyncActionType.conflict,
+              uuid: uuid,
+              message: winner == localItem
+                  ? 'local won (LWW: local newer'
+                      '${shouldPreserveCopy ? ', remote preserved as copy' : ''})'
+                  : 'remote won (LWW: remote newer'
+                      '${shouldPreserveCopy ? ', local preserved as copy' : ''})',
+            ));
           }
-          _addAction(actions, SyncAction(
-            type: SyncActionType.conflict,
-            uuid: uuid,
-            message: winner == localItem
-                ? 'local won (LWW: local newer'
-                    '${shouldPreserveCopy ? ', remote preserved as copy' : ''})'
-                : 'remote won (LWW: remote newer'
-                    '${shouldPreserveCopy ? ', local preserved as copy' : ''})',
-          ));
         }
       }
     }
