@@ -62,8 +62,13 @@ const String kStoreRootRel = 'temp/longrun-store';
 /// 全新创建时优先用它播种远端 vault，再在三端累积后续代数。
 const String kSeedVaultRel = 'temp/safenotes-vault';
 
-/// 真实数据集的候选密码（初始 testpwd.1111 → 改密 testpwd.2222，当前密码放首位）。
-const List<String> kSeedVaultPasswords = ['testpwd.2222', 'testpwd.1111'];
+/// 真实数据集的候选密码（最初始 safe-a-2026 → 改密 safe-a-2026aaa →
+/// safe-a-2026bbb，**当前密码放首位**）。
+const List<String> kSeedVaultPasswords = [
+  'safe-a-2026bbb',
+  'safe-a-2026aaa',
+  'safe-a-2026',
+];
 
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];
@@ -564,16 +569,9 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  // v4（epoch 消除）起 SKIP：该测试依赖 temp/longrun-store 与
-  // temp/safenotes-vault 的旧格式（epoch-AAD）持久化数据做跨运行累积与播种，
-  // v4 blob 纯化（AAD=hash）与其不兼容（不兼容策略 §0 不保留旧格式解码路径）。
-  // 恢复方式：删除 temp/longrun-store 与 temp/safenotes-vault 后用
-  // v4 新格式数据重建种子，再 LONGRUN_RESET=1 全量重跑。
   test('长期存续 - 真实数据库跨运行累积（永不清理）', () async {
-    // ignore: avoid_print
-    print('SKIP: 依赖旧格式真实数据（epoch-AAD），v4 不兼容，跳过'
-        '（见测试内注释：删除 temp/longrun-store + temp/safenotes-vault '
-        '并用 v4 格式重建后恢复）');
+    // 数据源：temp/safenotes-vault 由 Android 模拟器 + Windows 真实客户端
+    // 经 webdav 同步产生（当前 keyVersion=3，v4 信封格式），下载后用于播种。
     final reset = Platform.environment['LONGRUN_RESET'] == '1';
     final gens = int.tryParse(Platform.environment['LONGRUN_GENS'] ?? '') ?? 1;
 
@@ -622,8 +620,7 @@ void main() {
     }
 
     _printGrowthTable(store.state);
-  }, skip: 'v4 不兼容旧格式持久化数据，需重建种子后 LONGRUN_RESET=1 恢复',
-      timeout: const Timeout(Duration(minutes: 30)));
+  }, timeout: const Timeout(Duration(minutes: 30)));
 }
 
 // ──────────────────────────────────────────────

@@ -1727,18 +1727,22 @@ class SyncEngine {
     if (item.deleted) {
       // 远端是墓碑：本地也标记为软删除
       final local = await database.readNoteByUuid(uuid);
+      // 仅在真正产生本地变更（本地存在且未删除）时记录 delete action：
+      // 本地无此笔记或已是墓碑时无状态要改，不记 action → 无变更同步可跳过 PUT
+      // （否则墓碑条目在远端 manifest 存续期间，每台设备每次同步都判定"有变更"
+      //   而空转 PUT，version 无意义递增 + ETag 竞争 + backup/journal 冗余）。
       if (local != null && !local.deleted) {
         await database.updateNoteByUuid(local.copyWith(
           deleted: true,
           updatedAt: item.updatedAt,
           synced: true,
         ));
+        _addAction(actions, SyncAction(
+          type: SyncActionType.delete,
+          uuid: uuid,
+          message: 'remote tombstone applied',
+        ));
       }
-      _addAction(actions, SyncAction(
-        type: SyncActionType.delete,
-        uuid: uuid,
-        message: 'remote tombstone applied',
-      ));
       return const _DownloadSuccess();
     }
 
