@@ -736,6 +736,7 @@ class SyncService {
       lastResultMigrated: lastResult?.migrated,
       lastResultSkipped: lastResult?.skipped,
       lastResultPasswordEpochMismatch: lastResult?.passwordEpochMismatch,
+      lastResultRequiresRelogin: lastResult?.requiresRelogin,
       lastResultErrorMessage: lastResult?.errorMessage,
       lastResultFailedNoteUuids: lastResult?.failedNoteUuids,
       lastResultActions: lastResult?.actions

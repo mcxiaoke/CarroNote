@@ -65,8 +65,9 @@ class HomePageState extends State<HomePage> {
   bool isGridView = PreferencesStorage.isGridView;
   final importPassphraseController = TextEditingController();
 
-  /// B4 修复：监听同步状态流，消费 SyncResult.passwordEpochMismatch。
-  /// 引擎检测到"他端改密码"（远端 keyVersion 更高）时弹窗提示用户，
+  /// B4 修复：监听同步状态流，消费 SyncResult.requiresRelogin。
+  /// 引擎检测到"他端改密码"（scenario-b：本地 MK 解不开远端包裹）时
+  /// 强制弹窗并退出登录（v4 选项 B 定案，替代旧 passwordEpochMismatch 标志），
   /// 覆盖手动同步、autoSync、改密码后推送等所有同步路径。
   StreamSubscription<SyncServiceState>? _syncStateSub;
 
@@ -110,13 +111,17 @@ class HomePageState extends State<HomePage> {
 
   /// B4 修复：他端改密码提示
   ///
-  /// 触发条件：最近一次同步结果 passwordEpochMismatch=true
-  /// （即远端 keyVersion 高于本端会话，本端还在用旧密码）。
+  /// 触发条件：最近一次同步结果 requiresRelogin=true
+  /// （v4 scenario-b：他端改了密码，本地 MK 解不开远端包裹，同步被中止）。
   /// 数据安全性说明：
   ///   - 本地笔记由 dataKey 加密，dataKey 在改密码时不变，笔记不受影响；
-  ///   - 纪元不匹配的那次同步本身已正常完成（本地未同步笔记已推送）；
+  ///   - 同步已被引擎中止（零写入），本地新建/修改的笔记保留在本地数据库；
   ///   - 退出登录只清内存密钥与会话，不删除本地数据库，
   ///     用新密码重新登录后所有笔记完好且继续同步。
+  ///
+  /// v4（epoch 消除）起引擎不再设置 passwordEpochMismatch 标志，
+  /// 改为 requiresRelogin=true；弹窗为**强制**（不可点击遮罩/返回键跳过，
+  /// 仅提供"重新登录"），符合设计定案「选项 B：失败 + 强制重登录」。
   void _onSyncStateChanged(SyncServiceState state) {
     if (!mounted) return;
 
@@ -145,35 +150,36 @@ class HomePageState extends State<HomePage> {
       }
     }
 
-    // B4 修复：他端改密码提示（保持不变）
+    // B4 修复：他端改密码提示（v4 起用 requiresRelogin 标志接管）
     if (_passwordChangedDialogShown) return;
-    if (state.lastResult?.passwordEpochMismatch != true) return;
+    if (state.lastResult?.requiresRelogin != true) return;
 
     _passwordChangedDialogShown = true;
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('密码已在其他设备修改'.tr()),
-        content: Text(
-          '检测到同步密码已在其他设备上变更。\n\n'
-                  '本地笔记不会丢失，未同步的更改也已正常同步。'
-                  '请退出登录并使用新密码重新登录，'
-                  '否则旧密码将无法继续使用。'
-              .tr(),
+      // 强制：不可点击遮罩关闭，用户必须处理"重新登录"
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        // 强制：不可用系统返回键关闭
+        canPop: false,
+        child: AlertDialog(
+          title: Text('密码已在其他设备修改'.tr()),
+          content: Text(
+            '检测到同步密码已在其他设备上修改，当前密码已失效。\n\n'
+                    '本地笔记不会丢失，尚未同步的更改已保留在本地。'
+                    '请重新登录并使用新密码继续使用。'
+                .tr(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await _logoutToLogin();
+              },
+              child: Text('退出并重新登录'.tr()),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text('稍后'.tr()),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              await _logoutToLogin();
-            },
-            child: Text('退出并重新登录'.tr()),
-          ),
-        ],
       ),
     );
   }

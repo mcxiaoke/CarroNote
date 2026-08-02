@@ -450,6 +450,8 @@ class SyncEngine {
             // 解不开 + 远端 keyVersion >= 本地 → **他端改了密码（scenario-b）**：
             // 本地密码已过期。中止同步，报「他端改了密码，请重新输入密码」，
             // 不 PUT、不 echo（拒绝向远端写入任何值，防翻转）。
+            // requiresRelogin=true 通知 UI 强制登出并要求重新登录
+            // （v4 选项 B 定案，§8.2[I]）。
             Log.sync.w('scenario-b：他端改了密码，本地 MK 解不开远端包裹'
                 '（远端 keyVersion=${remoteHeader.keyVersion} >= 本地 '
                 '${keyring.keyVersion}），中止同步强制重登录');
@@ -457,6 +459,7 @@ class SyncEngine {
               '检测到同步密码已在其他设备修改，请退出登录并使用新密码重新登录'
               '（本地笔记未丢失，未同步的更改已保留）',
               attempts: attempt,
+              requiresRelogin: true,
             );
           }
         }
@@ -506,6 +509,7 @@ class SyncEngine {
             return SyncResult.failure(
               '密码不匹配，无法同步：${migrationResult.error}',
               attempts: attempt,
+              requiresRelogin: true,
             );
           }
           // 场景 d：密码相同、salt 不同 → 完整 keyring 迁移

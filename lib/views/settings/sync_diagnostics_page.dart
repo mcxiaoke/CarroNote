@@ -249,8 +249,11 @@ class _SyncResultTab extends StatelessWidget {
         Text('统计', style: Theme.of(context).textTheme.titleSmall),
         _buildStatGrid(context, snapshot),
         const SizedBox(height: 12),
-        _buildKVRow(context, '密钥纪元不匹配',
-            snapshot.lastResultPasswordEpochMismatch?.toString() ?? 'N/A'),
+        _buildKVRow(context, '需要重新登录',
+            snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
+            color: (snapshot.lastResultRequiresRelogin ?? false)
+                ? Colors.red
+                : null),
         if (snapshot.lastResultErrorMessage != null) ...[
           const SizedBox(height: 12),
           Text('错误信息', style: Theme.of(context).textTheme.titleSmall),

@@ -415,6 +415,9 @@ void main() {
           reason: 'B 旧密码会话同步应中止（他端改了密码，本地密码过期）');
       expect(b.result.errorMessage, contains('密码已在其他设备修改'),
           reason: 'errorMessage 接管 UI 提示（不再用 passwordEpochMismatch 标志）');
+      expect(b.result.requiresRelogin, isTrue,
+          reason: 'scenario-b 必须携带 requiresRelogin 标志，'
+              'UI 据此强制登出并要求重新登录');
 
       // —— 中止意味着零写入：A 的笔记未被拉取 ——
       final notesOnB = await b.db.readAllNotesIncludingDeleted();

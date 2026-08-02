@@ -666,7 +666,17 @@ class SyncResult {
   /// 密钥纪元不匹配标志（远端 keyVersion > 本地）
   ///
   /// true 表示他端改了密码，UI 应提示用户输入新密码。
+  /// 注意：v4（epoch 消除）后引擎不再设置该标志（恒为 false），
+  /// scenario-b 改用 [requiresRelogin] 表达"必须重新登录"。保留字段仅为
+  /// 兼容旧诊断面板展示。
   final bool passwordEpochMismatch;
+
+  /// 是否需要强制重新登录（v4 scenario-b：他端改了密码，本地密码已过期）
+  ///
+  /// true 表示同步被中止（零写入），UI 必须提示用户退出并重新登录，
+  /// 否则本地新建/修改的笔记无法同步到远端。对应设计定案
+  /// 「选项 B（失败 + 强制重登录）」（docs/epoch-elimination-design-20260801.md §8.2[I]）。
+  final bool requiresRelogin;
 
   /// 因密钥不匹配 / 数据损坏等原因，本次同步未能获取（且无本地明文可自愈）的笔记 uuid 列表。
   ///
@@ -686,6 +696,7 @@ class SyncResult {
     this.actions = const [],
     this.attempts = 1,
     this.passwordEpochMismatch = false,
+    this.requiresRelogin = false,
     this.failedNoteUuids = const [],
   });
 
@@ -717,10 +728,16 @@ class SyncResult {
       );
 
   /// 同步失败
-  factory SyncResult.failure(String message, {int attempts = 1}) => SyncResult(
+  factory SyncResult.failure(
+    String message, {
+    int attempts = 1,
+    bool requiresRelogin = false,
+  }) =>
+      SyncResult(
         success: false,
         errorMessage: message,
         attempts: attempts,
+        requiresRelogin: requiresRelogin,
       );
 
   /// 是否有实际数据变更（用于判断是否需要触发 UI 刷新）
@@ -764,6 +781,7 @@ class SyncResult {
     List<SyncAction>? actions,
     int? attempts,
     bool? passwordEpochMismatch,
+    bool? requiresRelogin,
     List<String>? failedNoteUuids,
   }) =>
       SyncResult(
@@ -778,6 +796,7 @@ class SyncResult {
         actions: actions ?? this.actions,
         attempts: attempts ?? this.attempts,
         passwordEpochMismatch: passwordEpochMismatch ?? this.passwordEpochMismatch,
+        requiresRelogin: requiresRelogin ?? this.requiresRelogin,
         failedNoteUuids: failedNoteUuids ?? this.failedNoteUuids,
       );
 
@@ -786,7 +805,8 @@ class SyncResult {
       ? 'SyncResult(success, ↑$uploaded ↓$downloaded ✗$deleted skip$skipped '
           'conflict$conflicts migrate$migrated, attempts=$attempts, '
           'epochMismatch=$passwordEpochMismatch)'
-      : 'SyncResult(failed: $errorMessage, attempts=$attempts)';
+      : 'SyncResult(failed: $errorMessage, attempts=$attempts, '
+          'requiresRelogin=$requiresRelogin)';
 }
 
 /// manifest 序列化/反序列化辅助方法
@@ -956,6 +976,7 @@ class SyncDiagnosticsSnapshot {
   final int? lastResultMigrated;
   final int? lastResultSkipped;
   final bool? lastResultPasswordEpochMismatch;
+  final bool? lastResultRequiresRelogin;
   final String? lastResultErrorMessage;
   final List<String>? lastResultFailedNoteUuids;
   final List<SyncActionInfo>? lastResultActions;
@@ -996,6 +1017,7 @@ class SyncDiagnosticsSnapshot {
     this.lastResultMigrated,
     this.lastResultSkipped,
     this.lastResultPasswordEpochMismatch,
+    this.lastResultRequiresRelogin,
     this.lastResultErrorMessage,
     this.lastResultFailedNoteUuids,
     this.lastResultActions,
@@ -1045,6 +1067,7 @@ class SyncDiagnosticsSnapshot {
         '删除: $lastResultDeleted, 冲突: $lastResultConflicts, '
         '迁移: $lastResultMigrated, 跳过: $lastResultSkipped');
     b.writeln('密钥纪元不匹配: $lastResultPasswordEpochMismatch');
+    b.writeln('需要重新登录: $lastResultRequiresRelogin');
     if (lastResultErrorMessage != null) {
       b.writeln('错误: $lastResultErrorMessage');
     }
