@@ -186,6 +186,51 @@ flutter run -d <platform>
 
 ---
 
+## 构建信息注入（版本 / Git / 构建时间）
+
+每次构建都会把 **Git 提交哈希、分支、tag、工作区是否脏、累计提交数** 以及 **构建时间** 注入到应用内，并在启动时打印一份版本详情，便于复现线上问题与溯源。
+
+实现方式：构建前由 `scripts/generate_build_info.py` 生成 `lib/utils/build_info.dart`（编译期常量，零运行时开销），`lib/main.dart` 的 `_initLogging()` 在启动时读取并打印。
+
+**统一使用 `make` 目标构建**（会自动先注入最新构建信息）：
+
+```bash
+make run            # 调试运行（自动注入）
+make build-apk     # Android APK (release)
+make build-aab     # Android AppBundle (release)
+make build-windows # Windows 桌面端 (release)
+make build-linux   # Linux 桌面端 (release)
+make build-macos   # macOS 桌面端 (release)
+make release       # 发布打包（多 ABI 拆分 + AppBundle，先注入最新信息）
+```
+
+> 若直接执行 `flutter run` / `flutter build`，会沿用 `lib/utils/build_info.dart` 中**上一次生成**的值（文件始终存在，可正常编译，仅信息可能滞后）。需要最新元数据请用上面的 `make` 目标。
+
+**手动生成 / 仅刷新构建信息：**
+
+```bash
+make gen-build-info
+# 或
+python scripts/generate_build_info.py
+```
+
+`BuildInfo` 暴露字段：`version` / `buildNumber` / `versionString` / `gitHash` / `gitHashShort` / `gitBranch` / `gitTag` / `gitCommitCount` / `gitDirty` / `buildDate`(UTC) / `buildDateReadable`，以及便捷 getter `summary`（单行）与 `detail`（多行，可用于「关于 / 调试」面板）。
+
+启动日志示例：
+
+```
+════════ SafeNotes 启动 ════════
+版本: 2.3.0 (build 10)
+Git: 0a4d888 @ sync-refact-dev (工作区有未提交改动)
+Commit: 0a4d888c82a636d3394d6b6c939c61e2adfe4b7d
+Tag: v2.3.0-188-g0a4d888 (累计提交 608)
+构建时间: 2026-08-02 12:21:18 (UTC 2026-08-02T04:21:18Z)
+平台: windows Microsoft Windows [Version 10.0.22631.0]
+Dart: 3.44.8
+```
+
+---
+
 ## 测试
 
 ```bash

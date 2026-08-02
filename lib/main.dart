@@ -39,6 +39,7 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/app_logger.dart';
+import 'package:safenotes/utils/build_info.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/log_webserver.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -71,8 +72,14 @@ Future main() async {
 Future<void> _initLogging() async {
   await AppLogFile.init();
   Log.app.i('════════ SafeNotes 启动 ════════');
-  Log.app.i('版本: ${SafeNotesConfig.appVersion} '
-      '(build ${SafeNotesConfig.appVersionCode})');
+  // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
+  Log.app.i('版本: ${BuildInfo.version} (build ${BuildInfo.buildNumber})');
+  Log.app.i('Git: ${BuildInfo.gitHashShort} @ ${BuildInfo.gitBranch}'
+      '${BuildInfo.gitDirty ? " (工作区有未提交改动)" : ""}');
+  Log.app.i('Commit: ${BuildInfo.gitHash}');
+  Log.app.i('Tag: ${BuildInfo.gitTag.isEmpty ? "无 tag" : BuildInfo.gitTag} '
+      '(累计提交 ${BuildInfo.gitCommitCount})');
+  Log.app.i('构建时间: ${BuildInfo.buildDateReadable} (UTC ${BuildInfo.buildDate})');
   Log.app.i('平台: ${Platform.operatingSystem} '
       '${Platform.operatingSystemVersion}');
   Log.app.i('Dart: ${Platform.version.split(' ').first}');

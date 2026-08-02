@@ -14,6 +14,7 @@
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -57,11 +58,40 @@ def get_destination():
     return github, playstore, version
 
 
+def generate_build_info():
+    """
+    Injects the latest Git commit info and build time before building,
+    ensuring the release packages embed accurate version metadata.
+    """
+    script = Path(__file__).resolve().parent / "generate_build_info.py"
+    print("-> Generate build info (git hash + build time)")
+    try:
+        subprocess.run(
+            ["python", str(script)],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            check=False,
+        )
+    except OSError as e:
+        print(f"Failed to generate build info (skipped, release will use last generated values): {e}")
+
+
+def copy_windows(exe_src: str, dst: str, newdir: Path):
+    """
+    Copies the Windows executable into the release folder.
+    """
+    source = Path(f"build/windows/x64/runner/Release/{exe_src}").resolve()
+    destination = Path.joinpath(newdir, dst)
+    shutil.copy2(src=source, dst=destination)
+
+
 def make_release():
     """
     Makes a release.
     """
     github, playstore, version = get_destination()
+
+    # Inject latest build info (git hash + build time) first, then run multiple clean/build rounds
+    generate_build_info()
     os.system("flutter clean && flutter pub get")
     os.system(
         "flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi"
@@ -106,6 +136,15 @@ def make_release():
         src="app-release.aab",
         dst=f"safenotes-{version}.aab",
         newdir=playstore,
+    )
+
+    # Build the Windows desktop binary and copy it into the github release folder
+    os.system("flutter clean && flutter pub get")
+    os.system("flutter build windows --release")
+    copy_windows(
+        exe_src="safenotes.exe",
+        dst=f"safenotes-{version}-windows.exe",
+        newdir=github,
     )
 
 

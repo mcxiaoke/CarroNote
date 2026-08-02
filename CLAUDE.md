@@ -18,7 +18,7 @@
 
 ## 3. 代码规范
 - 关键逻辑、核心算法、复杂分支必须加**简体中文注释**。
-- 遵守 `flutter_lints` 与 `analysis_options.yaml`；提交前 `make valid` 必须通过。
+- 遵守 `flutter_lints` 与 `analysis_options.yaml`。
 - 导入排序使用 import_sorter（`make isort`）。
 - 修复 Bug / 改码后**必须运行相关测试**。
 
