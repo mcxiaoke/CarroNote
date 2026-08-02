@@ -120,7 +120,22 @@ enum JournalEventType {
   syncGcOrphan('sync.gcOrphan'),
 
   /// 远端 manifest 损坏并重建（第二数据源价值最高的事件）
-  syncManifestRebuild('sync.manifestRebuild');
+  syncManifestRebuild('sync.manifestRebuild'),
+
+  /// manifest PUT 成功/失败（P3-c，同步流程关键节点）
+  ///
+  /// 记录每次 manifest 落地的结果（phase=done 成功 / failed 失败），
+  /// note 携带 version、attempt、是否备份了旧 manifest 等上下文。
+  /// 与 [syncManifestRebuild] 区分：后者是「损坏后用本地数据重建」的异常
+  /// 路径，本项是「正常合并后写回远端」的常规路径。
+  syncManifestPut('sync.manifestPut'),
+
+  /// 乐观锁冲突重试（P3-c，ETag 不匹配触发的回退重试）
+  ///
+  /// PUT manifest 时 ETag 不匹配（他端先 PUT 了）会抛 ConflictException，
+  /// 引擎回到 Step 1 重新拉取并重试。记录重试次数与最终是否成功，便于
+  /// 诊断「频繁冲突重试」类问题（多设备高并发写入竞争）。
+  syncOptimisticLockRetry('sync.optimisticLockRetry');
 
   const JournalEventType(this.wire);
 
