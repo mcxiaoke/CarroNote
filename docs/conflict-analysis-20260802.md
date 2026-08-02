@@ -266,8 +266,140 @@ if (localChanged && !remoteChanged) {
 本次只落地数据正确性相关的 P0-B + P1-A。以下优化项**不涉及数据正确性**，风险/收益需单独评估：
 
 - **P2：`SyncBackend.headBlob` 上传前探测**——避免 manifest PUT 失败后重复上传 blob（性能优化）。需改 `SyncBackend` 接口 + 所有实现（LocalFS/WebDAV/SafeServer/FakeBackend），影响面较大。
-- **P3-a：blob 上传重试退避**——网络抖动时的鲁棒性。
-- **P3-b：`autoSync` 互斥增强**——防止用户快速连续操作触发并发 sync。
-- **P3-c：journal 增加 manifest PUT 事件**——可观测性增强。
+- ~~P3-a：blob 上传重试退避~~（已实施，见 §10）
+- ~~P3-b：`autoSync` 互斥增强~~（已实施，见 §10）
+- ~~P3-c：journal 增加 manifest PUT 事件~~（已实施，见 §10）
 
-建议：P2/P3 单独立项，各自配套测试，避免与本次数据正确性修复混在一起增加回滚难度。本次 P0-B + P1-A 的两个 commit 可独立回滚。
+建议：P2 单独立项，配套测试，避免与本次数据正确性修复混在一起增加回滚难度。本次 P0-B + P1-A 的两个 commit 可独立回滚。
+
+---
+
+## 10. P3 低风险优化实施总结（2026-08-02 12:10 落地）
+
+P0-B + P1-A 数据正确性修复落地后，用户要求继续实施 P3 低风险优化（不改数据流、不破坏既有功能）。本节记录 P3-a / P3-b / P3-c / P3-log 四项的实施内容、影响面分析与回归验证。
+
+### 10.1 已完成 P3 修复
+
+#### P3-a：blob 操作重试退避（commit `e9e6a79`）
+
+**实施内容**：
+
+1. `lib/sync/sync_engine.dart` 新增私有 helper `_withBlobRetry<T>(op, opName, hash)`，对 `backend.putBlob` / `getBlob` 做指数退避重试：
+   - **仅重试 `BackendUnavailableException`**：网络/存储临时不可用。`ConflictException`（manifest 层语义）与其他 `Object` 异常直接抛出，不吞掉。
+   - **重试次数 2 次（共 3 次尝试）**：与 `sync()` 的 `maxRetries` 对齐。
+   - **指数退避 200ms → 400ms**：小步长避免同步时长被放大太多。
+   - **`getBlob` 返回 null 不重试**：null 是「blob 不存在」的合法语义，重试无意义。
+   - **`putBlob` 幂等**：`SyncBackend.putBlob` 契约保证相同 hash+data 多次调用结果一致，重试覆盖写安全。
+
+2. 替换 4 个 blob 操作调用点：
+   - `_uploadNote` 中的 `putBlob`（line 1609）
+   - `_repairRemoteOnce` 中的 `getBlob`（line 750）
+   - `_preserveConflictCopy` 中的 `getBlob`（line 1424）
+   - `_downloadNote` 中的 `getBlob`（line 1725）
+
+#### P3-b：autoSync 互斥增强（commit `5b52525`）
+
+**实施内容**：
+
+1. `lib/sync/sync_service.dart` `autoSync()` 的 `then()` 回调增强：
+   - **race 修复**：sync 完成后的 L3 re-schedule 检查 `_autoSyncTimer?.isActive`，若已有用户在 sync 期间新触发的 pending timer 则不覆盖，避免「T6 完成的 sync 覆盖 T4 用户编辑排程的 timer」导致用户最新编辑被立即基于旧状态同步、多余一次同步开销。
+   - **失败可重试**：sync 返回非 null 但 `success=false` 时（网络抖动等），排程一次重试；为避免失败死循环，限制最多 1 次失败重试（`_autoSyncFailureRetried` 标志位），重试成功或再次失败后清零。
+   - **状态可见**：在 timer 触发 / 被跳过 / re-schedule 各路径补 debug 日志。
+
+2. `dispose()` / `logout()` 时清零 `_autoSyncFailureRetried`，避免状态泄漏。
+
+#### P3-c：journal manifest PUT 事件 + 乐观锁重试事件（commit `e4147ad` + `e9e6a79`）
+
+**实施内容**：
+
+1. `lib/sync/journal.dart` `JournalEventType` 扩展两个事件类型：
+   - `syncManifestPut('sync.manifestPut')`：manifest PUT 成功（与 `syncManifestRebuild` 区分：后者是「损坏后用本地数据重建」的异常路径，本项是「正常合并后写回远端」的常规路径）。
+   - `syncOptimisticLockRetry('sync.optimisticLockRetry')`：乐观锁冲突重试（ETag 不匹配触发的回退重试）。
+
+2. `lib/sync/sync_engine.dart` 三条 PUT manifest 路径都补 journal 落地：
+   - 正常合并路径（line 617）：`syncManifestPut(done, version/attempt/items/backedUp)`
+   - 损坏重建路径（line 338）：`syncManifestPut(done, rebuild-after-corrupt)`
+   - repair 路径（line 882）：`syncManifestPut(done, repair)`
+
+3. 乐观锁冲突 catch 分支（line 241）：`syncOptimisticLockRetry(attempt/$maxRetries: $e)`
+
+#### P3-log：关键日志记录补全（commit `e9e6a79` + `5b52525`）
+
+**实施内容**：通过 search 子代理扫描 `lib/sync/` 全部 .dart 文件，识别 11 个潜在缺失点，按 P0/P1/P2/P3 优先级补全 7 处关键日志（其他 4 处经评估为「已通过 `_logAction` 间接覆盖」或「设计性分层不应改动」）：
+
+| 位置 | 级别 | 内容 | 优先级 |
+|------|------|------|--------|
+| `_gcOrphanBlobs` 入口 | info | 扫描结果（remote/referenced/orphans） | P0 |
+| `_gcOrphanBlobs` 隔离 | debug | 本轮隔离 N 个孤儿（候选表剩 M） | P0 |
+| `_gcOrphanBlobs` purge | info | 隔离区结算（before/purged/remaining） | P0 |
+| `_gcOrphanBlobs` 三处异常 | warn | 单 blob 软删除失败 / purgeOrphans 失败 / 整体 GC 失败 | P0 |
+| `_updateLocalState` 结尾 | debug | version/local/converged/skipped/excluded/purged | P0 |
+| `_executeMigration` 入口/出口/失败 | info / error | 开始 / 完成笔记数+新纪元 / 失败 | P1 |
+| `_executeMigrationVault` 入口/出口/失败 | info / error | scenario-d 开始 / 完成笔记数+新 vaultId / 失败 | P1 |
+| `SyncService.initialize` 完成 | info | status=idle, backendReady=true | P1 |
+| `SyncService.updateKeyring` 完成 | info | keyVersion 切换 + SyncEngine 重建状态 | P1 |
+| `SyncService.switchBackend` 拒绝 | warn | 同步进行中，抛 StateError | P1 |
+| `SyncService.switchBackend` 完成 | info | providerKey + SyncEngine 重建状态 | P1 |
+
+**保持现状的项**：
+- `keyring.dart` 全部使用 `Log.crypto.*`（34 处）——设计性分层，密钥层不污染 sync 日志流。
+- `_uploadNote` / `_downloadNote` 成功路径——已通过 `_addAction → _logAction` 间接输出 `↑ upload` / `↓ download` 日志，重复补充会造成噪音。
+- `_preserveConflictCopy` 成功路径——同上，已通过 upload action 间接覆盖。
+
+### 10.2 测试覆盖与回归验证
+
+| 测试套件 | 用例数 | 结果 |
+|----------|--------|------|
+| `test/sync/sync_engine_test.dart` | 24 | ✓ passed |
+| `test/sync/multi_device_test.dart` + `p0p1_self_heal_test.dart` + sync_engine | 47 | ✓ passed |
+| `test/sync/webdav_integration_test.dart` | 38 | ✓ passed |
+| `test/sync/chaos_multi_client_test.dart` + `keyring_test.dart` + 其他 | 139 | ✓ passed |
+| `test/encryption/*` | 全部 | ✓ passed |
+| **合计** | **248 passed / 2 skipped / 0 failed** | ✓ |
+| `flutter analyze lib/sync lib/models lib/data` | — | ✓ No issues found |
+
+**P0-B 引发的测试适配**（commit `8a22af3`）：`webdav_integration_test.dart` 中「Layer 2b 持有明文时下载失败自愈重传」用例在 P0-B 提交后即失败（非 P3 引入）。P0-B 修复后该场景走 fast-forward 单边本地变更，不再进入 `_handleDownloadFailure`，因此不产生 heal 动作。测试断言更新为期望 `upload` 动作、不期望 `heal` 动作，注释说明 P0-B 前后路径差异。两条路径最终结果一致（远端被本地内容覆盖、损坏 blob 被新 blob 替代）。
+
+### 10.3 影响面分析（同步逻辑改动风险评估）
+
+用户特别要求评估「P3 修改会不会影响别的同步或数据逻辑导致新 bug」。逐项核查：
+
+| 修改项 | 改动性质 | 对同步控制流影响 | 对数据正确性影响 | 风险评估 |
+|--------|----------|------------------|------------------|----------|
+| **P3-a** `_withBlobRetry` | 行为增强（重试包裹） | 单 blob 临时网络抖动不再立即失败，重试 2 次后才放弃；上层 catch 行为不变 | putBlob 幂等覆盖写安全；getBlob null 不重试；其他异常直接抛出 | ✓ 低风险，仅网络抖动场景行为改进 |
+| **P3-b** autoSync race 修复 | 行为修复（避免覆盖） | sync 完成后的 re-schedule 不再覆盖用户 debounce timer | sync 本身幂等（基于 manifest version + ETag），多次执行不丢数据 | ✓ 低风险，修复潜在 race |
+| **P3-b** autoSync 失败重试 | 行为增强（自动重试） | sync 失败后自动重试 1 次（限最多 1 次避免死循环） | sync 幂等，重试不丢数据；重试失败后等用户下次触发 | ✓ 低风险，限制次数避免死循环 |
+| **P3-c** journal 事件扩展 | 纯日志（新增枚举） | 不改变任何控制流 | 不影响 | ✓ 零风险 |
+| **P3-log** 关键日志补全 | 纯日志（新增 Log.sync 调用） | 不改变任何控制流 | 不影响 | ✓ 零风险 |
+
+**关键不变量核查**：
+
+1. **`_withBlobRetry` 异常语义保持**：仅捕获 `BackendUnavailableException` 重试，其他异常（如 `FormatException`、`ConflictException`）直接抛出，与原 `backend.putBlob` / `getBlob` 调用点的 catch 分支语义完全一致。上层 `_uploadNote` 的 `catch (BackendUnavailableException)` / `catch (Object)` 分支无需调整。
+
+2. **`_withBlobRetry` 在 `_repairRemoteOnce` 中的冒泡**：`repairRemote` 没有 catch `BackendUnavailableException`，重试耗尽后异常冒泡到 `SyncService.repairRemote` 的 `catch (Exception)` 分支，与原行为一致。
+
+3. **autoSync 失败重试不会死循环**：`_autoSyncFailureRetried` 标志位保证单次失败只重试一次。重试 timer 触发时立即清零标志位，允许「下次用户编辑触发的 autoSync 失败」再获得一次重试机会，但单次失败不会无限重试。
+
+4. **autoSync race 修复不丢数据**：检查 `_autoSyncTimer?.isActive` 后让用户的 debounce timer 接管，用户最新编辑会在 debounce 窗口结束后被同步。即使用户编辑后立即关闭应用，下次启动时 sync 仍会读取 DB 最新状态同步。
+
+5. **P3-c journal 落地不改变 phase 语义**：三条 PUT manifest 路径都用 `phase: JournalPhase.done`，与现有 `syncManifestRebuild` 的 phase 语义一致。`note` 字段区分路径（`rebuild-after-corrupt` / `repair` / 空=正常），不参与机器判定。
+
+6. **P3-log 不引入新的副作用**：所有新增 `Log.sync.*` 调用都在 try/catch 之外或独立语句，不改变异常处理路径。`_gcOrphanBlobs` 三处 `on Exception` 由静默吞掉改为 `Log.sync.w` 记录，仍不阻断同步——只是把「GC 失败」从黑盒变成可观测。
+
+**多设备既有测试全部通过**（multi_device 23 + p0p1_self_heal 24 + chaos_multi_client 18 + webdav_integration 38），印证 P3 修改不破坏多设备并发、改密码迁移、墓碑 GC、blob 自愈、孤儿 blob 两阶段 GC 等既有逻辑。
+
+### 10.4 提交记录
+
+| Commit | 类型 | 内容 |
+|--------|------|------|
+| `e4147ad` | feat(sync) | P3-c journal 新增 manifest PUT 与乐观锁重试事件类型 |
+| `e9e6a79` | feat(sync) | P3-a/P3-c/P3-log 同步引擎重试退避 + journal 落地 + 关键日志 |
+| `5b52525` | feat(sync) | P3-b/P3-log autoSync 互斥增强 + 生命周期关键日志 |
+| `8a22af3` | test(sync) | 适配 P0-B 后 Layer 2b 自愈场景走 fast-forward 的新行为 |
+
+4 个 commit 按主题分离，P3-a/P3-b/P3-c/P3-log 可独立回滚（P3-c 的 journal.dart enum 扩展是 P3-c sync_engine.dart 调用的前置依赖，回滚 P3-c 需同时回滚两个 commit）。
+
+### 10.5 后续建议
+
+- **P2 `SyncBackend.headBlob` 上传前探测**：仍未实施，需改接口 + 所有实现，建议单独立项。
+- **P3-log 缺失点 5（墓碑"应用 vs 空标记"区分日志）** 与 **缺失点 6（`_handleDownloadFailure` 决策入口日志）**：本次未补，可作为后续可观测性迭代。需注意 P0-B 后部分原 `_handleDownloadFailure` 触发场景已走 fast-forward，区分日志的必要性下降。
