@@ -33,6 +33,9 @@
 //   I6 水位不退  ：每端 journal.nextSeq >= 上一代记录值（跨进程续接）
 //   I7 密钥自洽  ：每端 keyVersion == 远端 header.keyVersion
 //   I8 明文自洽  ：每条笔记 computeHash(title, desc) == contentHash（抓静默腐坏）
+//   I9 隔离区有界：blobs-orphan 残留 hash 数 ≤ 常数（purge 路径必须持续生效）。
+//     注：测试以 orphanRetention=0 注入（_buildEngine），使「隔离→超期→purge」
+//     完整链路在每次 GC 实际执行——否则压缩时间下隔离项永不超期，purge 成为盲区。
 
 import 'dart:convert';
 import 'dart:io';
@@ -73,8 +76,20 @@ const List<String> kSeedVaultPasswords = [
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];
 
+/// 每代新建笔记数（真实用户一天写多篇）
+const int kNewPerGen = 3;
+
+/// 每代编辑的历史笔记数（真实用户一天改多篇）
+const int kEditPerGen = 3;
+
 /// state.json 结构版本；不匹配时自动重置（避免旧账本误判为数据丢失）
 const int kStateSchema = 1;
+
+/// I9 隔离区上界（hash 数）。测试注入 orphanRetention=0 后每代收敛的 GC
+/// 都会清空隔离区，理论残留 ≈ 0；预留 16 的缓冲吸收「隔离与 purge 同一毫秒
+/// 而暂留、下一轮 GC 才清」的极端时序。purge 路径若被破坏，每代产生
+/// ~3.5 条孤儿（edit $kEditPerGen + delete 平均 0.5），数代内即远超此界。
+const int kQuarantineBound = 16;
 
 /// 初始密码（后续按代轮换，真实密码记录在 state.json 里）
 const String kInitialPassword = 'longrun-pw-gen0';
@@ -438,6 +453,10 @@ class LongRunStore {
         keyring: keyring,
         deviceId: deviceId,
         journal: journal,
+        // 注入零保留期：让「隔离 → 超期 → purge」完整链路在每次 GC 都实际执行。
+        // 产品默认 30 天，但压缩时间下测试隔离项永不超期 → purge 成为盲区（I9）。
+        // 用 Duration.zero 后隔离即 purge，隔离区应在每代收敛后清零（有界）。
+        orphanRetention: Duration.zero,
       );
 
   // version 3：跨运行复用的文件库统一按当前 schema（含 synced_hash）创建。
@@ -713,26 +732,25 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
   final b = store.clients[1];
   final c = store.clients[2];
 
-  // ── 1. A 端新建 2 条并同步 ──────────────────
-  final created = <SafeNote>[];
-  for (var k = 0; k < 2; k++) {
-    final title = 'g$gen-n$k-${rng.nextInt(1 << 20)}';
-    created.add(await store.createNote(a, title, 'body of $title'));
-  }
-  await store.sync(a);
+  // 每代按真实用户的一天操作循环推进：
+  //   edit >> new >> delete >> killprocess >> changedpwd
+  // edit / new 是高频操作，每代各做多次；delete 低频；killprocess /
+  // changedpwd 按固定周期轮换，让四种周期在历代里交错覆盖。
 
-  // ── 2. B 端拉取后编辑一条历史笔记 ────────────
+  // ── 1. E：B 端编辑多条历史笔记（真实用户一天改多篇） ──
+  // 先拉最新，再随机挑 kEditPerGen 条不同笔记改内容
   await store.sync(b);
-  String? editedUuid;
+  final editedUuids = <String>[];
   {
     final live = await store.liveNotes(b);
-    if (live.isNotEmpty) {
-      final uuids = live.keys.toList()..sort();
-      final target = live[uuids[rng.nextInt(uuids.length)]]!;
+    final uuids = live.keys.toList()..shuffle(rng);
+    final targets = uuids.take(min(kEditPerGen, uuids.length));
+    for (final uuid in targets) {
+      final t = live[uuid]!;
       final newTitle = 'g$gen-edit-${rng.nextInt(1 << 20)}';
       final newDesc = 'edited at gen $gen';
       await NotesDatabase.instance.updateNoteByUuid(
-        target.copyWith(
+        t.copyWith(
           title: newTitle,
           description: newDesc,
           contentHash: SafeNote.computeHash(newTitle, newDesc),
@@ -740,22 +758,30 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
           synced: false,
         ),
       );
-      editedUuid = target.uuid;
+      editedUuids.add(uuid);
     }
   }
   await store.sync(b);
 
-  // ── 3. C 端每 2 代删一条（真实用户偶尔才删） ──
+  // ── 2. N：A 端新建多条并同步（真实用户一天写多篇） ──
+  final created = <SafeNote>[];
+  for (var k = 0; k < kNewPerGen; k++) {
+    final title = 'g$gen-n$k-${rng.nextInt(1 << 20)}';
+    created.add(await store.createNote(a, title, 'body of $title'));
+  }
+  await store.sync(a);
+
+  // ── 3. D：C 端每 2 代删一条（真实用户偶尔才删） ──
   await store.sync(c);
   String? deletedUuid;
   if (gen % 2 == 0) {
     final live = await store.liveNotes(c);
     // 保留一定存量，避免长期测试把库删空后失去「历史数据」的检验意义
     if (live.length > 4) {
-      final uuids = live.keys.toList()..sort();
-      final victim = live[uuids[rng.nextInt(uuids.length)]]!;
-      // 不删本代刚编辑的那条，避免断言口径互相纠缠
-      if (victim.uuid != editedUuid) {
+      final uuids = live.keys.toList()..shuffle(rng);
+      final victim = live[uuids.first]!;
+      // 不删本代刚编辑/新建的那几条，避免断言口径互相纠缠
+      if (!editedUuids.contains(victim.uuid)) {
         await NotesDatabase.instance.softDelete(victim.id!);
         deletedUuid = victim.uuid;
       }
@@ -763,7 +789,17 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
   }
   await store.sync(c);
 
-  // ── 4. 每 3 代改一次密码（A 端发起，其余端输新密码跟进） ──
+  // ── 4. K：每 4 代模拟一次全端重启（killprocess，journal 水位必须续得上） ──
+  if (gen % 4 == 0) {
+    for (final cl in store.clients) {
+      final before = cl.journal.nextSeq;
+      await store.restart(cl);
+      expect(cl.journal.nextSeq, greaterThanOrEqualTo(before),
+          reason: '重启后 ${cl.id} 的 journal seq 回退了，远端副本时序会错乱');
+    }
+  }
+
+  // ── 5. P：每 3 代改一次密码（A 端发起，其余端输新密码跟进） ──
   if (gen % 3 == 0) {
     await store.sync(a);
     final newPw = 'longrun-pw-gen$gen';
@@ -787,16 +823,6 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
     store.state.password = newPw;
   }
 
-  // ── 5. 每 4 代模拟一次全端重启（journal 水位必须续得上） ──
-  if (gen % 4 == 0) {
-    for (final cl in store.clients) {
-      final before = cl.journal.nextSeq;
-      await store.restart(cl);
-      expect(cl.journal.nextSeq, greaterThanOrEqualTo(before),
-          reason: '重启后 ${cl.id} 的 journal seq 回退了，远端副本时序会错乱');
-    }
-  }
-
   // ── 6. 收敛 ────────────────────────────────
   await store.converge(rounds: 2);
 
@@ -804,12 +830,12 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
   for (final n in created) {
     store.state.notes[n.uuid] = NoteFact(n.title, n.contentHash);
   }
-  if (editedUuid != null) {
+  for (final uuid in editedUuids) {
     // 编辑后的真值以 B 端落库结果为准（LWW 已收敛）
     final live = await store.liveNotes(b);
-    final n = live[editedUuid];
+    final n = live[uuid];
     if (n != null) {
-      store.state.notes[editedUuid] = NoteFact(n.title, n.contentHash);
+      store.state.notes[uuid] = NoteFact(n.title, n.contentHash);
     }
   }
   if (deletedUuid != null) {
@@ -836,6 +862,8 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
   print('gen $gen: 活跃 ${metrics['live']} / 墓碑 ${metrics['tombstones']} / '
       'blob ${metrics['blobs']} / 隔离 ${metrics['quarantine']} / '
       'journal ${metrics['journalTotal']} / DB ${metrics['dbKB']}KB'
+      '${editedUuids.isNotEmpty ? " / 本代编辑 ${editedUuids.length} 条" : ""}'
+      '${created.isNotEmpty ? " / 本代新建 ${created.length} 条" : ""}'
       '${deletedUuid != null ? " / 本代删 1 条" : ""}'
       '${gen % 3 == 0 ? " / 本代改密" : ""}'
       '${gen % 4 == 0 ? " / 本代重启" : ""}');
@@ -938,6 +966,19 @@ Future<void> _assertInvariants(LongRunStore store, int gen) async {
     expect(c.keyring.vaultId, header.vaultId,
         reason: 'gen $gen I7 vaultId 漂移：${c.id}');
   }
+
+  // I9：隔离区有界（purge 路径必须持续生效）
+  //
+  // 测试以 orphanRetention=0 注入（见 _buildEngine）：每次 GC 的
+  // `_gcOrphanBlobs → purgeOrphans` 都应把已隔离的超期项（即全部，因为保留期为 0）
+  // 清掉，隔离区在每代收敛后应保持在极小范围内，而不是随操作次数无界线性膨胀。
+  // 若未来改动破坏 purge 路径（不调 purgeOrphans / 实现错误 / 保留期误用），
+  // 隔离区会像 345 代审查里那样以每代 ~1.5 条线性增长，几十代内即突破上界红灯。
+  final orphanCount = (await store.backend.listOrphanBlobs()).length;
+  expect(orphanCount, lessThanOrEqualTo(kQuarantineBound),
+      reason: 'gen $gen I9 隔离区膨胀：blobs-orphan 残留 $orphanCount 个 hash，'
+          '超过上界 $kQuarantineBound。purge 路径（_gcOrphanBlobs → '
+          'purgeOrphans）可能被破坏——超期隔离项未被清理，长期运行会无界膨胀。');
 }
 
 // ──────────────────────────────────────────────

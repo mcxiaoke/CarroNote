@@ -102,7 +102,14 @@ class SyncEngine {
   /// 软删除（[SyncBackend.deleteBlobSoft]）到隔离区的孤儿 blob 超过此期限后，
   /// 才由 [_gcOrphanBlobs] 调用 [SyncBackend.purgeOrphans] 彻底删除。
   /// "超期才真删"给误删 / blob 静默损坏留出恢复窗口，避免不可逆数据损失。
+  ///
+  /// 默认 30 天；测试可经构造函数 [SyncEngine.orphanRetention] 注入更短保留期，
+  /// 在压缩时间内驱动「隔离 → 超期 → purge」完整链路（longrun I9 不变量依赖它，
+  /// 否则测试时间尺度下隔离项永不超期，purge 路径成为盲区）。
   static const Duration _orphanRetention = Duration(days: 30);
+
+  /// 本实例生效的隔离区保留期（默认 [_orphanRetention]，测试可注入缩短）
+  final Duration _orphanRetentionEffective;
 
   /// P2：操作日志（设计 §3.5，本阶段必填不可为空）
   ///
@@ -130,7 +137,8 @@ class SyncEngine {
     required this.journal,
     this.passphraseProvider,
     this.onKeyringChanged,
-  });
+    Duration orphanRetention = _orphanRetention,
+  }) : _orphanRetentionEffective = orphanRetention;
 
   /// 当前密钥状态快照（写入 key.* journal 条目）
   JournalKeyState get _keyStateSnapshot => JournalKeyState(
@@ -2187,7 +2195,7 @@ class SyncEngine {
       try {
         // 先记录本轮将被结算的隔离项（purgeOrphans 之后就查不到了）
         final beforePurge = await backend.listOrphanBlobs();
-        await backend.purgeOrphans(_orphanRetention);
+        await backend.purgeOrphans(_orphanRetentionEffective);
         final afterPurge = (await backend.listOrphanBlobs()).toSet();
         final purgedCount = beforePurge.length - afterPurge.length;
         // P3-log：purge 结算结果（info 级，超期才删的关键事件）

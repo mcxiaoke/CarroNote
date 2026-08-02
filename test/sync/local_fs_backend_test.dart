@@ -10,6 +10,7 @@
  *   - putBlob / getBlob 幂等性
  *   - getBlob 不存在返回 null
  *   - ETag 一致性（同内容同 etag）
+ *   - 隔离区：deleteBlobSoft → blobs-orphan、purgeOrphans 超期才删（I9 依赖的链路）
  *
  * 运行：flutter test test/sync/local_fs_backend_test.dart
  */
@@ -227,6 +228,74 @@ void main() {
       expect(await backend.getBlob(hash1), data1);
       expect(await backend.getBlob(hash2), data2);
       expect(await backend.getBlob(hash3), data3);
+    });
+  });
+
+  group('LocalFsBackend - 隔离区（blobs-orphan）', () {
+    // 隔离区语义是 P1-2 数据安全的核心承诺：
+    //   孤儿 blob 软删除进 blobs-orphan（文件名 `hash.<epochMs>`），
+    //   保留期（默认 30 天）内可恢复，超期才由 purgeOrphans 彻底删除。
+    // 这里锁定「隔离 → 列出 → 超期 purge → 未超期保留」的完整行为，
+    // 防止未来改动破坏 purge 路径（longrun I9 依赖同一链路，但此处定向更快）。
+    test('deleteBlobSoft 把 blob 移入隔离区，listOrphanBlobs 列出', () async {
+      final hash = 'soft-delete-hash';
+      await backend.putBlob(hash, Uint8List.fromList([1, 2, 3]));
+
+      await backend.deleteBlobSoft(hash);
+
+      // 原位置应已移走（blobs/ 不再有，隔离区有）
+      expect(await backend.getBlob(hash), isNull);
+      expect(await backend.listOrphanBlobs(), [hash]);
+      // 磁盘文件名应为 hash.<epochMs>（purge 依赖该时间戳）
+      final orphanDir = Directory(p.join(tempDir.path, 'blobs-orphan'));
+      final names = orphanDir.listSync().whereType<File>().map((f) => f.path).toList();
+      expect(names.length, 1);
+      final base = p.basename(names.first);
+      expect(base, startsWith('$hash.'));
+    });
+
+    test('deleteBlobSoft 幂等：hash 不存在时不报错', () async {
+      await backend.deleteBlobSoft('no-such-hash');
+      expect(await backend.listOrphanBlobs(), isEmpty);
+    });
+
+    test('purgeOrphans 保留期内不删（今天隔离的 30 天保留期仍在期内）', () async {
+      final hash = 'young-hash';
+      await backend.putBlob(hash, Uint8List.fromList([9]));
+      await backend.deleteBlobSoft(hash);
+
+      await backend.purgeOrphans(const Duration(days: 30));
+
+      // 刚隔离（时间戳为现在）未超过 30 天 → 保留
+      expect(await backend.listOrphanBlobs(), [hash]);
+    });
+
+    test('purgeOrphans 超期隔离项被删除（零保留期即隔离即清）', () async {
+      final hash = 'expired-hash';
+      await backend.putBlob(hash, Uint8List.fromList([7]));
+      await backend.deleteBlobSoft(hash);
+
+      // 零保留期：cutoff = now，隔离时间戳 < now → 立即清空
+      await backend.purgeOrphans(Duration.zero);
+
+      expect(await backend.listOrphanBlobs(), isEmpty);
+      final orphanDir = Directory(p.join(tempDir.path, 'blobs-orphan'));
+      expect(orphanDir.listSync().whereType<File>(), isEmpty);
+    });
+
+    test('purgeOrphans 混合：只删超期的，保留期内留下', () async {
+      // 手工构造两个隔离文件：一个 40 天前（超期），一个现在（期内）
+      final orphanDir = Directory(p.join(tempDir.path, 'blobs-orphan'));
+      await orphanDir.create(recursive: true);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final oldTs = now - 40 * 24 * 60 * 60 * 1000;
+      await File(p.join(orphanDir.path, 'old-hash.$oldTs'))
+          .writeAsString('x');
+      await File(p.join(orphanDir.path, 'fresh-hash.$now')).writeAsString('y');
+
+      await backend.purgeOrphans(const Duration(days: 30));
+
+      expect(await backend.listOrphanBlobs(), ['fresh-hash']);
     });
   });
 
