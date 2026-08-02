@@ -1890,19 +1890,43 @@ class SyncEngine {
   /// 同步完成后更新本地状态
   ///
   /// - 写入 manifest version 到 sync_meta 表
-  /// - 标记所有本地笔记为已同步（synced=1），但排除本轮未收敛的笔记
-  ///   （P6 修复：见 [excludeSynced]）
+  /// - 标记本轮真正收敛的笔记为已同步（synced=1）
   /// - 清理已从远端 manifest 移除的墓碑 uuid（M1 修复）
   ///
-  /// [excludeSynced]：本轮「上传失败」的笔记 uuid 集合。这些笔记本地是新内容、
-  /// 远端仍是旧内容，未真正收敛，不能标记已同步——否则 synced_hash 会被写成
-  /// 远端没有的新 hash，污染下一轮冲突判定的 base（DS002 P6）。
+  /// P1-A 修复（白名单模式，docs/conflict-analysis-20260802.md §P1-A）：
+  ///   原实现 [NotesDatabase.markAllSyncedExcept] 是全量 UPDATE（NOT IN exclude），
+  ///   会把同步期间被用户编辑的笔记也一并标记 synced=1 并把 synced_hash 写成
+  ///   「远端没有的新 hash」。下次同步 fast-forward 远端单边会把远端旧内容下载
+  ///   覆盖本地新编辑 → 丢数据。
+  ///
+  ///   现判据：只 markSynced 那些「当前 (content_hash, deleted) == merged.items[uuid]」
+  ///   的笔记。merged 基于同步开始的本地快照构建，同步期间被改的笔记当前 hash
+  ///   ≠ merged → 跳过，保持 synced=0、synced_hash=旧 base，下次同步重新处理。
+  ///   下载覆盖的笔记 _downloadNote 已把本地 DB 更新为远端内容 → 当前 == merged → 标记。
+  ///
+  /// [excludeSynced]：本轮「上传失败」的笔记 uuid 集合。即便它们的当前状态
+  /// 碰巧等于 merged（理论上不会，但兜底），也排除——本地是新内容、远端是旧内容，
+  /// 未真正收敛，不能标记 synced=1（DS002 P6）。
   Future<void> _updateLocalState(
     Manifest merged, {
     Set<String> excludeSynced = const {},
   }) async {
     await database.setManifestVersion(backend.providerKey, merged.version);
-    await database.markAllSyncedExcept(excludeSynced);
+
+    // 按白名单逐条比对，只标记真正收敛的 uuid
+    final localNotes = await database.readAllNotesIncludingDeleted();
+    final converged = <String>{};
+    for (final note in localNotes) {
+      if (excludeSynced.contains(note.uuid)) continue;
+      final item = merged.items[note.uuid];
+      if (item == null) continue; // 已从 manifest 移除（purged 等）
+      // 当前 (hash, deleted) == merged 期望值 → 本轮真正收敛
+      if (note.contentHash == item.hash && note.deleted == item.deleted) {
+        converged.add(note.uuid);
+      }
+      // 否则：同步期间被编辑（当前 ≠ merged 快照）→ 跳过，下次同步重传
+    }
+    await database.markSyncedForUuids(converged);
 
     // M1 修复：清理已从远端 manifest 移除的 uuid
     // merged.items 中已不包含这些 uuid（_mergeAndTransfer 中已移除）

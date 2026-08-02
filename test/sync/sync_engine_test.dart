@@ -41,6 +41,13 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   /// 控制 putManifest 是否第一次抛冲突（用于测试乐观锁重试）
   int _conflictOnNextPuts = 0;
 
+  /// P1-B 测试钩子：putManifest 写入前同步调用的回调。
+  ///
+  /// 此时 _mergeAndTransfer 已完成、merged 快照已构建，但 _updateLocalState
+  /// 尚未执行——模拟「同步期间用户编辑笔记」的竞态窗口。回调里编辑笔记后，
+  /// _updateLocalState 的白名单比对应跳过该笔记（当前 hash ≠ merged 快照）。
+  void Function()? onBeforePutManifestWrite;
+
   @override
   String get displayName => 'FakeBackend';
 
@@ -68,6 +75,11 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
     if (_conflictOnNextPuts > 0) {
       _conflictOnNextPuts--;
       throw ConflictException('FakeBackend: simulated conflict');
+    }
+
+    // P1-B：在乐观锁检查通过、实际写入前触发回调（模拟同步期竞态）
+    if (onBeforePutManifestWrite != null) {
+      onBeforePutManifestWrite!();
     }
 
     if (expectedEtag.isEmpty) {
@@ -674,6 +686,125 @@ void main() {
       expect(result.uploaded, 0);
       expect(result.downloaded, 0);
       expect(result.conflicts, 0);
+    });
+  });
+
+  group('SyncEngine - P1-A 同步期写入竞态（白名单 markSynced）', () {
+    // P1-A 修复目标：_updateLocalState 改为白名单模式，只标记「当前 (hash, deleted)
+    // == merged.items[uuid]」的笔记。同步期间被编辑的笔记当前 hash ≠ merged 快照
+    // → 跳过，保持 synced=0、syncedHash=旧 base，下次同步重新处理。
+    // 原实现 markAllSyncedExcept 是全量 UPDATE，会把同步期间编辑的笔记误标
+    // synced=1 并把 syncedHash 写成「远端没有的新 hash」→ 下次同步 fast-forward
+    // 远端单边下载旧内容覆盖本地新编辑 → 丢数据。
+    // 详见 docs/conflict-analysis-20260802.md §P1-A
+
+    test('同步期间编辑已同步笔记：不被误标 synced=1，base 不被污染', () async {
+      // note1 + note2 同步建立 base
+      final note1 = _makeNote(uuid: 'uuid-p1a-1', title: 'Note 1');
+      await database.storeNote(note1);
+      final note2 = _makeNote(uuid: 'uuid-p1a-2', title: 'V1', updatedAt: 1000);
+      await database.storeNote(note2);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      final v1Hash = SafeNote.computeHash('V1', 'Test Description');
+
+      // note3 新建触发第二次 sync 的 PUT manifest（否则无变化会跳过 PUT）
+      // 回调里编辑 note2 → V2：模拟「同步期间用户编辑」竞态
+      // （_mergeAndTransfer 已用 V1 快照构建 merged，_updateLocalState 尚未执行）
+      final note3 = _makeNote(uuid: 'uuid-p1a-3', title: 'Note 3');
+      await database.storeNote(note3);
+      final note2Stored = await database.readNoteByUuid('uuid-p1a-2');
+      backend.onBeforePutManifestWrite = () async {
+        final edited = note2Stored!.copyWith(
+          title: 'V2',
+          contentHash: SafeNote.computeHash('V2', 'Test Description'),
+          updatedAt: 2000,
+          synced: false,
+        );
+        await database.updateNote(edited);
+      };
+      await engine.sync();
+      backend.onBeforePutManifestWrite = null;
+
+      // 验证 P1-A：note2 当前是 V2，但 merged 快照是 V1（已 skip）→ 跳过 markSynced
+      final after = await database.readNoteByUuid('uuid-p1a-2');
+      expect(after!.title, 'V2');
+      expect(after.synced, isFalse, reason: '同步期间编辑的笔记不应被误标 synced=1');
+      expect(after.syncedHash, v1Hash, reason: 'base 必须保持旧 V1hash，不能被污染为新 hash');
+    });
+
+    test('同步期间编辑的笔记下次 fast-forward 上传新内容，不丢数据', () async {
+      // note1 + note2 同步建立 base
+      final note1 = _makeNote(uuid: 'uuid-p1a-nd-1', title: 'Note 1');
+      await database.storeNote(note1);
+      final note2 = _makeNote(uuid: 'uuid-p1a-nd-2', title: 'V1', updatedAt: 1000);
+      await database.storeNote(note2);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      // note3 触发 PUT，回调里编辑 note2 → V2
+      final note3 = _makeNote(uuid: 'uuid-p1a-nd-3', title: 'Note 3');
+      await database.storeNote(note3);
+      final note2Stored = await database.readNoteByUuid('uuid-p1a-nd-2');
+      backend.onBeforePutManifestWrite = () async {
+        final edited = note2Stored!.copyWith(
+          title: 'V2',
+          contentHash: SafeNote.computeHash('V2', 'Test Description'),
+          updatedAt: 2000,
+          synced: false,
+        );
+        await database.updateNote(edited);
+      };
+      await engine.sync();
+      backend.onBeforePutManifestWrite = null;
+
+      // 第三次同步：note2 V2 vs 远端 V1，base=V1hash（未被污染）
+      // → localChanged=true、remoteChanged=false → fast-forward 本地单边，上传 V2
+      final result = await engine.sync();
+      expect(result.success, isTrue);
+      expect(result.uploaded, 1);
+      expect(result.conflicts, 0);
+
+      // 验证 note2 V2 收敛，本地内容未被远端旧 V1 覆盖（不丢数据）
+      final after = await database.readNoteByUuid('uuid-p1a-nd-2');
+      expect(after!.title, 'V2');
+      expect(after.synced, isTrue);
+      expect(after.syncedHash, after.contentHash);
+
+      // 验证远端也是 V2
+      final remoteResponse = await backend.getManifest();
+      final remoteManifest = ManifestCrypto.deserialize(
+        engine.keyring.dataKey,
+        remoteResponse.ciphertext,
+      );
+      expect(remoteManifest.items['uuid-p1a-nd-2']!.hash, after.contentHash);
+    });
+
+    test('同步期间新建的笔记不被误标 synced=1', () async {
+      // note1 同步建立，note2 触发第二次 sync 的 PUT，回调里新建 note3
+      final note1 = _makeNote(uuid: 'uuid-p1a-new-1', title: 'Note 1');
+      await database.storeNote(note1);
+      final engine = _makeEngine(backend: backend, database: database);
+      await engine.sync();
+
+      final note2 = _makeNote(uuid: 'uuid-p1a-new-2', title: 'Note 2');
+      await database.storeNote(note2);
+      backend.onBeforePutManifestWrite = () async {
+        // note3 在同步开始前不存在，merged 快照不含 note3
+        final note3 = _makeNote(uuid: 'uuid-p1a-new-3', title: 'Note 3 (new during sync)');
+        await database.storeNote(note3);
+      };
+      final result = await engine.sync();
+      backend.onBeforePutManifestWrite = null;
+
+      expect(result.success, isTrue);
+
+      // note3 不在 merged 快照里 → _updateLocalState 跳过 → synced=0
+      final note3After = await database.readNoteByUuid('uuid-p1a-new-3');
+      expect(note3After, isNotNull);
+      expect(note3After!.synced, isFalse, reason: '同步期间新建的笔记不应被误标 synced=1');
+      expect(note3After.syncedHash, isNull);
     });
   });
 

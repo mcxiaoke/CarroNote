@@ -987,6 +987,35 @@ class NotesDatabase {
     Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
   }
 
+  /// P1-A 修复：按 uuid 集合标记已同步（白名单模式）
+  ///
+  /// 与 [markAllSyncedExcept] 的「黑名单排除」语义相对——只把传入的 uuid 标记为
+  /// synced=1 并刷新 synced_hash/synced_deleted，集合外的笔记一律不动。
+  ///
+  /// 为什么需要白名单：[markAllSyncedExcept] 是全量 UPDATE（NOT IN exclude），
+  /// 会把同步期间被用户编辑的笔记也一并标记 synced=1，并把 synced_hash 写成
+  /// 「远端没有的新 hash」——下次同步 fast-forward 远端单边会把远端旧内容
+  /// 下载覆盖本地新编辑，导致丢数据（docs/conflict-analysis-20260802.md §P1-A）。
+  ///
+  /// 调用方（SyncEngine._updateLocalState）只传入「本轮真正收敛」的 uuid 集合
+  /// （当前 (hash, deleted) == merged.items[uuid] 的笔记），从根上杜绝误标。
+  Future<void> markSyncedForUuids(Set<String> uuids) async {
+    if (uuids.isEmpty) {
+      Log.db.i('按 uuid 集合标记已同步: 空集合，跳过');
+      return;
+    }
+    final db = await instance.database;
+    final placeholders = List.filled(uuids.length, '?').join(',');
+    final rows = await db.rawUpdate(
+      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+      '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
+      'WHERE ${NoteFields.uuid} IN ($placeholders)',
+      uuids.toList(),
+    );
+    Log.db.i('按 uuid 集合标记已同步: $rows 条已标记 (请求 ${uuids.length} 个)');
+  }
+
   // ──────────────────────────────────────────────
   // Layer 2a: dataKey 变更后强制重传 blob
   // ──────────────────────────────────────────────────
