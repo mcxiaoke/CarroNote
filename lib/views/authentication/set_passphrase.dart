@@ -24,14 +24,12 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/keyring.dart';
-import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';

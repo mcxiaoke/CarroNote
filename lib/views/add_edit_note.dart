@@ -25,8 +25,7 @@ import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/editor_state.dart';
-import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 
 class AddEditNotePage extends StatefulWidget {

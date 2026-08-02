@@ -27,18 +27,14 @@ import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/session.dart';
-import 'package:safenotes/sync/crypto.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/login_button.dart';

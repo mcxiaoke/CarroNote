@@ -1,0 +1,6 @@
+# 纯 Dart 包：不应依赖 flutter_lints
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    avoid_print: true

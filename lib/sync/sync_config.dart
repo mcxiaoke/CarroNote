@@ -23,7 +23,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Project imports:
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 
 /// 同步后端类型
 enum SyncBackendType {

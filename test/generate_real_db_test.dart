@@ -35,9 +35,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:safenotes/data/database_handler.dart';
-import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/sync/keyring.dart';
+import 'package:core/core.dart';
 
 /// 单条笔记目标大小范围（字节）
 const int kMinBytes = 512; // 512B

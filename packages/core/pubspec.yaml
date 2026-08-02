@@ -1,0 +1,25 @@
+name: core
+description: SafeNotes 核心逻辑（加密 / 数据库 / 同步引擎），纯 Dart，不依赖 Flutter。
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  crypto: ^3.0.3
+  cryptography: ^2.9.0
+  http: ^1.1.0
+  logger: ^2.1.0
+  meta: ^1.15.0
+  path: ^1.9.0
+  pointycastle: ^4.0.0
+  sqflite_common: ^2.5.11
+  tuple: ^2.0.0
+
+dev_dependencies:
+  collection: ^1.19.0
+  sqflite_common_ffi: ^2.4.2
+  test: ^1.25.0

@@ -10,9 +10,17 @@ environment:
   sdk: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"
 
+# Dart pub workspaces：核心逻辑独立为纯 Dart 包，编译器强制禁止 Flutter 依赖
+workspace:
+  - packages/core
+
 dependencies:
   flutter:
     sdk: flutter
+
+  # 核心逻辑包（加密 / 数据库 / 同步引擎，纯 Dart）
+  core:
+    path: packages/core
 
   after_layout: ^1.2.0
   auto_size_text: ^3.0.0
@@ -25,6 +33,7 @@ dependencies:
   flutter_staggered_grid_view: ^0.7.0
   intl: ^0.20.2
   local_auth: ^3.0.2
+  meta: ^1.15.0
   local_session_timeout: ^3.2.0
   logger: ^2.1.0
   media_scanner: ^2.1.0
@@ -38,6 +47,7 @@ dependencies:
   settings_ui: ^3.0.1
   shared_preferences: ^2.0.6
   sqflite: ^2.4.3
+  sqflite_common: ^2.5.11
   sqflite_common_ffi: ^2.4.2  # 桌面端 SQLite（Windows/macOS/Linux 运行时 + 测试）
   timeago: ^3.3.0
   tuple: ^2.0.0
@@ -46,6 +56,7 @@ dependencies:
   # 同步功能依赖
   http: ^1.1.0                # WebDAV HTTP 客户端
   pointycastle: ^4.0.0        # AES-256-GCM + PBKDF2-SHA256 + AES-CBC 加密
+  args: ^2.5.0                # CLI（bin/safenotes_cli.dart）命令解析
 
   safenotes_nord_theme:
     git:

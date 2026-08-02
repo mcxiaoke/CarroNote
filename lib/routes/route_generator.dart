@@ -25,8 +25,7 @@ import 'package:page_transition/page_transition.dart';
 // Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/main.dart';
-import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/authentication/login.dart';

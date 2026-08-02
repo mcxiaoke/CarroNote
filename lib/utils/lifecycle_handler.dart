@@ -16,7 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 // Project imports:
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 
 class AppLifecycleEventHandler extends WidgetsBindingObserver {
   final AsyncCallback? resumeCallBack;

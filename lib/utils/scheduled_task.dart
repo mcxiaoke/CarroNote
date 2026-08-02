@@ -21,7 +21,7 @@ import 'package:path_provider/path_provider.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 
 class ScheduledTask {
   static Future<void> backup() async {

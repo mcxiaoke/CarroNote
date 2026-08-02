@@ -47,15 +47,9 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/sync/crypto.dart';
-import 'package:safenotes/sync/sync_backend.dart';
-import 'package:safenotes/sync/sync_engine.dart';
-import 'package:safenotes/sync/sync_models.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/device_id.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

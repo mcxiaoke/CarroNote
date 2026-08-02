@@ -22,7 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/models/file_handler.dart';
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 

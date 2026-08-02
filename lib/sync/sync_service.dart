@@ -26,19 +26,9 @@ import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 
 // 项目导入
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/sync/journal.dart';
-import 'package:safenotes/sync/local_fs_backend.dart';
-import 'package:safenotes/sync/safe_server_backend.dart';
-import 'package:safenotes/sync/sync_backend.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/sync/sync_engine.dart';
-import 'package:safenotes/utils/log_webserver.dart';
-import 'package:safenotes/utils/app_logger.dart';
-import 'package:safenotes/sync/sync_models.dart';
-import 'package:safenotes/sync/keyring.dart';
-import 'package:safenotes/sync/webdav_backend.dart';
 import 'package:safenotes/utils/device_id.dart';
 
 /// 同步状态枚举（供 UI 显示）

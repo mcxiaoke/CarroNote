@@ -23,12 +23,9 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 
 // Project imports:
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
-import 'package:safenotes/models/parse_import.dart';
-import 'package:safenotes/models/safenote.dart';
-import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 

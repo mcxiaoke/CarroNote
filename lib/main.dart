@@ -30,18 +30,15 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 // Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/keyring.dart';
-import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/build_info.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
-import 'package:safenotes/utils/log_webserver.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 
@@ -70,6 +67,9 @@ Future main() async {
 
 /// 初始化日志系统（全平台一致：移动端 + 桌面端）
 Future<void> _initLogging() async {
+  // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
+  logDirResolverOverride = () async =>
+      (await getApplicationSupportDirectory()).path;
   await AppLogFile.init();
   Log.app.i('════════ SafeNotes 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
@@ -127,6 +127,10 @@ Future<void> _bootstrap() async {
     Log.app.i('桌面平台，sqflite_ffi数据库目录已指向应用支持目录: '
         '${supportDir.path}\\safenotes_sync.db');
   }
+
+  // 统一注入数据库工厂：桌面端已被换成 FFI 实现，移动端由 sqflite 插件注册
+  // （同一注入点、两套平台实现，不引入分支）。
+  NotesDatabase.dbFactoryOverride = databaseFactory;
 
   WidgetsBinding.instance.addObserver(AppLifecycleEventHandler(
     inactiveCallBack: ScheduledTask.backup,

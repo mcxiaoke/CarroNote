@@ -18,7 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 
 // Project imports:
-import 'package:safenotes/models/safenote.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';

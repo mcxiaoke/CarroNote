@@ -15,10 +15,8 @@
 import 'dart:async';
 
 // Project imports:
-import 'package:safenotes/data/database_handler.dart';
-import 'package:safenotes/models/safenote.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/utils/app_logger.dart';
 
 class NoteEditorState {
   static SafeNote? original;

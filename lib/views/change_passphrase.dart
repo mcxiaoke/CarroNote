@@ -21,15 +21,13 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/sync/keyring.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:safenotes/utils/app_logger.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class ChangePassphrase extends StatefulWidget {

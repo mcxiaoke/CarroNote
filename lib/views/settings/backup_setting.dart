@@ -29,7 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/storage_permission.dart';
 import 'package:safenotes/utils/styles.dart';

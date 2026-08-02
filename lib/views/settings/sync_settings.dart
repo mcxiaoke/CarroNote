@@ -17,10 +17,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:settings_ui/settings_ui.dart';
 
 // Project 导入
-import 'package:safenotes/data/database_handler.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/utils/app_logger.dart';
 
 class SyncSettingsPage extends StatefulWidget {
   const SyncSettingsPage({super.key});

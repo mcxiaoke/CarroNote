@@ -21,7 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 import 'package:safenotes/views/authentication/login.dart';
 import 'package:safenotes/views/authentication/set_passphrase.dart';
 

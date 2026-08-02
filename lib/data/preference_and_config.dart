@@ -19,7 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 // Project imports:
-import 'package:safenotes/utils/app_logger.dart';
+import 'package:core/core.dart';
 
 class PreferencesStorage {
   static SharedPreferences? _preferences;

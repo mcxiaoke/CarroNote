@@ -25,8 +25,9 @@ get: gen-build-info
 	flutter pub get
 
 analyze: gen-build-info
-	@echo "-> Analyze the code for linting errors"
+	@echo "-> Analyze the code for linting errors (app + core)"
 	flutter analyze lib test
+	dart analyze packages/core
 
 isort:
 	@echo "-> Apply import_sorter to ensure proper imports ordering"
@@ -39,8 +40,14 @@ format:
 valid: isort format check analyze
 
 test: gen-build-info
-	@echo "-> Run widget tests"
+	@echo "-> Run all tests (core via dart test + app via flutter test)"
+	dart test packages/core/test
 	flutter test
+
+# 只跑核心纯 Dart 测试：秒级反馈，CI 里不需要 Flutter SDK
+test-core: gen-build-info
+	@echo "-> Run core (pure Dart) tests only"
+	dart test packages/core/test
 
 # ── One-click run / build (auto-inject build info first) ──────────────────────
 run: gen-build-info
