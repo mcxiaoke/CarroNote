@@ -1257,17 +1257,26 @@ void main() {
       // 本地持有明文（localTitle / localHash），updatedAt 较早。
       // 设定 syncedHash = 远端上一次同步收敛时的 hash（remoteHash）：
       // 表示本机这份笔记"上次同步的就是远端版本"，如今只是本地单方面改成了
-      // localTitle。配合 base-hash 冲突判定 → remoteChanged=false、localChanged=true
-      // → 单边编辑，走 LWW（远端较新）后自愈重传本地明文，不产生冲突副本。
-      // （这正是自愈场景的真实语义：服务器持有上次同步版本，本地编辑后服务器
-      //  blob 损坏，自愈把本地明文重新上传覆盖即可，不该多留一份副本。）
+      // localTitle。
+      //
+      // P0-B 修复后：base-hash 判定 → remoteChanged=false（远端 hash 仍是 base）、
+      // localChanged=true → 走 **fast-forward 单边本地变更** 分支，直接上传本地
+      // 内容覆盖远端，不进入冲突/LWW/_handleDownloadFailure 路径。
+      // （P0-B 前：被误判为冲突 → LWW 远端较新 → 下载远端 blob → 解密失败 →
+      // 走 _handleDownloadFailure 自愈重传。两条路径最终结果一致：远端被本地
+      // 内容覆盖、损坏 blob 被新 blob 替代，但走 fast-forward 更直接、不产生
+      // 冲突噪音。）
+      //
+      // 这正是自愈场景的真实语义：服务器持有上次同步版本，本地编辑后服务器
+      //  blob 损坏，本地重新上传覆盖即可，不该多留一份副本。
       await database.storeNote(_makeNote(
         uuid: 'note-heal',
         title: localTitle,
         description: 'desc',
         updatedAt: now,
       ).copyWith(syncedHash: remoteHash));
-      // 远端 manifest 引用 remoteHash（不同内容），updatedAt 较晚 → 远端"赢" → 触发下载
+      // 远端 manifest 引用 remoteHash（不同内容），updatedAt 较晚
+      // （P0-B 后 updatedAt 不再决定胜负，base-hash 判定优先）
       await _uploadRemoteManifest(
         backend: backend,
         dataKey: dataKeyNew,
@@ -1304,14 +1313,23 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.failedNoteUuids, isEmpty,
-          reason: '自愈成功，不应报告失败');
+          reason: 'fast-forward 上传成功，不应报告失败');
       expect(result.uploaded, greaterThanOrEqualTo(1),
-          reason: '应触发自愈重传');
+          reason: 'fast-forward 应上传本地内容覆盖远端');
+      // P0-B 修复后：本场景走 fast-forward，不进入 _handleDownloadFailure，
+      // 因此不产生 heal 动作（heal 是「下载失败后自愈重传」的语义，fast-forward
+      // 是「单边变更直接上传」的语义，两者路径不同但最终结果一致）
       expect(
         result.actions.any((a) =>
             a.type == SyncActionType.heal && a.uuid == 'note-heal'),
+        isFalse,
+        reason: 'P0-B 后走 fast-forward，不应产生 heal 动作',
+      );
+      expect(
+        result.actions.any((a) =>
+            a.type == SyncActionType.upload && a.uuid == 'note-heal'),
         isTrue,
-        reason: '应产生 heal 动作',
+        reason: '应产生 upload 动作（fast-forward 上传本地内容）',
       );
 
       // 修复后的 blob（localHash）现在用 dataKeyNew 加密且内容为本机明文
