@@ -181,8 +181,8 @@ Future<void> cleanupResidual() async {
     final result = await Process.run(
       'pwsh',
       ['-NoProfile', '-Command',
-        "Get-Process webdav -ErrorAction SilentlyContinue | Stop-Process -Force; " +
-        "Get-NetTCPConnection -LocalPort $kTestPort -ErrorAction SilentlyContinue | " +
+        "Get-Process webdav -ErrorAction SilentlyContinue | Stop-Process -Force; "
+        "Get-NetTCPConnection -LocalPort $kTestPort -ErrorAction SilentlyContinue | "
         "ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }"],
     );
     // 忽略错误

@@ -412,7 +412,7 @@ void main() {
       } catch (_) {}
     });
 
-    SyncEngine _fsEngine(String id) => _makeEngine(
+    SyncEngine fsEngine(String id) => _makeEngine(
           backend: fsBackend,
           database: database,
           dataKey: fsKey,
@@ -421,7 +421,7 @@ void main() {
         );
 
     test('P1-1 覆盖远端 manifest 前生成可恢复环形备份', () async {
-      final engine = _fsEngine('p11');
+      final engine = fsEngine('p11');
       final note = _makeNote(uuid: 'p11-note', title: 'P1-1');
       await database.storeNote(note);
 
@@ -468,7 +468,7 @@ void main() {
     });
 
     test('P1-2 孤儿 blob 软删除到隔离区而非物理删除', () async {
-      final engine = _fsEngine('p12');
+      final engine = fsEngine('p12');
       final note = _makeNote(uuid: 'p12-note', title: 'P1-2');
       await database.storeNote(note);
       await engine.sync(); // 上传 blob + manifest
@@ -526,7 +526,7 @@ void main() {
         () async {
       for (final seed in const [1, 2, 3, 7, 99]) {
         final rng = Random(seed);
-        final engine = _fsEngine('chaos-$seed');
+        final engine = fsEngine('chaos-$seed');
         final notes = <SafeNote>[];
         for (var i = 0; i < 3; i++) {
           final n = _makeNote(
@@ -575,7 +575,7 @@ void main() {
 
     test('混沌：blob 缺失且无任何设备持有明文 → 进入 failedNoteUuids', () async {
       // 客户端 A 上传一条笔记
-      final engineA = _fsEngine('chaos-fail-A');
+      final engineA = fsEngine('chaos-fail-A');
       final note = _makeNote(uuid: 'chaos-fail-note', title: 'X', description: 'Y');
       await database.storeNote(note);
       await engineA.sync();

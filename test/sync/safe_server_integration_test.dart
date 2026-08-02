@@ -149,7 +149,7 @@ class ServerProcess {
 
   /// 清理 server 数据目录（vaults/ 下所有内容），让每个测试从干净状态开始
   ///
-  /// 新存储布局：<dataDir>/vaults/keyring-default/{manifest, blobs/}
+  /// 新存储布局：`<dataDir>/vaults/keyring-default/{manifest, blobs/}`
   /// 清理整个 vaults/ 目录即可重置到干净状态。
   Future<void> clearData() async {
     final vaultsDir = Directory('$dataDir\\vaults');
