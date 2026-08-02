@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Project imports:
@@ -106,7 +107,18 @@ Future<void> _bootstrap() async {
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    Log.app.i('桌面平台：已启用 sqflite_ffi');
+
+    // 桌面端：把数据库目录从 sqflite_ffi 默认的「CWD 相对路径
+    // .dart_tool/sqflite_common_ffi/databases」改为应用支持目录
+    // （getApplicationSupportDirectory → %APPDATA%\<app>）。
+    // 原因：默认相对路径会让数据库位置随程序启动目录（exe 所在目录）漂移；
+    // 打包到 Program Files 后该目录通常无写权限，会导致无法建库。
+    // 注意：setDatabasesPath 必须在首次访问 database 之前调用（见下方
+    // NotesDatabase.instance.database），此处顺序满足要求。
+    final supportDir = await getApplicationSupportDirectory();
+    await databaseFactory.setDatabasesPath(supportDir.path);
+    Log.app.i('桌面平台，sqflite_ffi数据库目录已指向应用支持目录: '
+        '${supportDir.path}\\safenotes_sync.db');
   }
 
   WidgetsBinding.instance.addObserver(AppLifecycleEventHandler(
