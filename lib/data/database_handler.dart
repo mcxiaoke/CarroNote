@@ -142,6 +142,52 @@ class NotesDatabase {
     }
   }
 
+  /// 单条内容变更：直接用内存中的明文 [note] 替换/插入缓存条目，
+  /// 避免为「一条笔记改动」而重解密全部 41 条（P1 优化延伸）。
+  static void _upsertCacheEntry(SafeNote note) {
+    final cache = _notesCache;
+    if (cache == null) return; // 缓存未建：下次读取自然重建（已含本条）
+    final idx = cache.indexWhere((n) => n.uuid == note.uuid);
+    if (idx >= 0) {
+      cache[idx] = note;
+    } else {
+      cache.add(note);
+    }
+  }
+
+  /// 按 id 局部修改缓存条目的删除/同步态（软删除/恢复用，正文不变）。
+  ///
+  /// 必须同步更新 [updatedAt]：softDelete/restoreNote 在 DB 里写入了新的
+  /// updatedAt(=now)，缓存若不跟进会让读路径（同步引擎 _buildLocalManifest）
+  /// 拿到**过期的 updatedAt**，导致远端墓碑/冲突 LWW 按错误时间戳判定，
+  /// 出现"删除墓碑未生效"等回归（见 sync_engine_test 远端墓碑用例）。
+  static void _patchCacheEntryById(
+    int id, {
+    bool? deleted,
+    bool? synced,
+    int? updatedAt,
+  }) {
+    final cache = _notesCache;
+    if (cache == null) return;
+    final idx = cache.indexWhere((n) => n.id == id);
+    if (idx < 0) return;
+    cache[idx] = cache[idx].copyWith(
+      deleted: deleted,
+      synced: synced,
+      updatedAt: updatedAt,
+    );
+  }
+
+  /// 按 id 从缓存移除条目（硬删除用）。
+  static void _removeCacheEntryById(int id) {
+    _notesCache?.removeWhere((n) => n.id == id);
+  }
+
+  /// 按 uuid 从缓存移除条目（GC 硬删除用）。
+  static void _removeCacheEntryByUuid(String uuid) {
+    _notesCache?.removeWhere((n) => n.uuid == uuid);
+  }
+
   NotesDatabase._init();
 
   /// 设置 dataKey（登录/解锁 keyring 后调用）
@@ -405,7 +451,7 @@ class NotesDatabase {
     final db = await instance.database;
     try {
       final id = await db.insert(tableNotes, _toEncryptedRow(note));
-      _invalidateCache(); // 内容变更，使解密缓存失效
+      _upsertCacheEntry(note.copyWith(id: id)); // 单条新增：直接更新缓存，避免全量重解密
       // 只记录元数据，不记录标题 / 正文（见文件顶部隐私红线说明）
       Log.note.i('新增笔记 uuid=${note.uuid} id=$id '
           'hash=${_hashBrief(note.contentHash)} '
@@ -503,7 +549,7 @@ class NotesDatabase {
       ..sort((a, b) => a.createdTime.compareTo(b.createdTime));
     // 数据加载条数是排障关键信息（启动/刷新时都会打印）
     Log.db.i('加载笔记列表: ${notes.length} 条（未删除）'
-        '${cacheHit ? '（缓存命中，跳过解密）' : ''}');
+        '${cacheHit ? '（缓存命中，跳过解密）' : '（缓存失效，已重新解密）'}');
     return notes;
   }
 
@@ -542,6 +588,7 @@ class NotesDatabase {
   /// 结果写入 [_notesCache]；命中缓存时直接返回副本，避免重复解密。
   Future<List<SafeNote>> readAllNotesIncludingDeleted() async {
     if (_notesCache != null) {
+      Log.db.i('加载全量笔记（含墓碑）: 命中缓存，跳过解密（${_notesCache!.length} 条）');
       return List.of(_notesCache!);
     }
     final sw = Stopwatch()..start();
@@ -550,10 +597,12 @@ class NotesDatabase {
     final notes = result.map((json) => _fromEncryptedRow(json)).toList();
     _notesCache = notes;
     final tombstones = notes.where((n) => n.deleted).length;
-    Log.db.d('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
+    Log.db.i('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
         '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
-        '耗时 ${sw.elapsedMilliseconds}ms');
-    return notes;
+        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    // 返回副本：避免调用方（如 _buildLocalManifest）在遍历时因
+    // hardDeleteByUuid 改写 _notesCache 而触发并发修改异常。
+    return List.of(notes);
   }
 
   /// 更新笔记（title/description 加密后存储）
@@ -567,7 +616,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [note.id],
       );
-      _invalidateCache(); // 内容变更，使解密缓存失效
+      _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
       Log.note.i('修改笔记 uuid=${note.uuid} id=${note.id} '
           'hash=${_hashBrief(note.contentHash)} '
           'len=${note.title.length}+${note.description.length} rows=$rows');
@@ -590,7 +639,7 @@ class NotesDatabase {
         where: '${NoteFields.uuid} = ?',
         whereArgs: [note.uuid],
       );
-      _invalidateCache(); // 内容变更，使解密缓存失效
+      _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
       Log.note.i('按 uuid 更新笔记 uuid=${note.uuid} '
           'hash=${_hashBrief(note.contentHash)} '
           'deleted=${note.deleted} rows=$rows');
@@ -617,7 +666,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
-      _invalidateCache(); // 内容变更，使解密缓存失效
+      _patchCacheEntryById(id, deleted: true, synced: false, updatedAt: now); // 软删除：标记缓存条目为已删除，并同步 updatedAt
       Log.note.i('删除笔记（软删除，移入回收站）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
@@ -665,7 +714,7 @@ class NotesDatabase {
       }
     });
 
-    _invalidateCache(); // 笔记被删除，使解密缓存失效
+    _removeCacheEntryById(id); // 笔记被删除：从缓存移除该条目
 
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
@@ -693,7 +742,7 @@ class NotesDatabase {
       }
     });
     if (deleted > 0) {
-      _invalidateCache(); // 笔记被删除，使解密缓存失效
+      _removeCacheEntryByUuid(uuid); // 笔记被删除：从缓存移除该条目
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -777,7 +826,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [id],
       );
-      _invalidateCache(); // 内容变更，使解密缓存失效
+      _patchCacheEntryById(id, deleted: false, synced: false, updatedAt: now); // 恢复：标记缓存条目为未删除，并同步 updatedAt
       Log.note.i('恢复笔记（撤回删除）id=$id rows=$rows');
       return rows;
     } on Object catch (e, st) {
