@@ -52,34 +52,27 @@ Future<String?> Function()? logDirResolverOverride;
 /// 应用日志级别（与 package:logger 的 Level 对应）
 ///
 /// 调试面板用此枚举过滤，避免 UI 层直接依赖 logger 包的 Level 类型。
-enum AppLogLevel {
-  trace,
-  debug,
-  info,
-  warning,
-  error,
-  fatal,
-}
+enum AppLogLevel { trace, debug, info, warning, error, fatal }
 
 /// 级别的定宽标签（对齐，便于阅读日志文件）
 String _levelLabel(AppLogLevel lv) => switch (lv) {
-      AppLogLevel.trace => 'TRACE',
-      AppLogLevel.debug => 'DEBUG',
-      AppLogLevel.info => 'INFO ',
-      AppLogLevel.warning => 'WARN ',
-      AppLogLevel.error => 'ERROR',
-      AppLogLevel.fatal => 'FATAL',
-    };
+  AppLogLevel.trace => 'TRACE',
+  AppLogLevel.debug => 'DEBUG',
+  AppLogLevel.info => 'INFO ',
+  AppLogLevel.warning => 'WARN ',
+  AppLogLevel.error => 'ERROR',
+  AppLogLevel.fatal => 'FATAL',
+};
 
 AppLogLevel _mapLevel(Level lv) => switch (lv) {
-      Level.trace => AppLogLevel.trace,
-      Level.debug => AppLogLevel.debug,
-      Level.info => AppLogLevel.info,
-      Level.warning => AppLogLevel.warning,
-      Level.error => AppLogLevel.error,
-      Level.fatal => AppLogLevel.fatal,
-      _ => AppLogLevel.info,
-    };
+  Level.trace => AppLogLevel.trace,
+  Level.debug => AppLogLevel.debug,
+  Level.info => AppLogLevel.info,
+  Level.warning => AppLogLevel.warning,
+  Level.error => AppLogLevel.error,
+  Level.fatal => AppLogLevel.fatal,
+  _ => AppLogLevel.info,
+};
 
 // ──────────────────────────────────────────────
 // 单条日志
@@ -122,13 +115,13 @@ class AppLogEntry {
 
   /// JSON 形式（导出用）
   Map<String, Object?> toJson() => {
-        'time': time.toIso8601String(),
-        'level': level.name,
-        'tag': tag,
-        'message': message,
-        if (error != null) 'error': error,
-        if (stackTrace != null) 'stackTrace': stackTrace,
-      };
+    'time': time.toIso8601String(),
+    'level': level.name,
+    'tag': tag,
+    'message': message,
+    if (error != null) 'error': error,
+    if (stackTrace != null) 'stackTrace': stackTrace,
+  };
 }
 
 /// 时间戳格式：YYYY-MM-DD HH:MM:SS.mmm
@@ -263,17 +256,21 @@ class _HybridOutput extends LogOutput {
       }
     }
 
-    buffer._append(AppLogEntry(
-      time: event.origin.time,
-      level: level,
-      tag: _LogContext.tag,
-      message: message,
-      error: errorPart,
-      stackTrace: stackPart,
-    ));
+    buffer._append(
+      AppLogEntry(
+        time: event.origin.time,
+        level: level,
+        tag: _LogContext.tag,
+        message: message,
+        error: errorPart,
+        stackTrace: stackPart,
+      ),
+    );
 
     // 3) console（仅 debug 模式，避免 release 期无谓开销）
-    if (kDebugMode) {
+    // 运行时开关 consoleEnabled：CLI 侧会置 false，避免日志行污染命令输出
+    //（尤其 --json 机器可读输出）。App 侧保持默认 true，行为不变。
+    if (kDebugMode && AppLogFile.consoleEnabled) {
       // ignore: avoid_print
       print(fullText);
     }
@@ -302,6 +299,15 @@ class AppLogFile {
   static String? _currentDate;
   static DateTime? _lastFlush;
   static bool _initialized = false;
+
+  /// 是否输出日志到控制台（stdout）。默认 true（App 行为不变）；
+  /// CLI 在引导阶段置 false，让命令输出（含 --json）保持纯净不被日志行污染。
+  static bool consoleEnabled = true;
+
+  /// 是否优先使用注入的日志目录（[logDirResolverOverride]）而非 exe 同目录。
+  /// 默认 false（桌面 App 优先写 exe 同目录 logs/，便于用户直接找到）；
+  /// CLI 置 true，让日志落在 `--data-dir` 下（多设备测试隔离、`log cat` 可读）。
+  static bool preferLogDirOverride = false;
 
   /// 是否已初始化（重复调用 init 会被忽略）
   static bool get isInitialized => _initialized;
@@ -336,6 +342,12 @@ class AppLogFile {
   /// 桌面端优先用 exe 同目录的 logs/（便于用户直接找到）；
   /// 若该目录不可写（如安装在 Program Files），回退到应用数据目录。
   static Future<String?> _resolveLogDir() async {
+    // CLI（preferLogDirOverride=true）优先用注入的数据目录，保证多设备日志隔离
+    if (preferLogDirOverride) {
+      final viaOverride = await _resolveLogDirViaOverride();
+      if (viaOverride != null) return viaOverride;
+    }
+
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       try {
         final exeDir = p.dirname(Platform.resolvedExecutable);
@@ -346,6 +358,11 @@ class AppLogFile {
       }
     }
 
+    return _resolveLogDirViaOverride();
+  }
+
+  /// 走注入目录分支（移动端回退 / CLI 首选）
+  static Future<String?> _resolveLogDirViaOverride() async {
     // 移动端 / 桌面端回退：应用私有数据目录的 logs/
     // 目录来源由外部注入（App 侧注入 path_provider 实现，CLI/测试注入临时目录），
     // 使本文件不依赖任何 Flutter 插件，保持纯 Dart 可编译。

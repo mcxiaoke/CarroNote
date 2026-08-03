@@ -1,87 +1,60 @@
-// SafeNotes 核心逻辑 CLI —— 纯 Dart 驱动的冒烟验证 / 混沌测试 / 互操作验证入口。
+// SafeNotes 核心逻辑 CLI —— 纯 Dart 驱动的真实流程测试 / 互操作验证入口。
 //
-// 用法示例：
-//   dart run bin/safenotes_cli.dart db info --data-dir ./temp/cli
-//   dart run bin/safenotes_cli.dart note add --data-dir ./temp/cli --title hi --body world
+// CLI 是核心逻辑的第二个前端（App 是第一个）。它一旦编译不过，就说明有人往
+// core 里塞了 Flutter 依赖——这是架构约束的守卫。
 //
-// 说明：CLI 是核心逻辑的第二个前端（App 是第一个）。它一旦编译不过，
-// 就说明有人往 core 里塞了 Flutter 依赖——这是架构约束的守卫。
+// 设计文档：docs/cli-client-design-20260803.md
+//
+// 用法：
+//   dart run bin/safenotes_cli.dart <命令> [子命令] [--data-dir DIR] [--password P]
+//   dart run bin/safenotes_cli.dart help          # 全部命令帮助
+//   dart run bin/safenotes_cli.dart note list     # 示例
+//
+// 约定：
+//   - 全局参数（--data-dir/--password/--password-file/--device-id）必须写在
+//     命令名之前；子命令参数写在其后。
+//   - 退出码：0=成功；1=用户可预期错误（密码错/未找到/参数错误/同步失败）；
+//     2=未预期异常。帮助/用法错误由 args 抛 UsageException，统一打印后退出。
+//   - 输出默认文本，叶子命令可加 --json 输出机器可读 JSON。
 
+// Dart 原生导入
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:args/args.dart';
+// Package 导入
+import 'package:args/command_runner.dart';
 import 'package:core/core.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+// 项目导入
+import 'cli_commands.dart';
+import 'cli_context.dart';
 
 Future<void> main(List<String> args) async {
-  final parser = ArgParser()
-    ..addOption('data-dir', defaultsTo: 'temp/cli-data')
-    ..addOption('title')
-    ..addOption('body')
-    ..addFlag('help', abbr: 'h');
-
-  final results = parser.parse(args);
-  if (results['help'] as bool) {
-    stdout.writeln(parser.usage);
-    return;
+  final runner = buildCliRunner();
+  try {
+    final result = await runner.run(args);
+    if (result is String && result.isNotEmpty) {
+      stdout.writeln(result);
+    }
+  } on UsageException catch (e) {
+    // 参数解析 / 用法错误：args 包已生成消息，这里直接展示（不打印堆栈）
+    stderr.writeln(e.message);
+    stderr.writeln();
+    stderr.writeln(runner.usage);
+    exitCode = 64;
+  } on CliException catch (e) {
+    // 用户可预期错误：只打印一行消息
+    stderr.writeln('错误: ${e.message}');
+    exitCode = 1;
+  } on WrongPasswordException catch (e) {
+    stderr.writeln('错误: 密码错误（${e.message}）');
+    exitCode = 1;
+  } on KeyringNotInitializedException catch (e) {
+    stderr.writeln('错误: keyring 未初始化（${e.message}）');
+    exitCode = 1;
+  } catch (e, st) {
+    // 未预期异常：带堆栈，退出码 2
+    stderr.writeln('异常: $e');
+    stderr.writeln(st);
+    exitCode = 2;
   }
-
-  // 纯 Dart SQLite 初始化
-  sqfliteFfiInit();
-  NotesDatabase.dbFactoryOverride = databaseFactoryFfi;
-
-  final dataDir = Directory(results['data-dir'] as String);
-  await dataDir.create(recursive: true);
-  NotesDatabase.dbPathOverride = dataDir.path;
-
-  // CLI 侧日志目录注入（核心日志逻辑保持纯 Dart）
-  logDirResolverOverride = () async => dataDir.path;
-  await AppLogFile.init();
-
-  final command = results.rest.isNotEmpty ? results.rest.first : 'help';
-  switch (command) {
-    case 'db':
-      await _cmdDbInfo();
-    case 'note':
-      await _cmdNoteAdd(
-        title: results['title'] as String? ?? 'CLI 标题',
-        body: results['body'] as String? ?? 'CLI 正文',
-      );
-    default:
-      stdout.writeln('未知命令: $command');
-      stdout.writeln(parser.usage);
-  }
-
-  await NotesDatabase.instance.close();
-  await AppLogFile.close();
-}
-
-/// 打印数据库 schema 状态（冒烟验证：能建库即证明核心可被 CLI 驱动）
-Future<void> _cmdDbInfo() async {
-  final db = await NotesDatabase.instance.database;
-  final tables = await db.rawQuery(
-    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-  );
-  stdout.writeln('数据库已打开: ${db.isOpen}');
-  stdout.writeln('表: ${tables.map((r) => r['name']).join(', ')}');
-}
-
-/// 新增一条笔记并立即读回（验证字段级加解密往返）
-Future<void> _cmdNoteAdd({required String title, required String body}) async {
-  // CLI 无 UI 登录流程，用测试注入路径验证往返：
-  // 直接注入 dataKey 再走加密写 / 解密读。
-  await NotesDatabase.instance.database;
-  final key = await SyncCrypto.deriveMasterKey('cli-demo-pass',
-      salt: Uint8List.fromList(List<int>.generate(16, (i) => i + 1)));
-  NotesDatabase.instance.setDataKey(key);
-
-  final note = SafeNote.create(
-    title: title,
-    description: body,
-  );
-  await NotesDatabase.instance.storeNote(note);
-  final readBack = await NotesDatabase.instance.readNoteByUuid(note.uuid);
-  stdout.writeln(
-      '写入成功 uuid=${note.uuid} title=${readBack?.title} body=${readBack?.description}');
 }
