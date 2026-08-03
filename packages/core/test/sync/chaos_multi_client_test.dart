@@ -36,8 +36,12 @@ const String kChaosRootRel = 'temp/chaos';
 
 /// 打开真实 keyring 的候选密码（当前密码放首位省 PBKDF2）。
 /// 当前真实流程数据集（Android 模拟器 + Windows 应用交互产生）：
-/// 初始密码 testpwd.1111，随后修改为 testpwd.2222。
-const List<String> kRealVaultPasswords = ['testpwd.2222', 'testpwd.1111'];
+/// 初始密码 safe-a-2026 → 改密 safe-a-2026aaa → safe-a-2026bbb（**当前密码放首位**）。
+const List<String> kRealVaultPasswords = [
+  'safe-a-2026bbb',
+  'safe-a-2026aaa',
+  'safe-a-2026',
+];
 
 // ──────────────────────────────────────────────
 // 逻辑真值模型
@@ -236,13 +240,21 @@ class ChaosHarness {
   }
 
   /// 纪元不匹配协调：用 knownPasswords 中某个密码重新解锁远端 keyring，刷新本地 keyring。
+  ///
+  /// v4（epoch 消除）起引擎不再设置 [SyncResult.passwordEpochMismatch]（恒
+  /// false），scenario-b「他端改了密码」改用 [SyncResult.requiresRelogin]
+  /// 表达「必须重新登录」（sync_engine.dart:466-471 / 516-521）。因此两种
+  /// 信号都要触发协调，否则他端改密后本端同步被永久冻结（零动作）。
   Future<void> _reconcile(
     ChaosClient c,
     SyncResult result,
     LocalFsBackend backend,
   ) async {
     var current = result;
-    for (var attempt = 0; attempt < 4 && current.passwordEpochMismatch; attempt++) {
+    for (var attempt = 0;
+        attempt < 4 &&
+            (current.passwordEpochMismatch || current.requiresRelogin);
+        attempt++) {
       final resp = await backend.getManifest();
       final header = ManifestCrypto.deserializeHeaderOnly(resp.ciphertext);
       final remoteKv = header.keyVersion;
@@ -1132,20 +1144,19 @@ void main() {
     // 中执行，避免全局 NotesDatabase 单例互踩，耗时≈最慢单个 seed 而非累加。
     // 单个 seed 失败不会中断其余 seed，全部跑完后统一报告失败列表。
     //
-    // v4（epoch 消除）起 SKIP：该测试依赖 temp/safenotes-vault 的旧格式
-    // （epoch-AAD）真实数据作为混沌基线，v4 blob 纯化（AAD=hash）与其不兼容，
-    // 解密必失败（不兼容策略 §0：不保留旧格式只读解码路径）。如需恢复，
-    // 用 v4 新格式数据重建 temp/safenotes-vault 后去掉 skip。
+    // v4（epoch 消除）曾 SKIP：当时 temp/safenotes-vault 为旧格式（epoch-AAD）真实数据，
+    // v4 blob 纯化（AAD=hash）与其不兼容，解密必失败。2026-08-02 已用 v4 新格式
+    // 重建 temp/safenotes-vault（schemaVersion=4，密码 safe-a-2026bbb），故恢复运行。
     test('并行混沌（多 seed 独立 isolate 同时运行）', () async {
       const seeds = [12, 345, 6789];
-      print('SKIP: 依赖旧格式真实数据（temp/safenotes-vault，epoch-AAD），'
-          'v4 不兼容，跳过（见测试内注释）');
-      print('（如需恢复：用 v4 新格式数据重建 temp/safenotes-vault 后去掉 skip）');
       final sw = Stopwatch()..start();
-      final failures = <int>[];
+      final failures = await _runSeedsParallel(seeds);
       print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
           '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
-    }, skip: 'v4 不兼容旧格式真实数据（epoch-AAD），需重建数据后恢复');
+      if (failures.isNotEmpty) {
+        fail('失败的 seed: $failures');
+      }
+    }, timeout: const Timeout(Duration(minutes: 30)));
 
     // 命令行自定义 seed：通过环境变量 CHAOS_SEEDS 传入逗号分隔的 seed 列表。
     // 用法（pwsh）:
