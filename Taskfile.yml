@@ -1,0 +1,138 @@
+# SafeNotes task runner (Task / go-task)
+# Usage: task <task>
+#   task --list        # list all tasks
+#   task cli-build     # build the pure-Dart CLI executable
+#
+# Tasks are grouped into: deps / build / test.
+# Cross-platform: flutter, dart, python, pwsh must be on PATH.
+
+version: '3'
+
+tasks:
+
+  # ── Dependencies & maintenance ──────────────────────────────
+  get:
+    desc: Fetch package dependencies (after regenerating build info)
+    deps: [gen-build-info]
+    cmds:
+      - flutter pub get
+
+  clean:
+    desc: Clean build/ and .dart_tool/ directories
+    cmds:
+      - flutter clean
+
+  # ── Build ───────────────────────────────────────────────────
+  gen-build-info:
+    desc: Regenerate lib/utils/build_info.dart (git hash + build time)
+    cmds:
+      - python scripts/generate_build_info.py
+
+  cli-build:
+    desc: Build the pure-Dart CLI (AOT bundle with sqlite3)
+    deps: [gen-build-info]
+    cmds:
+      - dart build cli -t bin/safenotes_cli.dart -o build/cli
+
+  run:
+    desc: Run the app (debug)
+    deps: [gen-build-info]
+    cmds:
+      - flutter run
+
+  build-apk:
+    desc: Build Android APK (release)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build apk --release
+
+  build-aab:
+    desc: Build Android AppBundle (release)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build appbundle --release
+
+  build-windows:
+    desc: Build Windows desktop (release)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build windows --release
+
+  build-linux:
+    desc: Build Linux desktop (release)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build linux --release
+
+  build-macos:
+    desc: Build macOS desktop (release)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build macos --release
+
+  apk:
+    desc: Build Android APK (debug)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build apk --debug
+
+  exe:
+    desc: Build Windows executable (debug)
+    deps: [gen-build-info]
+    cmds:
+      - flutter build windows --debug
+
+  all:
+    desc: Build debug Windows exe + Android APK
+    cmds:
+      - task: exe
+      - task: apk
+
+  release:
+    desc: Run the release packaging script
+    deps: [gen-build-info]
+    cmds:
+      - python scripts/release.py
+
+  # ── Test & code quality ─────────────────────────────────────
+  analyze:
+    desc: Analyze app + core for lint/format errors
+    deps: [gen-build-info]
+    cmds:
+      - flutter analyze lib test
+      - dart analyze packages/core
+
+  test:
+    desc: Run all tests (core via dart test + app via flutter test)
+    deps: [gen-build-info]
+    cmds:
+      - dart test packages/core/test
+      - flutter test
+
+  test-core:
+    desc: Run core (pure Dart) tests only
+    deps: [gen-build-info]
+    cmds:
+      - dart test packages/core/test
+
+  e2e:
+    desc: Run the CLI end-to-end test script (needs `task cli-build` first)
+    cmds:
+      - pwsh scripts/cli-e2e-test.ps1
+
+  isort:
+    desc: Sort imports (import_sorter)
+    cmds:
+      - dart run import_sorter:main
+
+  format:
+    desc: Fix formatting (dart format)
+    cmds:
+      - dart format .
+
+  valid:
+    desc: Run quality gates (isort + format + analyze)
+    cmds:
+      - task: isort
+      - task: format
+      - task: analyze

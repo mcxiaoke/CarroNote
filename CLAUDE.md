@@ -7,6 +7,16 @@
 - **代码分层**：核心逻辑（加密 / 数据库 / 同步引擎）为独立纯 Dart 包 `packages/core`（无 Flutter 依赖，编译器强制），App 侧仅保留 UI 与状态装配。
 - 入口：`lib/main.dart`；核心包：`packages/core/`（统一经 `package:core/core.dart` 出口导入）；服务端参考实现：`server/`（Go / Node.js）。
 - CLI：`bin/safenotes_cli.dart`（纯 Dart，无需 Flutter SDK，可读写加密笔记数据库）。
+  - **编译 AOT 产物**：`make cli-build` / `task cli-build` / `just cli-build`
+    （= `dart build cli -t bin/safenotes_cli.dart -o build/cli`，注意 SDK ≥3.12 的 `dart compile exe`
+    不支持 build hooks，须用 `dart build cli`）。产物 `build/cli/bundle/bin/safenotes_cli.exe`
+    + `build/cli/bundle/lib/sqlite3.dll`（bundle 需整体分发），日常用产物比 `dart run` 快约 58x 且无
+    "Running build hooks" 噪声。
+  - **任务管理**：`make`（Makefile）、`task`（Taskfile.yml）、`just`（justfile）三份等价，
+    按 依赖/构建/测试 三类组织，均含 `cli-build`、`e2e`、`analyze`、`test`、`test-core` 等；
+    Windows 下 `make` 可能不在 PATH，推荐 `task` / `just`（可 `task --list` / `just --list` 查看）。
+  - **CLI 端到端测试**：`make e2e` / `task e2e` / `just e2e`（= `pwsh scripts/cli-e2e-test.ps1`，
+    需先 cli-build；脚本自动优先用二进制，缺失时回退 `dart run`）。
 
 ## 2. 测试流程
 1. 改码后先跑 `make analyze`（= `flutter analyze lib test` + `dart analyze packages/core`），确保无 lint / format 错误。

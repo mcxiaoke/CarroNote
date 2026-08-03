@@ -10,46 +10,37 @@
 #
 # See https://safenotes.dev for support or download.
 #
+# SafeNotes tasks, grouped into: deps / build / test.
+# Cross-platform: flutter, dart, python, pwsh must be on PATH.
+# On Windows prefer `task` (Taskfile.yml) or `just` (justfile) over make.
+
+# ─────────────────────────────────────────────────────────────
+# Dependencies & maintenance
+# ─────────────────────────────────────────────────────────────
+
+get: gen-build-info
+	@echo "-> Fetch the current package's dependencies"
+	flutter pub get
 
 clean:
 	@echo "-> Delete the build/ and .dart_tool/ directories"
 	flutter clean
+
+# ─────────────────────────────────────────────────────────────
+# Build
+# ─────────────────────────────────────────────────────────────
 
 # Generate build info (Git commit hash + build time) and inject it into lib/utils/build_info.dart
 gen-build-info:
 	@echo "-> Generate build info (git hash + build time)"
 	python scripts/generate_build_info.py
 
-get: gen-build-info
-	@echo "-> Get the current package's dependencies"
-	flutter pub get
+# Build the pure-Dart CLI as an AOT bundle (exe + sqlite3.dll). Requires a recent
+# Dart SDK: `dart compile exe` cannot run build hooks (sqlite3), so use `dart build cli`.
+cli-build: gen-build-info
+	@echo "-> Build the pure-Dart CLI (AOT bundle)"
+	dart build cli -t bin/safenotes_cli.dart -o build/cli
 
-analyze: gen-build-info
-	@echo "-> Analyze the code for linting errors (app + core)"
-	flutter analyze lib test
-	dart analyze packages/core
-
-isort:
-	@echo "-> Apply import_sorter to ensure proper imports ordering"
-	dart run import_sorter:main
-
-format:
-	@echo "-> Fix formatting issues in the code"
-	dart format .
-
-valid: isort format check analyze
-
-test: gen-build-info
-	@echo "-> Run all tests (core via dart test + app via flutter test)"
-	dart test packages/core/test
-	flutter test
-
-# 只跑核心纯 Dart 测试：秒级反馈，CI 里不需要 Flutter SDK
-test-core: gen-build-info
-	@echo "-> Run core (pure Dart) tests only"
-	dart test packages/core/test
-
-# ── One-click run / build (auto-inject build info first) ──────────────────────
 run: gen-build-info
 	@echo "-> Run the app (debug)"
 	flutter run
@@ -74,7 +65,6 @@ build-macos: gen-build-info
 	@echo "-> Build macOS desktop (release)"
 	flutter build macos --release
 
-# ── Debug builds (Windows + Android by default) ──────────────────────────────
 apk: gen-build-info
 	@echo "-> Build Android APK (debug)"
 	flutter build apk --debug
@@ -91,4 +81,40 @@ release: gen-build-info
 	@echo "-> Run the release packaging script"
 	python scripts/release.py
 
-.PHONY: clean get check test isort format valid gen-build-info run build-apk build-aab build-windows build-linux build-macos release apk exe all
+# ─────────────────────────────────────────────────────────────
+# Test & code quality
+# ─────────────────────────────────────────────────────────────
+
+analyze: gen-build-info
+	@echo "-> Analyze the code for linting errors (app + core)"
+	flutter analyze lib test
+	dart analyze packages/core
+
+# All tests: core (pure Dart) + app (Flutter)
+test: gen-build-info
+	@echo "-> Run all tests (core via dart test + app via flutter test)"
+	dart test packages/core/test
+	flutter test
+
+# Core (pure Dart) tests only: fast feedback, no Flutter SDK needed in CI
+test-core: gen-build-info
+	@echo "-> Run core (pure Dart) tests only"
+	dart test packages/core/test
+
+# CLI end-to-end test script (needs a CLI build first: `make cli-build`)
+e2e:
+	@echo "-> Run the CLI end-to-end test script"
+	pwsh scripts/cli-e2e-test.ps1
+
+isort:
+	@echo "-> Apply import_sorter to ensure proper imports ordering"
+	dart run import_sorter:main
+
+format:
+	@echo "-> Fix formatting issues in the code"
+	dart format .
+
+valid: isort format analyze
+	@echo "-> Code quality gates passed"
+
+.PHONY: clean get gen-build-info cli-build run build-apk build-aab build-windows build-linux build-macos release apk exe all analyze test test-core e2e isort format valid

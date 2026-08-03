@@ -57,7 +57,7 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
  (云盘)     (Go / Node.js)   (单设备/测试)
 ```
 
-核心逻辑（加密 / 数据库 / 同步引擎）独立为纯 Dart 包 `packages/core`（禁止 Flutter 依赖，由 pub workspace 编译器强制），App 侧只保留 UI 与状态装配，通过 `package:core/core.dart` 单一出口导入。另提供纯 Dart CLI `bin/safenotes_cli.dart`（无需 Flutter SDK 即可读写加密笔记数据库）。
+核心逻辑（加密 / 数据库 / 同步引擎）独立为纯 Dart 包 `packages/core`（禁止 Flutter 依赖，由 pub workspace 编译器强制），App 侧只保留 UI 与状态装配，通过 `package:core/core.dart` 单一出口导入。另提供纯 Dart CLI `bin/safenotes_cli.dart`（无需 Flutter SDK 即可读写加密笔记数据库，可编译为 AOT 原生产物，见 [CLI 客户端](#cli-客户端)）。
 
 ### 目录结构（App 侧 `lib/`）
 
@@ -145,6 +145,35 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
 
 ---
 
+## CLI 客户端
+
+核心逻辑的**第二个前端**（App 是第一个）：纯 Dart，无需 Flutter SDK，直接读写加密笔记数据库，
+是**真实流程测试**（多目录多设备同步、密钥迁移、冲突、改密码等）的主力工具。
+用 `--data-dir` 指定一个数据目录即视为**一台设备实例**，用两个目录即可模拟两台设备做同步。
+
+```bash
+# 编译为 AOT 原生产物（无 build-hooks 噪声，比 dart run 快约 58x；bundle 需整体分发）
+make cli-build        # = task cli-build = just cli-build
+                      # 产物：build/cli/bundle/bin/safenotes_cli.exe + bundle/lib/sqlite3.dll
+
+# 常用命令（产物位于 PATH 后可直接执行）
+safenotes_cli.exe --data-dir temp/dev-a --password P keyring init
+safenotes_cli.exe --data-dir temp/dev-a --password P note add --title 标题 --body 正文
+safenotes_cli.exe --data-dir temp/dev-a --password P note list
+safenotes_cli.exe --data-dir temp/dev-a --password P sync setup --type localfs --path temp/vault
+safenotes_cli.exe --data-dir temp/dev-a --password P sync run
+safenotes_cli.exe --data-dir temp/dev-a --password P export --out backup.json
+safenotes_cli.exe --data-dir temp/dev-a --password P db info
+```
+
+命令分组：`db`（info / wipe）、`keyring`（init / unlock / status / verify / change-password）、
+`note`（add / list / get / update / delete / restore / hard-delete / purge-deleted）、
+`export` / `import`、`sync`（setup / run / repair / status）、`log` / `journal`、`meta`。
+退出码约定：`0` 成功、`1` 用户可预期错误、`2` 异常崩溃。完整说明见
+`docs/cli-client-design-20260803.md`，端到端测试见 [测试](#测试) 中的 `e2e`。
+
+---
+
 ## 日志系统
 
 Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。日志核心在 `packages/core/lib/src/logger/`，平台目录由 App 侧经 `logDirResolverOverride` 注入。
@@ -177,27 +206,40 @@ Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业�
 - **网络**：`http`（WebDAV 客户端）
 - **状态管理**：`provider`
 - **生物识别**：`local_auth`；**本地化**：`easy_localization`
+- **CLI 解析**：`args`（CommandRunner）；**任务管理**：`make` / `task` / `just` 三套等价
 - **同步服务端**：Go（标准库）/ Node.js（内置模块）
 
 ---
 
 ## 构建与运行
 
+**任务管理**：`make`（Makefile）、`task`（Taskfile.yml）、`just`（justfile）三份**完全等价**，
+按「依赖 / 构建 / 测试」三类组织，均含 `get`、`clean`、`run`、`cli-build`、`build-*`、`test`、
+`test-core`、`analyze`、`e2e` 等。Windows 下 `make` 默认不在 PATH，推荐用 `task` 或 `just`
+（`task --list` / `just --list` 查看全部任务）。
+
 ```bash
 # 安装依赖
-flutter pub get
+make get              # = task get = just get（自动注入最新构建信息）
 
 # 调试运行
-flutter run
+make run              # = task run = just run
+
+# 构建 CLI 客户端（AOT 原生产物，见「CLI 客户端」一节）
+make cli-build
 
 # 构建 Android 发布包
-flutter build apk --release
-flutter build appbundle --release
+make build-apk        # APK (release)
+make build-aab        # AppBundle (release)
 
 # 桌面端（Windows / macOS / Linux，使用 sqflite_common_ffi）
 flutter config --enable-<platform>-desktop
+make build-windows / build-linux / build-macos
 flutter run -d <platform>
 
+# 查看全部任务
+task --list
+just --list
 ```
 
 > 首次启动需设置主密码；笔记在本地加密后写入 SQLite。启用同步需在「设置 → 同步」中配置后端。
@@ -210,7 +252,7 @@ flutter run -d <platform>
 
 实现方式：构建前由 `scripts/generate_build_info.py` 生成 `lib/utils/build_info.dart`（编译期常量，零运行时开销），`lib/main.dart` 的 `_initLogging()` 在启动时读取并打印。
 
-**统一使用 `make` 目标构建**（会自动先注入最新构建信息）：
+**统一使用 `make` 目标构建**（会自动先注入最新构建信息；`task` / `just` 同理）：
 
 ```bash
 make run            # 调试运行（自动注入）
@@ -255,12 +297,15 @@ Dart: 3.44.8
 
 ```bash
 # 运行全部测试（核心 + App）
-make test                # = dart test packages/core/test + flutter test
+make test                # = task test = just test；dart test packages/core/test + flutter test
 
 # 仅运行核心包测试（纯 Dart，无需 Flutter SDK）
 make test-core           # dart test packages/core/test
 dart test packages/core/test/encryption          # 仅加密
 dart test packages/core/test/sync                # 仅同步引擎 / 多设备 / 长期存续
+
+# CLI 端到端测试（需先 make cli-build，脚本自动优先用编译产物）
+make e2e                 # = task e2e = just e2e
 
 # 运行 App 侧测试（需 Flutter）
 flutter test
@@ -280,6 +325,7 @@ flutter test
 - `docs/sync-protocol-spec.md` / `docs/server-api-spec.md`：客户端 / 服务端协议规范
 - `docs/simplified-sync-design.md` / `docs/sync-feature-design.md`：同步架构设计
 - `docs/server-implementation.md`：SafeServer 实现文档
+- `docs/cli-client-design-20260803.md`：CLI 客户端设计（命令树 / 验收清单 / 实现要点）
 - `docs/pure-dart-core-extraction-research-20260802.md`：核心逻辑纯 Dart 化抽取设计
 - `docs/CHANGES-YYYYMMDD.md`：每日变更日志（按日期归档）
 
