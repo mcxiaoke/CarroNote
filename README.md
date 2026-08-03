@@ -202,7 +202,7 @@ Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业�
 - **核心包**：`packages/core`（纯 Dart，pub workspace，禁止 Flutter 依赖；编译器强制）
 - **本地存储**：`sqflite`（移动端）、`sqflite_common_ffi`（桌面端 / 测试 / CLI）
 - **安全存储**：`flutter_secure_storage`（密码 / MK 缓存于系统钥匙串）
-- **加密**：`pointycastle`（AES-256-GCM / PBKDF2-SHA256）、`crypto`、`cryptography`
+- **加密**：`cryptography` + `cryptography_flutter`（AES-256-GCM / PBKDF2，硬件加速）、`crypto`（SHA-256 内容 hash）
 - **网络**：`http`（WebDAV 客户端）
 - **状态管理**：`provider`
 - **生物识别**：`local_auth`；**本地化**：`easy_localization`
@@ -301,7 +301,7 @@ make test                # = task test = just test；dart test packages/core/tes
 
 # 仅运行核心包测试（纯 Dart，无需 Flutter SDK）
 make test-core           # dart test packages/core/test
-dart test packages/core/test/encryption          # 仅加密
+dart test packages/core/test/sync/crypto_test.dart    # 仅加密
 dart test packages/core/test/sync                # 仅同步引擎 / 多设备 / 长期存续
 
 # CLI 端到端测试（需先 make cli-build，脚本自动优先用编译产物）

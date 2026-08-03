@@ -22,7 +22,7 @@
 1. 改码后先跑 `make analyze`（= `flutter analyze lib test` + `dart analyze packages/core`），确保无 lint / format 错误。
 2. 单元测试：
    - 核心包（纯 Dart，无 Flutter SDK 也可跑）：`dart test packages/core/test`
-     - 加密：`dart test packages/core/test/encryption`
+     - 加密：`dart test packages/core/test/sync/crypto_test.dart`
      - 同步引擎 / 多设备 / 长期存续：`dart test packages/core/test/sync`
    - App 侧（需 Flutter）：`flutter test`（change_password / widget / generate_real_db）
 3. 集成测试（需 SafeServer，位于核心包）：

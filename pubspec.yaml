@@ -55,7 +55,6 @@ dependencies:
 
   # 同步功能依赖
   http: ^1.1.0                # WebDAV HTTP 客户端
-  pointycastle: ^4.0.0        # AES-256-GCM + PBKDF2-SHA256 + AES-CBC 加密
   args: ^2.5.0                # CLI（bin/safenotes_cli.dart）命令解析
 
   safenotes_nord_theme:
