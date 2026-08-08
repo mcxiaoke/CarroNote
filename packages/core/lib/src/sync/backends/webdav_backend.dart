@@ -262,6 +262,8 @@ class WebDavBackend implements SyncBackend {
 
     final etag = _normalizeEtag(res.headers['etag']);
     final ciphertext = res.bodyBytes;
+    // F-M04：远端 manifest 大小上限，防恶意服务端打爆内存
+    checkRemoteReadSize(ciphertext, 'WebDAV manifest', kRemoteManifestMaxBytes);
 
     // 服务器未返回 ETag 时，退化为内容 hash 作为 etag
     // 注意：这种情况下 putManifest 的 If-Match 可能被服务器忽略，
@@ -640,7 +642,10 @@ class WebDavBackend implements SyncBackend {
           .get(Uri.parse('$_journalUrl/$name'), headers: _authHeaders())
           .timeout(_httpTimeout);
       if (res.statusCode != 200) return null;
-      return res.bodyBytes;
+      final bytes = res.bodyBytes;
+      // F-M04：journal 副本大小上限，防恶意服务端打爆内存
+      checkRemoteReadSize(bytes, 'WebDAV journal', kRemoteJournalMaxBytes);
+      return bytes;
     } on Exception catch (e) {
       Log.sync.d('[WebDAV] journal 副本读取失败 name=$name', error: e);
       return null;

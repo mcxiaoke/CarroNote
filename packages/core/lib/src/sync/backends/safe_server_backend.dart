@@ -158,6 +158,8 @@ class SafeServerBackend implements SyncBackend {
 
     final etag = _normalizeEtag(res.headers['etag']);
     final ciphertext = res.bodyBytes;
+    // F-M04：远端 manifest 大小上限，防恶意服务端打爆内存
+    checkRemoteReadSize(ciphertext, 'SafeServer manifest', kRemoteManifestMaxBytes);
 
     // 服务端必须返回 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
     if (etag.isEmpty) {
@@ -642,7 +644,10 @@ class SafeServerBackend implements SyncBackend {
     try {
       final res = await _getResource('journal/$name');
       if (res.statusCode != 200) return null;
-      return res.bodyBytes;
+      final bytes = res.bodyBytes;
+      // F-M04：journal 副本大小上限，防恶意服务端打爆内存
+      checkRemoteReadSize(bytes, 'SafeServer journal', kRemoteJournalMaxBytes);
+      return bytes;
     } on Exception catch (e) {
       Log.sync.d('[SafeServer] journal 副本读取失败 name=$name', error: e);
       return null;

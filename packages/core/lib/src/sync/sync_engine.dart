@@ -585,13 +585,23 @@ class SyncEngine {
               remoteDk = null;
             }
           }
-          if (remoteDk != null) {
-            // 能解开 → 两端同 MK（密码一致），包裹差异仅来自 nonce 随机性或
-            // 远端重新 wrap。本地包裹合法（能解开本地全部 blob），
+          if (remoteDk != null && _bytesEqual(remoteDk!, _dataKey)) {
+            // 能解开 + 解出的 dataKey 与本地一致 → 两端同 MK（密码一致）、
+            // 同 dataKey，包裹差异仅来自 nonce 随机性或远端重新 wrap。
+            // 本地包裹合法（能解开本地全部 blob），
             // 不 adopt、不 echo（§0 只读解密）→ 正常同步。
             remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
               remoteResponse.ciphertext,
+            );
+          } else if (remoteDk != null) {
+            // F-M05：能解开远端包裹但 dataKey 与本地不一致（同 MK 却不同
+            // dataKey，与 fingerprint 判定矛盾的防御分支）。远端 manifest
+            // 按别的 dataKey 加密，本地无法正解其内容，保守失败且不写任何值。
+            Log.sync.w('远端包裹可解开但 dataKey 与本地不一致，中止同步');
+            return SyncResult.failure(
+              '远端 manifest 使用其他 dataKey 加密，与本地不一致，无法同步',
+              attempts: attempt,
             );
           } else if (mk == null) {
             // MK 未缓存（测试构造 / 异常状态，真实登录必有 MK）：无法 unwrap
@@ -1781,7 +1791,9 @@ class SyncEngine {
           actions,
           message: 'conflict-copy from $uuid',
         )) {
-          // 加入 merged（新 UUID）
+          // 加入 merged（新 UUID，远端败方副本）：补全 v5 自描述字段
+          // （与 _buildLocalManifest 一致），解密失败时能精确区分「旧密钥
+          // 数据」与「真损坏」，不误判。
           mergedItems[newNote.uuid] = ManifestItem(
             hash: newNote.contentHash,
             deleted: false,
@@ -1789,6 +1801,11 @@ class SyncEngine {
             updatedBy: deviceId,
             createdAt: newNote.createdTime.millisecondsSinceEpoch,
             contentSize: newNote.toContentBytes().length,
+            blobKeyEpoch: keyring.dataKeyEpoch,
+            dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(_dataKey),
+            createdBy: deviceId,
+            dataKeyCreatedAt: keyring.createdAt,
+            dataKeyCreatedBy: deviceId,
           );
         }
       } else {
@@ -1821,7 +1838,7 @@ class SyncEngine {
           actions,
           message: 'conflict-copy from $uuid',
         )) {
-          // 加入 merged（新 UUID）
+          // 加入 merged（新 UUID，本地败方副本）：补全 v5 自描述字段（同上）
           mergedItems[newNote.uuid] = ManifestItem(
             hash: newNote.contentHash,
             deleted: false,
@@ -1829,6 +1846,11 @@ class SyncEngine {
             updatedBy: deviceId,
             createdAt: newNote.createdTime.millisecondsSinceEpoch,
             contentSize: newNote.toContentBytes().length,
+            blobKeyEpoch: keyring.dataKeyEpoch,
+            dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(_dataKey),
+            createdBy: deviceId,
+            dataKeyCreatedAt: keyring.createdAt,
+            dataKeyCreatedBy: deviceId,
           );
         }
       }

@@ -258,6 +258,24 @@ class BackendNotInitializedException implements Exception {
 /// manifest 代际备份环形份数（三个后端保持一致）
 const int kManifestBackupRingCount = 5;
 
+/// 远端 manifest / journal 密文的读取大小上限（F-M04）
+///
+/// 防止恶意/损坏的服务端返回超大响应体打爆客户端内存。manifest 是全市笔记
+/// 元数据，正常远小于该值（万条笔记约几 MB）；journal 单文件受滚动阈值
+/// （100KB×3 份）约束。超限时视为「远端数据不合法」，抛异常中止本次读取。
+const int kRemoteManifestMaxBytes = 64 * 1024 * 1024; // 64 MB
+const int kRemoteJournalMaxBytes = 64 * 1024 * 1024; // 64 MB
+
+/// F-M04：校验远端响应体大小，超限抛 [BackendUnavailableException]
+void checkRemoteReadSize(Uint8List bytes, String what, int maxBytes) {
+  if (bytes.length > maxBytes) {
+    throw BackendUnavailableException(
+      '$what 响应体过大（${bytes.length} bytes > $maxBytes），'
+      '已中止读取，请检查远端数据',
+    );
+  }
+}
+
 /// P1-1 通用环形备份写入
 ///
 /// 把 [bytes] 写入 [dir] 下的环形备份文件 `manifest.bak-0` ..

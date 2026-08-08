@@ -353,7 +353,10 @@ class LocalFsBackend implements SyncBackend {
     _ensureInitialized();
     final file = File(p.join(_journalDirPath, name));
     if (!await file.exists()) return null;
-    return await file.readAsBytes();
+    final bytes = await file.readAsBytes();
+    // F-M04：journal 副本大小上限（本地手改/损坏兜底）
+    checkRemoteReadSize(bytes, 'LocalFS journal', kRemoteJournalMaxBytes);
+    return bytes;
   }
 
   @override

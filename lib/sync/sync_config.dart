@@ -77,6 +77,12 @@ class SyncConfig {
   /// 当前配置的后端类型
   static SyncBackendType get backendType {
     final index = _prefs?.getInt(_keyBackendType) ?? 0;
+    // 防御：prefs 值被外部篡改 / 旧版本写入非法索引时，越界会 RangeError 崩溃。
+    // 超出合法范围一律按 none（关闭同步）处理，绝不抛异常。
+    if (index < 0 || index >= SyncBackendType.values.length) {
+      Log.sync.w('同步后端类型索引非法: $index，回退为 none');
+      return SyncBackendType.none;
+    }
     return SyncBackendType.values[index];
   }
 

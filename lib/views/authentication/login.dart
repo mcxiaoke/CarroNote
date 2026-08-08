@@ -762,7 +762,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           localizedReason: 'Login using your biometric credential',
           persistAcrossBackgrounding: true,
         );
-      } catch (_) {}
+      } catch (e, st) {
+        // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
+        Log.auth.w('生物识别认证失败', error: e, stackTrace: st);
+      }
       if (authenticated) await _login(await BiometricAuth.authKey);
       if (authenticated) Log.auth.i('生物识别认证通过');
     }
