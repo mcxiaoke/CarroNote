@@ -195,25 +195,64 @@ Future<void> _shutdown() async {
   await AppLogFile.close();
 }
 
-class SafeNotesApp extends StatelessWidget {
-  SafeNotesApp({super.key});
+class SafeNotesApp extends StatefulWidget {
+  const SafeNotesApp({super.key});
 
+  @override
+  State<SafeNotesApp> createState() => _SafeNotesAppState();
+}
+
+class _SafeNotesAppState extends State<SafeNotesApp> {
   final navigatorKey = GlobalKey<NavigatorState>();
   NavigatorState? get _navigator => navigatorKey.currentState;
-  final sessionStateStream = StreamController<SessionState>();
-  final int foucsTimeout = PreferencesStorage.focusTimeout;
-  final int inactivityTimeout = PreferencesStorage.inactivityTimeout;
+  late final StreamController<SessionState> sessionStateStream;
+  SessionConfig? _prevSessionConfig;
+  StreamSubscription<SessionTimeoutState>? _sessionSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    sessionStateStream = StreamController<SessionState>();
+    // 应用初始位于 AuthWall（尚未登录）或无会话，先 stop listening
+    // 原实现在 build() 里每次重建都 add，这里移入 initState 只发一次，
+    // 语义保持不变（登录成功路由会再发 startListening）。
+    sessionStateStream.add(SessionState.stopListening);
+  }
+
+  @override
+  void dispose() {
+    // F-C03：取消会话订阅、释放 SessionConfig 的闭包 stream 并关闭 controller，
+    // 避免重建时旧 listener 泄漏 / StreamController 永不关闭
+    _sessionSubscription?.cancel();
+    _prevSessionConfig?.dispose();
+    sessionStateStream.close();
+    super.dispose();
+  }
+
+  /// F-C03：重建会话超时监听。
+  ///
+  /// 原实现是 StatelessWidget：build() 里每次重建都对配置的 stream 重新 listen，
+  /// 旧 listener 从不取消 → 会话事件被处理 N 次（重复登出/跳转）且流泄漏。
+  /// 这里改为每次 build 时先取消旧 subscription、释放旧 config 的闭包 stream，
+  /// 保证任意时刻只有一个存活 listener。
+  ///
+  /// F-H12：SessionConfig 每次 build 时重建（超时配置改为构建期动态读取，
+  /// 而非构造期 final 快照），配合本方法使「改超时设置后即时生效」。
+  void _rebuildSessionSubscription(SessionConfig sessionConfig) {
+    _sessionSubscription?.cancel();
+    _prevSessionConfig?.dispose();
+    _sessionSubscription = sessionConfig.stream.listen(sessionHandler);
+  }
 
   @override
   Widget build(BuildContext context) {
     final sessionConfig = SessionConfig(
-      invalidateSessionForAppLostFocus: Duration(seconds: foucsTimeout),
-      invalidateSessionForUserInactivity: Duration(seconds: inactivityTimeout),
+      invalidateSessionForAppLostFocus:
+          Duration(seconds: PreferencesStorage.focusTimeout),
+      invalidateSessionForUserInactivity:
+          Duration(seconds: PreferencesStorage.inactivityTimeout),
     );
-
-    sessionConfig.stream.listen(sessionHandler);
-    //  stop listening, as user will already be in auth page
-    sessionStateStream.add(SessionState.stopListening);
+    _rebuildSessionSubscription(sessionConfig);
 
     return SessionTimeoutManager(
       sessionConfig: sessionConfig,
