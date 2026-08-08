@@ -280,6 +280,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   Future<void> _selectBackendType(SyncBackendType type) async {
     await SyncConfig.setBackendType(type);
+    // F-H06：配置变更立即应用到运行中的 SyncService（停止旧引擎或切换后端），
+    // 否则内存中旧 backend 继续被 autoSync 使用，改配置形同虚设
+    await _applyConfigToService();
     if (mounted) {
       Navigator.pop(context);
       setState(() {});
@@ -290,6 +293,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     final result = await FilePicker.getDirectoryPath();
     if (result != null) {
       await SyncConfig.setLocalFsPath(result);
+      await _applyConfigToService();
       if (mounted) setState(() {});
     }
   }
@@ -301,6 +305,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       hintText: 'https://dav.jianguoyun.com/dav/',
       onSave: (value) async {
         await SyncConfig.setWebdavUrl(value);
+        await _applyConfigToService();
         if (mounted) setState(() {});
       },
     );
@@ -313,6 +318,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       hintText: 'user@example.com',
       onSave: (value) async {
         await SyncConfig.setWebdavUsername(value);
+        await _applyConfigToService();
         if (mounted) setState(() {});
       },
     );
@@ -326,6 +332,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       obscure: true,
       onSave: (value) async {
         await SyncConfig.setWebdavPassword(value);
+        await _applyConfigToService();
         if (mounted) setState(() {});
       },
     );
@@ -338,6 +345,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       hintText: 'http://192.168.1.118:2025',
       onSave: (value) async {
         await SyncConfig.setSafeServerUrl(value);
+        await _applyConfigToService();
         if (mounted) setState(() {});
       },
     );
@@ -351,8 +359,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       obscure: true,
       onSave: (value) async {
         await SyncConfig.setSafeServerToken(value);
+        await _applyConfigToService();
         if (mounted) setState(() {});
       },
+    );
+  }
+
+  /// F-H06：把当前 SyncConfig 应用到运行中的 SyncService
+  Future<void> _applyConfigToService() async {
+    await SyncService.instance.applyConfigToService(
+      database: NotesDatabase.instance,
     );
   }
 

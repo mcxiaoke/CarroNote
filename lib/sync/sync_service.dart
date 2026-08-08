@@ -174,6 +174,15 @@ class SyncService {
     // 采用反向注入而非直接依赖，避免 utils 层反向依赖 sync 层。
     LogWebServer.instance.diagnosticsProvider = exportAllLogsAsText;
 
+    // F-H03 修复：initialize 幂等化。重复调用时先关闭旧 journal/旧后端，
+    // 避免旧 journal 文件句柄泄漏、seq 水位紊乱、日志链断裂；否则直接覆盖
+    // 引用会让旧 journal 永远不再 flush/close，跨初始化状态错乱。
+    if (_journal != null) {
+      await _closeJournal();
+    }
+    await _backend?.close();
+    _backendReady = false;
+
     _keyring = keyring;
     _backend = backend;
 
@@ -667,6 +676,61 @@ class SyncService {
     // P3-log：切换完成（含 SyncEngine 重建状态，便于排查切换后状态不一致）
     Log.sync.i('switchBackend 完成 (providerKey=${backend.providerKey}, '
         'engine=${keyring != null && deviceId != null ? "已重建" : "未重建（keyring/deviceId=null）"})');
+  }
+
+  /// F-H06 修复：设置页修改配置（后端类型/URL/凭据）后应用生效。
+  ///
+  /// 场景：用户改了 WebDAV 密码/URL，或把「不同步」→「WebDAV」，
+  /// 原实现只写 [SyncConfig]，运行中的 [SyncEngine] 仍握着旧 backend，
+  /// autoSync 继续用旧配置同步——改配置形同虚设。
+  ///
+  /// 行为：
+  ///   - 当前配置为「不同步」→ 停用引擎/后端，阻止任何同步；
+  ///   - 当前配置有效且引擎已初始化 → [switchBackend] 重建引擎；
+  ///   - 当前配置有效但引擎未初始化（未启用同步）→ 仅保存配置，
+  ///     下次启用同步时由 [initBackend] 生效，避免提前建立连接。
+  Future<void> applyConfigToService({required NotesDatabase database}) async {
+    if (!SyncConfig.isSyncEnabled) {
+      // 用户关闭同步：停用现有引擎与后端，此后 sync()/autoSync() 均不可用
+      if (_engine != null || _backend != null) {
+        Log.sync.i('同步关闭：停止引擎并关闭旧后端');
+        _autoSyncTimer?.cancel();
+        await _backend?.close();
+        _backend = null;
+        _engine = null;
+        _backendReady = false;
+        _updateState(const SyncServiceState(status: SyncStatus.uninitialized));
+      }
+      return;
+    }
+
+    final backend = _createBackendFromConfig();
+    if (backend == null) {
+      // 配置不完整（路径/URL/凭据缺失）：同样停用，避免用半截配置去同步
+      if (_engine != null || _backend != null) {
+        Log.sync.w('同步配置不完整，暂停同步服务 (backend=null)');
+        await _backend?.close();
+        _backend = null;
+        _engine = null;
+        _backendReady = false;
+      }
+      return;
+    }
+
+    // 引擎尚未初始化（用户先前未启用同步）：不建连接，等 initBackend 启用
+    if (_engine == null && _keyring == null) {
+      Log.sync.i('applyConfigToService: SyncService 未初始化，仅保存配置');
+      return;
+    }
+
+    try {
+      // 引擎已就绪：切换后端（内含互斥与重建）
+      await switchBackend(backend: backend, database: database);
+      Log.sync.i('applyConfigToService: 配置变更已应用到 SyncService '
+          '(providerKey=${backend.providerKey})');
+    } on StateError catch (e) {
+      Log.sync.w('applyConfigToService: 切换后端被拒绝', error: e);
+    }
   }
 
   /// 获取当前后端（供 UI 显示配置信息）
