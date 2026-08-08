@@ -46,6 +46,18 @@ jobs:
       - name: Run widget tests
         run: flutter test
 
+      - name: Core package - Get dependencies
+        run: dart pub get
+        working-directory: packages/core
+
+      - name: Core package - Analyze (pure Dart, no Flutter)
+        run: dart analyze
+        working-directory: packages/core
+
+      - name: Core package - Run tests
+        run: dart test
+        working-directory: packages/core
+
       - name: Build apk
         run: flutter build apk --debug
 
