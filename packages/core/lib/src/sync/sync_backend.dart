@@ -245,6 +245,12 @@ const int kManifestBackupRingCount = 5;
 /// `manifest-backup/` 子目录；WebDAV/SafeServer 传入各自服务端的 `manifest-backup/`
 /// 子目录，旧版 SafeServer 兜底时传入客户端临时目录）。备份失败由调用方
 /// try-catch，不抛异常。
+///
+/// 原子写（manifest-reliability-design §9）：先写同目录临时文件再 rename，
+/// 避免"备份本身是半写坏文件"——半写备份是恢复路径的隐患（5 份 bak 可能全是坏的，
+/// 回退等于盲试）。与 putManifest / putBlob 的 tmp+rename 模式一致
+/// （local_fs_backend.dart:116-123 / 156-164）。rename 在同一文件系统内原子
+/// （POSIX / Windows NTFS 均保证）。
 Future<String> writeRingBackup(
   Directory dir,
   Uint8List bytes, {
@@ -267,7 +273,20 @@ Future<String> writeRingBackup(
     // 索引写入失败不阻断备份
   }
   final path = p.join(dir.path, 'manifest.bak-$slot');
-  final file = File(path);
-  await file.writeAsBytes(bytes, flush: true);
+  // 原子写：tmp + rename。tmp 文件名带微秒时间戳，避免极端场景下的并发碰撞。
+  final tmpPath = '$path.tmp-${DateTime.now().microsecondsSinceEpoch}';
+  final tmpFile = File(tmpPath);
+  try {
+    await tmpFile.writeAsBytes(bytes, flush: true);
+    await tmpFile.rename(path);
+  } on Exception {
+    // rename 失败时清理 tmp 残留，避免堆积；目标文件保持旧内容（要么旧完整、要么空）。
+    try {
+      if (await tmpFile.exists()) await tmpFile.delete();
+    } on Exception {
+      // 清理失败忽略，下次备份会覆盖同名 tmp
+    }
+    rethrow;
+  }
   return path;
 }

@@ -286,6 +286,138 @@ class SyncEngine {
     return SyncResult.failure('Unexpected sync flow exit');
   }
 
+  /// 远端 manifest 损坏后的统一恢复路径（manifest-reliability-design §7.1）
+  ///
+  /// 触发条件：`deserializeHeaderOnly` 抛 [FormatException]（结构损坏）或
+  /// [ManifestAuthException]（v5 容器 magic/fileVer/headerLen 非法 / pubHash 失败）。
+  ///
+  /// 流程：
+  ///   1. 备份损坏文件（`backupCorruptManifest`）
+  ///   2. journal 留痕（`syncManifestRebuild`，含 keyState）
+  ///   3. 用本地数据重建 manifest（`_buildLocalManifest` + `_mergeAndTransfer`）
+  ///   4. PUT 覆盖远端（用原 etag 乐观锁）
+  ///   5. 更新本地状态 + 推送 journal
+  ///
+  /// 这是 §3.4 现路径的提取复用，供 `_syncOnce` 的两个 catch 子句共用，
+  /// 并为 §7 统一恢复编排（re-GET → 验 pubHash 挑 bak → 重建）的后续扩展预留入口。
+  ///
+  /// **异常分流契约（§11.1）**：本方法仅处理「数据损坏」，不处理「密钥不匹配」
+  /// （后者走 scenario-b / 迁移流程）。调用方需确保只在 catch
+  /// `FormatException` / `ManifestAuthException` 时调用，**绝不**在 catch
+  /// `ManifestKeyMismatchException` 时调用。
+  Future<SyncResult> _recoverFromCorruptRemoteManifest(
+    ({Uint8List ciphertext, String etag}) remoteResponse,
+    Object error,
+    StackTrace stackTrace,
+    int attempt,
+  ) async {
+    Log.sync.w('远端 manifest 损坏，尝试恢复（§7.1 统一恢复编排）',
+        error: error, stackTrace: stackTrace);
+
+    // ── §7.1 步骤 1：re-GET（防瞬时坏 / 半写） ──────────────────────
+    // 远端文件可能只是瞬时损坏（网络截断、半写、磁盘抖动），重新 GET 一次
+    // 大概率拿到完好版本。re-GET 成功则 merge 保留远端数据（避免直接本地
+    // 重建丢失其他设备的更新）；失败才走步骤 2/3。
+    Manifest? recoveredManifest;
+    ({Uint8List ciphertext, String etag})? recoveredResponse;
+    try {
+      final retryResponse = await backend.getManifest();
+      if (retryResponse.ciphertext.isNotEmpty) {
+        // 完整解析（含 pubHash + GCM）；通过则远端完好
+        recoveredManifest = await ManifestCrypto.deserialize(
+            _dataKey, retryResponse.ciphertext);
+        recoveredResponse = retryResponse;
+        Log.sync.i('re-GET 成功，远端 manifest 完好，merge 保留远端数据');
+      } else {
+        Log.sync.w('re-GET 返回空 manifest，走本地重建');
+      }
+    } on ManifestAuthException catch (e) {
+      Log.sync.w('re-GET 仍损坏（pubHash 失败），走本地重建', error: e);
+    } on ManifestKeyMismatchException {
+      // re-GET 密钥不匹配——这不是「损坏恢复」的职责（§11.1 异常分流），
+      // 抛出让上层走 scenario-b 密钥/迁移流程。
+      rethrow;
+    } on Object catch (e) {
+      Log.sync.w('re-GET 失败（网络/后端错误），走本地重建', error: e);
+    }
+
+    // ── §7.1 步骤 2：bak 循环 ─────────────────────────────────────
+    // TODO（manifest-reliability-design §7.2 + §11.2）：从 bak 按槽位从新到旧
+    // 试（先验 pubHash 后解密）。当前 SyncBackend 接口只有 backupManifest
+    // （写 bak）无 bak 读取接口，待后续新增 listManifestBackups /
+    // readManifestBackup 后实现。实现时必须遵守 §11.2：bak 循环中任何异常
+    // （含 ManifestKeyMismatchException）都跳过当前 bak 试下一份，全部 bak
+    // 试完才走 scenario-b 判定。
+
+    // ── §7.1 步骤 3：本地重建（re-GET 失败或无 bak 可用） ──────────
+    // 仅当 re-GET 失败（远端 manifest 确实损坏、需本地重建）时才备份损坏文件：
+    //   - re-GET 成功说明损坏是瞬态（网络截断/半写），远端已是完好 manifest，
+    //     backupCorruptManifest 会把它移走/删除（LocalFS rename / SafeServer move
+    //     / WebDAV DELETE），随后 PUT 也因文件已不在而 412/Conflict 失败——
+    //     白白丢失刚 re-GET 到的远端数据。
+    //   - 只有 re-GET 失败（pubHash 复验仍失败）备份才可取，此时损坏文件应被
+    //     归档取证，且用本地数据重建上传覆盖。
+    // 用原始损坏的 remoteResponse（非 re-GET），保证归因对象是首次观测到的坏体。
+    if (recoveredManifest == null) {
+      await backend.backupCorruptManifest(remoteResponse.ciphertext);
+    }
+    // P2 journal §3.6c：manifest 单点故障是 journal「第二数据源」角色的
+    // 核心场景，这一刻必须留痕（含当时 keyState，便于事后取真）
+    journal.append(
+      type: JournalEventType.syncManifestRebuild,
+      phase: JournalPhase.done,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      keyState: _keyStateSnapshot,
+      note: recoveredManifest != null
+          ? 'remote manifest corrupt, recovered via re-GET: $error'
+          : 'remote manifest corrupt, rebuilt from local: $error',
+    );
+    final localManifest = await _buildLocalManifest();
+    final actions = <SyncAction>[];
+    _addAction(actions, SyncAction(
+      type: SyncActionType.skip,
+      uuid: '',
+      message: recoveredManifest != null
+          ? '远端 manifest 瞬时损坏，re-GET 已复用完好版本，正常合并'
+          : '远端 manifest 损坏，已备份损坏文件并本地重建',
+    ));
+    // merge：re-GET 成功用 recoveredManifest（保留远端数据），否则 null（纯本地重建）
+    final merged = (await _mergeAndTransfer(
+        localManifest, recoveredManifest, actions)).merged;
+    // PUT：re-GET 成功用 recoveredResponse.etag（远端文件已变），否则用原 etag
+    final putEtag = recoveredResponse?.etag ?? remoteResponse.etag;
+    final newCiphertext = await ManifestCrypto.serialize(_dataKey, merged);
+    await backend.putManifest(newCiphertext, putEtag);
+    // P3-c：损坏重建路径的 manifest PUT（与正常路径区分）
+    Log.sync.i('PUT manifest ok (rebuild after corrupt, '
+        'items=${merged.items.length}, '
+        'source=${recoveredManifest != null ? "re-GET" : "local"})');
+    journal.append(
+      type: JournalEventType.syncManifestPut,
+      phase: JournalPhase.done,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      note: 'rebuild-after-corrupt items=${merged.items.length} '
+          'source=${recoveredManifest != null ? "re-GET" : "local"}',
+    );
+    await _updateLocalState(
+      merged,
+      excludeSynced:
+          {for (final a in actions) if (a.type == SyncActionType.uploadFailed) a.uuid},
+    );
+    // 重建路径也要把 journal 推到远端——这正是「manifest 丢了还能取真」
+    // 的那份第二数据源
+    await _uploadJournal();
+    return SyncResult.success(
+      uploaded: _countActions(actions, SyncActionType.upload),
+      downloaded: _countActions(actions, SyncActionType.download),
+      deleted: _countActions(actions, SyncActionType.delete),
+      skipped: _countActions(actions, SyncActionType.skip),
+      conflicts: _countActions(actions, SyncActionType.conflict),
+      actions: actions,
+      attempts: attempt,
+    );
+  }
+
   /// 执行一次同步尝试（不含重试逻辑）
   ///
   /// [attempt] 当前重试次数（用于诊断）
@@ -316,58 +448,17 @@ class SyncEngine {
         remoteHeader =
             ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
       } on FormatException catch (e, st) {
-        // 远端 manifest 格式损坏（数据截断、header 长度字段错误等）
-        // 备份损坏文件，用本地数据重建 manifest 上传覆盖
-        Log.sync.w('远端 manifest 格式损坏，备份后用本地数据重建',
-            error: e, stackTrace: st);
-        await backend.backupCorruptManifest(remoteResponse.ciphertext);
-        // P2 journal §3.6c：manifest 单点故障是 journal「第二数据源」角色的
-        // 核心场景，这一刻必须留痕（含当时 keyState，便于事后取真）
-        journal.append(
-          type: JournalEventType.syncManifestRebuild,
-          phase: JournalPhase.done,
-          dataKeyEpoch: keyring.dataKeyEpoch,
-          keyState: _keyStateSnapshot,
-          note: 'remote manifest corrupt, rebuilt from local: $e',
-        );
-        final localManifest = await _buildLocalManifest();
-        final actions = <SyncAction>[];
-        _addAction(actions, SyncAction(
-          type: SyncActionType.skip,
-          uuid: '',
-          message: '远端 manifest 损坏已备份：$e',
-        ));
-        final merged =
-            (await _mergeAndTransfer(localManifest, null, actions)).merged;
-        // PUT manifest：用原 etag 做乐观锁（覆盖损坏文件）
-        final newCiphertext = await ManifestCrypto.serialize(_dataKey, merged);
-        await backend.putManifest(newCiphertext, remoteResponse.etag);
-        // P3-c：损坏重建路径的 manifest PUT（与正常路径区分）
-        Log.sync.i('PUT manifest ok (rebuild after corrupt, '
-            'items=${merged.items.length})');
-        journal.append(
-          type: JournalEventType.syncManifestPut,
-          phase: JournalPhase.done,
-          dataKeyEpoch: keyring.dataKeyEpoch,
-          note: 'rebuild-after-corrupt items=${merged.items.length}',
-        );
-        await _updateLocalState(
-          merged,
-          excludeSynced:
-              {for (final a in actions) if (a.type == SyncActionType.uploadFailed) a.uuid},
-        );
-        // 重建路径也要把 journal 推到远端——这正是「manifest 丢了还能取真」
-        // 的那份第二数据源
-        await _uploadJournal();
-        return SyncResult.success(
-          uploaded: _countActions(actions, SyncActionType.upload),
-          downloaded: _countActions(actions, SyncActionType.download),
-          deleted: _countActions(actions, SyncActionType.delete),
-          skipped: _countActions(actions, SyncActionType.skip),
-          conflicts: _countActions(actions, SyncActionType.conflict),
-          actions: actions,
-          attempts: attempt,
-        );
+        // 远端 manifest 结构损坏（数据过短等结构性问题）
+        // → 备份后用本地数据重建 manifest 上传覆盖（§7.1 统一恢复编排）
+        return _recoverFromCorruptRemoteManifest(
+            remoteResponse, e, st, attempt);
+      } on ManifestAuthException catch (e, st) {
+        // v5 容器（§5.5）：magic/fileVer/headerLen 非法 或 pubHash 校验失败
+        // → 数据损坏（位翻转/截断/半写）。走同一重建路径。
+        // **绝不走 scenario-b 强制重登**（§11.1 异常分流契约）——
+        // 损坏与密钥不匹配在此已被 pubHash 正交区分。
+        return _recoverFromCorruptRemoteManifest(
+            remoteResponse, e, st, attempt);
       }
 
       // [G] 协议降级拒绝（§8.2[G]）：远端 schemaVersion 低于当前协议版本
@@ -435,11 +526,25 @@ class SyncEngine {
                 _dataKey,
                 remoteResponse.ciphertext,
               );
-            } on Object catch (e) {
+            } on ManifestKeyMismatchException catch (e) {
+              // pubHash 已通过（数据未损坏），GCM 失败 = 密钥不匹配。
+              // 保守失败，避免向远端写任何值（与原 `on Object` 行为一致）。
               Log.sync.w('MK 未缓存且本地 dataKey 解不开远端 manifest，中止同步',
                   error: e);
               return SyncResult.failure(
                 '密钥验证信息不足，无法同步（MK 未缓存且 dataKey 不匹配）',
+                attempts: attempt,
+              );
+            } on ManifestAuthException catch (e, st) {
+              // 防御性（§11.1）：pubHash 应在 deserializeHeaderOnly 阶段已验过，
+              // 此处理论不再抛损坏异常；若 bytes 并发修改导致 pubHash 失败，走重建。
+              return _recoverFromCorruptRemoteManifest(
+                  remoteResponse, e, st, attempt);
+            } on Object catch (e) {
+              Log.sync.w('MK 未缓存且解析远端 manifest 未预期异常，中止同步',
+                  error: e);
+              return SyncResult.failure(
+                '密钥验证信息不足，无法同步（MK 未缓存且解析失败：$e）',
                 attempts: attempt,
               );
             }
@@ -718,9 +823,27 @@ class SyncEngine {
     if (remoteResponse.ciphertext.isEmpty) {
       return SyncResult.success(actions: actions, attempts: attempt);
     }
-    final remoteHeader = ManifestCrypto.deserializeHeaderOnly(
-      remoteResponse.ciphertext,
-    );
+    final ManifestHeader remoteHeader;
+    try {
+      remoteHeader = ManifestCrypto.deserializeHeaderOnly(
+        remoteResponse.ciphertext,
+      );
+    } on ManifestAuthException catch (e, st) {
+      // v5 容器：远端 manifest 数据损坏（magic/fileVer/headerLen 非法 / pubHash 失败）。
+      // repair 流程只负责修 blob 缺失，不负责 manifest 重建（那是 sync 的 §7 职责）。
+      // 返回明确失败，提示触发一次同步以走统一恢复编排。
+      Log.sync.e('repairRemote: 远端 manifest 数据损坏', error: e, stackTrace: st);
+      return SyncResult.failure(
+        '远端 manifest 数据损坏，修复中止：请触发一次同步以自动重建',
+        attempts: attempt,
+      );
+    } on FormatException catch (e, st) {
+      Log.sync.e('repairRemote: 远端 manifest 结构损坏', error: e, stackTrace: st);
+      return SyncResult.failure(
+        '远端 manifest 结构损坏，修复中止：请触发一次同步以自动重建',
+        attempts: attempt,
+      );
+    }
     // [G] 协议降级拒绝：远端 schemaVersion 低于当前协议版本时拒绝解读
     final schemaReject = _rejectOldSchemaVersion(remoteHeader);
     if (schemaReject != null) {
@@ -732,11 +855,22 @@ class SyncEngine {
         _dataKey,
         remoteResponse.ciphertext,
       );
-    } on SyncDecryptionException catch (e, st) {
-      // 当前 dataKey 解不开 manifest（密码不匹配/纪元过期），无法枚举远端条目。
-      Log.sync.e('repairRemote: 远端 manifest 解密失败', error: e, stackTrace: st);
+    } on ManifestKeyMismatchException catch (e, st) {
+      // pubHash 已通过（数据未损坏），GCM 失败 = 密钥不匹配。
+      // v5 容器异常分流（§5.5）：原 `on SyncDecryptionException` 改为捕获
+      // `ManifestKeyMismatchException`（deserialize 内部已包装）。
+      Log.sync.e('repairRemote: 远端 manifest 密钥不匹配', error: e, stackTrace: st);
       return SyncResult.failure(
         '无法解密远端 manifest（dataKey 不匹配），修复中止：请先用正确密码登录',
+        attempts: attempt,
+      );
+    } on ManifestAuthException catch (e, st) {
+      // 防御性：pubHash 已在 deserializeHeaderOnly 验过，此处理论不会再抛损坏
+      // 异常；但若 bytes 在两次调用间被并发修改，保守按损坏处理（§11.1）。
+      Log.sync.e('repairRemote: 远端 manifest 数据损坏（防御性）',
+          error: e, stackTrace: st);
+      return SyncResult.failure(
+        '远端 manifest 数据损坏，修复中止：请触发一次同步以自动重建',
         attempts: attempt,
       );
     } on Object catch (e, st) {
@@ -1914,6 +2048,10 @@ class SyncEngine {
           // 返回修复后的 manifest 条目：hash 取本地明文 hash，
           // 使合并后的 manifest 指向刚重传的（好）blob，避免修复后的 blob 成孤儿。
           // v4：blob 纯化后 blobKeyEpoch 是纯审计元数据，自愈重传不改写声明（§4）。
+          //
+          // §6.3 修订 3：补全自描述字段（与 _buildLocalManifest 一致）。
+          // heal 后的条目必须携带 dataKeyFingerprint，否则 §5.3 验证矩阵的
+          // 「密钥不匹配」判据在 heal 路径上失效——无法归因"旧 key vs 真损坏"。
           return ManifestItem(
             hash: local.contentHash,
             deleted: false,
@@ -1921,6 +2059,10 @@ class SyncEngine {
             updatedBy: deviceId,
             createdAt: local.createdTime.millisecondsSinceEpoch,
             contentSize: local.toContentBytes().length,
+            dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(_dataKey),
+            createdBy: deviceId,
+            dataKeyCreatedAt: keyring.createdAt,
+            dataKeyCreatedBy: deviceId,
           );
         }
       } on Object catch (e, st) {

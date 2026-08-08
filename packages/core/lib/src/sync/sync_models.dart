@@ -52,8 +52,9 @@ import 'dart:typed_data';
 // Package 导入
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/sync/sync_error.dart';
+import 'package:crypto/crypto.dart' show sha256;
 
-/// manifest 协议 schema 版本号（v4：epoch 消除）
+/// manifest 协议 schema 版本号（v5：可靠性容器重构）
 ///
 /// 历史：
 ///   - v1：初始（schemaVersion 从未被真实写入，恒默认 1）
@@ -62,13 +63,20 @@ import 'package:core/src/sync/sync_error.dart';
 ///     `blobKeyEpoch` 语义从「待现代化」变为「加密版本标签」纯审计元数据、
 ///     `dataKeyEpoch` 不再驱动同步、新增 item/header 自描述元数据
 ///     （`dataKeyFingerprint`/`createdBy`/`dataKeyCreatedAt`/`dataKeyCreatedBy`）。
+///   - v5：**可靠性容器重构**（manifest-reliability-design §5）——
+///     manifest 二进制容器加入 magic `'SMNT'` + fileVer + schemaV 固定头 +
+///     尾部无密钥 `pubHash`（SHA-256）损坏校验。彻底区分「数据损坏」与
+///     「密钥不匹配」两类失败（详见 §3.2 / §5.3），消除"items GCM 解密失败
+///     一律按密钥问题处理"导致的「损坏被误判为 scenario-b 强制重登」回归。
+///     新增具名异常 `ManifestAuthException` / `ManifestKeyMismatchException`
+///     替代"全靠 GCM 抛错再猜"。不兼容旧 v4 二进制（开发中未发布，废弃重建）。
 ///
 /// 用途（§7.1 / §8.2[G]）：
 ///   - 所有新写出的 manifest 显式写入此值（`Manifest.empty` / `_buildLocalManifest`
 ///     / repair），替代过去「从不真实写入、恒默认 1」的纸面版本号。
 ///   - 下载侧降级拒绝：`header.schemaVersion < kManifestSchemaVersion` 时拒绝
 ///     解读并提示升级（业界「拒绝旧协议防降级」共识，与不兼容策略 §0 对齐）。
-const int kManifestSchemaVersion = 4;
+const int kManifestSchemaVersion = 5;
 
 /// manifest 中单条笔记的元数据
 ///
@@ -113,7 +121,11 @@ class ManifestItem {
 
   /// 笔记内容大小（字节）
   ///
-  /// 用于 GC 优先级和统计。hash 已是更强的内容侧信道，不增加安全风险。
+  /// §6.3 修订 2（语义注释）：定义为 **payload（JSON）字节长**
+  /// （=`SafeNote.toContentBytes().length`，含 `"v"` 字段），与「身份域」
+  /// （hash = SHA-256(title+"\n"+description)）解耦——payload 是存储表示，
+  /// hash 是逻辑身份，二者域不同。用于 GC 优先级和统计；hash 已是更强的
+  /// 内容侧信道，contentSize 不增加安全风险。
   final int contentSize;
 
   /// blob 密钥纪元（Layer 3 显式标记）
@@ -809,15 +821,47 @@ class SyncResult {
           'requiresRelogin=$requiresRelogin)';
 }
 
-/// manifest 序列化/反序列化辅助方法
+/// manifest 序列化/反序列化辅助方法（v5 容器格式）
 ///
-/// manifest 文件格式：
-///   [4 字节大端 header 长度] [header JSON 字节] [加密的 items 字节]
+/// v5 容器布局（manifest-reliability-design §5.1）：
+/// ```
+/// 0         4        6        8        12
+/// ┌─────────┬────────┬────────┬────────┬──────────────┬──────────────┬──────────────┐
+/// │  magic   │fileVer│schemaV │headerLen│    header    │     items    │    pubHash   │
+/// │  4 字节   │ 2 字节 │ 2 字节 │ 4 字节  │   明文 JSON   │  AES-GCM 密文 │   SHA-256 32B │
+/// └─────────┴────────┴────────┴────────┴──────────────┴──────────────┴──────────────┘
+/// ```
 ///
-/// header 明文：新设备加入时无需 dataKey 即可解析。
-/// items 加密：用 dataKey 加密，AAD 固定为 'manifest-items'。
+/// - `magic`：`'SMNT'` 容器家族标识（不带版本数字）。
+/// - `fileVer`：文件级容器布局版本（当前 `1`），与 schemaVersion 解耦。
+/// - `schemaVersion`：协议语义版本（= `header.schemaVersion`）。
+/// - `headerLen`：header 字节数。
+/// - `header`：明文 JSON（新设备无 dataKey 即可解析）。
+/// - `items`：`AES-256-GCM(dataKey, AAD='manifest-items', items JSON)`。
+/// - `pubHash`：`SHA-256(容器 [0, pubHash 起始处) 全部字节)`，**无密钥**损坏校验。
+///
+/// 验证矩阵（§5.3，一次性区分损坏 / 密钥不匹配）：
+///   - `magic`/`fileVer`/`headerLen` 失败 → 结构损坏
+///   - `pubHash` 失败 → 数据损坏（位翻转 / 截断 / 半写）
+///   - `pubHash` 通过 + GCM 失败 → 密钥不匹配
+///
+/// 异常分流契约（§5.5 / §11.1）：
+///   - 结构 / pubHash 失败 → 抛 [ManifestAuthException] → 走 §7 统一恢复编排
+///   - GCM 失败 → 抛 [ManifestKeyMismatchException] → 走 scenario-b 密钥/迁移流程
 class ManifestCrypto {
   static const String _itemsAad = 'manifest-items';
+
+  /// 容器 magic 字节：'SMNT'（SafeNotes ManifesT）
+  static const List<int> _magic = [0x53, 0x4D, 0x4E, 0x54];
+
+  /// 当前支持的容器布局版本（fileVer 字段值）
+  static const int _kFileVer = 1;
+
+  /// pubHash 字段长度（SHA-256 = 32 字节）
+  static const int _kPubHashLen = 32;
+
+  /// 固定头长度：magic(4) + fileVer(2) + schemaV(2) + headerLen(4) = 12
+  static const int _kFixedHeaderLen = 12;
 
   /// 4 字节大端整数编码
   static Uint8List _encodeUint32(int value) {
@@ -836,12 +880,41 @@ class ManifestCrypto {
         bytes[offset + 3];
   }
 
-  /// 序列化 manifest 为密文二进制
+  /// 2 字节大端整数编码
+  static Uint8List _encodeUint16(int value) {
+    return Uint8List(2)
+      ..[0] = (value >> 8) & 0xFF
+      ..[1] = value & 0xFF;
+  }
+
+  /// 2 字节大端整数解码
+  static int _decodeUint16(Uint8List bytes, int offset) {
+    return (bytes[offset] << 8) | bytes[offset + 1];
+  }
+
+  /// 计算 SHA-256（返回 32 字节原始摘要）
+  static Uint8List _sha256(List<int> data) {
+    return Uint8List.fromList(sha256.convert(data).bytes);
+  }
+
+  /// 常量时间字节比较（防时序侧信道；pubHash 虽无密钥，保持习惯）
+  static bool _constTimeEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
+  }
+
+  /// 序列化 manifest 为 v5 容器二进制
   ///
   /// 流程：
   ///   1. header → JSON → UTF-8 字节
   ///   2. items → JSON → UTF-8 字节 → AES-GCM(dataKey, AAD='manifest-items')
-  ///   3. 拼接：[4字节 header 长度][header 字节][加密 items 字节]
+  ///   3. 拼接固定头 + header + items
+  ///   4. 计算 pubHash = SHA-256(除 pubHash 外的整个容器)
+  ///   5. 返回 [固定头][header][items][pubHash]
   static Future<Uint8List> serialize(Uint8List dataKey, Manifest manifest) async {
     // 1. header JSON
     final headerJson = jsonEncode(manifest.header.toJson());
@@ -855,51 +928,58 @@ class ManifestCrypto {
     final itemsBytes = Uint8List.fromList(utf8.encode(itemsJson));
     final encryptedItems = await SyncCrypto.seal(dataKey, _itemsAad, itemsBytes);
 
-    // 3. 拼接
-    final headerLenBytes = _encodeUint32(headerBytes.length);
-    return Uint8List.fromList(
-      [...headerLenBytes, ...headerBytes, ...encryptedItems],
+    // 3. 拼接固定头 + header + items（pubHash 覆盖此前所有字节）
+    final fixedHeader = Uint8List.fromList([
+      ..._magic,
+      ..._encodeUint16(_kFileVer),
+      ..._encodeUint16(manifest.header.schemaVersion),
+      ..._encodeUint32(headerBytes.length),
+    ]);
+    final prefix = Uint8List.fromList(
+      [...fixedHeader, ...headerBytes, ...encryptedItems],
     );
+
+    // 4. 计算 pubHash 并拼接
+    final pubHash = _sha256(prefix);
+    return Uint8List.fromList([...prefix, ...pubHash]);
   }
 
-  /// 反序列化密文为 manifest
+  /// 反序列化 v5 容器为 manifest
   ///
-  /// 两阶段解析：
-  ///   1. 先解析 header（明文），拿到 encryptedDataKey / KDF 参数 / 密钥纪元
-  ///   2. 用 dataKey 解密 items
+  /// 三阶段解析（§5.5）：
+  ///   1. 结构校验：magic / fileVer / headerLen 范围
+  ///   2. 损坏校验：pubHash（无密钥 SHA-256）
+  ///   3. 密钥校验：GCM 解密 items
   ///
-  /// 如果 dataKey 不正确，items 解密会抛 GCM tag 验证异常。
+  /// 异常：
+  ///   - [FormatException]：数据过短（结构性问题）
+  ///   - [ManifestAuthException]：magic/fileVer/headerLen 非法 或 pubHash 失败 → 数据损坏
+  ///   - [ManifestKeyMismatchException]：pubHash 通过但 GCM 失败 → 密钥不匹配
   static Future<Manifest> deserialize(Uint8List dataKey, Uint8List bytes) async {
-    if (bytes.length < 4) {
-      throw FormatException('manifest 数据过短：${bytes.length} 字节');
-    }
+    final info = _parseAndVerifyContainer(bytes);
 
-    // 1. 读取 header 长度
-    final headerLen = _decodeUint32(bytes, 0);
-    if (bytes.length < 4 + headerLen) {
-      throw FormatException(
-          'manifest header 不完整：期望 $headerLen 字节，实际 ${bytes.length - 4} 字节');
-    }
-
-    // 2. 解析 header（明文 JSON）
-    final headerBytes = bytes.sublist(4, 4 + headerLen);
-    final headerJson = jsonDecode(utf8.decode(headerBytes)) as Map<String, dynamic>;
-    final header = ManifestHeader.fromJson(headerJson);
-
-    // 3. 解密 items
-    final encryptedItems = bytes.sublist(4 + headerLen);
-    if (encryptedItems.isEmpty) {
+    // 解密 items
+    if (info.encryptedItems.isEmpty) {
       // 首次创建 keyring：items 为空
-      return Manifest(header: header, items: {});
+      return Manifest(header: info.header, items: {});
     }
 
-    final itemsBytes = await SyncCrypto.open(dataKey, _itemsAad, encryptedItems);
-    final itemsJson = jsonDecode(utf8.decode(itemsBytes)) as Map<String, dynamic>;
-    final itemsRaw = itemsJson['items'] as Map<String, dynamic>;
-    final items = itemsRaw.map((k, v) =>
-        MapEntry(k, ManifestItem.fromJson(v as Map<String, dynamic>)));
-
-    return Manifest(header: header, items: items);
+    try {
+      final itemsBytes =
+          await SyncCrypto.open(dataKey, _itemsAad, info.encryptedItems);
+      final itemsJson =
+          jsonDecode(utf8.decode(itemsBytes)) as Map<String, dynamic>;
+      final itemsRaw = itemsJson['items'] as Map<String, dynamic>;
+      final items = itemsRaw.map((k, v) =>
+          MapEntry(k, ManifestItem.fromJson(v as Map<String, dynamic>)));
+      return Manifest(header: info.header, items: items);
+    } on SyncDecryptionException catch (e) {
+      // pubHash 已通过（数据未损坏），GCM 失败 = 密钥不匹配
+      throw ManifestKeyMismatchException(
+        'items GCM 解密失败（pubHash 已通过，密钥不匹配或为旧密钥数据）',
+        cause: e,
+      );
+    }
   }
 
   /// 仅解析 manifest header（不解密 items，不需要 dataKey）
@@ -908,21 +988,90 @@ class ManifestCrypto {
   ///   1. GET manifest → 仅解析 header 拿到 encryptedDataKey + KDF 参数 + 密钥纪元
   ///   2. 用密码 + header.kdf.salt 派生 MK，解开 encryptedDataKey 得到 dataKey
   ///   3. 用 dataKey 调用 deserialize 解析完整 manifest
+  ///
+  /// v5 容器会同时验 magic/fileVer/headerLen/pubHash（§5.3 新设备 onboarding 两段式），
+  /// 失败抛 [ManifestAuthException] 或 [FormatException]——上层应同时 catch 两者走 §7 恢复。
   static ManifestHeader deserializeHeaderOnly(Uint8List bytes) {
-    if (bytes.length < 4) {
-      throw FormatException('manifest 数据过短：${bytes.length} 字节');
-    }
-
-    final headerLen = _decodeUint32(bytes, 0);
-    if (bytes.length < 4 + headerLen) {
-      throw FormatException(
-          'manifest header 不完整：期望 $headerLen 字节，实际 ${bytes.length - 4} 字节');
-    }
-
-    final headerBytes = bytes.sublist(4, 4 + headerLen);
-    final headerJson = jsonDecode(utf8.decode(headerBytes)) as Map<String, dynamic>;
-    return ManifestHeader.fromJson(headerJson);
+    return _parseAndVerifyContainer(bytes).header;
   }
+
+  /// v5 容器解析 + pubHash 校验（deserialize / deserializeHeaderOnly 共用）
+  ///
+  /// 返回 header + encryptedItems（不解密 items）。
+  /// 失败抛 [FormatException]（过短）或 [ManifestAuthException]（结构/pubHash 问题）。
+  static _ContainerInfo _parseAndVerifyContainer(Uint8List bytes) {
+    // 1. 长度检查：固定头(12) + pubHash(32) = 44 最小
+    final minLen = _kFixedHeaderLen + _kPubHashLen;
+    if (bytes.length < minLen) {
+      throw FormatException(
+          'manifest 数据过短：${bytes.length} 字节（最小 $minLen）');
+    }
+
+    // 2. magic 检查
+    for (var i = 0; i < 4; i++) {
+      if (bytes[i] != _magic[i]) {
+        final actual = bytes
+            .sublist(0, 4)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
+        throw ManifestAuthException(
+            'magic 不匹配：期望 SMNT(534d4e54)，实际 0x$actual');
+      }
+    }
+
+    // 3. fileVer 检查
+    final fileVer = _decodeUint16(bytes, 4);
+    if (fileVer != _kFileVer) {
+      throw ManifestAuthException(
+          '不支持的容器布局版本：fileVer=$fileVer（当前支持 $_kFileVer）');
+    }
+
+    // 4. schemaVersion 读取（不从固定头判定降级，header.schemaVersion 才是协议判定依据）
+    final schemaV = _decodeUint16(bytes, 6);
+
+    // 5. headerLen 范围检查（headerLen 不能让 items 起始超过 pubHash 起始）
+    final headerLen = _decodeUint32(bytes, 8);
+    final itemsStart = _kFixedHeaderLen + headerLen;
+    final pubHashStart = bytes.length - _kPubHashLen;
+    if (headerLen < 0 || itemsStart > pubHashStart) {
+      throw ManifestAuthException(
+          'headerLen 越界：headerLen=$headerLen，文件长度=${bytes.length}，'
+          'itemsStart=$itemsStart，pubHashStart=$pubHashStart');
+    }
+
+    // 6. 验 pubHash（覆盖 [0, pubHashStart) 全部字节）
+    final expectedPubHash = bytes.sublist(pubHashStart);
+    final actualPubHash = _sha256(bytes.sublist(0, pubHashStart));
+    if (!_constTimeEquals(expectedPubHash, actualPubHash)) {
+      throw ManifestAuthException(
+          'pubHash 校验失败（数据损坏：位翻转 / 截断 / 半写）');
+    }
+
+    // 7. 解析 header（明文 JSON）
+    final headerBytes = bytes.sublist(_kFixedHeaderLen, itemsStart);
+    final headerJson =
+        jsonDecode(utf8.decode(headerBytes)) as Map<String, dynamic>;
+    final header = ManifestHeader.fromJson(headerJson);
+
+    // 8. 一致性检查：固定头 schemaV 与 header.schemaVersion 应一致
+    if (schemaV != header.schemaVersion) {
+      throw ManifestAuthException(
+          'schemaVersion 不一致：固定头=$schemaV，header=${header.schemaVersion}');
+    }
+
+    // 9. 提取 encryptedItems
+    final encryptedItems =
+        Uint8List.fromList(bytes.sublist(itemsStart, pubHashStart));
+
+    return _ContainerInfo(header: header, encryptedItems: encryptedItems);
+  }
+}
+
+/// v5 容器解析中间结果（ManifestCrypto._parseAndVerifyContainer 返回值）
+class _ContainerInfo {
+  final ManifestHeader header;
+  final Uint8List encryptedItems;
+  const _ContainerInfo({required this.header, required this.encryptedItems});
 }
 
 // ──────────────────────────────────────────────

@@ -351,3 +351,59 @@ SyncDecryptionException wrapDecryptionError(
     aadId: aadId,
   );
 }
+
+// ──────────────────────────────────────────────
+// v5 容器异常类型（manifest-reliability-design §5.5）
+// ──────────────────────────────────────────────
+//
+// 设计目的：彻底区分「数据损坏」与「密钥不匹配」两类失败，消除以往"items GCM
+// 解密失败一律按密钥问题处理"导致的「损坏被误判为 scenario-b 强制重登」回归
+// （sync_engine.dart:458-471 / 438-445，详见设计文档 §3.2）。
+//
+// 异常分流契约（实施约束 §11.1，违反会引入回归）：
+//   - ManifestAuthException     → 走 §7 统一恢复编排（re-GET → 验 pubHash 挑 bak → 重建）
+//   - ManifestKeyMismatchException → 走 scenario-b 密钥/迁移流程（requiresRelogin）
+// 任何 `on Object catch` 兜底层都必须先分流这两种异常，否则新异常被吞掉、问题被掩盖。
+
+/// manifest 数据损坏异常（结构错误 / pubHash 校验失败）
+///
+/// 触发场景：
+///   - magic / fileVer / schemaVersion 不匹配或非法
+///   - headerLen 越界 / 文件截断
+///   - pubHash（无密钥 SHA-256）校验失败 → 位翻转 / 截断 / 半写
+///
+/// 处理：走统一恢复编排（§7），**绝不**走 scenario-b 强制重登。
+class ManifestAuthException implements Exception {
+  final String message;
+
+  /// 原始异常（可空，pubHash 失败时无原始异常）
+  final Object? cause;
+
+  ManifestAuthException(this.message, {this.cause});
+
+  @override
+  String toString() =>
+      'ManifestAuthException: $message${cause != null ? ' (cause: $cause)' : ''}';
+}
+
+/// manifest 密钥不匹配异常（pubHash 通过但 GCM 解密失败）
+///
+/// 触发场景：
+///   - pubHash 校验通过（数据未损坏）但 items GCM tag 验证失败
+///   - 含义：数据完整，但当前 dataKey 解不开 → 旧密钥数据 / 他端改密码 / 迁移后旧 bak
+///
+/// 处理：走 scenario-b 密钥/迁移流程（与现有 `requiresRelogin` 分支语义一致）。
+/// **例外**（§11.2）：bak 选择循环中遇到此异常应跳过当前 bak 试下一份，只有
+/// 所有 bak 都解不开才意味着密钥真的不匹配。
+class ManifestKeyMismatchException implements Exception {
+  final String message;
+
+  /// 原始异常（通常为 SyncDecryptionException）
+  final Object? cause;
+
+  ManifestKeyMismatchException(this.message, {this.cause});
+
+  @override
+  String toString() =>
+      'ManifestKeyMismatchException: $message${cause != null ? ' (cause: $cause)' : ''}';
+}
