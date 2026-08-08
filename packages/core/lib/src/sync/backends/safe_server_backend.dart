@@ -76,11 +76,11 @@ class SafeServerBackend implements SyncBackend {
     required String baseUrl,
     required this.token,
     http.Client? client,
-  })  : _client = client ?? http.Client(),
-        // 去掉末尾斜杠，保证 URL 拼接一致
-        baseUrl = baseUrl.endsWith('/')
-            ? baseUrl.substring(0, baseUrl.length - 1)
-            : baseUrl;
+  }) : _client = client ?? http.Client(),
+       // 去掉末尾斜杠，保证 URL 拼接一致
+       baseUrl = baseUrl.endsWith('/')
+           ? baseUrl.substring(0, baseUrl.length - 1)
+           : baseUrl;
 
   @override
   String get displayName => 'SafeServer';
@@ -134,10 +134,9 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.get(
-        Uri.parse(_manifestUrl),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .get(Uri.parse(_manifestUrl), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('GET manifest network error: $e');
     }
@@ -148,11 +147,13 @@ class SafeServerBackend implements SyncBackend {
     }
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'GET manifest failed: ${res.statusCode} ${res.body}');
+        'GET manifest failed: ${res.statusCode} ${res.body}',
+      );
     }
 
     final etag = _normalizeEtag(res.headers['etag']);
@@ -161,17 +162,15 @@ class SafeServerBackend implements SyncBackend {
     // 服务端必须返回 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
     if (etag.isEmpty) {
       throw BackendUnavailableException(
-          'GET manifest failed: server did not return ETag (SafeServer v2.2 required)');
+        'GET manifest failed: server did not return ETag (SafeServer v2.2 required)',
+      );
     }
 
     return (ciphertext: ciphertext, etag: etag);
   }
 
   @override
-  Future<String> putManifest(
-    Uint8List ciphertext,
-    String expectedEtag,
-  ) async {
+  Future<String> putManifest(Uint8List ciphertext, String expectedEtag) async {
     _ensureInitialized();
 
     final headers = _authHeaders();
@@ -187,11 +186,9 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.put(
-        Uri.parse(_manifestUrl),
-        headers: headers,
-        body: ciphertext,
-      ).timeout(_httpTimeout);
+      res = await _client
+          .put(Uri.parse(_manifestUrl), headers: headers, body: ciphertext)
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT manifest network error: $e');
     }
@@ -199,22 +196,26 @@ class SafeServerBackend implements SyncBackend {
     // 412 Precondition Failed = 乐观锁冲突
     if (res.statusCode == 412) {
       throw ConflictException(
-          'SafeServer If-Match failed: ${res.statusCode} (expected etag=$expectedEtag)');
+        'SafeServer If-Match failed: ${res.statusCode} (expected etag=$expectedEtag)',
+      );
     }
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
-          'PUT manifest failed: ${res.statusCode} ${res.body}');
+        'PUT manifest failed: ${res.statusCode} ${res.body}',
+      );
     }
 
     // 服务端必须返回新 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
     final newEtag = _normalizeEtag(res.headers['etag']);
     if (newEtag.isEmpty) {
       throw BackendUnavailableException(
-          'PUT manifest failed: server did not return ETag (SafeServer v2.2 required)');
+        'PUT manifest failed: server did not return ETag (SafeServer v2.2 required)',
+      );
     }
     return newEtag;
   }
@@ -225,10 +226,9 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.get(
-        Uri.parse('$_blobUrlPrefix/$hash'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .get(Uri.parse('$_blobUrlPrefix/$hash'), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
     }
@@ -236,11 +236,13 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 404) return null;
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'GET blob failed: ${res.statusCode} for hash=$hash');
+        'GET blob failed: ${res.statusCode} for hash=$hash',
+      );
     }
     return res.bodyBytes;
   }
@@ -254,11 +256,9 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.put(
-        Uri.parse('$_blobUrlPrefix/$hash'),
-        headers: headers,
-        body: data,
-      ).timeout(_httpTimeout);
+      res = await _client
+          .put(Uri.parse('$_blobUrlPrefix/$hash'), headers: headers, body: data)
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT blob network error: $e');
     }
@@ -266,11 +266,13 @@ class SafeServerBackend implements SyncBackend {
     // 幂等：相同内容覆盖写
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
-          'PUT blob failed: ${res.statusCode} for hash=$hash');
+        'PUT blob failed: ${res.statusCode} for hash=$hash',
+      );
     }
   }
 
@@ -278,34 +280,48 @@ class SafeServerBackend implements SyncBackend {
   ///
   /// SafeServer v2.2 协议定义了 DELETE /api/v2/blob/`<hash>` 端点
   /// （在 v2.2 中委托到资源层 `blobs/<hash>`）。
-  /// 客户端要求服务端必须实现 v2.2，未实现时返回 405 视为不兼容，抛异常。
+  ///
+  /// **F-H08 修复**：405 视为旧版服务端未实现该端点，**静默降级**（不清理，
+  /// 不抛异常），与 server-api-spec §4「客户端对 405 静默降级」一致。
+  /// 修复前 405 抛 `BackendUnavailableException`，会把 GC/孤儿清理的预期降级
+  /// 变成同步硬失败，破坏与旧版 v2.1/v2 服务端的升级时序兼容。
   @override
   Future<void> deleteBlob(String hash) async {
     _ensureInitialized();
 
     http.Response res;
     try {
-      res = await _client.delete(
-        Uri.parse('$_blobUrlPrefix/$hash'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .delete(Uri.parse('$_blobUrlPrefix/$hash'), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('DELETE blob network error: $e');
     }
 
     // 204 No Content = 删除成功
     // 404 Not Found = blob 不存在（幂等删除，视为成功）
+    // 405 = 旧版服务端未实现 DELETE 端点（静默降级：仅失去清理能力，不影响同步）
     // 401 = 认证失败（仍抛异常，提示用户检查 token）
-    if (res.statusCode == 204 || res.statusCode == 404) {
+    if (res.statusCode == 204 ||
+        res.statusCode == 404 ||
+        res.statusCode == 405) {
+      if (res.statusCode == 405) {
+        Log.sync.d(
+          '[SafeServer] deleteBlob: 405 旧版服务端未实现，静默降级 '
+          'hash=$hash',
+        );
+      }
       return;
     }
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
-    // 其余状态（含 405 = 旧版服务端未实现 DELETE）：v2.2 必须支持，抛异常
+    // 其余状态视为真实故障，抛异常
     throw BackendUnavailableException(
-        'DELETE blob failed: ${res.statusCode} for hash=$hash');
+      'DELETE blob failed: ${res.statusCode} for hash=$hash',
+    );
   }
 
   /// 备份损坏的 manifest（v2.2 资源层 move 到 `.corrupt-<ts>`）
@@ -329,14 +345,15 @@ class SafeServerBackend implements SyncBackend {
     }
     // move 意外失败（如资源层异常）：退化为 DELETE 兜底
     try {
-      await _client.delete(
-        Uri.parse(_manifestUrl),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      await _client
+          .delete(Uri.parse(_manifestUrl), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       // 删除失败不抛异常，让 SyncEngine 的 PUT 覆盖
-      Log.sync.w('[SafeServer] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
-          error: e);
+      Log.sync.w(
+        '[SafeServer] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
+        error: e,
+      );
     }
   }
 
@@ -351,21 +368,22 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.get(
-        Uri.parse(_blobsUrl),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .get(Uri.parse(_blobsUrl), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blobs network error: $e');
     }
 
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'SafeServer auth failed (401): check token');
+        'SafeServer auth failed (401): check token',
+      );
     }
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'GET blobs failed: ${res.statusCode} ${res.body}');
+        'GET blobs failed: ${res.statusCode} ${res.body}',
+      );
     }
 
     try {
@@ -373,7 +391,8 @@ class SafeServerBackend implements SyncBackend {
       return hashes.whereType<String>().toList();
     } on FormatException {
       throw BackendUnavailableException(
-          'GET blobs failed: invalid JSON response');
+        'GET blobs failed: invalid JSON response',
+      );
     }
   }
 
@@ -402,14 +421,18 @@ class SafeServerBackend implements SyncBackend {
       try {
         await deleteBlob(hash);
       } on Exception catch (e) {
-        Log.sync.w('[SafeServer] deleteBlobSoft: 409 后删除原 blob 失败 '
-            'hash=${hash.substring(0, 8)}…', error: e);
+        Log.sync.w(
+          '[SafeServer] deleteBlobSoft: 409 后删除原 blob 失败 '
+          'hash=${hash.substring(0, 8)}…',
+          error: e,
+        );
       }
       return;
     }
     // 其余状态：v2.2 资源层必须支持 move，视为不兼容，抛异常
     throw BackendUnavailableException(
-        'SafeServer move blob to quarantine failed: ${res.statusCode} for hash=$hash');
+      'SafeServer move blob to quarantine failed: ${res.statusCode} for hash=$hash',
+    );
   }
 
   /// P1-2 修复：列出隔离区孤儿 blob 的 hash
@@ -420,7 +443,8 @@ class SafeServerBackend implements SyncBackend {
     final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'SafeServer propfind blobs-orphan failed: ${res.statusCode}');
+        'SafeServer propfind blobs-orphan failed: ${res.statusCode}',
+      );
     }
     try {
       final List<dynamic> entries = jsonDecode(res.body);
@@ -433,7 +457,8 @@ class SafeServerBackend implements SyncBackend {
       return result;
     } on FormatException {
       throw BackendUnavailableException(
-          'SafeServer propfind blobs-orphan failed: invalid JSON response');
+        'SafeServer propfind blobs-orphan failed: invalid JSON response',
+      );
     }
   }
 
@@ -446,7 +471,8 @@ class SafeServerBackend implements SyncBackend {
     final res = await _postResource('blobs-orphan', 'propfind', depth: 1);
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'SafeServer propfind blobs-orphan failed: ${res.statusCode}');
+        'SafeServer propfind blobs-orphan failed: ${res.statusCode}',
+      );
     }
     final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
     try {
@@ -461,15 +487,19 @@ class SafeServerBackend implements SyncBackend {
               await _deleteResource('blobs-orphan/$name');
             } on Exception catch (e) {
               // 单个删除失败不阻断
-              Log.sync.w('[SafeServer] purgeOrphans: 单个孤儿删除失败 '
-                  'name=$name', error: e);
+              Log.sync.w(
+                '[SafeServer] purgeOrphans: 单个孤儿删除失败 '
+                'name=$name',
+                error: e,
+              );
             }
           }
         }
       }
     } on FormatException {
       throw BackendUnavailableException(
-          'SafeServer propfind blobs-orphan failed: invalid JSON response');
+        'SafeServer propfind blobs-orphan failed: invalid JSON response',
+      );
     }
   }
 
@@ -503,8 +533,10 @@ class SafeServerBackend implements SyncBackend {
         slot = int.tryParse(utf8.decode(idx.bodyBytes).trim()) ?? 0;
       }
     } on Exception catch (e) {
-      Log.sync.d('[SafeServer] _backupManifestOnServer: 读取备份索引失败，slot=0',
-          error: e);
+      Log.sync.d(
+        '[SafeServer] _backupManifestOnServer: 读取备份索引失败，slot=0',
+        error: e,
+      );
       slot = 0;
     }
     slot = (slot + 1) % kManifestBackupRingCount;
@@ -523,14 +555,20 @@ class SafeServerBackend implements SyncBackend {
   ///
   /// 内容已由 Journal 用 AES-GCM(dataKey) 加密，服务端只存字节。
   /// 客户端要求服务端必须实现 v2.2 资源层。
+  ///
+  /// **F-H07 修复**：非 2xx 状态抛异常，禁止"假成功"。
+  /// 修复前异常被整体吞掉，journal 侧 `_uploadedSeq` 无条件推进，
+  /// 失败归档永不重传。现在由 journal.syncToRemote 外层 catch 兜底。
   @override
   Future<void> putJournalObject(String name, Uint8List ciphertext) async {
     _ensureInitialized();
-    try {
-      await _postResource('journal', 'mkdir'); // 201 已建 / 405 已存在
-      await _putResource('journal/$name', ciphertext);
-    } on Exception catch (e) {
-      Log.sync.d('[SafeServer] journal 副本上传失败 name=$name', error: e);
+    await _postResource('journal', 'mkdir'); // 201 已建 / 405 已存在（幂等）
+    final res = await _putResource('journal/$name', ciphertext);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError(
+        '[SafeServer] journal 副本上传失败 name=$name: '
+        '${res.statusCode} ${res.body}',
+      );
     }
   }
 
@@ -578,10 +616,7 @@ class SafeServerBackend implements SyncBackend {
     final req = http.Request('POST', uri);
     req.headers.addAll(_authHeaders());
     req.headers['Content-Type'] = 'application/json';
-    final body = <String, Object>{
-      'op': op,
-      'overwrite': overwrite,
-    };
+    final body = <String, Object>{'op': op, 'overwrite': overwrite};
     if (dest != null) body['dest'] = dest;
     if (op == 'propfind' || op == 'stats') body['depth'] = depth;
     req.body = jsonEncode(body);
@@ -623,7 +658,9 @@ class SafeServerBackend implements SyncBackend {
     // SafeServer 探测：GET /api/v2/health（无认证，1 次 HTTP 请求）
     // 不依赖 _initialized 标志，允许未 init 时也能探测
     try {
-      final res = await _client.get(Uri.parse(_healthUrl)).timeout(_httpTimeout);
+      final res = await _client
+          .get(Uri.parse(_healthUrl))
+          .timeout(_httpTimeout);
       return res.statusCode == 200 && res.body == 'ok';
     } on Exception {
       return false;

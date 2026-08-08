@@ -102,10 +102,10 @@ class WebDavBackend implements SyncBackend {
     required this.username,
     required this.password,
     http.Client? client,
-  })  : _client = client ?? http.Client(),
-        _userBaseUrl = baseUrl,
-        // 规范化：去掉末尾斜杠，附加固定子目录
-        baseUrl = _normalizeAndAppendVault(baseUrl);
+  }) : _client = client ?? http.Client(),
+       _userBaseUrl = baseUrl,
+       // 规范化：去掉末尾斜杠，附加固定子目录
+       baseUrl = _normalizeAndAppendVault(baseUrl);
 
   /// 规范化用户输入的 URL，附加固定 keyring 子目录
   ///
@@ -114,9 +114,7 @@ class WebDavBackend implements SyncBackend {
   ///   - 'https://dav.jianguoyun.com/dav'  → 'https://dav.jianguoyun.com/dav/safenotes-vault'
   ///   - 'http://192.168.1.118:2025/my-sync/' → 'http://192.168.1.118:2025/my-sync/safenotes-vault'
   static String _normalizeAndAppendVault(String url) {
-    final trimmed = url.endsWith('/')
-        ? url.substring(0, url.length - 1)
-        : url;
+    final trimmed = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
     return '$trimmed/$kWebDavVaultSubdir';
   }
 
@@ -168,10 +166,9 @@ class WebDavBackend implements SyncBackend {
     try {
       http.Response res;
       try {
-        res = await _client.get(
-          Uri.parse(_manifestUrl),
-          headers: _authHeaders(),
-        ).timeout(_httpTimeout);
+        res = await _client
+            .get(Uri.parse(_manifestUrl), headers: _authHeaders())
+            .timeout(_httpTimeout);
       } on Exception catch (e) {
         // 网络错误：保守假设支持，不阻断 init
         Log.sync.w('[WebDAV] ETag 探测网络错误，保守假设支持', error: e);
@@ -189,10 +186,12 @@ class WebDavBackend implements SyncBackend {
 
       if (!_etagSupported && !_etagWarningLogged) {
         _etagWarningLogged = true;
-        Log.sync.w('[WebDAV] 警告：服务器不支持 ETag 头，'
-            '乐观锁将退化为内容 hash 比较，'
-            'If-Match 可能被服务器忽略，多端并发写入有覆盖风险。'
-            '建议升级 WebDAV 服务或使用 SafeServer 后端。');
+        Log.sync.w(
+          '[WebDAV] 警告：服务器不支持 ETag 头，'
+          '乐观锁将退化为内容 hash 比较，'
+          'If-Match 可能被服务器忽略，多端并发写入有覆盖风险。'
+          '建议升级 WebDAV 服务或使用 SafeServer 后端。',
+        );
       }
     } on Exception catch (e) {
       // 探测失败不阻断 init
@@ -209,7 +208,8 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '0';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>';
 
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
@@ -243,10 +243,9 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.get(
-        Uri.parse(_manifestUrl),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .get(Uri.parse(_manifestUrl), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } catch (e) {
       throw BackendUnavailableException('GET manifest network error: $e');
     }
@@ -257,7 +256,8 @@ class WebDavBackend implements SyncBackend {
     }
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'GET manifest failed: ${res.statusCode} ${res.body}');
+        'GET manifest failed: ${res.statusCode} ${res.body}',
+      );
     }
 
     final etag = _normalizeEtag(res.headers['etag']);
@@ -266,17 +266,15 @@ class WebDavBackend implements SyncBackend {
     // 服务器未返回 ETag 时，退化为内容 hash 作为 etag
     // 注意：这种情况下 putManifest 的 If-Match 可能被服务器忽略，
     // 退化为"最后写入胜"。主流 WebDAV 服务都返回 ETag，此分支极少触发。
-    final effectiveEtag =
-        etag.isNotEmpty ? etag : _computeContentEtag(ciphertext);
+    final effectiveEtag = etag.isNotEmpty
+        ? etag
+        : _computeContentEtag(ciphertext);
 
     return (ciphertext: ciphertext, etag: effectiveEtag);
   }
 
   @override
-  Future<String> putManifest(
-    Uint8List ciphertext,
-    String expectedEtag,
-  ) async {
+  Future<String> putManifest(Uint8List ciphertext, String expectedEtag) async {
     _ensureInitialized();
 
     final headers = _authHeaders();
@@ -293,11 +291,9 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.put(
-        Uri.parse(_manifestUrl),
-        headers: headers,
-        body: ciphertext,
-      ).timeout(_httpTimeout);
+      res = await _client
+          .put(Uri.parse(_manifestUrl), headers: headers, body: ciphertext)
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT manifest network error: $e');
     }
@@ -306,11 +302,13 @@ class WebDavBackend implements SyncBackend {
     // 409 Conflict = 某些 WebDAV 实现用于 If-None-Match 冲突
     if (res.statusCode == 412 || res.statusCode == 409) {
       throw ConflictException(
-          'WebDAV If-Match failed: ${res.statusCode} (expected etag=$expectedEtag)');
+        'WebDAV If-Match failed: ${res.statusCode} (expected etag=$expectedEtag)',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
-          'PUT manifest failed: ${res.statusCode} ${res.body}');
+        'PUT manifest failed: ${res.statusCode} ${res.body}',
+      );
     }
 
     // 服务器返回新 ETag 优先；否则用上传内容的 hash 作为 fallback
@@ -324,10 +322,9 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.get(
-        Uri.parse('$_blobsUrl/$hash'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .get(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
     }
@@ -335,7 +332,8 @@ class WebDavBackend implements SyncBackend {
     if (res.statusCode == 404) return null;
     if (res.statusCode != 200) {
       throw BackendUnavailableException(
-          'GET blob failed: ${res.statusCode} for hash=$hash');
+        'GET blob failed: ${res.statusCode} for hash=$hash',
+      );
     }
     return res.bodyBytes;
   }
@@ -349,11 +347,9 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.put(
-        Uri.parse('$_blobsUrl/$hash'),
-        headers: headers,
-        body: data,
-      ).timeout(_httpTimeout);
+      res = await _client
+          .put(Uri.parse('$_blobsUrl/$hash'), headers: headers, body: data)
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT blob network error: $e');
     }
@@ -361,7 +357,8 @@ class WebDavBackend implements SyncBackend {
     // WebDAV PUT 幂等：相同内容覆盖写
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
-          'PUT blob failed: ${res.statusCode} for hash=$hash');
+        'PUT blob failed: ${res.statusCode} for hash=$hash',
+      );
     }
   }
 
@@ -375,10 +372,9 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client.delete(
-        Uri.parse('$_blobsUrl/$hash'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      res = await _client
+          .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('DELETE blob network error: $e');
     }
@@ -388,7 +384,8 @@ class WebDavBackend implements SyncBackend {
     if (res.statusCode == 404) return;
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw BackendUnavailableException(
-          'DELETE blob failed: ${res.statusCode} for hash=$hash');
+        'DELETE blob failed: ${res.statusCode} for hash=$hash',
+      );
     }
   }
 
@@ -405,7 +402,8 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
 
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
@@ -421,7 +419,9 @@ class WebDavBackend implements SyncBackend {
       final result = <String>[];
       final hashRegex = RegExp(r'^[a-f0-9]{64}$');
       // 简单字符串匹配（避免引入 XML 解析库）
-      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      final hrefRegex = RegExp(
+        r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
+      );
       for (final match in hrefRegex.allMatches(body)) {
         final href = match.group(1)!;
         // 取 URL 路径最后一段作为文件名
@@ -455,8 +455,10 @@ class WebDavBackend implements SyncBackend {
       await _mkcol(_orphanUrl);
     } on Exception catch (e) {
       // MKCOL 失败（目录已存在或无权限），忽略继续
-      Log.sync.d('[WebDAV] deleteBlobSoft: MKCOL blobs-orphan 失败（可能已存在）',
-          error: e);
+      Log.sync.d(
+        '[WebDAV] deleteBlobSoft: MKCOL blobs-orphan 失败（可能已存在）',
+        error: e,
+      );
     }
     try {
       final copyReq = http.Request('COPY', Uri.parse('$_blobsUrl/$hash'));
@@ -468,26 +470,30 @@ class WebDavBackend implements SyncBackend {
       final copyHttp = await http.Response.fromStream(copyRes);
       if (copyHttp.statusCode >= 200 && copyHttp.statusCode < 300) {
         // 隔离区已有副本：删除原 blob
-        await _client.delete(
-          Uri.parse('$_blobsUrl/$hash'),
-          headers: _authHeaders(),
-        ).timeout(_httpTimeout);
+        await _client
+            .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
+            .timeout(_httpTimeout);
         return;
       }
     } on Exception catch (e) {
       // COPY 失败：退化为硬删除原 blob
-      Log.sync.w('[WebDAV] deleteBlobSoft: COPY 失败，退化为硬删除 '
-          'hash=${hash.substring(0, 8)}…', error: e);
+      Log.sync.w(
+        '[WebDAV] deleteBlobSoft: COPY 失败，退化为硬删除 '
+        'hash=${hash.substring(0, 8)}…',
+        error: e,
+      );
     }
     try {
-      await _client.delete(
-        Uri.parse('$_blobsUrl/$hash'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      await _client
+          .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
+          .timeout(_httpTimeout);
     } on Exception catch (e) {
       // 删除失败不抛异常（GC 不阻断同步）
-      Log.sync.w('[WebDAV] deleteBlobSoft: 硬删除失败 '
-          'hash=${hash.substring(0, 8)}…', error: e);
+      Log.sync.w(
+        '[WebDAV] deleteBlobSoft: 硬删除失败 '
+        'hash=${hash.substring(0, 8)}…',
+        error: e,
+      );
     }
   }
 
@@ -502,18 +508,22 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final hashRegex = RegExp(r'^[a-f0-9]{64}\.');
-      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      final hrefRegex = RegExp(
+        r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
+      );
       final result = <String>[];
       for (final match in hrefRegex.allMatches(res.body)) {
         final href = match.group(1)!;
         final name = Uri.decodeComponent(
-            href.split('/').where((s) => s.isNotEmpty).last);
+          href.split('/').where((s) => s.isNotEmpty).last,
+        );
         if (hashRegex.hasMatch(name)) {
           result.add(name.substring(0, 64));
         }
@@ -537,31 +547,39 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return;
-      final hrefRegex = RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
-      final cutoff =
-          DateTime.now().subtract(retention).millisecondsSinceEpoch;
+      final hrefRegex = RegExp(
+        r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
+      );
+      final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
       for (final match in hrefRegex.allMatches(res.body)) {
         final href = match.group(1)!;
         final name = Uri.decodeComponent(
-            href.split('/').where((s) => s.isNotEmpty).last);
+          href.split('/').where((s) => s.isNotEmpty).last,
+        );
         final dot = name.indexOf('.');
         if (dot > 0 && name.substring(0, dot).length == 64) {
           final ts = int.tryParse(name.substring(dot + 1));
           if (ts != null && ts < cutoff) {
             try {
-              await _client.delete(
-                Uri.parse('$_orphanUrl/$name'),
-                headers: _authHeaders(),
-              ).timeout(_httpTimeout);
+              await _client
+                  .delete(
+                    Uri.parse('$_orphanUrl/$name'),
+                    headers: _authHeaders(),
+                  )
+                  .timeout(_httpTimeout);
             } on Exception catch (e) {
               // 单个删除失败不阻断
-              Log.sync.w('[WebDAV] purgeOrphans: 单个孤儿删除失败 '
-                  'name=$name', error: e);
+              Log.sync.w(
+                '[WebDAV] purgeOrphans: 单个孤儿删除失败 '
+                'name=$name',
+                error: e,
+              );
             }
           }
         }
@@ -580,28 +598,37 @@ class WebDavBackend implements SyncBackend {
   String get _journalUrl => '$baseUrl/journal';
 
   /// P2：写入 journal 密文副本（内容已由 Journal 加密，网盘只存字节）
+  ///
+  /// **F-H07 修复**：非 2xx 状态抛异常，禁止"假成功"。
+  /// 修复前异常/非 2xx 被整体吞掉，journal 侧 `_uploadedSeq` 无条件推进，
+  /// 失败归档永不重传，远端 journal 出现洞。现在由 journal.syncToRemote
+  /// 的外层 catch 兜底（降级 local-only 且不推进水位，下次同步重传）。
   @override
   Future<void> putJournalObject(String name, Uint8List ciphertext) async {
     _ensureInitialized();
+    // 确保目录存在（已存在返回 405，忽略；仅为幂等建目录，不影响上传结果）
     try {
-      // 确保目录存在（已存在返回 405，忽略）
-      try {
-        await _mkcol(_journalUrl);
-      } on Exception catch (e) {
-        Log.sync.d('[WebDAV] putJournalObject: MKCOL journal 失败（可能已存在）',
-            error: e);
-      }
-      await _client.put(
-        Uri.parse('$_journalUrl/$name'),
-        headers: {
-          ..._authHeaders(),
-          'Content-Type': 'application/octet-stream',
-        },
-        body: ciphertext,
-      ).timeout(_httpTimeout);
+      await _mkcol(_journalUrl);
     } on Exception catch (e) {
-      // journal 副本失败不阻断同步
-      Log.sync.d('[WebDAV] journal 副本上传失败 name=$name', error: e);
+      Log.sync.d(
+        '[WebDAV] putJournalObject: MKCOL journal 失败（可能已存在）',
+        error: e,
+      );
+    }
+    final res = await _client
+        .put(
+          Uri.parse('$_journalUrl/$name'),
+          headers: {
+            ..._authHeaders(),
+            'Content-Type': 'application/octet-stream',
+          },
+          body: ciphertext,
+        )
+        .timeout(_httpTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError(
+        'WebDAV journal 副本上传失败 name=$name: ${res.statusCode} ${res.body}',
+      );
     }
   }
 
@@ -609,10 +636,9 @@ class WebDavBackend implements SyncBackend {
   Future<Uint8List?> getJournalObject(String name) async {
     _ensureInitialized();
     try {
-      final res = await _client.get(
-        Uri.parse('$_journalUrl/$name'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      final res = await _client
+          .get(Uri.parse('$_journalUrl/$name'), headers: _authHeaders())
+          .timeout(_httpTimeout);
       if (res.statusCode != 200) return null;
       return res.bodyBytes;
     } on Exception catch (e) {
@@ -629,14 +655,16 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '1';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
       final res = await http.Response.fromStream(streamedRes);
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final result = <String>[];
-      final hrefRegex =
-          RegExp(r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>');
+      final hrefRegex = RegExp(
+        r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
+      );
       for (final match in hrefRegex.allMatches(res.body)) {
         final href = match.group(1)!;
         final parts = href.split('/').where((s) => s.isNotEmpty);
@@ -679,42 +707,49 @@ class WebDavBackend implements SyncBackend {
       await _mkcol(backupUrl);
     } on Exception catch (e) {
       // 某些服务端自动创建父目录，MKCOL 失败可忽略
-      Log.sync.d('[WebDAV] _backupManifestOnServer: MKCOL 备份目录失败（可能已存在）',
-          error: e);
+      Log.sync.d(
+        '[WebDAV] _backupManifestOnServer: MKCOL 备份目录失败（可能已存在）',
+        error: e,
+      );
     }
     var slot = 0;
     try {
-      final idxRes = await _client.get(
-        Uri.parse('$backupUrl/.manifest-bak-index'),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      final idxRes = await _client
+          .get(
+            Uri.parse('$backupUrl/.manifest-bak-index'),
+            headers: _authHeaders(),
+          )
+          .timeout(_httpTimeout);
       if (idxRes.statusCode == 200) {
         slot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
       }
     } on Exception catch (e) {
-      Log.sync.d('[WebDAV] _backupManifestOnServer: 读取备份索引失败，slot=0',
-          error: e);
+      Log.sync.d('[WebDAV] _backupManifestOnServer: 读取备份索引失败，slot=0', error: e);
       slot = 0;
     }
     slot = (slot + 1) % kManifestBackupRingCount;
     // 写轮转索引
-    await _client.put(
-      Uri.parse('$backupUrl/.manifest-bak-index'),
-      headers: {
-        ..._authHeaders(),
-        'Content-Type': 'application/octet-stream',
-      },
-      body: utf8.encode(slot.toString()),
-    ).timeout(_httpTimeout);
+    await _client
+        .put(
+          Uri.parse('$backupUrl/.manifest-bak-index'),
+          headers: {
+            ..._authHeaders(),
+            'Content-Type': 'application/octet-stream',
+          },
+          body: utf8.encode(slot.toString()),
+        )
+        .timeout(_httpTimeout);
     // 写备份文件
-    await _client.put(
-      Uri.parse('$backupUrl/manifest.bak-$slot'),
-      headers: {
-        ..._authHeaders(),
-        'Content-Type': 'application/octet-stream',
-      },
-      body: bytes,
-    ).timeout(_httpTimeout);
+    await _client
+        .put(
+          Uri.parse('$backupUrl/manifest.bak-$slot'),
+          headers: {
+            ..._authHeaders(),
+            'Content-Type': 'application/octet-stream',
+          },
+          body: bytes,
+        )
+        .timeout(_httpTimeout);
   }
 
   /// D2 修复：备份损坏的 manifest（WebDAV 退化实现）
@@ -725,10 +760,9 @@ class WebDavBackend implements SyncBackend {
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {
     _ensureInitialized();
     try {
-      final res = await _client.delete(
-        Uri.parse(_manifestUrl),
-        headers: _authHeaders(),
-      ).timeout(_httpTimeout);
+      final res = await _client
+          .delete(Uri.parse(_manifestUrl), headers: _authHeaders())
+          .timeout(_httpTimeout);
       // 204/200 = 删除成功，404 = 不存在（已删除），都视为成功
       if (res.statusCode != 204 &&
           res.statusCode != 200 &&
@@ -737,8 +771,7 @@ class WebDavBackend implements SyncBackend {
       }
     } on Exception catch (e) {
       // 网络错误：不抛异常，让 SyncEngine 的 PUT 覆盖
-      Log.sync.w('[WebDAV] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
-          error: e);
+      Log.sync.w('[WebDAV] backupCorruptManifest: 删除失败，退化为 PUT 覆盖', error: e);
     }
   }
 
@@ -757,7 +790,8 @@ class WebDavBackend implements SyncBackend {
       req.headers.addAll(_authHeaders());
       req.headers['Depth'] = '0';
       req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body = '<?xml version="1.0" encoding="utf-8"?>'
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
 
       final streamedRes = await _client.send(req).timeout(_httpTimeout);
@@ -832,9 +866,11 @@ class WebDavBackend implements SyncBackend {
     }
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
-          'WebDAV auth failed (401): check username/password');
+        'WebDAV auth failed (401): check username/password',
+      );
     }
     throw BackendUnavailableException(
-        'MKCOL $url failed: ${res.statusCode} ${res.body}');
+      'MKCOL $url failed: ${res.statusCode} ${res.body}',
+    );
   }
 }
