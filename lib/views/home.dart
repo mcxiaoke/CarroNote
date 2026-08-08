@@ -57,10 +57,8 @@ class HomePageState extends State<HomePage> {
   late List<SafeNote> allnotes;
   bool isLoading = false;
   String query = '';
-  bool isHiddenImport = true;
   bool isNewFirst = PreferencesStorage.isNewFirst;
   bool isGridView = PreferencesStorage.isGridView;
-  final importPassphraseController = TextEditingController();
 
   /// B4 修复：监听同步状态流，消费 SyncResult.requiresRelogin。
   /// 引擎检测到"他端改密码"（scenario-b：本地 MK 解不开远端包裹）时
@@ -88,7 +86,6 @@ class HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _syncStateSub?.cancel();
-    importPassphraseController.dispose();
     // 注意：此处不停止日志 Web 服务器。
     // HomePage 会因登出 / 页面跳转等原因反复销毁重建，
     // 而日志服务器的生命周期是"应用级"的，只在应用退出时结束。
