@@ -547,6 +547,70 @@ class SafeServerBackend implements SyncBackend {
     await _putResource('$rel/manifest.bak-$slot', bytes);
   }
 
+  /// P1-1 READ 侧：列出服务端 `manifest-backup/` 目录的备份，从新到旧
+  ///
+  /// 通过资源层 `propfind` 枚举 `manifest.bak-*` 文件名，再读 `.manifest-bak-index`
+  /// 得到最近写入槽位，从该槽降序（mod N）即「从新到旧」。未初始化 / 枚举失败
+  /// 时返回空列表（恢复退化为本地重建）。
+  @override
+  Future<List<String>> listManifestBackups() async {
+    _ensureInitialized();
+    try {
+      final res = await _postResource('manifest-backup', 'propfind', depth: 1);
+      if (res.statusCode != 200) return const [];
+      final List<dynamic> entries = jsonDecode(res.body);
+      final names = <String>[];
+      for (final e in entries) {
+        final name = (e is Map ? e['name'] : null)?.toString() ?? '';
+        if (RegExp(r'^manifest\.bak-\d+$').hasMatch(name)) {
+          names.add(name);
+        }
+      }
+      // 最近写入槽位（读取失败按 0 处理）
+      var newestSlot = 0;
+      try {
+        final idx = await _getResource('manifest-backup/.manifest-bak-index');
+        if (idx.statusCode == 200) {
+          newestSlot =
+              int.tryParse(utf8.decode(idx.bodyBytes).trim()) ?? 0;
+        }
+      } on Exception {
+        newestSlot = 0;
+      }
+      // 从新到旧排序：slot 距离 newestSlot 越近越新
+      int slotOf(String name) =>
+          int.parse(RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!);
+      names.sort((a, b) {
+        final da =
+            (slotOf(a) - newestSlot + kManifestBackupRingCount) %
+            kManifestBackupRingCount;
+        final db =
+            (slotOf(b) - newestSlot + kManifestBackupRingCount) %
+            kManifestBackupRingCount;
+        return da.compareTo(db);
+      });
+      return names;
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] manifest 备份枚举失败', error: e);
+      return const [];
+    }
+  }
+
+  /// P1-1 READ 侧：读取指定 manifest 备份密文；不存在返回 null
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async {
+    _ensureInitialized();
+    if (!RegExp(r'^manifest\.bak-\d+$').hasMatch(name)) return null;
+    try {
+      final res = await _getResource('manifest-backup/$name');
+      if (res.statusCode != 200) return null;
+      return res.bodyBytes;
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] manifest 备份读取失败 name=$name', error: e);
+      return null;
+    }
+  }
+
   // ──────────────────────────────────────────────
   // P2 Journal 远端副本（v2.2 资源层 `journal/` 子目录）
   // ──────────────────────────────────────────────

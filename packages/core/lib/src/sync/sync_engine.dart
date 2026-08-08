@@ -344,6 +344,8 @@ class SyncEngine {
     // 重建丢失其他设备的更新）；失败才走步骤 2/3。
     Manifest? recoveredManifest;
     ({Uint8List ciphertext, String etag})? recoveredResponse;
+    // 恢复来源追踪：re-get / bak / local（用于 notes 与日志区分路径）
+    var recoveredSource = 'local';
     try {
       final retryResponse = await backend.getManifest();
       if (retryResponse.ciphertext.isNotEmpty) {
@@ -353,6 +355,7 @@ class SyncEngine {
           retryResponse.ciphertext,
         );
         recoveredResponse = retryResponse;
+        recoveredSource = 'reget';
         Log.sync.i('re-GET 成功，远端 manifest 完好，merge 保留远端数据');
       } else {
         Log.sync.w('re-GET 返回空 manifest，走本地重建');
@@ -367,22 +370,48 @@ class SyncEngine {
       Log.sync.w('re-GET 失败（网络/后端错误），走本地重建', error: e);
     }
 
-    // ── §7.1 步骤 2：bak 循环 ─────────────────────────────────────
-    // TODO（manifest-reliability-design §7.2 + §11.2）：从 bak 按槽位从新到旧
-    // 试（先验 pubHash 后解密）。当前 SyncBackend 接口只有 backupManifest
-    // （写 bak）无 bak 读取接口，待后续新增 listManifestBackups /
-    // readManifestBackup 后实现。实现时必须遵守 §11.2：bak 循环中任何异常
-    // （含 ManifestKeyMismatchException）都跳过当前 bak 试下一份，全部 bak
-    // 试完才走 scenario-b 判定。
+    // ── §7.1 步骤 2：bak 循环（re-GET 失败时） ─────────────────────
+    // manifest-reliability-design §7.2 + §11.2：从最新 bak 开始，先验 pubHash
+    //（无 key、免费、粗损检测），验过才 GCM 解密。任何异常都跳过当前份试下一份
+    // —— 包括 ManifestKeyMismatchException（pubHash 过 + GCM 败 = 旧 dataKey 数据，
+    // 不是损坏）。全部 bak 试完仍无可用版本才走本地重建（步骤 3），
+    // 绝不因 bak 解密失败误触发 scenario-b 强制重登。
+    if (recoveredManifest == null) {
+      try {
+        final bakNames = await backend.listManifestBackups();
+        for (final name in bakNames) {
+          try {
+            final bakBytes = await backend.readManifestBackup(name);
+            if (bakBytes == null || bakBytes.isEmpty) continue;
+            // pubHash 预验 + GCM 解密都在 deserialize 内完成（§7.2）
+            recoveredManifest = await ManifestCrypto.deserialize(
+              _dataKey,
+              bakBytes,
+            );
+            recoveredSource = 'bak';
+            Log.sync.i('从 bak 恢复 manifest 成功 name=$name');
+            break;
+          } on Object catch (e) {
+            // §11.2：bak 循环中任何异常（含 ManifestKeyMismatchException）
+            // 都跳过当前份试下一份，绝不触发 scenario-b。
+            recoveredManifest = null;
+            Log.sync.w('manifest bak 不可用 name=$name，试下一份', error: e);
+          }
+        }
+      } on Object catch (e) {
+        // 后端读取失败（网络/未实现读侧）：不阻断，走本地重建
+        recoveredManifest = null;
+        Log.sync.w('manifest bak 读取失败，走本地重建', error: e);
+      }
+    }
 
-    // ── §7.1 步骤 3：本地重建（re-GET 失败或无 bak 可用） ──────────
-    // 仅当 re-GET 失败（远端 manifest 确实损坏、需本地重建）时才备份损坏文件：
-    //   - re-GET 成功说明损坏是瞬态（网络截断/半写），远端已是完好 manifest，
+    // ── §7.1 步骤 3：本地重建（re-GET 失败且无可用 bak） ──────────
+    // 仅当 re-GET 失败且 bak 全不可用时才备份损坏文件：
+    //   - re-GET 成功说明损坏是瞬态（网络/半写），远端已是完好 manifest，
     //     backupCorruptManifest 会把它移走/删除（LocalFS rename / SafeServer move
     //     / WebDAV DELETE），随后 PUT 也因文件已不在而 412/Conflict 失败——
     //     白白丢失刚 re-GET 到的远端数据。
-    //   - 只有 re-GET 失败（pubHash 复验仍失败）备份才可取，此时损坏文件应被
-    //     归档取证，且用本地数据重建上传覆盖。
+    //   - bak 恢复说明已有完好代际本，无需再动远端损坏文件（直接用其 etag 覆盖）。
     // 用原始损坏的 remoteResponse（非 re-GET），保证归因对象是首次观测到的坏体。
     if (recoveredManifest == null) {
       await backend.backupCorruptManifest(remoteResponse.ciphertext);
@@ -394,9 +423,7 @@ class SyncEngine {
       phase: JournalPhase.done,
       dataKeyEpoch: keyring.dataKeyEpoch,
       keyState: _keyStateSnapshot,
-      note: recoveredManifest != null
-          ? 'remote manifest corrupt, recovered via re-GET: $error'
-          : 'remote manifest corrupt, rebuilt from local: $error',
+      note: 'remote manifest corrupt, recovered via $recoveredSource: $error',
     );
     final localManifest = await _buildLocalManifest();
     final actions = <SyncAction>[];
@@ -405,26 +432,32 @@ class SyncEngine {
       SyncAction(
         type: SyncActionType.skip,
         uuid: '',
-        message: recoveredManifest != null
-            ? '远端 manifest 瞬时损坏，re-GET 已复用完好版本，正常合并'
-            : '远端 manifest 损坏，已备份损坏文件并本地重建',
+        message: recoveredSource == 'local'
+            ? '远端 manifest 损坏，已备份损坏文件并本地重建'
+            : '远端 manifest 损坏，已从 $recoveredSource 恢复，正常合并',
       ),
     );
-    // merge：re-GET 成功用 recoveredManifest（保留远端数据），否则 null（纯本地重建）
+    // merge：reget/bak 成功用 recoveredManifest（保留远端数据），否则 null（纯本地重建）
     final merged = (await _mergeAndTransfer(
       localManifest,
       recoveredManifest,
       actions,
     )).merged;
-    // PUT：re-GET 成功用 recoveredResponse.etag（远端文件已变），否则用原 etag
-    final putEtag = recoveredResponse?.etag ?? remoteResponse.etag;
+    // PUT：本地重建（recoveredSource == 'local'，且 backupCorruptManifest 已把损坏
+    // 文件 move/DELETE 移除，远端已无文件）时，必须用空 etag（If-None-Match /
+    // 首传语义）重建；仍沿用旧 etag 会因文件已不存在而 412/Conflict 报错（F-H01）。
+    // re-GET 成功：远端文件已是完好版本，用其新 etag；bak 恢复：未动远端损坏
+    // 文件，用首次 GET 的 etag 覆盖即可。
+    final putEtag = recoveredSource == 'local'
+        ? ''
+        : (recoveredResponse?.etag ?? remoteResponse.etag);
     final newCiphertext = await ManifestCrypto.serialize(_dataKey, merged);
     await backend.putManifest(newCiphertext, putEtag);
     // P3-c：损坏重建路径的 manifest PUT（与正常路径区分）
     Log.sync.i(
       'PUT manifest ok (rebuild after corrupt, '
       'items=${merged.items.length}, '
-      'source=${recoveredManifest != null ? "re-GET" : "local"})',
+      'source=$recoveredSource)',
     );
     journal.append(
       type: JournalEventType.syncManifestPut,
@@ -432,7 +465,7 @@ class SyncEngine {
       dataKeyEpoch: keyring.dataKeyEpoch,
       note:
           'rebuild-after-corrupt items=${merged.items.length} '
-          'source=${recoveredManifest != null ? "re-GET" : "local"}',
+          'source=$recoveredSource',
     );
     await _updateLocalState(
       merged,

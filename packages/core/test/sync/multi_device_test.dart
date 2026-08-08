@@ -94,6 +94,12 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   @override
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
 
+  @override
+  Future<List<String>> listManifestBackups() async => [];
+
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async => null;
+
   /// 写入篡改过的 blob（用于 M7 测试）
   void putTamperedBlob(String hash, Uint8List data) {
     _blobs[hash] = data;

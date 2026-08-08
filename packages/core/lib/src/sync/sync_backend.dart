@@ -171,6 +171,27 @@ abstract class SyncBackend {
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
 
   // ──────────────────────────────────────────────
+  // P1-1 READ 侧：manifest 代际备份（manifest-reliability-design §7.2 / §11.2）
+  // ──────────────────────────────────────────────
+
+  /// 列出远端可用的 manifest 备份文件名，**从新到旧**（最新优先）
+  ///
+  /// 返回服务端 `manifest-backup/` 子目录中的备份文件名（如 `manifest.bak-3`），
+  /// 顺序从新到旧，供损坏恢复流程（§7.1 步骤 2）按槽位优先尝试。无备份或
+  /// 后端不支持读侧时返回空列表（恢复退化为本地重建，行为与旧版一致）。
+  ///
+  /// 默认空实现（no-op）：子类按需覆盖（LocalFS/WebDAV/SafeServer 均已实现）。
+  Future<List<String>> listManifestBackups() async => const [];
+
+  /// 读取指定 manifest 备份的密文；不存在时返回 null
+  ///
+  /// [name] 必须来自 [listManifestBackups]（避免路径穿越）。返回未解析的原始
+  /// 密文，由 SyncEngine 用当前 dataKey 验 pubHash（无 key）后解密。
+  ///
+  /// 默认空实现（no-op）：后端不支持读侧时返回 null，恢复流程跳过该份。
+  Future<Uint8List?> readManifestBackup(String name) async => null;
+
+  // ──────────────────────────────────────────────
   // P2 Journal 远端副本（设计 §3.3-4 / §3.6c）
   // ──────────────────────────────────────────────
 

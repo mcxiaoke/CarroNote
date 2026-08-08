@@ -121,6 +121,12 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
 
   @override
+  Future<List<String>> listManifestBackups() async => [];
+
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async => null;
+
+  @override
   Future<void> close() async {}
 
   @override

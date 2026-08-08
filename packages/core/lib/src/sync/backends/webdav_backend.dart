@@ -752,6 +752,94 @@ class WebDavBackend implements SyncBackend {
         .timeout(_httpTimeout);
   }
 
+  /// P1-1 READ 侧：列出服务端 `manifest-backup/` 目录的备份，从新到旧
+  ///
+  /// 通过 PROPFIND 枚举 `manifest.bak-*` 文件名，再 GET `.manifest-bak-index`
+  /// 得到最近写入槽位，从该槽降序（mod N）即「从新到旧」。未初始化 / 枚举失败
+  /// 时返回空列表（恢复退化为本地重建）。
+  @override
+  Future<List<String>> listManifestBackups() async {
+    _ensureInitialized();
+    final backupUrl = _manifestBackupUrl;
+    try {
+      final req = http.Request('PROPFIND', Uri.parse(backupUrl));
+      req.headers.addAll(_authHeaders());
+      req.headers['Depth'] = '1';
+      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
+      req.body =
+          '<?xml version="1.0" encoding="utf-8"?>'
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
+      final streamedRes = await _client.send(req).timeout(_httpTimeout);
+      final res = await http.Response.fromStream(streamedRes);
+      if (res.statusCode != 207 && res.statusCode != 200) return const [];
+      final names = <String>[];
+      final hrefRegex = RegExp(
+        r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
+      );
+      for (final match in hrefRegex.allMatches(res.body)) {
+        final href = match.group(1)!;
+        final parts = href.split('/').where((s) => s.isNotEmpty);
+        if (parts.isEmpty) continue;
+        final decoded = Uri.decodeComponent(parts.last);
+        if (RegExp(r'^manifest\.bak-\d+$').hasMatch(decoded)) {
+          names.add(decoded);
+        }
+      }
+      // 最近写入槽位（读取失败按 0 处理）
+      var newestSlot = 0;
+      try {
+        final idxRes = await _client
+            .get(
+              Uri.parse('$backupUrl/.manifest-bak-index'),
+              headers: _authHeaders(),
+            )
+            .timeout(_httpTimeout);
+        if (idxRes.statusCode == 200) {
+          newestSlot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
+        }
+      } on Exception {
+        newestSlot = 0;
+      }
+      // 从新到旧排序：slot 距离 newestSlot 越近越新
+      int slotOf(String name) =>
+          int.parse(RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!);
+      names.sort((a, b) {
+        final da =
+            (slotOf(a) - newestSlot + kManifestBackupRingCount) %
+            kManifestBackupRingCount;
+        final db =
+            (slotOf(b) - newestSlot + kManifestBackupRingCount) %
+            kManifestBackupRingCount;
+        return da.compareTo(db);
+      });
+      return names;
+    } on Exception catch (e) {
+      Log.sync.d('[WebDAV] manifest 备份枚举失败', error: e);
+      return const [];
+    }
+  }
+
+  /// P1-1 READ 侧：读取指定 manifest 备份密文；不存在返回 null
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async {
+    _ensureInitialized();
+    if (!RegExp(r'^manifest\.bak-\d+$').hasMatch(name)) return null;
+    final backupUrl = _manifestBackupUrl;
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$backupUrl/$name'),
+            headers: _authHeaders(),
+          )
+          .timeout(_httpTimeout);
+      if (res.statusCode != 200) return null;
+      return res.bodyBytes;
+    } on Exception catch (e) {
+      Log.sync.d('[WebDAV] manifest 备份读取失败 name=$name', error: e);
+      return null;
+    }
+  }
+
   /// D2 修复：备份损坏的 manifest（WebDAV 退化实现）
   ///
   /// WebDAV 不支持原子重命名，退化为 DELETE 损坏文件，让 SyncEngine 用本地数据

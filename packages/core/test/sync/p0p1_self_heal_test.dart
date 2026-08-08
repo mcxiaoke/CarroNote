@@ -119,8 +119,27 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
     }
   }
 
+  /// D2 修复：备份损坏 manifest（模拟真实后端：移除损坏文件以便空 etag 重建）
   @override
-  Future<void> backupCorruptManifest(Uint8List ciphertext) async {}
+  Future<void> backupCorruptManifest(Uint8List ciphertext) async {
+    _manifestCiphertext = null;
+    _etag = '';
+  }
+
+  /// P1-1 读侧：从新到旧返回所有备份名（对应 _backups 逆序）
+  @override
+  Future<List<String>> listManifestBackups() async => [
+        for (var i = _backups.length - 1; i >= 0; i--) 'backup-$i',
+      ];
+
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async {
+    final m = RegExp(r'^backup-(\d+)$').firstMatch(name);
+    if (m == null) return null;
+    final idx = int.parse(m.group(1)!);
+    if (idx < 0 || idx >= _backups.length) return null;
+    return _backups[idx];
+  }
 
   @override
   Future<void> close() async {}
@@ -266,6 +285,92 @@ void main() {
       // 重建分支直接 early-return，根本不会执行 GC
       expect(backend._blobs.containsKey(otherHash), isTrue,
           reason: '损坏重建不应误删其他设备 blob');
+    });
+  });
+
+  // ────────────────────────────────────────────
+  // P1-F: bak 循环恢复 + F-H01 空 etag PUT
+  // ────────────────────────────────────────────
+  group('P1-F manifest bak 循环恢复', () {
+    test('损坏且 bak 可用：优先从 bak 恢复，不丢远端数据', () async {
+      final note = _makeNote(uuid: 'p1f-note', title: 'P1-F');
+      await database.storeNote(note);
+
+      final engine = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: testDataKey,
+      );
+
+      // 第一次同步：远端为空 → 仅首次上传，不产生备份
+      var r = await engine.sync();
+      expect(r.success, isTrue);
+      expect(backend._backups, isEmpty);
+
+      // 第二次同步：PUT 前会备份旧 manifest（此时已存在）→ 得到一份可用的 bak
+      final note2 = _makeNote(uuid: 'p1f-note2', title: 'P1-F2');
+      await database.storeNote(note2);
+      r = await engine.sync();
+      expect(r.success, isTrue);
+      expect(backend._backups, isNotEmpty, reason: '第二次同步应产生 manifest 备份');
+
+      // 注入损坏远端（本地两次同步后 bak 中已是含 note 的旧 manifest）
+      backend._manifestCiphertext = Uint8List.fromList([1, 2, 3, 4, 5]);
+      backend._etag = 'garbage-etag';
+
+      // re-GET 也损坏 → 走 bak 循环：应能从备份恢复远端数据
+      r = await engine.sync();
+      expect(r.success, isTrue, reason: 'bak 恢复不应导致同步失败');
+      final recoverAction = r.actions.firstWhere(
+        (a) => a.uuid == '' && a.type == SyncActionType.skip,
+        orElse: () => throw StateError('缺少恢复动作'),
+      );
+      expect(recoverAction.message, contains('bak'),
+          reason: '应从 bak 恢复而非本地空重建');
+      // 远端数据未丢：两次同步的笔记都还在本地
+      expect(await database.readNoteByUuid('p1f-note'), isNotNull);
+      expect(await database.readNoteByUuid('p1f-note2'), isNotNull);
+      // 远端 manifest 已生成可解析的新版本（含 bak 恢复的旧数据 + 本地新数据）
+      expect(backend._manifestCiphertext, isNotNull);
+      final remote = await ManifestCrypto.deserialize(
+        testDataKey,
+        backend._manifestCiphertext!,
+      );
+      expect(remote.items.keys, contains('p1f-note'));
+      expect(remote.items.keys, contains('p1f-note2'));
+    });
+
+    test('损坏且无 bak：本地重建后用空 etag 首传（F-H01）', () async {
+      final note = _makeNote(uuid: 'p1f-empty', title: 'P1-F-Empty');
+      await database.storeNote(note);
+
+      final engine = _makeEngine(
+        backend: backend,
+        database: database,
+        dataKey: testDataKey,
+      );
+      await engine.sync(); // 建立远端 manifest
+      backend._backups.clear(); // 模拟 bak 全部丢失（此 fake 首传不产生备份）
+
+      backend._manifestCiphertext = Uint8List.fromList([9, 9, 9, 9]);
+      backend._etag = 'corrupt-etag';
+
+      // 无 bak → 本地重建；backupCorruptManifest 把损坏文件移除（F-H01），
+      // 因此重建上传必须用空 etag（首传语义），否则会因文件不存在而 412 失败
+      final r = await engine.sync();
+      expect(r.success, isTrue,
+          reason: '本地重建 + 空 etag 首传必须成功（F-H01）');
+      final recoverAction = r.actions.firstWhere(
+        (a) => a.uuid == '' && a.type == SyncActionType.skip,
+        orElse: () => throw StateError('缺少恢复动作'),
+      );
+      expect(recoverAction.message, contains('本地重建'));
+      // 远端已是可解析的新 manifest，且只含本地笔记
+      final remote = await ManifestCrypto.deserialize(
+        testDataKey,
+        backend._manifestCiphertext!,
+      );
+      expect(remote.items.keys, contains('p1f-empty'));
     });
   });
 

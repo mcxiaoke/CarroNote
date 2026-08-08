@@ -287,6 +287,48 @@ class LocalFsBackend implements SyncBackend {
     }
   }
 
+  /// P1-1 READ 侧：列出 `manifest-backup/` 环形备份，从新到旧
+  ///
+  /// 与 `writeRingBackup` 的写入布局对应：`.manifest-bak-index` 记录最近写入的
+  /// 槽位，从该槽降序（mod N）即「从新到旧」。缺失槽位跳过，只返回存在的名字。
+  @override
+  Future<List<String>> listManifestBackups() async {
+    _ensureInitialized();
+    final dir = Directory(p.join(rootPath, 'manifest-backup'));
+    if (!await dir.exists()) return const [];
+    // 读取最近写入槽位（读取失败按 0 处理，仅影响顺序不影响正确性）
+    var newestSlot = 0;
+    final indexFile = File(p.join(dir.path, '.manifest-bak-index'));
+    try {
+      if (await indexFile.exists()) {
+        newestSlot = int.tryParse(await indexFile.readAsString()) ?? 0;
+      }
+    } on Exception {
+      newestSlot = 0;
+    }
+    final result = <String>[];
+    // 环形 N 份：从 newestSlot 开始按 -1 步长回退，形成从新到旧顺序
+    for (var i = 0; i < kManifestBackupRingCount; i++) {
+      final slot = (newestSlot - i + kManifestBackupRingCount) %
+          kManifestBackupRingCount;
+      final file = File(p.join(dir.path, 'manifest.bak-$slot'));
+      if (await file.exists()) result.add('manifest.bak-$slot');
+    }
+    return result;
+  }
+
+  /// P1-1 READ 侧：读取指定 manifest 备份密文；不存在返回 null
+  @override
+  Future<Uint8List?> readManifestBackup(String name) async {
+    _ensureInitialized();
+    // 仅接受 listManifestBackups 产出的合法名字，防路径穿越
+    final m = RegExp(r'^manifest\.bak-\d+$').firstMatch(name);
+    if (m == null) return null;
+    final file = File(p.join(rootPath, 'manifest-backup', name));
+    if (!await file.exists()) return null;
+    return await file.readAsBytes();
+  }
+
   // ──────────────────────────────────────────────
   // P2 Journal 远端副本（落在 keyring 根目录的 `journal/` 子目录）
   // ──────────────────────────────────────────────
