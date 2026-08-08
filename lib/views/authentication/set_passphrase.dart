@@ -69,8 +69,12 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
   @override
   void dispose() {
+    // F-H11 修复：补齐 _scrollController 与焦点节点的 dispose，避免资源泄漏
     _passPhraseController.dispose();
     _passPhraseControllerConfirm.dispose();
+    _scrollController.dispose();
+    _focusFirst.dispose();
+    _focusSecond.dispose();
     super.dispose();
   }
 

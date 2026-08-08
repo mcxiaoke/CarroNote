@@ -126,6 +126,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     _timer?.cancel();
     _timer = null;
     _controller.close();
+    // F-H11 修复:补齐 _scrollController 的 dispose
+    _scrollController.dispose();
     passPhraseController.dispose();
     super.dispose();
   }

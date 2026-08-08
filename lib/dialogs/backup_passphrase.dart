@@ -41,6 +41,13 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
   final _formKey = GlobalKey<FormState>();
 
   @override
+  void dispose() {
+    // F-H11 修复：对话框持有的 TextEditingController 需要 dispose
+    importPassphraseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     const double importDataPassDialogRadious = 10.0;
 

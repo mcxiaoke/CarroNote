@@ -38,6 +38,13 @@ class SearchWidgetState extends State<SearchWidget> {
   final controller = TextEditingController();
 
   @override
+  void dispose() {
+    // F-H11 修复：搜索框 controller 需要 dispose
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     const styleActive = TextStyle(color: Colors.black);
     const styleHint = TextStyle(color: Colors.black54);

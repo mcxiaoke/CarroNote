@@ -51,6 +51,11 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
   @override
   void dispose() {
+    // F-H11 修复：补齐 TextEditingController 与 ScrollController 的 dispose
+    _oldPassphraseController.dispose();
+    _newPassphraseController.dispose();
+    _newConfirmPassphraseController.dispose();
+    _scrollController.dispose();
     _focusOld.dispose();
     _focusNew.dispose();
     _focusNewConfirm.dispose();
