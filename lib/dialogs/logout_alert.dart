@@ -27,13 +27,50 @@ import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
 
-StreamController<String> _controller = StreamController<String>.broadcast();
-int _timeoutSeconds = PreferencesStorage.preInactivityLogoutCounter;
-int _counter = 0;
-Timer? _timer;
-
-class PreInactivityLogOff extends StatelessWidget {
+class PreInactivityLogOff extends StatefulWidget {
   const PreInactivityLogOff({super.key});
+
+  @override
+  State<PreInactivityLogOff> createState() => _PreInactivityLogOffState();
+}
+
+class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
+  // F-H10/F-H11 修复:倒计时计时器与 StreamController 从文件顶层移入 State,
+  // 由 State 的生命周期管理,避免先前的全局 Timer 在对话框关闭后仍触发 pop
+  final StreamController<String> _controller =
+      StreamController<String>.broadcast();
+  final int _timeoutSeconds = PreferencesStorage.preInactivityLogoutCounter;
+  int _counter = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.close();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _counter = _timeoutSeconds;
+    _timer?.cancel();
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      (_counter > 0) ? _counter-- : timer.cancel();
+      if (!_controller.isClosed) {
+        _controller.add(_counter.toString().padLeft(2, '0'));
+      }
+      if (_counter == 0 && mounted) {
+        // 倒计时结束,自动触发登出
+        Navigator.of(context).pop();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,10 +106,7 @@ class PreInactivityLogOff extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(top: topSpacing), //, right: 100),
-        child: Text(
-          title,
-          style: dialogHeadTextStyle,
-        ),
+        child: Text(title, style: dialogHeadTextStyle),
       ),
     );
   }
@@ -126,10 +160,11 @@ class PreInactivityLogOff extends StatelessWidget {
         Expanded(
           child: ElevatedButton(
             child: _buttonText(noButtonText, buttonTextFontSize),
-            onPressed: () => Navigator.of(context)
-                .pop(true), // return false to dialog caller
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(true), // return false to dialog caller
           ),
-        )
+        ),
       ],
     );
   }
@@ -140,48 +175,19 @@ class PreInactivityLogOff extends StatelessWidget {
       textAlign: TextAlign.center,
       minFontSize: 8,
       maxLines: 1,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
     );
   }
 }
 
-void _startTimer(BuildContext context) {
-  _counter = _timeoutSeconds;
-
-  if (_timer != null) {
-    _timer?.cancel();
-  }
-
-  _timer = Timer.periodic(
-    const Duration(seconds: 1),
-    (timer) {
-      (_counter > 0) ? _counter-- : _timer?.cancel();
-      _controller.add(_counter.toString().padLeft(2, '0'));
-      if (_counter == 0) {
-        Navigator.of(context).pop();
-      }
-    },
-  );
-}
-
-Future<bool?> preInactivityLogOffAlert(BuildContext context) async {
-  bool? isUserActive = await showDialog(
+Future<bool?> preInactivityLogOffAlert(BuildContext context) {
+  return showDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {
-      _startTimer(context); // start filling the stream with coutndown data
+      // 倒计时由 _PreInactivityLogOffState.initState 启动,
+      // 对话框关闭时 timer 与 stream 由 State.dispose 统一清理
       return const PreInactivityLogOff();
     },
   );
-
-  if (_timer!.isActive) {
-    // if timer is active i.e user user choose
-    // some option which already pop out the dialoge
-    // so disable timer to prevent re-trigger of pop
-    _timer!.cancel();
-  }
-  return isUserActive;
 }

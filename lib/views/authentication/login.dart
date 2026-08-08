@@ -79,23 +79,53 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   // 原本 validator 里 hash 比对失败时递减,现在 validator 只做长度检查
   int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
 
+  // F-H09 修复:锁定倒计时状态从文件顶层移入 State,随 widget 生命周期创建/释放
+  // 修复前这些是顶层全局变量 + 顶层 Timer,无法在路由销毁时取消,可能泄漏 Timer
+  // 并持续向已释放的 StreamController 发事件(在 widget 销毁后 setState 报错)
+  final int _lockoutTime = PreferencesStorage.bruteforceLockOutTime;
+  int _counter = 0;
+  Timer? _timer;
+  final StreamController<String> _controller =
+      StreamController<String>.broadcast();
+
+  void _startTimer(VoidCallback callback) {
+    _counter = _lockoutTime;
+
+    // F-H09:每次重启前取消旧 Timer,避免多个周期叠加
+    _timer?.cancel();
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      (_counter > 0) ? _counter-- : _timer?.cancel();
+      if (!_controller.isClosed) {
+        _controller.add(_counter.toString().padLeft(2, '0'));
+      }
+      if (_counter <= 0) {
+        callback();
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _isKeyboardFocused = widget.isKeyboardFocused ?? true;
 
     // BiometricAuth:
-    auth.isDeviceSupported().then(
-      (bool isSupported) {
-        setState(() => _supportState = isSupported
+    auth.isDeviceSupported().then((bool isSupported) {
+      setState(
+        () => _supportState = isSupported
             ? _BiometricState.supported
-            : _BiometricState.unsupported);
-      },
-    );
+            : _BiometricState.unsupported,
+      );
+    });
   }
 
   @override
   void dispose() {
+    // F-H09 修复:销毁时取消倒计时 Timer 并释放 StreamController,避免泄漏
+    _timer?.cancel();
+    _timer = null;
+    _controller.close();
     passPhraseController.dispose();
     super.dispose();
   }
@@ -118,10 +148,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: AppBar(
-          title: Text(
-            'Login'.tr(),
-            style: appBarTitle,
-          ),
+          title: Text('Login'.tr(), style: appBarTitle),
           centerTitle: true,
         ),
         body: CustomScrollView(
@@ -153,8 +180,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   void scrollToBottomIfOnScreenKeyboard() {
     try {
       if (MediaQuery.of(context).viewInsets.bottom > 0) {
-        _scrollController.animateTo(_scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 500), curve: Curves.ease);
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.ease,
+        );
       }
     } catch (_) {}
   }
@@ -163,8 +193,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final double topPadding = MediaQuery.of(context).size.height * 0.050;
     final double dimensions =
         MediaQuery.of(context).orientation == Orientation.portrait
-            ? MediaQuery.of(context).size.width * 0.40
-            : MediaQuery.of(context).size.height * 0.40;
+        ? MediaQuery.of(context).size.width * 0.40
+        : MediaQuery.of(context).size.height * 0.40;
 
     return Padding(
       padding: EdgeInsets.only(top: topPadding),
@@ -172,9 +202,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         child: SizedBox(
           width: dimensions,
           height: dimensions,
-          child: Image.asset(
-            SafeNotesConfig.appLogoPath,
-          ),
+          child: Image.asset(SafeNotesConfig.appLogoPath),
         ),
       ),
     );
@@ -205,33 +233,30 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       SystemChannels.textInput.invokeMethod('TextInput.hide');
       passPhraseController.clear();
 
-      _startTimer(
-        () {
-          setState(
-            () {
-              _isLocked = false;
-              _isKeyboardFocused = true;
-              _formKey = GlobalKey<FormState>();
-              // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
-              _noOfAllowedAttempts =
-                  PreferencesStorage.noOfLogginAttemptAllowed;
-            },
-          );
-        },
-      );
+      _startTimer(() {
+        setState(() {
+          _isLocked = false;
+          _isKeyboardFocused = true;
+          _formKey = GlobalKey<FormState>();
+          // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
+          _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
+        });
+      });
 
       return StreamBuilder(
         stream: _controller.stream,
         builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
-          String? timeLeft =
-              snapshot.hasData ? snapshot.data : _lockoutTime.toString();
+          String? timeLeft = snapshot.hasData
+              ? snapshot.data
+              : _lockoutTime.toString();
           return Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: Align(
               alignment: Alignment.center,
               child: Text(
-                'Exceeded number of attempts, try after {timeLeft} seconds'
-                    .tr(namedArgs: {'timeLeft': timeLeft.toString()}),
+                'Exceeded number of attempts, try after {timeLeft} seconds'.tr(
+                  namedArgs: {'timeLeft': timeLeft.toString()},
+                ),
                 style: TextStyle(
                   color: NordColors.aurora.red,
                   fontSize: 13,
@@ -309,12 +334,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _buildLoginButton() {
     // 简化方案:验证中(_isLoggingIn)或锁定(_isLocked)时禁用按钮防重入
-    final String loginText =
-        _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
+    final String loginText = _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
     return ButtonWidget(
       text: loginText,
-      onClicked: (_isLocked || _isLoggingIn) ? null : () async => _loginController(),
+      onClicked: (_isLocked || _isLoggingIn)
+          ? null
+          : () async => _loginController(),
     );
   }
 
@@ -323,10 +349,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 10),
-          child: Text(
-            'OR'.tr(),
-            style: const TextStyle(fontSize: 15),
-          ),
+          child: Text('OR'.tr(), style: const TextStyle(fontSize: 15)),
         ),
         Align(
           alignment: Alignment.centerRight,
@@ -339,25 +362,21 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                     : NordColors.polarNight.darkest,
                 minimumSize: const Size(200, 50), //Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 elevation: 5.0,
               ),
-              onPressed: (PreferencesStorage.isBiometricAuthEnabled &&
+              onPressed:
+                  (PreferencesStorage.isBiometricAuthEnabled &&
                       !forcePassphraseInput &&
                       !_isLocked)
                   ? _authenticate
                   : null,
               child: Wrap(
                 children: <Widget>[
-                  const Icon(
-                    Icons.fingerprint,
-                    size: 30.0,
-                  ),
+                  const Icon(Icons.fingerprint, size: 30.0),
                   const SizedBox(width: 10),
-                  Text(
-                    'Biometric'.tr(),
-                    style: const TextStyle(fontSize: 20),
-                  ),
+                  Text('Biometric'.tr(), style: const TextStyle(fontSize: 20)),
                 ],
               ),
             ),
@@ -425,10 +444,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误,不扣尝试次数
           if (mounted) {
-            showSnackBarMessage(
-              context,
-              '无法验证密码(网络不可用),请检查网络后重试',
-            );
+            showSnackBarMessage(context, '无法验证密码(网络不可用),请检查网络后重试');
           }
           return;
         }
@@ -502,9 +518,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     } else {
       final wrongPhraseMsg =
           'Wrong passphrase {noOfAllowedAttempts} attempts left!'.tr(
-              namedArgs: {
-            'noOfAllowedAttempts': _noOfAllowedAttempts.toString()
-          });
+            namedArgs: {'noOfAllowedAttempts': _noOfAllowedAttempts.toString()},
+          );
       if (mounted) {
         showSnackBarMessage(context, wrongPhraseMsg);
       }
@@ -534,8 +549,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
 
       // 仅解析 header(不需要 dataKey)
-      final header =
-          ManifestCrypto.deserializeHeaderOnly(remoteResponse.ciphertext);
+      final header = ManifestCrypto.deserializeHeaderOnly(
+        remoteResponse.ciphertext,
+      );
 
       // 用输入密码 + 远端 salt 派生 MK,比对 fingerprint
       final mk = await SyncCrypto.deriveMasterKeyAsync(
@@ -581,8 +597,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildForgotPassphrase() {
-    final String cantRecoverPassphraseMsg =
-        "Can't decrypt without phrase!".tr();
+    final String cantRecoverPassphraseMsg = "Can't decrypt without phrase!"
+        .tr();
     double fontSize = 10;
 
     return Container(
@@ -590,9 +606,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       child: TextButton(
         child: Text(
           cantRecoverPassphraseMsg,
-          style: TextStyle(
-            fontSize: fontSize,
-          ),
+          style: TextStyle(fontSize: fontSize),
         ),
         onPressed: () => _showForgotPassphraseDialog(),
       ),
@@ -620,15 +634,15 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           children: [
             Text(
               'There is no way to decrypt these notes without the passphrase. '
-              'With great security comes the great responsibility of '
-              'remembering the passphrase!'
+                      'With great security comes the great responsibility of '
+                      'remembering the passphrase!'
                   .tr(),
             ),
             const SizedBox(height: 16),
             Text(
               'If you have a backup, you can reset the local data and re-import '
-              'the backup after setting a new passphrase. This action cannot be '
-              'undone.'
+                      'the backup after setting a new passphrase. This action cannot be '
+                      'undone.'
                   .tr(),
               style: TextStyle(
                 color: NordColors.aurora.red,
@@ -643,9 +657,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             child: Text('Cancel'.tr()),
           ),
           TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: NordColors.aurora.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: NordColors.aurora.red),
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _confirmResetLocalData();
@@ -665,7 +677,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         title: Text('Confirm Reset'.tr()),
         content: Text(
           'This will permanently delete all local notes and keyring data. '
-          'This action CANNOT be undone. Are you absolutely sure?'
+                  'This action CANNOT be undone. Are you absolutely sure?'
               .tr(),
         ),
         actions: [
@@ -674,9 +686,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             child: Text('Cancel'.tr()),
           ),
           TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: NordColors.aurora.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: NordColors.aurora.red),
             onPressed: () async {
               Navigator.of(dialogContext).pop();
               await _performLocalDataReset();
@@ -762,36 +772,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 }
 
-int _lockoutTime = PreferencesStorage.bruteforceLockOutTime;
-int _counter = 0;
-
-Timer? _timer;
-StreamController<String> _controller = StreamController<String>.broadcast();
-
-void _startTimer(VoidCallback callback) {
-  _counter = _lockoutTime;
-
-  if (_timer != null) _timer?.cancel();
-
-  _timer = Timer.periodic(
-    const Duration(seconds: 1),
-    (timer) {
-      (_counter > 0) ? _counter-- : _timer?.cancel();
-      _controller.add(_counter.toString().padLeft(2, '0'));
-      if (_counter <= 0) {
-        callback();
-      }
-    },
-  );
-}
-
 bool isPassphraseRememberChallenge() {
   return PreferencesStorage.biometricAttemptAllTimeCount == 0
       ? false
       : PreferencesStorage.biometricAttemptAllTimeCount %
-              PreferencesStorage
-                  .noOfLoginsBeforeNextPassphraseRememberChallenge ==
-          0;
+                PreferencesStorage
+                    .noOfLoginsBeforeNextPassphraseRememberChallenge ==
+            0;
 }
 
 /// 远端验证三态结果(简化方案,评审 hy3 A7)
