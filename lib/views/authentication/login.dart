@@ -433,7 +433,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // 2. 仅在启用同步时尝试远端验证
       //    避免无条件触发远端(隐私泄露 + 离线暴力放大,评审 kk27c P1)
       await SyncConfig.init();
-      if (SyncConfig.isSyncEnabled) {
+      if (SyncConfig.isSyncReady) {
         final remoteResult = await _tryVerifyPassphraseViaRemote(passphrase);
         if (remoteResult == RemoteVerifyResult.verified) {
           await _onLoginSuccess(passphrase);
@@ -476,9 +476,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     // start listening for session inactivity on successful login
     widget.sessionStream.add(SessionState.startListening);
 
-    // 初始化后端(如果已配置),失败不阻断进入 home
+    // 初始化后端(总开关已开且配置完整时),失败不阻断进入 home
     await SyncConfig.init();
-    if (SyncConfig.isSyncEnabled) {
+    if (SyncConfig.isSyncReady) {
       final backendResult = await SyncService.instance.initBackend(
         database: NotesDatabase.instance,
       );

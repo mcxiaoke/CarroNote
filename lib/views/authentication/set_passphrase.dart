@@ -420,9 +420,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     Log.crypto.i('新建 Keyring 成功, dataKey 已注入数据库 '
         '(耗时 ${swKeyring.elapsedMilliseconds}ms)');
 
-    // 如果已配置同步后端，顺带初始化后端
+    // 如果同步开关已开且后端配置完整，顺带初始化后端
     await SyncConfig.init();
-    if (SyncConfig.isSyncEnabled) {
+    if (SyncConfig.isSyncReady) {
       Log.sync.i('同步已启用, 开始初始化后端 (type=${SyncConfig.backendType})');
       final backendResult = await SyncService.instance.initBackend(
         database: NotesDatabase.instance,
@@ -440,7 +440,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       }
       // 后端失败不阻断进入 home——keyring 已就绪，用户可在设置页修复后端
     } else {
-      Log.sync.d('同步未启用, 跳过后端初始化');
+      Log.sync.d('同步未启用或后端未配置, 跳过后端初始化 '
+          '(enabled=${SyncConfig.isSyncEnabled}, '
+          'configured=${SyncConfig.hasBackendConfig})');
     }
     return true;
   }

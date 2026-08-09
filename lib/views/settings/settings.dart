@@ -350,7 +350,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 同步状态显示值
+  ///
+  /// 三态：总开关关掉 → 「已关闭」；开着但后端没配全 → 「未配置」；
+  /// 都就绪 → 显示后端名称。
   String _syncStatusValue() {
-    return SyncConfig.isSyncEnabled ? SyncConfig.backendDisplayName : '未配置';
+    if (!SyncConfig.isSyncEnabled) return '已关闭';
+    if (!SyncConfig.hasBackendConfig) return '未配置';
+    return SyncConfig.backendDisplayName;
   }
 }

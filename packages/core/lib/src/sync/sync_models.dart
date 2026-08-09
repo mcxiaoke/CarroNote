@@ -1102,6 +1102,9 @@ class SyncDiagnosticsSnapshot {
   final String webdavUrl;
   final String webdavUsername;
   final String safeServerUrl;
+
+  /// 同步总开关（用户可独立于后端配置关闭同步）
+  final bool syncEnabled;
   final bool autoSyncEnabled;
 
   // Keyring 元数据
@@ -1149,6 +1152,7 @@ class SyncDiagnosticsSnapshot {
     required this.webdavUrl,
     required this.webdavUsername,
     required this.safeServerUrl,
+    required this.syncEnabled,
     required this.autoSyncEnabled,
     this.vaultId,
     this.keyVersion,
@@ -1188,6 +1192,7 @@ class SyncDiagnosticsSnapshot {
     if (errorMessage != null) b.writeln('错误信息: $errorMessage');
     b.writeln('');
     b.writeln('-- 后端配置 --');
+    b.writeln('同步总开关: $syncEnabled');
     b.writeln('类型: $backendDisplayName ($backendType)');
     b.writeln('运行时类型: $backendRuntimeType');
     b.writeln('providerKey: $providerKey');

@@ -154,6 +154,30 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  // Center the window on the primary monitor's work area (taskbar excluded)
+  // at startup, instead of the default top-left cascade. Native Common Item
+  // Dialogs (file / folder pickers) center on their parent window by default,
+  // so centering the main window also centers those dialogs on the desktop.
+  {
+    RECT rect;
+    if (GetWindowRect(window, &rect)) {
+      const int win_w = rect.right - rect.left;
+      const int win_h = rect.bottom - rect.top;
+      const HMONITOR mon = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
+      MONITORINFO mi = {};
+      mi.cbSize = sizeof(mi);
+      if (mon != nullptr && GetMonitorInfo(mon, &mi)) {
+        const RECT& wa = mi.rcWork;
+        const int x = wa.left + (wa.right - wa.left - win_w) / 2;
+        const int y = wa.top + (wa.bottom - wa.top - win_h) / 2;
+        // Move only (keep size). Coordinates are device pixels, consistent
+        // with the work area, so no DPI scaling is needed.
+        SetWindowPos(window, nullptr, x, y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+    }
+  }
+
   // Read the system preferred theme as the initial title-bar state. The
   // Flutter app may override this via the 'safenotes/window_title_bar'
   // method channel (see flutter_window.cpp).

@@ -130,6 +130,8 @@ class _StatusTab extends StatelessWidget {
             _KV('错误信息', snapshot.errorMessage!, color: Colors.red),
         ]),
         _buildSection(context, '后端配置', [
+          _KV('同步总开关', snapshot.syncEnabled ? '已开启' : '已关闭',
+              color: snapshot.syncEnabled ? null : Colors.orange),
           _KV('类型', snapshot.backendDisplayName),
           _KV('运行时类型', snapshot.backendRuntimeType ?? 'N/A'),
           _KV('providerKey', snapshot.providerKey ?? 'N/A'),

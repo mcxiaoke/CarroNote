@@ -362,14 +362,14 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   /// AppBar 同步状态按钮
   ///
-  /// 仅在启用同步时显示，点击跳转同步设置页。
+  /// 仅在同步总开关已开且后端配置完整时显示，点击跳转同步设置页。
   /// 图标根据同步状态变化：
   ///   - 未初始化/空闲：cloud_outlined
   ///   - 同步中：sync（旋转动画）
   ///   - 成功：cloud_done_outlined
   ///   - 失败：cloud_off_outlined（红色）
   Widget _syncStatusButton() {
-    if (!SyncConfig.isSyncEnabled) return const SizedBox.shrink();
+    if (!SyncConfig.isSyncReady) return const SizedBox.shrink();
 
     return StreamBuilder<SyncServiceState>(
       stream: SyncService.instance.stateStream,

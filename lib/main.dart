@@ -36,6 +36,7 @@ import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/build_info.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
@@ -150,6 +151,12 @@ Future<void> _bootstrap() async {
   ));
 
   await PreferencesStorage.init();
+
+  // 同步配置必须在任何 UI 读它之前就绪：主界面的同步按钮、设置页的同步状态
+  // 都是同步 getter（背后是 SharedPreferences 缓存 + SecureStorage 预载）。
+  // 原先只在登录页/设置页里 init，启动早期读到的是「未配置」默认值，
+  // 表现为同步按钮短暂消失、状态显示错误。
+  await SyncConfig.init();
 
   // 简化方案:预初始化 db + 一次性查询 Keyring.isInitialized
   // 避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁

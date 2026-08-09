@@ -395,6 +395,20 @@ class SyncService {
   ///
   /// 返回同步结果。如果未初始化或正在同步，返回 null。
   Future<SyncResult?> sync() async {
+    // 总开关守卫：用户手动关闭同步后，任何路径都不得再碰远端。
+    // applyConfigToService 通常已经把引擎拆掉了，这里是二道防线——
+    // 覆盖"配置在别处被改、引擎还残留"的边界情况。
+    // 仅在配置系统就绪（SyncConfig.isInitialized）后才拦截：未初始化时
+    // 没有用户偏好可依据，按历史行为放行（纯逻辑测试、启动早期窗口等）。
+    if (SyncConfig.isInitialized && !SyncConfig.isSyncEnabled) {
+      Log.sync.d('sync 被跳过：同步总开关已关闭');
+      _updateState(state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: '同步已在设置中关闭',
+      ));
+      return null;
+    }
+
     final engine = _engine;
     if (engine == null) {
       _updateState(state.copyWith(
@@ -574,6 +588,7 @@ class SyncService {
   ///   - **状态可见**：在 timer 触发/被跳过/re-schedule 各路径补 debug 日志，
   ///     便于排查「改了笔记怎么没同步」类问题。
   void autoSync() {
+    if (SyncConfig.isInitialized && !SyncConfig.isSyncEnabled) return;
     if (_engine == null) return;
 
     // 笔记变更后触发自动同步（debounce）：记录排程，便于排查"改了没同步"
@@ -685,42 +700,43 @@ class SyncService {
   /// autoSync 继续用旧配置同步——改配置形同虚设。
   ///
   /// 行为：
-  ///   - 当前配置为「不同步」→ 停用引擎/后端，阻止任何同步；
-  ///   - 当前配置有效且引擎已初始化 → [switchBackend] 重建引擎；
-  ///   - 当前配置有效但引擎未初始化（未启用同步）→ 仅保存配置，
-  ///     下次启用同步时由 [initBackend] 生效，避免提前建立连接。
-  Future<void> applyConfigToService({required NotesDatabase database}) async {
-    if (!SyncConfig.isSyncEnabled) {
-      // 用户关闭同步：停用现有引擎与后端，此后 sync()/autoSync() 均不可用
-      if (_engine != null || _backend != null) {
-        Log.sync.i('同步关闭：停止引擎并关闭旧后端');
-        _autoSyncTimer?.cancel();
-        await _backend?.close();
-        _backend = null;
-        _engine = null;
-        _backendReady = false;
-        _updateState(const SyncServiceState(status: SyncStatus.uninitialized));
-      }
-      return;
+  ///   - 总开关关闭 或 配置不完整 → 停用引擎/后端，阻止任何同步；
+  ///   - 配置可用且引擎已初始化 → [switchBackend] 重建引擎；
+  ///   - 配置可用但引擎尚未建立、keyring 已解锁 → 走 [initBackend]
+  ///     完整初始化（需求 3：开关一打开就自动把同步服务拉起来）；
+  ///   - 配置可用但未登录（keyring 为空）→ 仅保存配置，登录时再初始化。
+  ///
+  /// 返回 (success, error)：仅当"本次确实尝试了初始化/切换"且失败时
+  /// success=false，其余情况（无需动作、未登录）均为 success=true。
+  Future<({bool success, String? error})> applyConfigToService({
+    required NotesDatabase database,
+  }) async {
+    if (SyncConfig.isInitialized && !SyncConfig.isSyncEnabled) {
+      // 用户关闭总开关：停用现有引擎与后端，此后 sync()/autoSync() 均不可用
+      await _shutdownEngine(reason: '同步总开关已关闭');
+      return (success: true, error: null);
     }
 
     final backend = _createBackendFromConfig();
     if (backend == null) {
       // 配置不完整（路径/URL/凭据缺失）：同样停用，避免用半截配置去同步
-      if (_engine != null || _backend != null) {
-        Log.sync.w('同步配置不完整，暂停同步服务 (backend=null)');
-        await _backend?.close();
-        _backend = null;
-        _engine = null;
-        _backendReady = false;
-      }
-      return;
+      await _shutdownEngine(reason: '同步配置不完整');
+      return (success: true, error: null);
     }
 
-    // 引擎尚未初始化（用户先前未启用同步）：不建连接，等 initBackend 启用
-    if (_engine == null && _keyring == null) {
-      Log.sync.i('applyConfigToService: SyncService 未初始化，仅保存配置');
-      return;
+    // 未登录：keyring 还没解锁，建不了引擎。仅保存配置，登录流程会接手。
+    if (_keyring == null) {
+      Log.sync.i('applyConfigToService: keyring 未就绪，仅保存配置');
+      return (success: true, error: null);
+    }
+
+    // 需求 3：keyring 已解锁但引擎/设备 ID 还没建起来（首次启用同步、
+    // 或此前配置不完整被停用过）→ 走完整初始化。
+    // 不能用 switchBackend：它依赖 initialize() 设置的 _deviceId，
+    // 为空时会静默跳过 SyncEngine 重建，表现为"配置好了却始终未初始化"。
+    if (_engine == null || _deviceId == null) {
+      Log.sync.i('applyConfigToService: 引擎未就绪，执行完整初始化');
+      return initBackend(database: database);
     }
 
     try {
@@ -728,9 +744,31 @@ class SyncService {
       await switchBackend(backend: backend, database: database);
       Log.sync.i('applyConfigToService: 配置变更已应用到 SyncService '
           '(providerKey=${backend.providerKey})');
+      return (success: true, error: null);
     } on StateError catch (e) {
       Log.sync.w('applyConfigToService: 切换后端被拒绝', error: e);
+      return (success: false, error: '$e');
+    } on BackendUnavailableException catch (e) {
+      Log.sync.w('applyConfigToService: 新后端不可用', error: e);
+      return (success: false, error: '后端不可用：$e');
+    } on Exception catch (e, st) {
+      Log.sync.e('applyConfigToService: 切换后端失败', error: e, stackTrace: st);
+      return (success: false, error: '切换后端失败：$e');
     }
+  }
+
+  /// 停用同步引擎与后端（关总开关 / 配置不完整时调用）
+  ///
+  /// 幂等：已经是停用状态时不做任何事，也不重复刷状态。
+  Future<void> _shutdownEngine({required String reason}) async {
+    if (_engine == null && _backend == null) return;
+    Log.sync.i('$reason：停止引擎并关闭后端');
+    _autoSyncTimer?.cancel();
+    await _backend?.close();
+    _backend = null;
+    _engine = null;
+    _backendReady = false;
+    _updateState(const SyncServiceState(status: SyncStatus.uninitialized));
   }
 
   /// 获取当前后端（供 UI 显示配置信息）
@@ -770,6 +808,7 @@ class SyncService {
       webdavUrl: SyncConfig.webdavUrl,
       webdavUsername: SyncConfig.webdavUsername,
       safeServerUrl: SyncConfig.safeServerUrl,
+      syncEnabled: SyncConfig.isSyncEnabled,
       autoSyncEnabled: SyncConfig.isAutoSyncEnabled,
       // Keyring 元数据
       vaultId: keyring?.vaultId,
@@ -947,32 +986,57 @@ class SyncService {
   /// 根据 SyncConfig 创建后端实例（内部辅助）
   ///
   /// 返回 null 表示配置不完整（路径为空、URL 缺失等）。
-  static SyncBackend? _createBackendFromConfig() {
-    switch (SyncConfig.backendType) {
-      case SyncBackendType.none:
-        return null;
-      case SyncBackendType.localFs:
-        if (SyncConfig.localFsPath.isEmpty) return null;
-        return LocalFsBackend(rootPath: SyncConfig.localFsPath);
-      case SyncBackendType.webdav:
-        if (SyncConfig.webdavUrl.isEmpty ||
-            SyncConfig.webdavUsername.isEmpty) {
-          return null;
-        }
-        return WebDavBackend(
-          baseUrl: SyncConfig.webdavUrl,
-          username: SyncConfig.webdavUsername,
-          password: SyncConfig.webdavPassword,
-        );
-      case SyncBackendType.safeServer:
-        if (SyncConfig.safeServerUrl.isEmpty ||
-            SyncConfig.safeServerToken.isEmpty) {
-          return null;
-        }
-        return SafeServerBackend(
-          baseUrl: SyncConfig.safeServerUrl,
-          token: SyncConfig.safeServerToken,
-        );
+  /// 构造与完整性判定逻辑统一收敛在 [SyncBackendDraft]，避免与配置面板
+  /// 的「能否保存」判断出现两套标准。
+  static SyncBackend? _createBackendFromConfig() =>
+      SyncBackendDraft.fromConfig().buildBackend();
+
+  // ──────────────────────────────────────────────
+  // 连接测试（配置面板「测试」按钮）
+  // ──────────────────────────────────────────────
+
+  /// 测试一份**尚未保存**的后端配置能否真正连通。
+  ///
+  /// 用草稿构造一个临时后端实例，与单例持有的 [_backend] 完全隔离：
+  /// 测试失败不会影响正在运行的同步，测试成功也不会自动生效。
+  ///
+  /// 检测两层：
+  ///   1. [SyncBackend.init]：目录可建 / 服务可达（WebDAV 在此识别 401）；
+  ///   2. [SyncBackend.getManifest]：一次**带认证**的真实读取。
+  ///      这一步不可省——SafeServer 的 health 端点不校验 Token，只做 init
+  ///      的话填错 Token 也会显示"测试通过"。远端还没有 manifest 时后端
+  ///      统一返回空内容而非报错，所以首次配置同样能通过。
+  ///
+  /// 无论成功失败都会 close 临时后端，不泄漏 HTTP 连接。
+  Future<({bool success, String? error})> testBackendConfig(
+    SyncBackendDraft draft,
+  ) async {
+    if (draft.type == SyncBackendType.none) {
+      return (success: false, error: '未选择同步后端类型');
+    }
+    final backend = draft.buildBackend();
+    if (backend == null) {
+      return (success: false, error: '配置不完整，请填写必填项');
+    }
+
+    Log.sync.i('测试同步后端连接: type=${draft.type.name}');
+    try {
+      await backend.init();
+      await backend.getManifest();
+      Log.sync.i('同步后端连接测试通过 (providerKey=${backend.providerKey})');
+      return (success: true, error: null);
+    } on BackendUnavailableException catch (e) {
+      Log.sync.w('同步后端连接测试失败（后端不可用）', error: e);
+      return (success: false, error: '$e');
+    } on Exception catch (e, st) {
+      Log.sync.w('同步后端连接测试失败', error: e, stackTrace: st);
+      return (success: false, error: '$e');
+    } finally {
+      try {
+        await backend.close();
+      } on Exception catch (e) {
+        Log.sync.d('测试后端 close 失败（忽略）: $e');
+      }
     }
   }
 
