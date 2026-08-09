@@ -46,8 +46,9 @@ class SearchWidgetState extends State<SearchWidget> {
 
   @override
   Widget build(BuildContext context) {
-    const styleActive = TextStyle(color: Colors.black);
-    const styleHint = TextStyle(color: Colors.black54);
+    final colorScheme = Theme.of(context).colorScheme;
+    final styleActive = TextStyle(color: colorScheme.onSurface);
+    final styleHint = TextStyle(color: colorScheme.onSurfaceVariant);
     final style = widget.text.isEmpty ? styleHint : styleActive;
     const searchBoxRadius = 7.0;
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
@@ -57,8 +58,8 @@ class SearchWidgetState extends State<SearchWidget> {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(searchBoxRadius),
-        color: Colors.white,
-        border: Border.all(color: Colors.black26),
+        color: colorScheme.surfaceContainerHighest,
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: TextField(

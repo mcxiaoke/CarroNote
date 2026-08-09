@@ -23,16 +23,24 @@ import 'package:flex_color_scheme/flex_color_scheme.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/utils/window_title_bar.dart';
 
 class ThemeProvider extends ChangeNotifier {
-  ThemeMode themeMode =
-      PreferencesStorage.isThemeDark ? ThemeMode.dark : ThemeMode.light;
+  ThemeProvider() {
+    // 启动时把已保存的主题同步到 Windows 标题栏（非 Windows 平台无副作用）。
+    syncWindowsTitleBar(isDarkMode);
+  }
+
+  ThemeMode themeMode = PreferencesStorage.isThemeDark
+      ? ThemeMode.dark
+      : ThemeMode.light;
 
   bool get isDarkMode => themeMode == ThemeMode.dark;
 
   void setIsDarkMode(bool isDark) {
     themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
     PreferencesStorage.setIsThemeDark(isDark);
+    syncWindowsTitleBar(isDark);
     notifyListeners();
   }
 }
@@ -49,15 +57,14 @@ class AppThemes {
       seedColor: _brandSeed,
       brightness: brightness,
     );
-    final TextTheme serifText = (brightness == Brightness.light
-            ? ThemeData.light()
-            : ThemeData.dark())
-        .textTheme
-        .apply(fontFamily: 'NotoSerif');
+    final TextTheme serifText =
+        (brightness == Brightness.light ? ThemeData.light() : ThemeData.dark())
+            .textTheme
+            .apply(fontFamily: 'NotoSerif');
 
     return (brightness == Brightness.light
-            ? FlexThemeData.light
-            : FlexThemeData.dark)(
+        ? FlexThemeData.light
+        : FlexThemeData.dark)(
       colorScheme: scheme,
       useMaterial3: true,
       textTheme: serifText,
