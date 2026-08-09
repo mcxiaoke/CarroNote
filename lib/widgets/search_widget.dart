@@ -67,51 +67,63 @@ class SearchWidgetState extends State<SearchWidget> {
         color: boxColor,
         border: Border.all(color: colorScheme.outlineVariant),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: TextField(
-        enableIMEPersonalizedLearning: enableIMEPLFlag,
-        textDirection: getTextDirecton(widget.text),
-        controller: controller,
-        enableInteractiveSelection: true,
-        autofocus: false,
-        textAlignVertical: TextAlignVertical.center,
-        contextMenuBuilder: (context, editableTextState) {
-          final List<ContextMenuButtonItem> buttonItems =
-              editableTextState.contextMenuButtonItems;
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      // 搜索图标、输入框、清除按钮放在同一 Row，由 Row 统一垂直居中。
+      // 注意：不要给 TextField 设 textAlignVertical —— 在 isCollapsed + 零内边距下，
+      // 它会把文字/hint 额外下移约 4px（真实字体实测）；不设时文字天然居中。
+      // 也不用 InputDecoration 的 leading icon / suffixIcon，避免内部布局差异。
+      child: Row(
+        children: [
+          Icon(Icons.search, color: style.color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              enableIMEPersonalizedLearning: enableIMEPLFlag,
+              textDirection: getTextDirecton(widget.text),
+              controller: controller,
+              enableInteractiveSelection: true,
+              autofocus: false,
+              maxLines: 1,
+              contextMenuBuilder: (context, editableTextState) {
+                final List<ContextMenuButtonItem> buttonItems =
+                    editableTextState.contextMenuButtonItems;
 
-          final itemsToRemove = [
-            ContextMenuButtonType.share,
-            ContextMenuButtonType.searchWeb,
-            ContextMenuButtonType.lookUp,
-          ];
+                final itemsToRemove = [
+                  ContextMenuButtonType.share,
+                  ContextMenuButtonType.searchWeb,
+                  ContextMenuButtonType.lookUp,
+                ];
 
-          buttonItems.removeWhere((ContextMenuButtonItem buttonItem) {
-            return itemsToRemove.contains(buttonItem.type);
-          });
+                buttonItems.removeWhere((ContextMenuButtonItem buttonItem) {
+                  return itemsToRemove.contains(buttonItem.type);
+                });
 
-          return AdaptiveTextSelectionToolbar.buttonItems(
-            anchors: editableTextState.contextMenuAnchors,
-            buttonItems: buttonItems,
-          );
-        },
-        decoration: InputDecoration(
-          icon: Icon(Icons.search, color: style.color),
-          suffixIcon: widget.text.isNotEmpty
-              ? GestureDetector(
-                  child: Icon(Icons.close, color: style.color),
-                  onTap: () {
-                    controller.clear();
-                    widget.onChanged('');
-                    //FocusScope.of(context).requestFocus(FocusNode());
-                  },
-                )
-              : null,
-          hintText: widget.hintText,
-          hintStyle: style,
-          border: InputBorder.none,
-        ),
-        style: style,
-        onChanged: widget.onChanged,
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: editableTextState.contextMenuAnchors,
+                  buttonItems: buttonItems,
+                );
+              },
+              decoration: InputDecoration(
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
+                hintText: widget.hintText,
+                hintStyle: style,
+                border: InputBorder.none,
+              ),
+              style: style,
+              onChanged: widget.onChanged,
+            ),
+          ),
+          if (widget.text.isNotEmpty)
+            GestureDetector(
+              child: Icon(Icons.close, color: style.color),
+              onTap: () {
+                controller.clear();
+                widget.onChanged('');
+                //FocusScope.of(context).requestFocus(FocusNode());
+              },
+            ),
+        ],
       ),
     );
   }

@@ -68,8 +68,9 @@ class HomeSidebar extends StatelessWidget {
     final Color fg = colorScheme.onSurface;
     final Color bg = colorScheme.surfaceContainerLow;
     final Color divider = colorScheme.outlineVariant;
-    final String themeText =
-        colorScheme.brightness == Brightness.dark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
+    final String themeText = colorScheme.brightness == Brightness.dark
+        ? 'Light Mode'.tr()
+        : 'Dark Mode'.tr();
 
     Future<void> launchExternal(String url) async {
       try {
@@ -99,94 +100,114 @@ class HomeSidebar extends StatelessWidget {
       );
     }
 
-    return Container(
+    return SizedBox(
       width: 240,
-      color: bg,
-      child: Column(
-        children: [
-          // 顶部 Logo + 应用名
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: Image.asset(SafeNotesConfig.appLogoPath),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    SafeNotesConfig.appName.tr(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fg,
-                      fontFamily: uiFontFamily,
-                      fontFamilyFallback: uiFontFamilyFallback,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+      child: Material(
+        color: bg,
+        child: Column(
+          children: [
+            // 顶部 Logo + 应用名
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Image.asset(SafeNotesConfig.appLogoPath),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      SafeNotesConfig.appName.tr(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: fg,
+                        fontFamily: uiFontFamily,
+                        fontFamilyFallback: uiFontFamilyFallback,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Divider(color: divider, height: 1),
-          // 主入口（可滚动，防窗口过矮时溢出）
-          Expanded(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                sideItem(Icons.file_download_outlined, 'Import Backup'.tr(),
-                    onImportCallback),
-                sideItem(Icons.key_outlined, 'Change Passphrase'.tr(),
-                    onChangePassCallback),
-                sideItem(
-                  colorScheme.brightness == Brightness.dark
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined,
-                  themeText,
-                  onThemeCallback,
-                ),
-                sideItem(
-                    Icons.fingerprint, 'Biometric'.tr(), onBiometricsCallback),
-                sideItem(
-                    Icons.settings_outlined, 'Settings'.tr(), onSettingsCallback),
-                sideItem(Icons.bug_report_outlined, '调试面板'.tr(),
-                    onDiagnosticsCallback),
-                sideItem(Icons.delete_outline, '最近删除'.tr(),
-                    onDeletedNotesCallback),
-                sideItem(Icons.logout, 'Logout'.tr(), onLogoutCallback),
-              ],
+            Divider(color: divider, height: 1),
+            // 主入口（可滚动，防窗口过矮时溢出）
+            Expanded(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  sideItem(
+                    Icons.file_download_outlined,
+                    'Import Backup'.tr(),
+                    onImportCallback,
+                  ),
+                  sideItem(
+                    Icons.key_outlined,
+                    'Change Passphrase'.tr(),
+                    onChangePassCallback,
+                  ),
+                  sideItem(
+                    colorScheme.brightness == Brightness.dark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    themeText,
+                    onThemeCallback,
+                  ),
+                  sideItem(
+                    Icons.fingerprint,
+                    'Biometric'.tr(),
+                    onBiometricsCallback,
+                  ),
+                  sideItem(
+                    Icons.settings_outlined,
+                    'Settings'.tr(),
+                    onSettingsCallback,
+                  ),
+                  sideItem(
+                    Icons.bug_report_outlined,
+                    '调试面板'.tr(),
+                    onDiagnosticsCallback,
+                  ),
+                  sideItem(
+                    Icons.delete_outline,
+                    '最近删除'.tr(),
+                    onDeletedNotesCallback,
+                  ),
+                  sideItem(Icons.logout, 'Logout'.tr(), onLogoutCallback),
+                ],
+              ),
             ),
-          ),
-          Divider(color: divider, height: 1),
-          // 底部外链（全部指向 GitHub 仓库）
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.rate_review_outlined, color: fg),
-                  tooltip: 'GitHub'.tr(),
-                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
-                ),
-                IconButton(
-                  icon: Icon(Icons.quiz_outlined, color: fg),
-                  tooltip: 'GitHub'.tr(),
-                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
-                ),
-                IconButton(
-                  icon: Icon(Icons.help_outline, color: fg),
-                  tooltip: 'GitHub'.tr(),
-                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
-                ),
-              ],
+            Divider(color: divider, height: 1),
+            // 底部外链（全部指向 GitHub 仓库）
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.rate_review_outlined, color: fg),
+                    tooltip: 'GitHub'.tr(),
+                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.quiz_outlined, color: fg),
+                    tooltip: 'GitHub'.tr(),
+                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.help_outline, color: fg),
+                    tooltip: 'GitHub'.tr(),
+                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
