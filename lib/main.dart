@@ -158,14 +158,20 @@ Future<void> _bootstrap() async {
       await Keyring.isInitialized(NotesDatabase.instance);
   Log.app.i('数据库就绪 (vaultInitialized=${AppBootState.vaultInitialized})');
 
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-    if (PreferencesStorage.isAutoRotate) ...[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]
-  ]);
+  // 桌面/大屏适配（P1-3）：Windows/macOS/Linux 窗口可自由缩放，
+  // 强制取向在桌面是 no-op 且不符合桌面预期，故仅在移动端（非 Web）执行。
+  final isDesktopUi =
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+  if (!isDesktopUi) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      if (PreferencesStorage.isAutoRotate) ...[
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]
+    ]);
+  }
 
   onAppUpdate();
 

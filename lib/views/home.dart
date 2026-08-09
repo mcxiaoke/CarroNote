@@ -13,8 +13,11 @@
 
 // Dart imports:
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:math' show max;
 
 // Flutter imports:
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 // Package imports:
@@ -33,12 +36,19 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/drawer.dart';
+import 'package:safenotes/widgets/home_navigation_rail.dart';
 import 'package:safenotes/widgets/note_card.dart';
 import 'package:safenotes/widgets/note_card_compact.dart';
 import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
+
+// 桌面平台判定（Windows/macOS/Linux 且非 Web），用于桌面专属 UI 适配。
+// Web 端 kIsWeb 为 true 会短路，不会真正访问 Platform，故可安全 import dart:io。
+bool get _isDesktopUi =>
+    !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
 class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -249,12 +259,20 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     Provider.of<NotesColor>(context);
 
+    // 桌面/大屏适配（P2 NavigationRail）：按整个应用窗口宽度做断点判断。
+    // 用 MediaQuery.sizeOf 取「窗口」尺寸（而非某个局部 widget 的约束），
+    // 因为导航形态是顶层布局决策，应与窗口整体尺寸绑定。
+    // - Compact (< 600px)：保留移动端 Drawer（汉堡菜单）
+    // - Medium/Expanded (≥ 600px)：左侧常驻 NavigationRail + 内容区
+    final double windowWidth = MediaQuery.sizeOf(context).width;
+    final bool isCompact = windowWidth < 600;
+
     return GestureDetector(
       onTap: dismissKeyboard,
       onVerticalDragStart: dismissKeyboard,
       onVerticalDragDown: dismissKeyboard,
       child: Scaffold(
-        drawer: _buildDrawer(context),
+        drawer: isCompact ? _buildDrawer(context) : null,
         appBar: AppBar(
           title: Text(
             'Safe Notes'.tr(),
@@ -270,13 +288,45 @@ class HomePageState extends State<HomePage> {
                   _shortNotes(),
                 ],
         ),
-        body: Column(
+        // 桌面/大屏适配（P0-2）：原本 body 铺满整个窗口宽度。
+        // 用 Center + ConstrainedBox 将内容宽度收束到最大 1300 并居中，
+        // 避免大屏上文字行过宽、卡片被拉散；手机宽度 < 1300 时约束不生效，
+        // 行为与改动前一致。crossAxisAlignment.stretch 让内容填满受限宽度。
+        body: isCompact
+            ? _homeBody()
+              : Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  HomeSidebar(
+                    onImportCallback: _navImport,
+                    onChangePassCallback: _navChangePass,
+                    onThemeCallback: _navTheme,
+                    onBiometricsCallback: _navBiometrics,
+                    onSettingsCallback: _navSettings,
+                    onDiagnosticsCallback: _navDiagnostics,
+                    onDeletedNotesCallback: _navDeletedNotes,
+                    onLogoutCallback: _navLogout,
+                  ),
+                  Expanded(child: _homeBody()),
+                ],
+              ),
+        floatingActionButton: _addANewNoteButton(context),
+      ),
+    );
+  }
+
+  /// 主页主体内容（搜索框 + 笔记列表/网格），Compact 与桌面 Rail 模式共用。
+  Widget _homeBody() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1300),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildSearch(),
             _handleAndBuildNotes(),
           ],
         ),
-        floatingActionButton: _addANewNoteButton(context),
       ),
     );
   }
@@ -446,79 +496,103 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  /// 移动端 Drawer：复用统一的导航回调（_nav*），并在每个会离开主页的入口前
+  /// 先 pop 抽屉（与改动前行为一致）。桌面 Rail 模式不需要 pop，直接调 _nav*。
   Widget _buildDrawer(BuildContext context) {
     return HomeDrawer(
-      onImportCallback: () async {
-        Log.ui.i('用户从侧边栏发起导入笔记流程');
+      onImportCallback: () {
         Navigator.of(context).pop();
-        widget.sessionStateStream.add(SessionState.stopListening);
-        await showImportDialog(context, homeRefresh: refreshNotes);
-        widget.sessionStateStream.add(SessionState.startListening);
-        Log.ui.d('导入流程结束, 已恢复会话超时监听');
+        _navImport();
       },
-      onChangePassCallback: () async {
-        // 先关抽屉再跳转：不要 await 返回后再 pop。若目标页触发了
-        // pushNamedAndRemoveUntil 清栈（如退出登录），残留的 pop() 会把
-        // 栈中唯一剩余的路由弹掉，触发 Navigator _history.isNotEmpty 断言崩溃。
+      onChangePassCallback: () {
         Navigator.of(context).pop();
-        Log.ui.i('界面切换: 主界面 → 修改密码(/changepassphrase)');
-        await Navigator.pushNamed(context, '/changepassphrase');
+        _navChangePass();
       },
-      onLogoutCallback: () async {
-        // F3 修复：顺序与 settings.dart / main.dart 超时退出保持一致，
-        // 具体顺序说明见 _logoutToLogin 注释。
-        Log.auth.i('用户从侧边栏主动登出');
-        await _logoutToLogin();
-      },
-      onSettingsCallback: () async {
-        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+      onBiometricsCallback: () {
         Navigator.of(context).pop();
-        Log.ui.i('界面切换: 主界面 → 设置(/settings)');
-        await Navigator.pushNamed(
-          context,
-          '/settings',
-          arguments: widget.sessionStateStream,
-        );
-        // 设置页内退出登录时，'/settings' 是被 removeUntil 移除的（而非正常
-        // pop 返回），此 continuation 仍会被唤醒。此时 dataKey 已清、页面
-        // 即将销毁，必须跳过 refresh，否则 readAllNotes 抛
-        // DataKeyNotSetException。
-        if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
-          refreshNotes();
-        }
+        _navBiometrics();
       },
-      onBiometricsCallback: () async {
-        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+      onSettingsCallback: () {
         Navigator.of(context).pop();
-        Log.ui.i('界面切换: 主界面 → 生物识别设置(/biometricSetting)');
-        await Navigator.pushNamed(
-          context,
-          '/biometricSetting',
-        );
+        _navSettings();
       },
-      onDeletedNotesCallback: () async {
-        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+      onDiagnosticsCallback: () {
         Navigator.of(context).pop();
-        Log.ui.i('界面切换: 主界面 → 回收站(/deletedNotes)');
-        await Navigator.pushNamed(context, '/deletedNotes');
-        // 同 onSettingsCallback：路由若被清栈移除（如无操作超时登出），
-        // 需跳过 refresh。
-        if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
-          refreshNotes();
-        }
+        _navDiagnostics();
       },
-      onDiagnosticsCallback: () async {
-        // 先关抽屉再跳转，理由见 onChangePassCallback 注释。
+      onDeletedNotesCallback: () {
         Navigator.of(context).pop();
-        Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics, 来自侧边栏)');
-        await Navigator.pushNamed(context, '/diagnostics');
+        _navDeletedNotes();
+      },
+      onLogoutCallback: () {
+        _navLogout();
       },
     );
   }
 
+  // ---- 桌面 Rail 与移动 Drawer 共用的导航动作（不带 pop，pop 由 Drawer 负责） ----
+
+  Future<void> _navImport() async {
+    Log.ui.i('用户发起导入笔记流程');
+    widget.sessionStateStream.add(SessionState.stopListening);
+    await showImportDialog(context, homeRefresh: refreshNotes);
+    widget.sessionStateStream.add(SessionState.startListening);
+    Log.ui.d('导入流程结束, 已恢复会话超时监听');
+  }
+
+  Future<void> _navChangePass() async {
+    Log.ui.i('界面切换: 主界面 → 修改密码(/changepassphrase)');
+    await Navigator.pushNamed(context, '/changepassphrase');
+  }
+
+  void _navTheme() {
+    showThemeBottomSheet(context);
+  }
+
+  Future<void> _navBiometrics() async {
+    Log.ui.i('界面切换: 主界面 → 生物识别设置(/biometricSetting)');
+    await Navigator.pushNamed(context, '/biometricSetting');
+  }
+
+  Future<void> _navSettings() async {
+    Log.ui.i('界面切换: 主界面 → 设置(/settings)');
+    await Navigator.pushNamed(
+      context,
+      '/settings',
+      arguments: widget.sessionStateStream,
+    );
+    // 设置页内退出登录时 '/settings' 被 removeUntil 移除，dataKey 已清，
+    // 必须跳过 refresh，否则 readAllNotes 抛 DataKeyNotSetException。
+    if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+      refreshNotes();
+    }
+  }
+
+  Future<void> _navDiagnostics() async {
+    Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics)');
+    await Navigator.pushNamed(context, '/diagnostics');
+  }
+
+  Future<void> _navDeletedNotes() async {
+    Log.ui.i('界面切换: 主界面 → 回收站(/deletedNotes)');
+    await Navigator.pushNamed(context, '/deletedNotes');
+    if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+      refreshNotes();
+    }
+  }
+
+  Future<void> _navLogout() async {
+    Log.auth.i('用户主动登出');
+    await _logoutToLogin();
+  }
+
   Widget _buildNotesTile() {
-    return ListView.separated(
-      padding: const EdgeInsets.all(15),
+    // 桌面/大屏适配（P1-4）：桌面端原生滚动条默认隐藏，长列表难以定位。
+    // 外包 Scrollbar，桌面常驻可见（thumbVisibility），移动端保持默认覆盖式。
+    return Scrollbar(
+      thumbVisibility: _isDesktopUi,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(15),
       itemCount: notes.length,
       itemBuilder: ((context, index) {
         final note = notes[index];
@@ -548,35 +622,50 @@ class HomePageState extends State<HomePage> {
           color: Colors.transparent,
         );
       },
+      ),
     );
   }
 
   Widget _buildNotes() {
-    return AlignedGridView.count(
-      itemCount: notes.length,
-      padding: const EdgeInsets.all(12),
-      crossAxisCount: 2,
-      mainAxisSpacing: 4,
-      crossAxisSpacing: 4,
-      itemBuilder: (context, index) {
-        final note = notes[index];
-        return GestureDetector(
-          onTap: () async {
-            Log.ui.i('界面切换: 主界面(网格) → 查看笔记(/viewnote) '
-                'uuid=${note.uuid} index=$index');
-            await Navigator.pushNamed(
-              context,
-              '/viewnote',
-              arguments: NoteDetailPageArguments(
-                note: note,
-                sessionStream: widget.sessionStateStream,
-              ),
-            );
-            refreshNotes();
-          },
-          child: PreferencesStorage.isCompactPreview
-              ? NoteCardWidgetCompact(note: note, index: index)
-              : NoteCardWidget(note: note, index: index),
+    // 桌面/大屏适配（P0-1 + P1-4）：
+    // 1) 原本写死 crossAxisCount:2，宽屏上只是把 2 列拉宽。改为按网格真实
+    //    可用宽度计算列数（目标列宽 ~300，最小 2 列）：手机仍 2 列，桌面随
+    //    窗口变宽自动增列。用 LayoutBuilder 读受限宽度（body 已限宽 1300），
+    //    避免直接用 MediaQuery 取到整屏宽度导致超宽屏列数过多。
+    // 2) 外包 Scrollbar，桌面常驻可见（thumbVisibility），移动端保持默认。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = max(2, (constraints.maxWidth / 300).floor());
+        return Scrollbar(
+          thumbVisibility: _isDesktopUi,
+          child: AlignedGridView.count(
+            itemCount: notes.length,
+            padding: const EdgeInsets.all(12),
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            itemBuilder: (context, index) {
+              final note = notes[index];
+              return GestureDetector(
+                onTap: () async {
+                  Log.ui.i('界面切换: 主界面(网格) → 查看笔记(/viewnote) '
+                      'uuid=${note.uuid} index=$index');
+                  await Navigator.pushNamed(
+                    context,
+                    '/viewnote',
+                    arguments: NoteDetailPageArguments(
+                      note: note,
+                      sessionStream: widget.sessionStateStream,
+                    ),
+                  );
+                  refreshNotes();
+                },
+                child: PreferencesStorage.isCompactPreview
+                    ? NoteCardWidgetCompact(note: note, index: index)
+                    : NoteCardWidget(note: note, index: index),
+              );
+            },
+          ),
         );
       },
     );
