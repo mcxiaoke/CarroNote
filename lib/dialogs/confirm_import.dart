@@ -18,11 +18,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class ImportConfirm extends StatefulWidget {
   final int importCount;
@@ -86,46 +86,18 @@ class ImportConfirmState extends State<ImportConfirm> {
   }
 
   Widget _buildButtons() {
-    const double buttonTextFontSize = 15.0;
-    final String cancelButtonText = 'Cancel'.tr();
-    final String confirmButtonText = 'Confirm'.tr();
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Expanded(
-          child: ElevatedButton(
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(
-                Theme.of(context).colorScheme.error,
-              ),
-            ),
-            child: _buttonText(cancelButtonText, buttonTextFontSize),
-            onPressed: () {
-              Navigator.of(context).pop(false);
-            },
-          ),
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'Cancel'.tr(),
+          onPressed: () => Navigator.of(context).pop(false),
         ),
-        SizedBox(width: MediaQuery.of(context).size.width * 0.1),
-        Expanded(
-          child: ElevatedButton(
-            child: _buttonText(confirmButtonText, buttonTextFontSize),
-            onPressed: () => Navigator.of(
-              context,
-            ).pop(true), // return false to dialog caller
-          ),
+        DialogButton(
+          label: 'Confirm'.tr(),
+          isPrimary: true,
+          onPressed: () => Navigator.of(context).pop(true),
         ),
       ],
-    );
-  }
-
-  Widget _buttonText(String text, double fontSize) {
-    return AutoSizeText(
-      text,
-      textAlign: TextAlign.center,
-      minFontSize: 8,
-      maxLines: 1,
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
     );
   }
 }

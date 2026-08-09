@@ -18,11 +18,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class DeleteConfirmationDialog extends StatelessWidget {
   final VoidCallback callback;
@@ -87,52 +87,18 @@ class DeleteConfirmationDialog extends StatelessWidget {
   }
 
   Widget _buildButtons(BuildContext context) {
-    const double paddingAroundButtonRowLR = 15.0;
-    const double paddingAroundButtonRowTop = 20.0;
-    const double buttonTextFontSize = 14.0;
-    final String cancelButtonText = 'Cancel'.tr();
-    final String deleteButtonText = 'Delete'.tr();
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        paddingAroundButtonRowLR,
-        paddingAroundButtonRowTop,
-        paddingAroundButtonRowLR,
-        0,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: ElevatedButton(
-              child: _buttonText(cancelButtonText, buttonTextFontSize),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-          SizedBox(width: MediaQuery.of(context).size.width * 0.1),
-          Expanded(
-            child: ElevatedButton(
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(
-                  Theme.of(context).colorScheme.error,
-                ),
-              ),
-              onPressed: callback,
-              child: _buttonText(deleteButtonText, buttonTextFontSize),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buttonText(String text, double fontSize) {
-    return AutoSizeText(
-      text,
-      textAlign: TextAlign.center,
-      minFontSize: 8,
-      maxLines: 1,
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'Cancel'.tr(),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        DialogButton(
+          label: 'Delete'.tr(),
+          isDestructive: true,
+          onPressed: callback,
+        ),
+      ],
     );
   }
 }

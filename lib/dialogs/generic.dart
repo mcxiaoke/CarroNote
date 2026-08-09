@@ -22,6 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class GenericDialog extends StatelessWidget {
   final IconData icon;
@@ -63,34 +64,14 @@ class GenericDialog extends StatelessWidget {
   }
 
   Widget _buildButtons(BuildContext context) {
-    const double buttonTextFontSize = 15.0;
-    final String okButtonText = 'OK'.tr();
-
-    return Container(
-      alignment: Alignment.centerRight,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          minimumSize: Size.zero, // Set this
-          padding: const EdgeInsets.symmetric(
-            vertical: 5,
-            horizontal: 15,
-          ), // and this
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'OK'.tr(),
+          isPrimary: true,
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        child: _buttonText(context, okButtonText, buttonTextFontSize),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-    );
-  }
-
-  Widget _buttonText(BuildContext context, String text, double fontSize) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: Style.buttonTextStyle(context).color,
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+      ],
     );
   }
 }

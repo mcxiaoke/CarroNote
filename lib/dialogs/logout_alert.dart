@@ -19,12 +19,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class PreInactivityLogOff extends StatefulWidget {
   const PreInactivityLogOff({super.key});
@@ -137,46 +137,18 @@ class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
   }
 
   Widget _buildButtons(BuildContext context) {
-    const double buttonTextFontSize = 15.0;
-    final String yesButtonText = 'Logout'.tr();
-    final String noButtonText = 'Cancel'.tr();
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Expanded(
-          child: ElevatedButton(
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(
-                Theme.of(context).colorScheme.error,
-              ),
-            ),
-            child: _buttonText(yesButtonText, buttonTextFontSize),
-            onPressed: () {
-              Navigator.of(context).pop(false);
-            },
-          ),
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'Cancel'.tr(),
+          onPressed: () => Navigator.of(context).pop(true),
         ),
-        SizedBox(width: MediaQuery.of(context).size.width * 0.06),
-        Expanded(
-          child: ElevatedButton(
-            child: _buttonText(noButtonText, buttonTextFontSize),
-            onPressed: () => Navigator.of(
-              context,
-            ).pop(true), // return false to dialog caller
-          ),
+        DialogButton(
+          label: 'Logout'.tr(),
+          isDestructive: true,
+          onPressed: () => Navigator.of(context).pop(false),
         ),
       ],
-    );
-  }
-
-  Widget _buttonText(String text, double fontSize) {
-    return AutoSizeText(
-      text,
-      textAlign: TextAlign.center,
-      minFontSize: 8,
-      maxLines: 1,
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
     );
   }
 }

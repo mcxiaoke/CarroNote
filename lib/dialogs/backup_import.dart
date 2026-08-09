@@ -25,6 +25,7 @@ import 'package:safenotes/models/file_handler.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class FileImportDialog extends StatelessWidget {
   final VoidCallback callback;
@@ -91,26 +92,14 @@ class FileImportDialog extends StatelessWidget {
   }
 
   Widget _buildButtons() {
-    const double buttonTextFontSize = 15.0;
-    final String yesButtonText = 'Select file'.tr();
-
-    return Container(
-      alignment: Alignment.centerRight,
-      child: ElevatedButton(
-        onPressed: callback,
-        child: _buttonText(yesButtonText, buttonTextFontSize),
-      ),
-    );
-  }
-
-  Widget _buttonText(String text, double fontSize) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'Select file'.tr(),
+          isPrimary: true,
+          onPressed: callback,
+        ),
+      ],
     );
   }
 }

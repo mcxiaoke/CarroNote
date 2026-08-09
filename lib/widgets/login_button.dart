@@ -14,6 +14,11 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
+// Project imports:
+import 'package:safenotes/widgets/app_button.dart';
+
+/// 登录/继续等主操作按钮。委托给统一的 [AppButton]，自动按平台适配尺寸
+/// （桌面紧凑、移动端触摸友好），不再写死高 50 / 投影 5 的移动端样式。
 class ButtonWidget extends StatelessWidget {
   final String text;
   final VoidCallback? onClicked;
@@ -22,25 +27,10 @@ class ButtonWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double topSpacing = 10.0;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: topSpacing),
-      child: SizedBox(
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            elevation: 5.0,
-          ),
-          onPressed: onClicked,
-          child: FittedBox(
-            child: Text(text, style: const TextStyle(fontSize: 20)),
-          ),
-        ),
-      ),
+    return AppButton(
+      text: text,
+      onPressed: onClicked,
+      fullWidth: true,
     );
   }
 }

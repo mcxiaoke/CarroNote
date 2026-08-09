@@ -19,13 +19,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:crypto/crypto.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class ImportPassPhraseDialog extends StatefulWidget {
   const ImportPassPhraseDialog({super.key});
@@ -151,51 +151,18 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
   }
 
   Widget _buildButtons(BuildContext context) {
-    const double paddingAroundButtonRow = 15.0;
-    const double buttonTextFontSize = 15.0;
-    final String formSubmitButtonText = 'Submit'.tr();
-    final String formCancelButtonText = 'Cancel'.tr();
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        paddingAroundButtonRow,
-        paddingAroundButtonRow,
-        paddingAroundButtonRow,
-        0,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: ElevatedButton(
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(
-                  Theme.of(context).colorScheme.error,
-                ),
-              ),
-              child: _buttonText(formCancelButtonText, buttonTextFontSize),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-          SizedBox(width: MediaQuery.of(context).size.width * 0.06),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _onEditonComplete,
-              child: _buttonText(formSubmitButtonText, buttonTextFontSize),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buttonText(String text, double fontSize) {
-    return AutoSizeText(
-      text,
-      textAlign: TextAlign.center,
-      minFontSize: 8,
-      maxLines: 1,
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
+    return DialogActionBar(
+      actions: [
+        DialogButton(
+          label: 'Cancel'.tr(),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        DialogButton(
+          label: 'Submit'.tr(),
+          isPrimary: true,
+          onPressed: _onEditonComplete,
+        ),
+      ],
     );
   }
 

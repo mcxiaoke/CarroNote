@@ -118,10 +118,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     const double buttonFontSize = 17.0;
     final String buttonText = 'Save'.tr();
 
+    // AppBar 内不使用凸起按钮（更像原生桌面应用）：改用文字按钮。
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(),
+      child: TextButton(
         onPressed: isFormValid ? onSaveCallback : null,
         child: Text(
           buttonText,
