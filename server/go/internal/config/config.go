@@ -87,11 +87,38 @@ type Config struct {
 	CertFile string `json:"certFile"` // TLS 证书路径
 	KeyFile  string `json:"keyFile"`  // TLS 私钥路径
 
-	// 日志配置（开发调试用）
+	// 配置：备份（开发调试用）
 	LogLevel    slog.Level `json:"-"`        // 日志级别（不直接 JSON 序列化，用 LogLevel 字符串）
 	LogLevelStr string     `json:"logLevel"` // 日志级别字符串："debug"/"info"/"warn"/"error"
 	LogFile     string     `json:"logFile"`  // 日志文件路径（空=stdout）
 	LogJSON     bool       `json:"logJSON"`  // 是否输出 JSON 格式日志（true=JSON，false=文本）
+
+	// Backup 备份配置（Tier 1 快照 + Tier 2 归档，见 docs/server-backup-design.md）
+	Backup BackupConfig `json:"backup"`
+}
+
+// BackupConfig 是 Tier 1 备份配置（manifest 快照 + blob 副本池）
+//
+// 零值即文档默认值（全部关闭/不限制），故 Default() 无需填充。
+type BackupConfig struct {
+	Enabled          bool          `json:"enabled"`          // 是否启用备份
+	ScheduleInterval string        `json:"scheduleInterval"` // 定时快照间隔（"1h"/"6h"，空=仅写入触发）
+	AutoOnWrite      bool          `json:"autoOnWrite"`      // 写入后去抖触发快照
+	WriteDebounceMs  int           `json:"writeDebounceMs"`  // 写入去抖间隔（毫秒，默认 5000）
+	MaxSnapshots     int           `json:"maxSnapshots"`     // 最多保留快照数（0=不限）
+	RetentionDays    int           `json:"retentionDays"`    // 保留天数（0=不限）
+	Archive          ArchiveConfig `json:"archive"`          // Tier 2 归档配置
+}
+
+// ArchiveConfig 是 Tier 2 归档配置（全量打包导出到外部路径）
+//
+// 零值即"默认值"（Enabled=false / Interval="" / Format="zip" / MaxArchives=0）。
+type ArchiveConfig struct {
+	Enabled     bool   `json:"enabled"`     // 是否启用归档
+	Interval    string `json:"interval"`    // 归档间隔（"24h"/"12h"，空=不启用）
+	Path        string `json:"path"`        // 输出目录（可跨磁盘/网络映射）
+	Format      string `json:"format"`      // "zip" 或 "tar.gz"（空=zip）
+	MaxArchives int    `json:"maxArchives"` // 保留份数（0=不限）
 }
 
 // DefaultToken 是默认的弱 Token，仅用于本地开发未配置时的兜底。
@@ -231,6 +258,11 @@ func loadConfigFile(c *Config, path string, set map[string]bool) error {
 	}
 	if !set["log-json"] && fileCfg.LogJSON {
 		c.LogJSON = fileCfg.LogJSON
+	}
+	// 备份配置：没有对应 CLI flag，配置文件一旦出现 backup 段就整体采用
+	// （其零值字段即文档默认值，无需与默认值做差分）。
+	if !set["backup"] {
+		c.Backup = fileCfg.Backup
 	}
 	return nil
 }

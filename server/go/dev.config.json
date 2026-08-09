@@ -10,5 +10,20 @@
   "idleTimeout": "120s",
   "logLevel": "debug",
   "logFile": "./temp/safeserver-debug.log",
-  "logJSON": false
+  "logJSON": false,
+  "backup": {
+    "enabled": true,
+    "scheduleInterval": "1h",
+    "autoOnWrite": true,
+    "writeDebounceMs": 5000,
+    "maxSnapshots": 48,
+    "retentionDays": 14,
+    "archive": {
+      "enabled": true,
+      "interval": "24h",
+      "path": "./backups",
+      "format": "zip",
+      "maxArchives": 30
+    }
+  }
 }

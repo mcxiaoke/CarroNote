@@ -99,6 +99,67 @@ func TestLoadConfigFilePriority(t *testing.T) {
 	}
 }
 
+// TestLoadConfigFileBackup 验证配置文件中 backup 段被正确合并（含归档子配置）。
+func TestLoadConfigFileBackup(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.json")
+	content := `{
+		"token":"strong",
+		"backup": {
+			"enabled": true,
+			"scheduleInterval": "1h",
+			"autoOnWrite": true,
+			"writeDebounceMs": 3000,
+			"maxSnapshots": 24,
+			"retentionDays": 7,
+			"archive": {
+				"enabled": true,
+				"interval": "24h",
+				"path": "D:/Backup/safenotes",
+				"format": "zip",
+				"maxArchives": 30
+			}
+		}
+	}`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := Default()
+	if err := loadConfigFile(c, p, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	b := c.Backup
+	if !b.Enabled || b.ScheduleInterval != "1h" || !b.AutoOnWrite || b.WriteDebounceMs != 3000 {
+		t.Fatalf("backup 配置未正确合并: %+v", b)
+	}
+	if b.MaxSnapshots != 24 || b.RetentionDays != 7 {
+		t.Fatalf("backup 清理参数未正确合并: %+v", b)
+	}
+	a := b.Archive
+	if !a.Enabled || a.Interval != "24h" || a.Path != "D:/Backup/safenotes" || a.Format != "zip" || a.MaxArchives != 30 {
+		t.Fatalf("archive 配置未正确合并: %+v", a)
+	}
+}
+
+// TestLoadConfigFileNoBackupKeepsDisabled 验证配置文件不含 backup 段时保持默认禁用。
+func TestLoadConfigFileNoBackupKeepsDisabled(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.json")
+	content := `{"token":"strong"}`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := Default()
+	if err := loadConfigFile(c, p, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	// 不含 backup 字段时 fileCfg.Backup 为零值，而备份默认值本身即零值（全部关闭），
+	// 因此语义一致：备份默认不启用。
+	if c.Backup.Enabled || c.Backup.AutoOnWrite || c.Backup.ScheduleInterval != "" {
+		t.Fatalf("backup 默认应为关闭: %+v", c.Backup)
+	}
+}
+
 // TestLoadConfigFileFatalOnBadDuration 验证非法 duration 会让 loadConfigFile 报错，
 // 从而由调用方非零退出（避免静默回退弱 token，修复 S-1）。
 func TestLoadConfigFileFatalOnBadDuration(t *testing.T) {

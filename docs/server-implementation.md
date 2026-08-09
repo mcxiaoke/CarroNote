@@ -86,6 +86,10 @@ server/go/
     ├── storage/
     │   ├── storage.go               # Storage + Vault 接口定义 + 哨兵错误 + ValidateHash + ValidateVaultPath + ResourceEntry + ComputeETag
     │   └── fs.go                    # 文件系统实现（fsVault + 通用资源层 + atomicWrite）
+    ├── backup/
+    │   ├── engine.go                # 备份引擎：blob 副本池 + manifest 快照 + Tier 2 归档 + 过期清理
+    │   ├── vault.go                 # ObservableVault：拦截写操作（blob 即时复制 + manifest 去抖快照）
+    │   └── scheduler.go             # 双定时器（Tier 1 快照 + Tier 2 归档）
     └── server/
         ├── server.go                # Server 结构 + 路由分发 + graceful shutdown
         ├── handlers.go              # HTTP handler（manifest/blob CRUD + blobs 列表 + 通用资源层）
@@ -192,6 +196,23 @@ func (s *Server) Run() error {
     }
 }
 ```
+
+### 3.4 备份系统（Tier 1 快照 + Tier 2 归档）
+
+Go server 内置 vault 备份系统（**仅 Go 实现，Node.js 版不含**），设计细节见
+[docs/server-backup-design.md](server-backup-design.md)：
+
+- **三层协作**：
+  - `backup.Engine`：blob 副本池维护（只增不删）、manifest 快照、Tier 2 全量 zip/tar.gz 归档、过期清理
+  - `backup.ObservableVault`：包装 `storage.Vault`，拦截写操作 —— `PutBlob`/`PutResource(blobs/)`
+    即时复制 blob 到备份池（失败仅记日志、不阻断请求），`PutManifest`/`DeleteManifest` 去抖后创建快照
+  - `backup.Scheduler`：两个独立 ticker（Tier 1 定时快照 + Tier 2 定时归档），随服务 ctx 取消而退出
+- **存储布局**：`<vaultDir>/backups/` 下 `blobs/`（blob 副本池）+ `snap-<ts>/manifest`（快照仅 manifest，共享 blob 池）
+- **恢复**：`snap-<ts>/manifest` + `backups/blobs/*` = 完整 vault 状态
+- **兜底**：`CreateSnapshot` 前先调用 `SyncBlobPool()` 扫描主 `blobs/` 按 mtime 增量同步，覆盖
+  备份后启用、服务重启、即时复制偶发失败等边界（blob 备份双路径互补）
+- **关闭时机**：graceful shutdown 时 `shutdownBackup()` 取消调度上下文 + 停止去抖定时器，
+  避免进程退出前的幽灵快照
 
 ---
 
@@ -394,6 +415,25 @@ class SQLiteVault extends Vault {
 | `-log-level` | string | info | 日志级别（debug/info/warn/error） |
 | `-log-file` | string | "" | 日志文件路径（空=stdout） |
 | `-log-json` | bool | false | JSON 格式日志 |
+
+**backup 配置段**（仅 JSON 配置文件，无独立 CLI flag；见 [server-backup-design.md](server-backup-design.md) §4）：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `backup.enabled` | bool | `false` | 是否启用备份 |
+| `backup.scheduleInterval` | string | `""` | 定时快照间隔（如 `"1h"`，空=仅写入触发） |
+| `backup.autoOnWrite` | bool | `false` | 写入后去抖触发快照（开启时才包装 vault 拦截写操作） |
+| `backup.writeDebounceMs` | int | `5000` | 写入去抖间隔（毫秒） |
+| `backup.maxSnapshots` | int | `0` | 最多保留快照数（0=不限） |
+| `backup.retentionDays` | int | `0` | 快照保留天数（0=不限） |
+| `backup.archive.enabled` | bool | `false` | 是否启用 Tier 2 归档 |
+| `backup.archive.interval` | string | `""` | 归档间隔（如 `"24h"`，空=不启用） |
+| `backup.archive.path` | string | `""` | 归档输出目录（可跨磁盘/网络映射） |
+| `backup.archive.format` | string | `"zip"` | `"zip"` 或 `"tar.gz"` |
+| `backup.archive.maxArchives` | int | `0` | 归档保留份数（0=不限） |
+
+注意：`backup` 段采用「配置文件中出现即整体采用」的合并策略，其零值字段即文档默认值，与现有
+「可选 CLI 增量覆盖」同语义。归档仅 Go server 支持。
 
 ### 6.3 Node.js server 配置
 

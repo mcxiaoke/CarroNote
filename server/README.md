@@ -20,6 +20,10 @@ server/
 │       ├── storage/
 │       │   ├── storage.go      # Vault + Storage 接口 + DefaultVaultID
 │       │   └── fs.go           # 文件系统实现（含 fsync）
+│       ├── backup/             # ★ vault 备份系统（详见 docs/server-backup-design.md）
+│       │   ├── engine.go       #   blob 副本池 + manifest 快照 + Tier 2 归档 + 清理
+│       │   ├── vault.go        #   ObservableVault：写拦截（blob 即时复制 + manifest 去抖）
+│       │   └── scheduler.go    #   双定时器（快照 + 归档）
 │       └── server/
 │           ├── server.go       # Server + 路由 + graceful shutdown
 │           ├── handlers.go     # HTTP handlers
@@ -101,8 +105,11 @@ flutter test
 └── vaults/
     └── vault-default/          # DefaultVaultID（单用户场景）
         ├── manifest            # manifest 密文（单文件）
-        └── blobs/
-            └── <hash>          # blob 密文
+        ├── blobs/
+        │   └── <hash>          # blob 密文
+        └── backups/            # ★ 备份区（启用 backup.* 配置后产生）
+            ├── blobs/          #   blob 副本池（只增不删，独立 inode）
+            └── snap-<ts>/      #   manifest 快照（仅 manifest，共享 blob 池）
 ```
 
 服务端不解析文件内容，只做二进制存储。多 vault 扩展见 [实现文档 §5](../docs/server-implementation.md#五存储层抽象与扩展)。
@@ -122,6 +129,7 @@ flutter test
 | graceful shutdown | SIGINT/SIGTERM → 等待在途请求（30s 超时） |
 | 存储层抽象 | Storage + Vault 接口，支持切换后端 |
 | 多 vault 预留 | `NewVault(vaultID)` 接口，默认用 `DefaultVaultID`（"vault-default"） |
+| 备份（Go 版） | Tier 1 manifest 快照 + blob 副本池 + Tier 2 zip/tar.gz 归档，配置见 [server-backup-design.md](../docs/server-backup-design.md) |
 | 部署 | systemd 服务单元文件（含安全加固），见 [deploy/safeserver.service](deploy/safeserver.service) |
 
 ## 自行实现新 server

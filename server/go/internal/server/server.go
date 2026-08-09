@@ -21,11 +21,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"safenotes-server/internal/auth"
+	"safenotes-server/internal/backup"
 	"safenotes-server/internal/config"
 	"safenotes-server/internal/storage"
 )
@@ -38,6 +40,9 @@ type Server struct {
 	authFail  *auth.FailTracker
 	logger    *slog.Logger
 	logCloser io.Closer // 日志文件句柄（graceful shutdown 时关闭，修复 L-6）
+
+	backupEngine *backup.Engine     // 备份引擎（nil 当 cfg.Backup.Enabled=false）
+	bgCancel     context.CancelFunc // 后台任务生命周期上下文（cancel 信号）
 }
 
 // New 创建 Server 实例
@@ -55,14 +60,29 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("create default vault failed: %w", err)
 	}
 	logger, closer := NewLogger(cfg.LogLevel, cfg.LogFile, cfg.LogJSON)
-	return &Server{
+	s := &Server{
 		cfg:       cfg,
 		storage:   store,
 		vault:     vault,
 		authFail:  auth.NewFailTracker(time.Minute, 10000),
 		logger:    logger,
 		logCloser: closer,
-	}, nil
+	}
+
+	// 备份引擎（Tier 1 快照 + Tier 2 归档）
+	if cfg.Backup.Enabled {
+		vaultDir := filepath.Join(cfg.DataDir, "vaults", storage.DefaultVaultID)
+		eng := backup.NewEngine(vaultDir, &cfg.Backup)
+		eng.SetLogger(logger)
+		s.backupEngine = eng
+
+		// 拦截写操作：blob 即时复制 + manifest 去抖快照（仅在写入自动备份开启时）
+		if cfg.Backup.AutoOnWrite {
+			s.vault = backup.NewObservableVault(vault, eng)
+		}
+	}
+
+	return s, nil
 }
 
 // Run 启动 HTTP 服务（含 graceful shutdown）
@@ -75,6 +95,18 @@ func (s *Server) Run() error {
 			_ = s.logCloser.Close()
 		}
 	}()
+
+	// 启动备份调度器（Tier 1 定时快照 + Tier 2 定时归档）
+	ctx, cancel := context.WithCancel(context.Background())
+	s.bgCancel = cancel
+	defer s.shutdownBackup()
+
+	if s.backupEngine != nil {
+		snapInterval, _ := time.ParseDuration(s.cfg.Backup.ScheduleInterval)
+		archiveInterval, _ := time.ParseDuration(s.cfg.Backup.Archive.Interval)
+		scheduler := backup.NewScheduler(s.backupEngine, snapInterval, archiveInterval, s.logger)
+		go scheduler.Start(ctx)
+	}
 
 	srv := &http.Server{
 		Addr:              s.cfg.Addr,
@@ -116,6 +148,19 @@ func (s *Server) Run() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return srv.Shutdown(ctx)
+	}
+}
+
+// shutdownBackup 停止备份后台任务：
+//   - 取消调度器上下文（两个 ticker goroutine 退出）
+//   - 停止 ObservableVault 的去抖定时器（避免进程退出前的幽灵快照）
+func (s *Server) shutdownBackup() {
+	if s.bgCancel != nil {
+		s.bgCancel()
+		s.bgCancel = nil
+	}
+	if v, ok := s.vault.(interface{ Stop() }); ok {
+		v.Stop()
 	}
 }
 
