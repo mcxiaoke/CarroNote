@@ -1,6 +1,10 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <variant>
+
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -26,6 +30,28 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  // Register a method channel so the Flutter app can sync its theme to the
+  // Windows title bar (dark mode). The Dart side calls
+  // `MethodChannel('safenotes/window_title_bar').invokeMethod('setDarkMode', bool)`.
+  title_bar_channel_ = std::make_unique<flutter::MethodChannel<>>(
+      flutter_controller_->engine()->messenger(), "safenotes/window_title_bar",
+      &flutter::StandardMethodCodec::GetInstance());
+  title_bar_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<>& call,
+             std::unique_ptr<flutter::MethodResult<>> result) {
+        if (call.method_name() == "setDarkMode") {
+          const auto* args = call.arguments();
+          bool dark = false;
+          if (args != nullptr && std::holds_alternative<bool>(*args)) {
+            dark = std::get<bool>(*args);
+          }
+          SetDarkMode(dark);
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();

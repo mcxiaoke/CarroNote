@@ -71,7 +71,11 @@ class Win32Window {
   // Called when Destroy is called.
   virtual void OnDestroy();
 
- private:
+  // Set the window frame's dark mode on or off, overriding the system theme.
+  // Driven by the Flutter app via the 'safenotes/window_title_bar' channel.
+  void SetDarkMode(bool dark);
+
+  private:
   friend class WindowClassRegistrar;
 
   // OS callback called by message pump. Handles the WM_NCCREATE message which
@@ -87,10 +91,13 @@ class Win32Window {
   // Retrieves a class instance pointer for |window|
   static Win32Window* GetThisFromHandle(HWND const window) noexcept;
 
-  // Update the window frame's theme to match the system theme.
-  static void UpdateTheme(HWND const window);
+  // Update the window frame's theme to match the current dark_mode_ setting.
+  void UpdateTheme(HWND window);
 
   bool quit_on_close_ = false;
+
+  // Whether the window frame should use dark mode decorations.
+  bool dark_mode_ = false;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

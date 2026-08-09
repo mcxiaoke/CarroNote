@@ -144,6 +144,17 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  // Read the system preferred theme as the initial title-bar state. The
+  // Flutter app may override this via the 'safenotes/window_title_bar'
+  // method channel (see flutter_window.cpp).
+  DWORD light_mode = 0;
+  DWORD light_mode_size = sizeof(light_mode);
+  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
+                               kGetPreferredBrightnessRegValue,
+                               RRF_RT_REG_DWORD, nullptr, &light_mode,
+                               &light_mode_size);
+  dark_mode_ = (result == ERROR_SUCCESS) ? (light_mode == 0) : false;
+
   UpdateTheme(window);
 
   return OnCreate();
@@ -273,16 +284,14 @@ void Win32Window::OnDestroy() {
 }
 
 void Win32Window::UpdateTheme(HWND const window) {
-  DWORD light_mode;
-  DWORD light_mode_size = sizeof(light_mode);
-  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                               kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
+  BOOL enable_dark_mode = dark_mode_ ? TRUE : FALSE;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE, &enable_dark_mode,
+                        sizeof(enable_dark_mode));
+}
 
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
+void Win32Window::SetDarkMode(bool const dark) {
+  dark_mode_ = dark;
+  if (window_handle_) {
+    UpdateTheme(window_handle_);
   }
 }

@@ -6,16 +6,11 @@ project(safenotes LANGUAGES CXX)
 # the on-disk name of your application.
 set(BINARY_NAME "safenotes")
 
-# 抑制 MSVC 14.51+ (VS 2026) 对 <experimental/coroutine> 的弃用错误
-# local_auth_windows 和 permission_handler_windows 仍在使用旧的 /await
-# 和 <experimental/coroutine>，在新版 MSVC 中是硬错误。
-# 此宏将其降级为警告，使 Windows 构建通过。
-# 参考：https://github.com/baseflow/flutter-permission-handler/issues/1534
-add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
-
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
+
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
