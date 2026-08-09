@@ -19,7 +19,6 @@ import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/string_utils.dart';
@@ -30,11 +29,7 @@ class NoteCardWidget extends StatelessWidget {
   final SafeNote note;
   final int index;
 
-  const NoteCardWidget({
-    super.key,
-    required this.note,
-    required this.index,
-  });
+  const NoteCardWidget({super.key, required this.note, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +40,10 @@ class NoteCardWidget extends StatelessWidget {
     DateTime now = DateTime.now();
     DateTime todayDate = DateTime(now.year, now.month, now.day);
     DateTime noteDate = DateTime(
-        note.createdTime.year, note.createdTime.month, note.createdTime.day);
+      note.createdTime.year,
+      note.createdTime.month,
+      note.createdTime.day,
+    );
     String time = (todayDate == noteDate)
         ? humanTime(
             time: note.createdTime,
@@ -54,11 +52,8 @@ class NoteCardWidget extends StatelessWidget {
         : DateFormat.yMMMd().format(note.createdTime);
 
     return Card(
-      shadowColor: PreferencesStorage.isThemeDark ? Colors.white : Colors.black,
       color: color,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Container(
         padding: const EdgeInsets.all(10),
         child: Column(
@@ -94,11 +89,7 @@ class NoteCardWidget extends StatelessWidget {
             AutoSizeText(
               sanitize(note.abstractText),
               textDirection: getTextDirecton(note.abstractText),
-              style: TextStyle(
-                color: fontColor,
-                fontSize: 16,
-                height: 1.2,
-              ),
+              style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
               minFontSize: 16,
               maxLines: getMaxLine(index), //3,
               overflow: TextOverflow.clip,

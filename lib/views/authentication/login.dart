@@ -23,7 +23,6 @@ import 'package:after_layout/after_layout.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
@@ -260,7 +259,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                   namedArgs: {'timeLeft': timeLeft.toString()},
                 ),
                 style: TextStyle(
-                  color: NordColors.aurora.red,
+                  color: Theme.of(context).colorScheme.error,
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
@@ -359,9 +358,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             padding: const EdgeInsets.only(top: 10, bottom: 20),
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                shadowColor: PreferencesStorage.isThemeDark
-                    ? NordColors.snowStorm.lightest
-                    : NordColors.polarNight.darkest,
                 minimumSize: const Size(200, 50), //Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -647,7 +643,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                       'undone.'
                   .tr(),
               style: TextStyle(
-                color: NordColors.aurora.red,
+                color: Theme.of(context).colorScheme.error,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -659,7 +655,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             child: Text('Cancel'.tr()),
           ),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: NordColors.aurora.red),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _confirmResetLocalData();
@@ -688,7 +686,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             child: Text('Cancel'.tr()),
           ),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: NordColors.aurora.red),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () async {
               Navigator.of(dialogContext).pop();
               await _performLocalDataReset();

@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/string_utils.dart';
@@ -42,7 +41,6 @@ class NoteCardWidgetCompact extends StatelessWidget {
     final previewText = note.title == ' ' ? note.abstractText : note.title;
 
     return Card(
-      shadowColor: PreferencesStorage.isThemeDark ? Colors.white : Colors.black,
       color: color,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
       child: Container(

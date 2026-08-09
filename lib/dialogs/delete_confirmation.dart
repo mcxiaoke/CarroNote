@@ -20,17 +20,13 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
 
 class DeleteConfirmationDialog extends StatelessWidget {
   final VoidCallback callback;
-  const DeleteConfirmationDialog({
-    super.key,
-    required this.callback,
-  });
+  const DeleteConfirmationDialog({super.key, required this.callback});
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +59,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
     return Icon(
       Icons.warning_rounded,
       size: MediaQuery.of(context).size.width * 0.17,
-      color: NordColors.aurora.yellow,
+      color: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -72,10 +68,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Text(
-        title,
-        style: dialogHeadTextStyle,
-      ),
+      child: Text(title, style: dialogHeadTextStyle),
     );
   }
 
@@ -101,8 +94,12 @@ class DeleteConfirmationDialog extends StatelessWidget {
     final String deleteButtonText = 'Delete'.tr();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(paddingAroundButtonRowLR,
-          paddingAroundButtonRowTop, paddingAroundButtonRowLR, 0),
+      padding: const EdgeInsets.fromLTRB(
+        paddingAroundButtonRowLR,
+        paddingAroundButtonRowTop,
+        paddingAroundButtonRowLR,
+        0,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -116,8 +113,9 @@ class DeleteConfirmationDialog extends StatelessWidget {
           Expanded(
             child: ElevatedButton(
               style: ButtonStyle(
-                backgroundColor:
-                    WidgetStateProperty.all(NordColors.aurora.red),
+                backgroundColor: WidgetStateProperty.all(
+                  Theme.of(context).colorScheme.error,
+                ),
               ),
               onPressed: callback,
               child: _buttonText(deleteButtonText, buttonTextFontSize),
@@ -134,10 +132,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
       textAlign: TextAlign.center,
       minFontSize: 8,
       maxLines: 1,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
     );
   }
 }

@@ -20,10 +20,8 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/widgets/note_widget.dart';
@@ -32,7 +30,11 @@ class AddEditNotePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
   final SafeNote? note;
 
-  const AddEditNotePage({super.key, this.note, required this.sessionStateStream});
+  const AddEditNotePage({
+    super.key,
+    this.note,
+    required this.sessionStateStream,
+  });
 
   @override
   AddEditNotePageState createState() => AddEditNotePageState();
@@ -53,9 +55,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     description = description == ' ' ? '' : description;
     NoteEditorState.setSaveAttempted(false);
     // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
-    Log.ui.i('进入笔记编辑页: 模式=${widget.note == null ? "新建" : "编辑"} '
-        'uuid=${widget.note?.uuid ?? "(未生成)"} '
-        'len=${title.length}+${description.length}');
+    Log.ui.i(
+      '进入笔记编辑页: 模式=${widget.note == null ? "新建" : "编辑"} '
+      'uuid=${widget.note?.uuid ?? "(未生成)"} '
+      'len=${title.length}+${description.length}',
+    );
   }
 
   @override
@@ -66,8 +70,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       canPop: true,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop && isNoteNewOrContentChanged()) {
-          Log.note.i('退出编辑页时检测到内容变更, 自动保存 '
-              'uuid=${widget.note?.uuid ?? "(新建)"}');
+          Log.note.i(
+            '退出编辑页时检测到内容变更, 自动保存 '
+            'uuid=${widget.note?.uuid ?? "(新建)"}',
+          );
           NoteEditorState().addOrUpdateNote();
         }
       },
@@ -97,19 +103,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         sessionStateStream: widget.sessionStateStream,
         onChangedTitle: (title) => setState(() {
           this.title = title;
-          NoteEditorState.setState(
-            widget.note,
-            this.title,
-            description,
-          );
+          NoteEditorState.setState(widget.note, this.title, description);
         }),
         onChangedDescription: (description) => setState(() {
           this.description = description;
-          NoteEditorState.setState(
-            widget.note,
-            title,
-            this.description,
-          );
+          NoteEditorState.setState(widget.note, title, this.description);
         }),
       ),
     );
@@ -123,11 +121,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: PreferencesStorage.isThemeDark
-              ? null
-              : NordColors.polarNight.darkest,
-        ),
+        style: ElevatedButton.styleFrom(),
         onPressed: isFormValid ? onSaveCallback : null,
         child: Text(
           buttonText,
@@ -141,8 +135,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   }
 
   Future<void> onSaveCallback() async {
-    Log.note.i('用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
-        'len=${title.length}+${description.length}');
+    Log.note.i(
+      '用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
+      'len=${title.length}+${description.length}',
+    );
     // TODO: refactor without using BuildContexts across async gap
     var navigator = Navigator.of(context);
     await NoteEditorState()

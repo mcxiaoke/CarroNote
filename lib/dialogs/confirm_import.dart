@@ -20,7 +20,6 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
@@ -28,10 +27,7 @@ import 'package:safenotes/utils/styles.dart';
 class ImportConfirm extends StatefulWidget {
   final int importCount;
 
-  const ImportConfirm({
-    super.key,
-    required this.importCount,
-  });
+  const ImportConfirm({super.key, required this.importCount});
 
   @override
   ImportConfirmState createState() => ImportConfirmState();
@@ -53,11 +49,7 @@ class ImportConfirmState extends State<ImportConfirm> {
           padding: const EdgeInsets.all(paddingAllAround),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              _title(),
-              _body(paddingAllAround),
-              _buildButtons(),
-            ],
+            children: [_title(), _body(paddingAllAround), _buildButtons()],
           ),
         ),
       ),
@@ -72,10 +64,7 @@ class ImportConfirmState extends State<ImportConfirm> {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(top: topSpacing), //, right: 100),
-        child: Text(
-          title,
-          style: dialogHeadTextStyle,
-        ),
+        child: Text(title, style: dialogHeadTextStyle),
       ),
     );
   }
@@ -83,17 +72,15 @@ class ImportConfirmState extends State<ImportConfirm> {
   Widget _body(double padding) {
     final String cautionMessage =
         'Do you want to import {noOfNotesInImport} new notes?'.tr(
-            namedArgs: {'noOfNotesInImport': widget.importCount.toString()});
+          namedArgs: {'noOfNotesInImport': widget.importCount.toString()},
+        );
     const double topSpacing = 15.0;
 
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: EdgeInsets.only(top: topSpacing, bottom: padding),
-        child: Text(
-          cautionMessage,
-          style: dialogBodyTextStyle,
-        ),
+        child: Text(cautionMessage, style: dialogBodyTextStyle),
       ),
     );
   }
@@ -109,7 +96,9 @@ class ImportConfirmState extends State<ImportConfirm> {
         Expanded(
           child: ElevatedButton(
             style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(NordColors.aurora.red),
+              backgroundColor: WidgetStateProperty.all(
+                Theme.of(context).colorScheme.error,
+              ),
             ),
             child: _buttonText(cancelButtonText, buttonTextFontSize),
             onPressed: () {
@@ -121,8 +110,9 @@ class ImportConfirmState extends State<ImportConfirm> {
         Expanded(
           child: ElevatedButton(
             child: _buttonText(confirmButtonText, buttonTextFontSize),
-            onPressed: () => Navigator.of(context)
-                .pop(true), // return false to dialog caller
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(true), // return false to dialog caller
           ),
         ),
       ],
@@ -135,10 +125,7 @@ class ImportConfirmState extends State<ImportConfirm> {
       textAlign: TextAlign.center,
       minFontSize: 8,
       maxLines: 1,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
     );
   }
 }

@@ -27,11 +27,7 @@ class GenericDialog extends StatelessWidget {
   final IconData icon;
   final String message;
 
-  const GenericDialog({
-    super.key,
-    required this.icon,
-    required this.message,
-  });
+  const GenericDialog({super.key, required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -59,24 +55,10 @@ class GenericDialog extends StatelessWidget {
     );
   }
 
-  // Widget _buildIcon(BuildContext context) {
-  //   return Padding(
-  //     padding: EdgeInsets.only(bottom: 15),
-  //     child: Icon(
-  //       this.icon,
-  //       size: MediaQuery.of(context).size.width * 0.12,
-  //       color: NordColors.frost.darkest,
-  //     ),
-  //   );
-  // }
-
   Widget _body(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 10),
-      child: Text(
-        message,
-        style: dialogBodyTextStyle,
-      ),
+      child: Text(message, style: dialogBodyTextStyle),
     );
   }
 
@@ -94,18 +76,18 @@ class GenericDialog extends StatelessWidget {
             horizontal: 15,
           ), // and this
         ),
-        child: _buttonText(okButtonText, buttonTextFontSize),
+        child: _buttonText(context, okButtonText, buttonTextFontSize),
         onPressed: () => Navigator.of(context).pop(),
       ),
     );
   }
 
-  Widget _buttonText(String text, double fontSize) {
+  Widget _buttonText(BuildContext context, String text, double fontSize) {
     return Text(
       text,
       textAlign: TextAlign.center,
       style: TextStyle(
-        color: Style.buttonTextStyle().color,
+        color: Style.buttonTextStyle(context).color,
         fontWeight: FontWeight.bold,
         fontSize: fontSize,
       ),
@@ -122,10 +104,7 @@ Future<void> showGenericDialog({
     context: context,
     barrierDismissible: true,
     builder: (BuildContext context) {
-      return GenericDialog(
-        icon: icon,
-        message: message,
-      );
+      return GenericDialog(icon: icon, message: message);
     },
   );
 }

@@ -14,21 +14,11 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
-
-// Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
-
 class ButtonWidget extends StatelessWidget {
   final String text;
   final VoidCallback? onClicked;
 
-  const ButtonWidget({
-    super.key,
-    required this.text,
-    required this.onClicked,
-  });
+  const ButtonWidget({super.key, required this.text, required this.onClicked});
 
   @override
   Widget build(BuildContext context) {
@@ -39,9 +29,6 @@ class ButtonWidget extends StatelessWidget {
       child: SizedBox(
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            shadowColor: PreferencesStorage.isThemeDark
-                ? NordColors.snowStorm.lightest
-                : NordColors.polarNight.darkest,
             minimumSize: const Size.fromHeight(50),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -50,10 +37,7 @@ class ButtonWidget extends StatelessWidget {
           ),
           onPressed: onClicked,
           child: FittedBox(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 20),
-            ),
+            child: Text(text, style: const TextStyle(fontSize: 20)),
           ),
         ),
       ),

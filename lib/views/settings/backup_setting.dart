@@ -22,7 +22,6 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 import 'package:settings_ui/settings_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -78,10 +77,12 @@ class BackupSettingState extends State<BackupSetting> {
 
     if (Platform.isAndroid &&
         await Directory(SafeNotesConfig.androidBackupDirectory).exists()) {
-      path = SafeNotesConfig.androidBackupDirectory +
+      path =
+          SafeNotesConfig.androidBackupDirectory +
           SafeNotesConfig.backupFileName;
     } else if (Platform.isIOS) {
-      path = SafeNotesConfig.iosBackupDirectoryIndicativePath +
+      path =
+          SafeNotesConfig.iosBackupDirectoryIndicativePath +
           SafeNotesConfig.backupFileName;
     }
 
@@ -105,12 +106,7 @@ class BackupSettingState extends State<BackupSetting> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Backup'.tr(),
-          style: appBarTitle,
-        ),
-      ),
+      appBar: AppBar(title: Text('Backup'.tr(), style: appBarTitle)),
       body: _bodyBackup(context),
     );
   }
@@ -147,12 +143,13 @@ class BackupSettingState extends State<BackupSetting> {
                     _buildUpperBackupView(),
                     const SizedBox(height: 10),
                     Text(
-                        "This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ."
-                            .tr()),
+                      "This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ."
+                          .tr(),
+                    ),
                     const SizedBox(height: 10),
-                    _buildBackupNowButton()
+                    _buildBackupNowButton(),
                   ],
-                )
+                ),
               ],
             ),
           ),
@@ -211,8 +208,9 @@ class BackupSettingState extends State<BackupSetting> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Last Backup: {lastBackupTime}'
-                    .tr(namedArgs: {'lastBackupTime': lastUpdateTime}),
+                'Last Backup: {lastBackupTime}'.tr(
+                  namedArgs: {'lastBackupTime': lastUpdateTime},
+                ),
                 style: const TextStyle(fontSize: 10),
               ),
               _showLocationPath(context),
@@ -221,7 +219,7 @@ class BackupSettingState extends State<BackupSetting> {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: _encrypted(),
-                )
+                ),
             ],
           ),
         ),
@@ -237,22 +235,20 @@ class BackupSettingState extends State<BackupSetting> {
             TextSpan(
               text: 'Location: {locationPath}'.tr(
                 namedArgs: {
-                  'locationPath': validWorkingBackupFullyQualifiedPath
+                  'locationPath': validWorkingBackupFullyQualifiedPath,
                 },
               ),
               style: TextStyle(
-                color: NordColors.frost.darker,
+                color: Theme.of(context).colorScheme.primary,
                 fontSize: 10,
               ),
               recognizer: TapGestureRecognizer()..onTap = onShowIosBackupDir,
             ),
-            const WidgetSpan(
-              child: SizedBox(width: 1),
-            ),
+            const WidgetSpan(child: SizedBox(width: 1)),
             WidgetSpan(
               child: Icon(
                 Icons.open_in_new,
-                color: NordColors.frost.darker,
+                color: Theme.of(context).colorScheme.primary,
                 size: 12,
               ),
             ),
@@ -278,16 +274,9 @@ class BackupSettingState extends State<BackupSetting> {
   Widget _encrypted() {
     return Row(
       children: [
-        const Icon(
-          Icons.lock,
-          size: 15,
-          color: Colors.green,
-        ),
+        const Icon(Icons.lock, size: 15, color: Colors.green),
         const SizedBox(width: 1),
-        Text(
-          'Backup encrypted'.tr(),
-          style: const TextStyle(fontSize: 10),
-        )
+        Text('Backup encrypted'.tr(), style: const TextStyle(fontSize: 10)),
       ],
     );
   }
@@ -330,8 +319,9 @@ Future<bool> handleBackupPermissionAndLocation() async {
   if (!await Directory(SafeNotesConfig.androidDownloadDirectory).exists()) {
     return false;
   }
-  await Directory(SafeNotesConfig.androidBackupDirectory)
-      .create(recursive: false);
+  await Directory(
+    SafeNotesConfig.androidBackupDirectory,
+  ).create(recursive: false);
 
   return true;
 }

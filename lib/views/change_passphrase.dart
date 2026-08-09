@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
 
 // Project imports:
 import 'package:core/core.dart';
@@ -83,8 +82,11 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
   void scrollToBottomIfOnScreenKeyboard() {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
-      _scrollController.animateTo(_scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300), curve: Curves.ease);
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.ease,
+      );
     }
   }
 
@@ -101,7 +103,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
           children: [
             Padding(
               padding: const EdgeInsets.only(
-                  top: paddingBetweenInputBox, bottom: 10),
+                top: paddingBetweenInputBox,
+                bottom: 10,
+              ),
               child: Text(
                 pageTitleName,
                 style: dialogHeadTextStyle.copyWith(
@@ -210,8 +214,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     return passphrase == null || passphrase.length < minPassphraseLength
         ? minpCharacterMsg
         : (estimateBruteforceStrength(passphrase) < minPassphraseStrength)
-            ? tooWeakMsg
-            : null;
+        ? tooWeakMsg
+        : null;
   }
 
   Widget _buildNewConfirmPassField() {
@@ -241,8 +245,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     );
   }
 
-  InputDecoration _inputBoxDecoration(BuildContext context, String inputFieldID,
-      String inputHintText, double inputBoxEdgeRadious) {
+  InputDecoration _inputBoxDecoration(
+    BuildContext context,
+    String inputFieldID,
+    String inputHintText,
+    double inputBoxEdgeRadious,
+  ) {
     bool? visibility;
 
     if (inputFieldID == 'first') {
@@ -290,12 +298,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         padding: const EdgeInsets.only(right: 10, top: 25, bottom: 20),
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            shadowColor: PreferencesStorage.isThemeDark
-                ? NordColors.snowStorm.lightest
-                : NordColors.polarNight.darkest,
             minimumSize: const Size(200, 50), //Size.fromHeight(50),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             elevation: 5.0, //StadiumBorder(),
           ),
           onPressed: _finalSublmitChange,
@@ -385,8 +391,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
           database: NotesDatabase.instance,
         );
         // 密钥版本号推进是多端识别「他端已改密码」的依据，必须留痕
-        Log.crypto.i('主密钥已轮换: keyVersion=${newKeyring.keyVersion} '
-            'fingerprint=${newKeyring.keyFingerprint}');
+        Log.crypto.i(
+          '主密钥已轮换: keyVersion=${newKeyring.keyVersion} '
+          'fingerprint=${newKeyring.keyFingerprint}',
+        );
       } on Exception catch (e, st) {
         // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
         Log.auth.e('改密码失败：持久化新 keyring 时异常', error: e, stackTrace: st);
@@ -462,7 +470,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       if (!online && mounted) {
         final proceed = await _showWarningDialog(
           title: '同步服务器不可用',
-          content: '无法连接同步服务器，改密码后新密钥无法立即推送。\n'
+          content:
+              '无法连接同步服务器，改密码后新密钥无法立即推送。\n'
               '他端在下次同步时可能触发密钥迁移，期间无法正常同步。\n\n是否仍要继续改密码？',
           confirmText: '继续改密码',
           cancelText: '取消',
@@ -478,7 +487,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         if (unsynced.isNotEmpty && mounted) {
           final proceed = await _showWarningDialog(
             title: '本地仍有未同步笔记',
-            content: '当前有 ${unsynced.length} 条笔记未成功同步（可能是远端临时不可达）。\n'
+            content:
+                '当前有 ${unsynced.length} 条笔记未成功同步（可能是远端临时不可达）。\n'
                 '改密码后这些笔记仍会保留在本地，下次同步时推送。\n\n是否仍要继续改密码？',
             confirmText: '继续改密码',
             cancelText: '取消',
