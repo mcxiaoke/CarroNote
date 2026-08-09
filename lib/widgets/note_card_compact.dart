@@ -20,6 +20,7 @@ import 'package:auto_size_text/auto_size_text.dart';
 // Project imports:
 import 'package:core/core.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
@@ -52,7 +53,8 @@ class NoteCardWidgetCompact extends StatelessWidget {
             color: fontColor,
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            fontFamily: 'MerriweatherBlack',
+            fontFamily: uiFontFamily,
+            fontFamilyFallback: uiFontFamilyFallback,
           ),
           minFontSize: 15,
           maxLines: 2,

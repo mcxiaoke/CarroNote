@@ -14,6 +14,9 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
+// Project imports:
+import 'package:safenotes/utils/platform_ui.dart';
+
 class Style {
   static TextStyle buttonTextStyle(BuildContext context) {
     return TextStyle(color: Theme.of(context).colorScheme.onPrimary);
@@ -22,16 +25,6 @@ class Style {
 
 TextStyle dialogBodyTextStyle = const TextStyle(fontSize: 14);
 
-TextStyle dialogHeadTextStyle = const TextStyle(
-  fontFamily: 'MerriweatherBlack',
-  fontWeight: FontWeight.bold,
-  letterSpacing: 0,
-  fontSize: 20,
-);
+TextStyle dialogHeadTextStyle = uiTitleStyle(fontSize: 20);
 
-TextStyle appBarTitle = const TextStyle(
-  fontFamily: 'MerriweatherBlack',
-  fontWeight: FontWeight.bold,
-  letterSpacing: -0.4,
-  fontSize: 20,
-);
+TextStyle appBarTitle = uiTitleStyle(fontSize: 20);

@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 
@@ -222,7 +223,8 @@ class HomeDrawerState extends State<HomeDrawer> {
           minFontSize: 8,
           maxLines: 1,
           style: TextStyle(
-            fontFamily: 'MerriweatherBlack',
+            fontFamily: uiFontFamily,
+            fontFamilyFallback: uiFontFamilyFallback,
             fontWeight: FontWeight.bold,
             letterSpacing: -0.4,
             fontSize: 18,
@@ -279,8 +281,9 @@ class HomeDrawerState extends State<HomeDrawer> {
                         officialAppName.tr(),
                         maxLines: 1,
                         minFontSize: 8,
-                        style: const TextStyle(
-                          fontFamily: 'MerriweatherBlack',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily,
+                          fontFamilyFallback: uiFontFamilyFallback,
                           fontWeight: FontWeight.bold,
                           fontSize: appNameFontSize,
                         ),

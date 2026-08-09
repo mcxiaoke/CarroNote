@@ -21,6 +21,7 @@ import 'package:provider/provider.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 
 /// 桌面端常驻侧边栏（Sidebar），对应移动端 Drawer 的同一组入口。
@@ -85,7 +86,8 @@ class HomeSidebar extends StatelessWidget {
           style: TextStyle(
             color: fg,
             fontSize: 15,
-            fontFamily: 'MerriweatherBlack',
+            fontFamily: uiFontFamily,
+            fontFamilyFallback: uiFontFamilyFallback,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -119,7 +121,8 @@ class HomeSidebar extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: fg,
-                      fontFamily: 'MerriweatherBlack',
+                      fontFamily: uiFontFamily,
+                      fontFamilyFallback: uiFontFamilyFallback,
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
                     ),

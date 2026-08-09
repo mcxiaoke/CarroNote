@@ -21,6 +21,7 @@ import 'package:easy_localization/easy_localization.dart';
 // Project imports:
 import 'package:core/core.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 import 'package:safenotes/utils/time_utils.dart';
@@ -72,7 +73,8 @@ class NoteTileWidget extends StatelessWidget {
               fontSize: 20,
               height: 1.2,
               fontWeight: FontWeight.bold,
-              fontFamily: 'MerriweatherBlack',
+              fontFamily: uiFontFamily,
+              fontFamilyFallback: uiFontFamilyFallback,
             ),
             minFontSize: 20,
             maxLines: 1,

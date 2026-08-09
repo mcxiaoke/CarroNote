@@ -23,6 +23,7 @@ import 'package:flex_color_scheme/flex_color_scheme.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/window_title_bar.dart';
 
 class ThemeProvider extends ChangeNotifier {
@@ -57,18 +58,24 @@ class AppThemes {
       seedColor: _brandSeed,
       brightness: brightness,
     );
-    final TextTheme serifText =
-        (brightness == Brightness.light ? ThemeData.light() : ThemeData.dark())
-            .textTheme
-            .apply(fontFamily: 'NotoSerif');
+    // 用平台原生字体（Windows=Segoe UI 等）替代原先全局强制的 NotoSerif 衬线体，
+    // 让桌面端更贴近原生观感；移动端返回 null 沿用系统默认字体。
+    final TextTheme uiText = applyUiFont(
+      (brightness == Brightness.light ? ThemeData.light() : ThemeData.dark())
+          .textTheme,
+    );
 
     return (brightness == Brightness.light
         ? FlexThemeData.light
         : FlexThemeData.dark)(
       colorScheme: scheme,
       useMaterial3: true,
-      textTheme: serifText,
-      primaryTextTheme: serifText,
+      // 组件级微调：统一圆角，桌面端更协调（M3 默认按钮/输入/卡片圆角各异）。
+      subThemesData: const FlexSubThemesData(
+        defaultRadius: 8.0,
+      ),
+      textTheme: uiText,
+      primaryTextTheme: uiText,
     );
   }
 
@@ -77,6 +84,7 @@ class AppThemes {
   static ThemeData get darkTheme => _build(Brightness.dark);
 
   // 设置页背景（无 context，给固定语义值；后续可改为 Theme.of(context).colorScheme.surface）
-  static Color get darkSettingsScaffold => Colors.black;
+  // 深色不再用纯黑，改用 Windows 风格的深灰 #202020，更接近系统设置页。
+  static Color get darkSettingsScaffold => const Color(0xFF202020);
   static Color? get darkSettingsCanvas => Colors.grey.shade900;
 }
