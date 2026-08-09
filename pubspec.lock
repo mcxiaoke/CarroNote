@@ -17,6 +17,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.2.0"
+  algorithmic:
+    dependency: transitive
+    description:
+      name: algorithmic
+      sha256: "306e203894ad5a1b03b45483f2c912bb20d8aaa312907f1381db922eedbc331d"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.0.11"
   analyzer:
     dependency: transitive
     description:
@@ -1354,6 +1362,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.1.3"
+  zxcvbnm:
+    dependency: "direct main"
+    description:
+      name: zxcvbnm
+      sha256: "3fba979d79ceac5e5505f6d35575d0d75da99e75e30cb768d14117d87d10d142"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.1.1"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"

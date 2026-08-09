@@ -57,6 +57,9 @@ dependencies:
   http: ^1.1.0                # WebDAV HTTP 客户端
   args: ^2.5.0                # CLI（bin/safenotes_cli.dart）命令解析
 
+  # 密码强度评估（基于 Dropbox zxcvbn 算法）
+  zxcvbnm: ^1.1.1
+
   cryptography: ^2.9.0
   cryptography_flutter: ^2.3.4
   flex_color_scheme: ^8.4.0
