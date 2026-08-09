@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:settings_ui/settings_ui.dart';
+import 'package:safenotes/utils/settings_platform.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // Project imports:
@@ -113,7 +114,7 @@ class BackupSettingState extends State<BackupSetting> {
 
   Widget _bodyBackup(BuildContext context) {
     return SettingsList(
-      platform: DevicePlatform.iOS,
+      platform: currentDevicePlatform,
       darkTheme: SettingsThemeData(
         settingsListBackground: AppThemes.darkSettingsScaffold,
         settingsSectionBackground: AppThemes.darkSettingsCanvas,

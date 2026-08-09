@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 // Package 导入
 import 'package:file_picker/file_picker.dart';
 import 'package:settings_ui/settings_ui.dart';
+import 'package:safenotes/utils/settings_platform.dart';
 
 // Project 导入
 import 'package:core/core.dart';
@@ -52,7 +53,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   Widget _buildBody() {
     return SettingsList(
-      platform: DevicePlatform.iOS,
+      platform: currentDevicePlatform,
       sections: [
         // ── 同步状态 ──
         SettingsSection(

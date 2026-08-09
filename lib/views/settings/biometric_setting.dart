@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:settings_ui/settings_ui.dart';
+import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -47,7 +48,7 @@ class _BiometricSettingState extends State<BiometricSetting> {
 
   Widget _settings() {
     return SettingsList(
-      platform: DevicePlatform.iOS,
+      platform: currentDevicePlatform,
       lightTheme: const SettingsThemeData(),
       darkTheme: SettingsThemeData(
         settingsListBackground: AppThemes.darkSettingsScaffold,
