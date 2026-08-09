@@ -2,6 +2,7 @@
 * Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
 *
 * SPDX-License-Identifier: GPL-3.0-or-later
+*
 * You may use, distribute and modify this code under the
 * terms of the GPL-3.0+ license.
 *
@@ -49,18 +50,11 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final dimText = "Dim".tr();
     final darkModeText = 'Dark mode'.tr();
-    final lightOutText = "Light out".tr();
-    final themeText = 'Theme'.tr();
     final systemDefaultSettingsText = "Use device settings".tr();
     final systemDefaultSettingsSubtitleText =
         "Use device's light or dark mode setting for the app.".tr();
 
-    DarkThemeEnum darkTheme =
-        DarkThemeEnum.values[PreferencesStorage.darkThemeEnum];
-
-    bool isThemeActive = Theme.of(context).brightness == Brightness.dark;
     bool isPlatformDark =
         MediaQuery.of(context).platformBrightness == Brightness.dark;
 
@@ -70,7 +64,6 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
             : PreferencesStorage.isLocalDarkSwitchEnabled;
 
     final symmetricPadding = MediaQuery.of(context).size.width * 0.04;
-    final topHeadingPadding = MediaQuery.of(context).size.height * 0.03;
     const headTextStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 20);
     final innerTextStyle =
         Theme.of(context).textTheme.titleMedium!.copyWith(fontSize: 16);
@@ -151,95 +144,9 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                 ],
               ),
             ),
-            _divider(),
-            Padding(
-              padding: EdgeInsets.only(
-                top: topHeadingPadding / 4,
-              ),
-              child: Text(
-                themeText,
-                style: headTextStyle,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.only(
-                left: symmetricPadding,
-                right: symmetricPadding,
-                bottom: symmetricPadding + 30,
-              ),
-              child: Column(
-                children: [
-                  CupertinoCheckListTile(
-                    title: Text(
-                      dimText,
-                      style: innerTextStyle,
-                    ),
-                    value: darkTheme == DarkThemeEnum.dim,
-                    onChanged: !isThemeActive
-                        ? null
-                        : (bool? value) {
-                            setModalStateDarkTheme(
-                              context: context,
-                              setState: setState,
-                              darkTheme: darkTheme,
-                              value: (value == true)
-                                  ? DarkThemeEnum.dim
-                                  : DarkThemeEnum.lightOut,
-                              isDarkDim: true,
-                            );
-                          },
-                  ),
-                  CupertinoCheckListTile(
-                    title: Text(
-                      lightOutText,
-                      style: innerTextStyle,
-                    ),
-                    value: darkTheme == DarkThemeEnum.lightOut,
-                    onChanged: !isThemeActive
-                        ? null
-                        : (bool? value) {
-                            setModalStateDarkTheme(
-                              context: context,
-                              setState: setState,
-                              darkTheme: darkTheme,
-                              value: (value == true)
-                                  ? DarkThemeEnum.lightOut
-                                  : DarkThemeEnum.dim,
-                              isDarkDim: false,
-                            );
-                          },
-                  )
-                ],
-              ),
-            ),
           ],
-        )
+        ),
       ],
     );
   }
 }
-
-Widget _divider() => Divider(
-      color: PreferencesStorage.isThemeDark
-          ? Colors.grey.shade600
-          : Colors.grey.shade500,
-    );
-
-void setModalStateDarkTheme({
-  required BuildContext context,
-  required StateSetter setState,
-  required DarkThemeEnum darkTheme,
-  required var value,
-  required bool isDarkDim,
-}) {
-  final provider = Provider.of<ThemeProvider>(context, listen: false);
-  provider.setIsDarkDimTheme(isDarkDim);
-
-  setState(() {
-    darkTheme = value!;
-    PreferencesStorage.setDarkThemeEnum(index: darkTheme.index);
-  });
-}
-
-enum DarkThemeEnum { dim, lightOut }

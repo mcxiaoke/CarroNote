@@ -2,6 +2,7 @@
 * Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
 *
 * SPDX-License-Identifier: GPL-3.0-or-later
+*
 * You may use, distribute and modify this code under the
 * terms of the GPL-3.0+ license.
 *
@@ -15,7 +16,10 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:safenotes_nord_theme/safenotes_nord_theme.dart';
+// 主题引擎接入点（插拔点）：当前使用 flex_color_scheme (FCS)。
+// 业务代码一律通过 Theme.of(context).colorScheme.* 取色，不直接依赖任何主题库；
+// 将来要替换主题引擎，只需重写本文件 AppThemes，业务层零改动。
+import 'package:flex_color_scheme/flex_color_scheme.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -31,75 +35,41 @@ class ThemeProvider extends ChangeNotifier {
     PreferencesStorage.setIsThemeDark(isDark);
     notifyListeners();
   }
-
-  void setIsDarkDimTheme(bool isDim) {
-    //themeMode = isDim ? ThemeMode.dark : ThemeMode.light;
-    PreferencesStorage.setIsDimTheme(isDim);
-    notifyListeners();
-  }
 }
 
 class AppThemes {
-  //static final ThemeData darkTheme = ThemeData.dark();
-  static ThemeData get darkTheme =>
-      PreferencesStorage.isDimTheme ? dimTheme : lightOutTheme;
+  // 插拔点：品牌种子色（Nord frost 蓝调）。换主题库时通常只需改这一处。
+  static const Color _brandSeed = Color(0xFF5E81AC);
 
-  static final ThemeData lightOutTheme = NordTheme.dark().copyWith(
-      textTheme: ThemeData.dark().textTheme.apply(
-            fontFamily: 'NotoSerif',
-          ),
-      primaryTextTheme: ThemeData.dark().textTheme.apply(
-            fontFamily: 'NotoSerif',
-          ),
-      bottomAppBarTheme: NordTheme.dark().bottomAppBarTheme.copyWith(
-            color: Colors.grey.shade900,
-          ),
-      dialogTheme: const DialogThemeData().copyWith(
-        backgroundColor: Colors.grey.shade900,
-      ),
-      primaryColor: Colors.black,
-      scaffoldBackgroundColor: Colors.black,
-      canvasColor: Colors.black,
-      primaryColorDark: Colors.black,
-      appBarTheme: const AppBarTheme().copyWith(
-        backgroundColor: Colors.grey.shade900,
-      ),
-      bottomSheetTheme: const BottomSheetThemeData().copyWith(
-        modalBackgroundColor: Colors.grey.shade900,
-      ),
-      drawerTheme: NordTheme.dark().drawerTheme.copyWith(
-            backgroundColor: Colors.grey.shade900,
-          )
-      //platform: TargetPlatform.iOS,
-      );
+  // 亮/暗共用一套配置，仅 brightness 不同。
+  // 用 Flutter 内置 ColorScheme.fromSeed 生成和谐、对比度合规的 M3 调色板，
+  // 再交给 FCS 包装（应用表面色调、组件默认值等增强）。
+  static ThemeData _build(Brightness brightness) {
+    final ColorScheme scheme = ColorScheme.fromSeed(
+      seedColor: _brandSeed,
+      brightness: brightness,
+    );
+    final TextTheme serifText = (brightness == Brightness.light
+            ? ThemeData.light()
+            : ThemeData.dark())
+        .textTheme
+        .apply(fontFamily: 'NotoSerif');
 
-  static final ThemeData dimTheme = NordTheme.dark().copyWith(
-    textTheme: ThemeData.dark().textTheme.apply(
-          fontFamily: 'NotoSerif',
-        ),
-    primaryTextTheme: ThemeData.dark().textTheme.apply(
-          fontFamily: 'NotoSerif',
-        ),
-    //platform: TargetPlatform.iOS,
-  );
+    return (brightness == Brightness.light
+            ? FlexThemeData.light
+            : FlexThemeData.dark)(
+      colorScheme: scheme,
+      useMaterial3: true,
+      textTheme: serifText,
+      primaryTextTheme: serifText,
+    );
+  }
 
-  static Color get darkSettingsScaffold => PreferencesStorage.isDimTheme
-      ? NordColors.polarNight.darkest
-      : Colors.black;
+  static ThemeData get lightTheme => _build(Brightness.light);
 
-  static Color? get darkSettingsCanvas => PreferencesStorage.isDimTheme
-      ? NordColors.polarNight.darker
-      : Colors.grey.shade900;
+  static ThemeData get darkTheme => _build(Brightness.dark);
 
-  static final ThemeData lightTheme = NordTheme.light().copyWith(
-    textTheme: ThemeData.light().textTheme.apply(
-          fontFamily: 'NotoSerif',
-        ),
-    primaryTextTheme: ThemeData.light().textTheme.apply(
-          fontFamily: 'NotoSerif',
-        ),
-    unselectedWidgetColor: NordColors.frost.darker,
-
-    //platform: TargetPlatform.iOS,
-  );
+  // 设置页背景（无 context，给固定语义值；后续可改为 Theme.of(context).colorScheme.surface）
+  static Color get darkSettingsScaffold => Colors.black;
+  static Color? get darkSettingsCanvas => Colors.grey.shade900;
 }
