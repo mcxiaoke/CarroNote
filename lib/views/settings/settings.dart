@@ -99,6 +99,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 setState(() {});
               },
             ),
+            SettingsTile.switchTile(
+              leading: Icon(Icons.access_time),
+              title: Text('Relative Time'.tr()),
+              description: Text(
+                'Show note timestamps as relative (e.g. 5 minutes ago). '
+                'Off shows absolute dates.'.tr(),
+              ),
+              initialValue: PreferencesStorage.isRelativeTime,
+              onToggle: (bool value) {
+                PreferencesStorage.setIsRelativeTime(value);
+                setState(() {});
+              },
+            ),
+            SettingsTile.switchTile(
+              leading: Icon(Icons.sort),
+              title: Text('Sort by Modified Date'.tr()),
+              description: Text(
+                'Sort notes by last modified time. '
+                'Off sorts by creation time.'.tr(),
+              ),
+              initialValue: PreferencesStorage.isSortByModified,
+              onToggle: (bool value) {
+                PreferencesStorage.setIsSortByModified(value);
+                setState(() {});
+              },
+            ),
             SettingsTile.navigation(
               leading: const Icon(Icons.dark_mode_outlined),
               title: Text('Dark Mode'.tr()),

@@ -35,6 +35,7 @@ import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/route_observer.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/drawer.dart';
@@ -62,13 +63,14 @@ class HomePage extends StatefulWidget {
   HomePageState createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> with RouteAware {
   late List<SafeNote> notes;
   late List<SafeNote> allnotes;
   bool isLoading = false;
   String query = '';
   bool isNewFirst = PreferencesStorage.isNewFirst;
   bool isGridView = PreferencesStorage.isGridView;
+  bool _routeSubscribed = false;
 
   /// B4 修复：监听同步状态流，消费 SyncResult.requiresRelogin。
   /// 引擎检测到"他端改密码"（scenario-b：本地 MK 解不开远端包裹）时
@@ -94,12 +96,35 @@ class HomePageState extends State<HomePage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null && !_routeSubscribed) {
+      routeObserver.subscribe(this, route);
+      _routeSubscribed = true;
+    }
+  }
+
+  @override
   void dispose() {
+    if (_routeSubscribed) {
+      routeObserver.unsubscribe(this);
+    }
     _syncStateSub?.cancel();
     // 注意：此处不停止日志 Web 服务器。
     // HomePage 会因登出 / 页面跳转等原因反复销毁重建，
     // 而日志服务器的生命周期是"应用级"的，只在应用退出时结束。
     super.dispose();
+  }
+
+  /// 从设置等子页面返回时，按最新排序偏好重新排序。
+  ///
+  /// 排序字段（修改日期/创建日期）由设置页切换，不会经过主页顶栏的方向按钮，
+  /// 故需在返回时主动重排，否则要等下次进入主页才生效。
+  @override
+  void didPopNext() {
+    if (!mounted) return;
+    _sortAndStoreNotes();
   }
 
   /// 启动日志 Web 服务器（幂等，失败不影响主流程）
@@ -238,21 +263,25 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _sortAndStoreNotes() async {
     // storing copy of notes in allnotes so that it does not change while doing search
-    // show recently created notes first
+    // 默认按修改时间排序（新→旧），可在设置中改为创建时间
+    final sortByModified = PreferencesStorage.isSortByModified;
+    DateTime keyOf(SafeNote n) =>
+        sortByModified ? n.modifiedTime : n.createdTime;
     List<SafeNote> tmpNotes;
     if (isNewFirst) {
       tmpNotes = await NotesDatabase.instance.readAllNotes()
-        ..sort((a, b) => b.createdTime.compareTo(a.createdTime));
+        ..sort((a, b) => keyOf(b).compareTo(keyOf(a)));
     } else {
       tmpNotes = await NotesDatabase.instance.readAllNotes()
-        ..sort((a, b) => a.createdTime.compareTo(b.createdTime));
+        ..sort((a, b) => keyOf(a).compareTo(keyOf(b)));
     }
     setState(() {
       allnotes = notes = tmpNotes;
     });
     // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
     Log.ui.i('主界面笔记列表已装载: ${tmpNotes.length} 条, '
-        '排序=${isNewFirst ? "新→旧" : "旧→新"}');
+        '${sortByModified ? "修改时间" : "创建时间"}/'
+        '${isNewFirst ? "新→旧" : "旧→新"}');
   }
 
   @override

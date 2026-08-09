@@ -28,6 +28,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/route_observer.dart';
 
 class App extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -52,6 +53,7 @@ class App extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey,
+          navigatorObservers: [routeObserver],
           initialRoute: '/',
           onGenerateRoute: RouteGenerator.generateRoute,
           title: SafeNotesConfig.appName,

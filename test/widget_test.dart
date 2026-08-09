@@ -26,7 +26,7 @@ void main() {
         ),
       );
 
-      final buttonFinder = find.byType(ElevatedButton);
+      final buttonFinder = find.byType(FilledButton);
       expect(buttonFinder, findsOneWidget);
 
       final textFinder = find.text(buttonText);

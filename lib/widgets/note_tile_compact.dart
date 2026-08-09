@@ -19,10 +19,13 @@ import 'package:auto_size_text/auto_size_text.dart';
 
 // Project imports:
 import 'package:core/core.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:safenotes/utils/time_utils.dart';
 
 class NoteTileWidgetCompact extends StatelessWidget {
   final SafeNote note;
@@ -40,6 +43,11 @@ class NoteTileWidgetCompact extends StatelessWidget {
     final color = NotesColor.getNoteColor(notIndex: index);
     final fontColor = getFontColorForBackground(color);
     final previewText = note.title == ' ' ? note.abstractText : note.title;
+    final time = noteTimeLabel(
+      time: note.createdTime,
+      localeString: context.locale.toString(),
+      isRelative: PreferencesStorage.isRelativeTime,
+    );
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -47,19 +55,35 @@ class NoteTileWidgetCompact extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
         color: color,
       ),
-      child: AutoSizeText(
-        sanitize(previewText),
-        textDirection: getTextDirecton(previewText),
-        style: TextStyle(
-          color: fontColor,
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          fontFamily: uiFontFamily,
-          fontFamilyFallback: uiFontFamilyFallback,
-        ),
-        minFontSize: 15,
-        maxLines: 2,
-        overflow: TextOverflow.clip,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AutoSizeText(
+            sanitize(previewText),
+            textDirection: getTextDirecton(previewText),
+            style: TextStyle(
+              color: fontColor,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              fontFamily: uiFontFamily,
+              fontFamilyFallback: uiFontFamilyFallback,
+            ),
+            minFontSize: 15,
+            maxLines: 2,
+            overflow: TextOverflow.clip,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            time,
+            textDirection: getTextDirecton(time),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: fontColor,
+            ),
+          ),
+        ],
       ),
     );
   }

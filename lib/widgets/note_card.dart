@@ -20,6 +20,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:core/core.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
@@ -38,19 +39,11 @@ class NoteCardWidget extends StatelessWidget {
     final color = NotesColor.getNoteColor(notIndex: index);
     final fontColor = getFontColorForBackground(color);
 
-    DateTime now = DateTime.now();
-    DateTime todayDate = DateTime(now.year, now.month, now.day);
-    DateTime noteDate = DateTime(
-      note.createdTime.year,
-      note.createdTime.month,
-      note.createdTime.day,
+    String time = noteTimeLabel(
+      time: note.createdTime,
+      localeString: context.locale.toString(),
+      isRelative: PreferencesStorage.isRelativeTime,
     );
-    String time = (todayDate == noteDate)
-        ? humanTime(
-            time: note.createdTime,
-            localeString: context.locale.toString(),
-          )
-        : DateFormat.yMMMd().format(note.createdTime);
 
     return Card(
       color: color,

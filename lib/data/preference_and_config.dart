@@ -48,6 +48,8 @@ class PreferencesStorage {
   static const _keyBiometricAttemptAllTimeCount =
       'biometricAttemptAllTimeCount';
   static const _keyIsCompactPreview = 'isCompactPreview';
+  static const _keyIsRelativeTime = 'isRelativeTime';
+  static const _keyIsSortByModified = 'isSortByModified';
   static const _keyIsDimTheme = 'isDimTheme';
   static const _keyDarkThemeEnum = 'isDarkThemeEnum';
   static const _keyIsAutoRotate = 'isAutoRotate';
@@ -306,6 +308,26 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsCompactPreview);
     await _preferences?.setBool(_keyIsCompactPreview, flag);
     _logPrefChange('紧凑预览', old, flag, important: false);
+  }
+
+  static bool get isRelativeTime =>
+      _preferences?.getBool(_keyIsRelativeTime) ?? false;
+
+  static Future<void> setIsRelativeTime(bool flag) async {
+    final old = _preferences?.getBool(_keyIsRelativeTime);
+    await _preferences?.setBool(_keyIsRelativeTime, flag);
+    _logPrefChange('卡片相对时间', old, flag, important: false);
+  }
+
+  static bool get isSortByModified =>
+      _preferences?.getBool(_keyIsSortByModified) ?? true;
+
+  static Future<void> setIsSortByModified(bool flag) async {
+    final old = _preferences?.getBool(_keyIsSortByModified);
+    await _preferences?.setBool(_keyIsSortByModified, flag);
+    _logPrefChange('排序依据', old == null ? null : (old ? '修改时间' : '创建时间'),
+        flag ? '修改时间' : '创建时间',
+        important: false);
   }
 
   static bool get isDimTheme => _preferences?.getBool(_keyIsDimTheme) ?? true;

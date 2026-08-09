@@ -106,6 +106,12 @@ class SafeNote {
     return description.substring(0, abstractMaxLength);
   }
 
+  /// 最后修改时间（由 [updatedAt] 的 Unix 毫秒转换）。
+  ///
+  /// 列表默认按此字段排序，卡片也可选择展示此时间。
+  DateTime get modifiedTime =>
+      DateTime.fromMillisecondsSinceEpoch(updatedAt);
+
 
   /// 创建新笔记的工厂构造函数
   ///

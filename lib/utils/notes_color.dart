@@ -18,13 +18,20 @@ import 'package:flutter/material.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 
 class NotesColor extends ChangeNotifier {
+  // 浅色模式下卡片底色提亮比例：原主题色与白色混合，避免深色卡片在浅色界面下显得过重。
+  // 0 = 不变，1 = 纯白；0.4 在保留主题色相差异的同时明显提亮。
+  static const double _lightenAmount = 0.4;
+
   static Color getNoteColor({required int notIndex}) {
     var lightColors =
         allNotesColorTheme[PreferencesStorage.colorfulNotesColorIndex]
             .colorList;
-    return PreferencesStorage.isColorful
+    final base = PreferencesStorage.isColorful
         ? lightColors[notIndex % lightColors.length]
         : const Color(0xFFA7BEAE);
+    // 仅浅色模式提亮；暗黑模式保持原色不变，避免浅色卡片在深色背景上刺眼/违和。
+    if (PreferencesStorage.isThemeDark) return base;
+    return Color.lerp(base, Colors.white, _lightenAmount) ?? base;
   }
 
   void toggleColor() {
