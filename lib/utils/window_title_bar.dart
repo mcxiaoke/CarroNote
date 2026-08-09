@@ -1,3 +1,6 @@
+// Dart imports:
+import 'dart:io';
+
 // Flutter imports:
 import 'package:flutter/services.dart';
 
@@ -9,17 +12,18 @@ import 'package:flutter/services.dart';
 /// 需要由 Dart 侧通过 method channel 把当前主题推送到原生层，由原生层
 /// 调用 DWM `DWMWA_USE_IMMERSIVE_DARK_MODE`。
 ///
-/// 其它平台（Linux/macOS/Android/iOS）没有该通道，调用会抛
-/// [PlatformException]，这里已捕获并忽略，无副作用。
+/// 其它平台（Linux/macOS/Android/iOS）没有该通道，直接提前返回，不调用。
 const MethodChannel _titleBarChannel = MethodChannel(
   'safenotes/window_title_bar',
 );
 
 /// 通知 Windows 原生层将标题栏切换为暗色([isDark])或亮色。
+/// 仅 Windows 平台生效；非 Windows 平台直接跳过（无该通道）。
 Future<void> syncWindowsTitleBar(bool isDark) async {
+  if (!Platform.isWindows) return;
   try {
     await _titleBarChannel.invokeMethod<void>('setDarkMode', isDark);
   } on PlatformException {
-    // 非 Windows 平台忽略。
+    // 理论上 Windows 已注册该通道，保留健壮性。
   }
 }

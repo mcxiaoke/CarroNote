@@ -298,41 +298,53 @@ class _SyncResultTab extends StatelessWidget {
       ('迁移', snapshot.lastResultMigrated ?? 0, Icons.swap_horiz, Colors.purple),
       ('跳过', snapshot.lastResultSkipped ?? 0, Icons.skip_next, Colors.grey),
     ];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 2.5,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: stats.length,
-      itemBuilder: (context, index) {
-        final (label, count, icon, color) = stats[index];
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 16, color: color),
-                  const SizedBox(width: 4),
-                  Text(label, style: TextStyle(fontSize: 12, color: color)),
-                ],
+    // 用 LayoutBuilder + Wrap 取代固定 childAspectRatio 的 GridView：
+    // 窄屏下固定宽高比会让单元格高度不足以容纳内容，导致 RenderFlex 底部溢出。
+    // 这里按可用宽度计算每列宽度，单元格高度由内容自适应，杜绝溢出。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const crossAxisCount = 3;
+        const spacing = 8.0;
+        final chipWidth =
+            (constraints.maxWidth - spacing * (crossAxisCount - 1)) /
+                crossAxisCount;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: stats.map((s) {
+            final (label, count, icon, color) = s;
+            return SizedBox(
+              width: chipWidth,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(icon, size: 16, color: color),
+                        const SizedBox(width: 4),
+                        Text(label, style: TextStyle(fontSize: 12, color: color)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text('$count',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: color)),
+                  ],
+                ),
               ),
-              Text('$count',
-                  style: TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-            ],
-          ),
+            );
+          }).toList(),
         );
       },
     );
