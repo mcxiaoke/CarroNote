@@ -1,0 +1,51 @@
+# SafeServer (Go) just command runner
+# Usage: just --list | just <recipe>
+#
+# 所有交叉编译统一交给 build.go（单一事实来源），justfile 只负责调用。
+# build.go 用 os/exec 逐目标设置 GOOS/GOARCH/CGO_ENABLED，不会污染全局
+# `go env`（旧版用 `go env -w` 会写入持久化配置，已废弃）。
+#
+# 产物统一输出到 server/dist/go/safeserver-<os>-<arch>[.exe]。
+# 常用：
+#   just build         # 本机(host)构建
+#   just multi         # 全部目标平台交叉编译
+#   just dist T=...    # 指定平台，如 just dist T=windows/amd64,linux/arm64
+#   just test          # 运行全部单测
+#   just ci            # CI 前置检查（vet + test + multi）
+
+set windows-shell := ["pwsh", "-Command"]
+
+default:
+    just --list
+
+# ── Build ─────────────────────────────────────────────────────────
+# 本机 host 构建（当前 GOOS/GOARCH），产物 server/dist/go/safeserver[.exe]
+build:
+    go run build.go -targets host
+
+# 一键构建全部分发目标（矩阵见 build.go defaultTargets）
+multi:
+    go run build.go
+
+# 自定义目标：just dist T=windows/amd64,linux/arm64
+dist T:
+    go run build.go -targets {{T}}
+
+# ── Test & code quality ───────────────────────────────────────────
+test:
+    go -C go test ./...
+
+vet:
+    go -C go vet ./...
+
+analyze: vet test
+
+# 构建 + 校验一站式（CI 入口）
+ci: analyze multi
+
+# ── Clean ──────────────────────────────────────────────────────────
+clean:
+    [windows]
+    Remove-Item -Recurse -Force -Path dist/go -ErrorAction SilentlyContinue
+    [unix]
+    rm -rf dist/go

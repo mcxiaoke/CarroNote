@@ -75,6 +75,34 @@ node server/nodejs/server.js --port 9000 --data /tmp/safeserver-data --token my-
 node server/nodejs/server.js --config server/nodejs/dev.config.json
 ```
 
+## 构建分发二进制
+
+交叉编译由 `server/build.go` 统一驱动（单一事实来源），`justfile` 与 `Makefile` 都委托给它，因此在 Windows 开发机、Linux/macOS CI runner 上行为一致，且不会污染全局 `go env`。
+
+默认矩阵：**linux/windows × amd64/arm64**（4 个静态二进制，`CGO_ENABLED=0`），产物输出到 `server/dist/go/safeserver-<os>-<arch>[.exe]`。
+
+```bash
+# 三种等价入口，任选其一（均在 server/ 目录下运行）
+
+# 1. 直接用 Go（推荐，跨平台）
+go run build.go                 # 全部目标
+go run build.go -targets host   # 仅本机平台
+go run build.go -targets windows/amd64,linux/arm64   # 指定平台
+
+# 2. just
+just build      # 本机
+just multi      # 全部目标
+just dist T=windows/amd64,linux/arm64
+
+# 3. make
+make build
+make multi
+make dist TARGETS=windows/amd64,linux/arm64
+```
+
+> CI 入口：`just ci` 或 `make ci`（依次执行 `vet` → `test` → `multi`）。
+> 新增目标平台（如 `darwin/arm64`）只需在 `build.go` 的 `defaultTargets` 中增删，三处调用自动生效。
+
 ## 健康检查
 
 ```bash

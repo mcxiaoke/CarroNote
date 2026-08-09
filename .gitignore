@@ -62,6 +62,7 @@ temp/
 tmp/
 server/nodejs/data/
 server/go/data/
+server/dist/
 coverage/
 
 #Ignore App Store Listing Assets
