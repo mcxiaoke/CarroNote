@@ -387,7 +387,7 @@ class Keyring {
   ///     dataKeyCreatedAt = keyring 创建时间（dataKey 在创建时生成）。
   ///     [dataKeyCreatedBy] 由调用方（SyncEngine）传入本机 deviceId。
   ManifestHeader toManifestHeader({
-    int schemaVersion = 1,
+    int schemaVersion = kManifestSchemaVersion,
     required int version,
     required int updatedAt,
     required String lastModifiedBy,

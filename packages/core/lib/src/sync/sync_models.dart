@@ -423,7 +423,7 @@ class ManifestHeader {
   final String lastModifiedBy;
 
   const ManifestHeader({
-    this.schemaVersion = 1,
+    this.schemaVersion = kManifestSchemaVersion,
     required this.version,
     required this.vaultId,
     required this.createdAt,

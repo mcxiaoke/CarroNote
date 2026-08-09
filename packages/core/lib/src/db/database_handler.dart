@@ -945,9 +945,9 @@ class NotesDatabase {
             whereArgs: [uuid],
           );
         }
-          });
+      });
 
-    _invalidateCache(); // 全库密文已更新，使解密缓存失效
+      _invalidateCache(); // 全库密文已更新，使解密缓存失效
 
     // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);

@@ -38,7 +38,7 @@ Manifest _makeRemoteManifest({
 }) {
   return Manifest(
     header: ManifestHeader(
-      schemaVersion: 1,
+      schemaVersion: kManifestSchemaVersion,
       version: version,
       vaultId: vaultId,
       createdAt: createdAt,
@@ -681,7 +681,7 @@ void main() {
       expect(header.version, 42);
       expect(header.updatedAt, 1700000000000);
       expect(header.lastModifiedBy, 'device-X');
-      expect(header.schemaVersion, 1);
+      expect(header.schemaVersion, kManifestSchemaVersion);
       expect(header.dataKeyWrap, kDataKeyWrapAlgorithm);
       // v4 自描述元数据：dataKeyFingerprint = H(dataKey)，恒等
       expect(header.dataKeyFingerprint,
@@ -762,6 +762,32 @@ void main() {
       await database.setMeta(MetaKeys.keyring, '{not valid json');
       expect(await KeyringLedger.load(database), isNull,
           reason: '账本损坏要能降级到"未初始化"，而不是让 App 崩在启动路径上');
+    });
+  });
+
+  group('协议降级拒绝（ManifestHeader.schemaVersion 校验）', () {
+    test('旧协议版本被拒绝、当前版本被接受', () {
+      final oldHeader = ManifestHeader(
+        schemaVersion: 1,
+        version: 1,
+        vaultId: 'v-reject',
+        createdAt: 0,
+        updatedAt: 0,
+        keyFingerprint: '',
+        encryptedDataKey: '',
+        kdf: KdfParams.create(salt: Uint8List(16)),
+        dataKeyWrap: kDataKeyWrapAlgorithm,
+        lastModifiedBy: 'device-reject',
+      );
+      // 低版本协议（< kManifestSchemaVersion）必须被拒绝解读
+      expect(SyncEngine.rejectOldSchemaVersion(oldHeader), isNotNull,
+          reason: '远端使用旧协议时必须拒绝，不兼容/不迁移/不覆盖');
+
+      // 当前协议版本应被接受（不返回拒绝原因）
+      final curHeader =
+          oldHeader.copyWith(schemaVersion: kManifestSchemaVersion);
+      expect(SyncEngine.rejectOldSchemaVersion(curHeader), isNull,
+          reason: '当前协议版本应被接受');
     });
   });
 }

@@ -544,7 +544,7 @@ class SyncEngine {
 
       // [G] 协议降级拒绝（§8.2[G]）：远端 schemaVersion 低于当前协议版本
       // 时拒绝解读、不迁移、不覆盖，提示升级（与不兼容策略 §0 对齐）。
-      final schemaReject = _rejectOldSchemaVersion(remoteHeader);
+      final schemaReject = rejectOldSchemaVersion(remoteHeader);
       if (schemaReject != null) {
         return SyncResult.failure(schemaReject, attempts: attempt);
       }
@@ -959,7 +959,7 @@ class SyncEngine {
       );
     }
     // [G] 协议降级拒绝：远端 schemaVersion 低于当前协议版本时拒绝解读
-    final schemaReject = _rejectOldSchemaVersion(remoteHeader);
+    final schemaReject = rejectOldSchemaVersion(remoteHeader);
     if (schemaReject != null) {
       return SyncResult.failure(schemaReject, attempts: attempt);
     }
@@ -2818,7 +2818,7 @@ class SyncEngine {
   /// 按 §0 不共存，全量升级）。
   ///
   /// 返回 null 表示版本兼容（可继续）；否则返回用户可读的拒绝原因。
-  String? _rejectOldSchemaVersion(ManifestHeader header) {
+  static String? rejectOldSchemaVersion(ManifestHeader header) {
     if (header.schemaVersion < kManifestSchemaVersion) {
       return '远端同步数据使用旧版协议（schema v${header.schemaVersion}，'
           '当前 v$kManifestSchemaVersion）。请将全部设备升级到最新版本后重试'
