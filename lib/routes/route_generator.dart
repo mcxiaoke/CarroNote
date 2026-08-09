@@ -25,6 +25,7 @@ import 'package:page_transition/page_transition.dart';
 // Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/main.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
@@ -52,14 +53,22 @@ class RouteGenerator {
     final String? routeName = settings.name;
     // 集中记录每一次路由解析(界面切换的底层入口),便于全链路追踪
     Log.ui.d('路由解析: $routeName');
-    const transitionDuration = 300;
-    const transitionType = PageTransitionType.leftToRight;
+
+    // 桌面端（尤其 Windows）不使用移动端的整页左推转场，改用 Fluent 风格的
+    // 淡入（轻微、快速），更接近原生窗口/页面切换手感；移动端保留滑动转场。
+    final bool useNativeDesktopTransition = isDesktopPlatform;
+    final Duration transitionDuration = useNativeDesktopTransition
+        ? const Duration(milliseconds: 180)
+        : const Duration(milliseconds: 300);
+    final PageTransitionType transitionType = useNativeDesktopTransition
+        ? PageTransitionType.fade
+        : PageTransitionType.leftToRight;
 
     switch (routeName) {
       case '/':
         return PageTransition(
           child: SafeNotesApp(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
@@ -70,7 +79,7 @@ class RouteGenerator {
               sessionStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -84,7 +93,7 @@ class RouteGenerator {
               sessionStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -98,7 +107,7 @@ class RouteGenerator {
               sessionStateStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -109,7 +118,7 @@ class RouteGenerator {
         if (args is StreamController<SessionState>) {
           return PageTransition(
             child: HomePage(sessionStateStream: args),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -124,7 +133,7 @@ class RouteGenerator {
               noteId: args.note.id!,
               sessionStateStream: args.sessionStream,
             ),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -134,7 +143,7 @@ class RouteGenerator {
         if (args is StreamController<SessionState>) {
           return PageTransition(
             child: AddEditNotePage(sessionStateStream: args),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -148,7 +157,7 @@ class RouteGenerator {
               sessionStateStream: args.sessionStream,
               note: args.note,
             ),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -157,35 +166,35 @@ class RouteGenerator {
       case '/backup':
         return PageTransition(
           child: const BackupSetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/changepassphrase':
         return PageTransition(
           child: const ChangePassphrase(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/syncSettings':
         return PageTransition(
           child: const SyncSettingsPage(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/diagnostics':
         return PageTransition(
           child: const SyncDiagnosticsPage(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/deletedNotes':
         return PageTransition(
           child: const DeletedNotesPage(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
@@ -193,7 +202,7 @@ class RouteGenerator {
         if (args is StreamController<SessionState>) {
           return PageTransition(
             child: SettingsScreen(sessionStateStream: args),
-            duration: const Duration(milliseconds: transitionDuration),
+            duration: transitionDuration,
             type: transitionType,
           );
         }
@@ -203,42 +212,42 @@ class RouteGenerator {
       case '/chooseColorSettings':
         return PageTransition(
           child: const ColorPallet(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/inactivityTimerSettings':
         return PageTransition(
           child: const InactivityTimerSetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/chooseLanguageSettings':
         return PageTransition(
           child: const LanguageSetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/secureDisplaySetting':
         return PageTransition(
           child: const SecureDisplaySetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/biometricSetting':
         return PageTransition(
           child: const BiometricSetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
       case '/autoRotateSettings':
         return PageTransition(
           child: const AutoRotationSetting(),
-          duration: const Duration(milliseconds: transitionDuration),
+          duration: transitionDuration,
           type: transitionType,
         );
 
