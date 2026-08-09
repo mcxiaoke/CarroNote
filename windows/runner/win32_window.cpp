@@ -16,6 +16,16 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+// System backdrop (Mica) attribute, available on Windows 11+.
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+
+// DWM_SYSTEMBACKDROP_TYPE values. 2 = DWMSBT_MAINWINDOW (Mica).
+#ifndef DWMSBT_MAINWINDOW
+#define DWMSBT_MAINWINDOW 2
+#endif
+
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
 /// Registry key for app theme preference.
@@ -156,6 +166,7 @@ bool Win32Window::Create(const std::wstring& title,
   dark_mode_ = (result == ERROR_SUCCESS) ? (light_mode == 0) : false;
 
   UpdateTheme(window);
+  SetSystemBackdrop(window);
 
   return OnCreate();
 }
@@ -227,6 +238,25 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+
+    case WM_SETTINGCHANGE:
+      // When the system light/dark theme changes (lparam == L"ImmersiveColorSet"),
+      // refresh the title-bar decoration so it follows the OS, matching native
+      // Windows behavior.
+      if (lparam != 0 &&
+          wcscmp(reinterpret_cast<LPCWSTR>(lparam), L"ImmersiveColorSet") == 0) {
+        DWORD light_mode = 0;
+        DWORD light_mode_size = sizeof(light_mode);
+        LSTATUS result = RegGetValue(
+            HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
+            kGetPreferredBrightnessRegValue, RRF_RT_REG_DWORD, nullptr,
+            &light_mode, &light_mode_size);
+        if (result == ERROR_SUCCESS) {
+          dark_mode_ = (light_mode == 0);
+          UpdateTheme(hwnd);
+        }
+      }
+      return 0;
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);
@@ -287,6 +317,15 @@ void Win32Window::UpdateTheme(HWND const window) {
   BOOL enable_dark_mode = dark_mode_ ? TRUE : FALSE;
   DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE, &enable_dark_mode,
                         sizeof(enable_dark_mode));
+}
+
+void Win32Window::SetSystemBackdrop(HWND const window) {
+  // 2 = DWMSBT_MAINWINDOW: apply a Mica backdrop on Windows 11 so the window
+  // blends with the desktop. Older OS versions do not support this attribute
+  // and the call simply fails silently.
+  int backdrop = DWMSBT_MAINWINDOW;
+  DwmSetWindowAttribute(window, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop,
+                        sizeof(backdrop));
 }
 
 void Win32Window::SetDarkMode(bool const dark) {

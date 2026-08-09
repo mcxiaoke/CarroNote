@@ -94,6 +94,11 @@ class Win32Window {
   // Update the window frame's theme to match the current dark_mode_ setting.
   void UpdateTheme(HWND window);
 
+  // Apply a system backdrop (Mica on Windows 11) to the window frame so it
+  // blends with the desktop, improving the native look. No-op on unsupported
+  // OS versions (call simply fails silently).
+  void SetSystemBackdrop(HWND window);
+
   bool quit_on_close_ = false;
 
   // Whether the window frame should use dark mode decorations.

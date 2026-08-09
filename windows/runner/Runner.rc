@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.trisven" "\0"
-            VALUE "FileDescription", "safenotes" "\0"
+            VALUE "CompanyName", "SafeNotes" "\0"
+            VALUE "FileDescription", "Safe Notes" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "safenotes" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.trisven. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 SafeNotes. All rights reserved." "\0"
             VALUE "OriginalFilename", "safenotes.exe" "\0"
-            VALUE "ProductName", "safenotes" "\0"
+            VALUE "ProductName", "Safe Notes" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

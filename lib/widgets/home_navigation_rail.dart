@@ -63,12 +63,13 @@ class HomeSidebar extends StatelessWidget {
     // 订阅 ThemeProvider：主题切换后本侧栏的颜色随之刷新。
     Provider.of<ThemeProvider>(context);
 
-    final bool isDark = PreferencesStorage.isThemeDark;
-    // 显式前景色：暗色=白，亮色=深灰（保证在各自背景上清晰可读）。
-    final Color fg = isDark ? Colors.white : Colors.grey.shade700;
-    final Color bg = isDark ? Colors.grey.shade900 : Colors.grey.shade100;
-    final Color divider = isDark ? Colors.grey.shade700 : Colors.grey.shade400;
-    final String themeText = isDark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
+    // 直接复用主题色板，而非写死灰色，保证侧栏与整体主题一致（含暗色/亮色）。
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final Color fg = colorScheme.onSurface;
+    final Color bg = colorScheme.surfaceContainerLow;
+    final Color divider = colorScheme.outlineVariant;
+    final String themeText =
+        colorScheme.brightness == Brightness.dark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
 
     Future<void> launchExternal(String url) async {
       try {
@@ -142,7 +143,9 @@ class HomeSidebar extends StatelessWidget {
                 sideItem(Icons.key_outlined, 'Change Passphrase'.tr(),
                     onChangePassCallback),
                 sideItem(
-                  isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                  colorScheme.brightness == Brightness.dark
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined,
                   themeText,
                   onThemeCallback,
                 ),
