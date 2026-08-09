@@ -464,7 +464,8 @@ class HomePageState extends State<HomePage> {
     return Expanded(
       child: !isLoading
           ? notes.isEmpty
-              ? Text(noNotes, style: const TextStyle(fontSize: fontSize))
+              ? Center(
+                  child: Text(noNotes, style: const TextStyle(fontSize: fontSize)))
               : (isGridView ? _buildNotes() : _buildNotesTile())
           : const Center(child: CircularProgressIndicator()),
     );

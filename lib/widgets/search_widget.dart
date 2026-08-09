@@ -52,13 +52,19 @@ class SearchWidgetState extends State<SearchWidget> {
     final style = widget.text.isEmpty ? styleHint : styleActive;
     const searchBoxRadius = 7.0;
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
+    // 亮色模式用更浅的 surfaceContainerLow，避免 surfaceContainerHighest 偏深发灰；
+    // 暗色模式沿用 surfaceContainerHighest（本就是深色容器）。
+    final bool isDark = colorScheme.brightness == Brightness.dark;
+    final Color boxColor = isDark
+        ? colorScheme.surfaceContainerHighest
+        : colorScheme.surfaceContainerLow;
 
     return Container(
       height: 42,
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(searchBoxRadius),
-        color: colorScheme.surfaceContainerHighest,
+        color: boxColor,
         border: Border.all(color: colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -68,6 +74,7 @@ class SearchWidgetState extends State<SearchWidget> {
         controller: controller,
         enableInteractiveSelection: true,
         autofocus: false,
+        textAlignVertical: TextAlignVertical.center,
         contextMenuBuilder: (context, editableTextState) {
           final List<ContextMenuButtonItem> buttonItems =
               editableTextState.contextMenuButtonItems;

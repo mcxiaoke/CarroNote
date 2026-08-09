@@ -307,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               description: Padding(
                 padding: const EdgeInsets.only(top: 20),
-                child: footer(showVersion: true),
+                child: footer(),
               ),
             ),
           ],

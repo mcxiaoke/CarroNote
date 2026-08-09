@@ -68,9 +68,9 @@ class HomeDrawerState extends State<HomeDrawer> {
     final String darkModeText = 'Dark Mode'.tr();
     final String lightModeText = 'Light Mode'.tr();
     final String settings = 'Settings'.tr();
-    final String helpText = 'Help and Feedback'.tr();
-    final String faqsText = 'FAQs'.tr();
-    final String rateText = 'Rate App'.tr();
+    final String helpText = 'GitHub'.tr();
+    final String faqsText = 'GitHub'.tr();
+    final String rateText = 'GitHub'.tr();
     final String logoutText = 'Logout'.tr();
     final String biometrics = 'Biometric'.tr();
     const String deletedNotesText = '最近删除';
@@ -151,9 +151,8 @@ class HomeDrawerState extends State<HomeDrawer> {
                     icon: Icons.rate_review_outlined,
                     onClicked: () async {
                       Navigator.of(context).pop();
-                      String playstoreUrl = SafeNotesConfig.playStoreUrl;
                       try {
-                        await launchUrlExternal(Uri.parse(playstoreUrl));
+                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
                       } catch (_) {}
                     },
                   ),
@@ -163,9 +162,8 @@ class HomeDrawerState extends State<HomeDrawer> {
                     icon: Icons.quiz_outlined,
                     onClicked: () async {
                       Navigator.of(context).pop();
-                      String faqsUrl = SafeNotesConfig.faqsUrl;
                       try {
-                        await launchUrlExternal(Uri.parse(faqsUrl));
+                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
                       } catch (_) {}
                     },
                   ),
@@ -175,9 +173,8 @@ class HomeDrawerState extends State<HomeDrawer> {
                     icon: Icons.help_outline,
                     onClicked: () async {
                       Navigator.of(context).pop();
-                      var mailUrl = SafeNotesConfig.mailToForFeedback;
                       try {
-                        await launchUrlExternal(Uri.parse(mailUrl));
+                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
                       } catch (_) {}
                     },
                   ),

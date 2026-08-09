@@ -162,7 +162,7 @@ class HomeSidebar extends StatelessWidget {
             ),
           ),
           Divider(color: divider, height: 1),
-          // 底部外链（评分 / FAQ / 反馈）
+          // 底部外链（全部指向 GitHub 仓库）
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
@@ -170,19 +170,18 @@ class HomeSidebar extends StatelessWidget {
               children: [
                 IconButton(
                   icon: Icon(Icons.rate_review_outlined, color: fg),
-                  tooltip: 'Rate App'.tr(),
-                  onPressed: () => launchExternal(SafeNotesConfig.playStoreUrl),
+                  tooltip: 'GitHub'.tr(),
+                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
                 ),
                 IconButton(
                   icon: Icon(Icons.quiz_outlined, color: fg),
-                  tooltip: 'FAQs'.tr(),
-                  onPressed: () => launchExternal(SafeNotesConfig.faqsUrl),
+                  tooltip: 'GitHub'.tr(),
+                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
                 ),
                 IconButton(
                   icon: Icon(Icons.help_outline, color: fg),
-                  tooltip: 'Help and Feedback'.tr(),
-                  onPressed: () =>
-                      launchExternal(SafeNotesConfig.mailToForFeedback),
+                  tooltip: 'GitHub'.tr(),
+                  onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
                 ),
               ],
             ),
