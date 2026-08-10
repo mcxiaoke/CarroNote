@@ -38,8 +38,9 @@ import 'package:http/http.dart' as http;
 
 // Project 导入
 import 'package:core/src/crypto/crypto.dart';
-import 'package:core/src/sync/sync_backend.dart';
 import 'package:core/src/logger/app_logger.dart';
+import 'package:core/src/sync/backends/http_util.dart';
+import 'package:core/src/sync/sync_backend.dart';
 
 /// SafeServer v2 API 路径前缀
 const String kSafeServerApiPrefix = '/api/v2';
@@ -108,7 +109,7 @@ class SafeServerBackend implements SyncBackend {
     // 注意：health 端点不需要认证
     http.Response res;
     try {
-      res = await _client.get(Uri.parse(_healthUrl)).timeout(_httpTimeout);
+      res = await _sendHttp('GET', Uri.parse(_healthUrl));
     } on Exception catch (e) {
       throw BackendUnavailableException('SafeServer health check failed: $e');
     }
@@ -128,15 +129,40 @@ class SafeServerBackend implements SyncBackend {
     }
   }
 
+  /// B-H1 修复：后端统一 HTTP 发送入口
+  ///
+  /// 所有请求经 [sendWithRedirectPolicy] 显式处理重定向（followRedirects=false）：
+  ///   - GET（读取）：307/308 同源跟随；301/302/303 同源或 http→https 升格时跟随；
+  ///   - PUT/DELETE/POST（写操作）：仅 307/308 且严格同源时跟随；
+  ///     遇到 301/302/303 原样返回 3xx，由调用方按错误响亮失败，
+  ///     绝不降级为 GET 造成"写成功假象"（manifest 静默丢失）。
+  Future<http.Response> _sendHttp(
+    String method,
+    Uri url, {
+    Map<String, String>? headers,
+    List<int>? bodyBytes,
+  }) {
+    return sendWithRedirectPolicy(
+      client: _client,
+      method: method,
+      url: url,
+      headers: headers,
+      bodyBytes: bodyBytes,
+      timeout: _httpTimeout,
+    );
+  }
+
   @override
   Future<({Uint8List ciphertext, String etag})> getManifest() async {
     _ensureInitialized();
 
     http.Response res;
     try {
-      res = await _client
-          .get(Uri.parse(_manifestUrl), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'GET',
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET manifest network error: $e');
     }
@@ -159,7 +185,11 @@ class SafeServerBackend implements SyncBackend {
     final etag = _normalizeEtag(res.headers['etag']);
     final ciphertext = res.bodyBytes;
     // F-M04：远端 manifest 大小上限，防恶意服务端打爆内存
-    checkRemoteReadSize(ciphertext, 'SafeServer manifest', kRemoteManifestMaxBytes);
+    checkRemoteReadSize(
+      ciphertext,
+      'SafeServer manifest',
+      kRemoteManifestMaxBytes,
+    );
 
     // 服务端必须返回 ETag（v2.2 规范要求）；缺失即视为不兼容，抛异常
     if (etag.isEmpty) {
@@ -188,9 +218,12 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .put(Uri.parse(_manifestUrl), headers: headers, body: ciphertext)
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'PUT',
+        Uri.parse(_manifestUrl),
+        headers: headers,
+        bodyBytes: ciphertext,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT manifest network error: $e');
     }
@@ -228,9 +261,11 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .get(Uri.parse('$_blobUrlPrefix/$hash'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'GET',
+        Uri.parse('$_blobUrlPrefix/$hash'),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
     }
@@ -258,9 +293,12 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .put(Uri.parse('$_blobUrlPrefix/$hash'), headers: headers, body: data)
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'PUT',
+        Uri.parse('$_blobUrlPrefix/$hash'),
+        headers: headers,
+        bodyBytes: data,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT blob network error: $e');
     }
@@ -293,9 +331,11 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .delete(Uri.parse('$_blobUrlPrefix/$hash'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'DELETE',
+        Uri.parse('$_blobUrlPrefix/$hash'),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('DELETE blob network error: $e');
     }
@@ -347,9 +387,11 @@ class SafeServerBackend implements SyncBackend {
     }
     // move 意外失败（如资源层异常）：退化为 DELETE 兜底
     try {
-      await _client
-          .delete(Uri.parse(_manifestUrl), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      await _sendHttp(
+        'DELETE',
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       // 删除失败不抛异常，让 SyncEngine 的 PUT 覆盖
       Log.sync.w(
@@ -370,9 +412,11 @@ class SafeServerBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .get(Uri.parse(_blobsUrl), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'GET',
+        Uri.parse(_blobsUrl),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blobs network error: $e');
     }
@@ -573,15 +617,15 @@ class SafeServerBackend implements SyncBackend {
       try {
         final idx = await _getResource('manifest-backup/.manifest-bak-index');
         if (idx.statusCode == 200) {
-          newestSlot =
-              int.tryParse(utf8.decode(idx.bodyBytes).trim()) ?? 0;
+          newestSlot = int.tryParse(utf8.decode(idx.bodyBytes).trim()) ?? 0;
         }
       } on Exception {
         newestSlot = 0;
       }
       // 从新到旧排序：slot 距离 newestSlot 越近越新
-      int slotOf(String name) =>
-          int.parse(RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!);
+      int slotOf(String name) => int.parse(
+        RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!,
+      );
       names.sort((a, b) {
         final da =
             (slotOf(a) - newestSlot + kManifestBackupRingCount) %
@@ -682,38 +726,38 @@ class SafeServerBackend implements SyncBackend {
     int depth = 1,
   }) async {
     final uri = Uri.parse('$baseUrl$kSafeServerApiPrefix/resources/$rel');
-    final req = http.Request('POST', uri);
-    req.headers.addAll(_authHeaders());
-    req.headers['Content-Type'] = 'application/json';
     final body = <String, Object>{'op': op, 'overwrite': overwrite};
     if (dest != null) body['dest'] = dest;
     if (op == 'propfind' || op == 'stats') body['depth'] = depth;
-    req.body = jsonEncode(body);
-    final streamed = await _client.send(req).timeout(_httpTimeout);
-    return http.Response.fromStream(streamed);
+    return _sendHttp(
+      'POST',
+      uri,
+      headers: {..._authHeaders(), 'Content-Type': 'application/json'},
+      bodyBytes: utf8.encode(jsonEncode(body)),
+    );
   }
 
   /// GET `/api/v2/resources/<rel>`
   Future<http.Response> _getResource(String rel) async {
     final uri = Uri.parse('$baseUrl$kSafeServerApiPrefix/resources/$rel');
-    return _client.get(uri, headers: _authHeaders()).timeout(_httpTimeout);
+    return _sendHttp('GET', uri, headers: _authHeaders());
   }
 
   /// PUT `/api/v2/resources/<rel>`
   Future<http.Response> _putResource(String rel, List<int> bytes) async {
     final uri = Uri.parse('$baseUrl$kSafeServerApiPrefix/resources/$rel');
-    final req = http.Request('PUT', uri);
-    req.headers.addAll(_authHeaders());
-    req.headers['Content-Type'] = 'application/octet-stream';
-    req.bodyBytes = bytes;
-    final streamed = await _client.send(req).timeout(_httpTimeout);
-    return http.Response.fromStream(streamed);
+    return _sendHttp(
+      'PUT',
+      uri,
+      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      bodyBytes: bytes,
+    );
   }
 
   /// DELETE `/api/v2/resources/<rel>`
   Future<http.Response> _deleteResource(String rel) async {
     final uri = Uri.parse('$baseUrl$kSafeServerApiPrefix/resources/$rel');
-    return _client.delete(uri, headers: _authHeaders()).timeout(_httpTimeout);
+    return _sendHttp('DELETE', uri, headers: _authHeaders());
   }
 
   @override
@@ -727,9 +771,7 @@ class SafeServerBackend implements SyncBackend {
     // SafeServer 探测：GET /api/v2/health（无认证，1 次 HTTP 请求）
     // 不依赖 _initialized 标志，允许未 init 时也能探测
     try {
-      final res = await _client
-          .get(Uri.parse(_healthUrl))
-          .timeout(_httpTimeout);
+      final res = await _sendHttp('GET', Uri.parse(_healthUrl));
       return res.statusCode == 200 && res.body == 'ok';
     } on Exception {
       return false;

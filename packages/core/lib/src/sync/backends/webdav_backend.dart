@@ -35,8 +35,9 @@ import 'package:http/http.dart' as http;
 
 // Project 导入
 import 'package:core/src/crypto/crypto.dart';
-import 'package:core/src/sync/sync_backend.dart';
 import 'package:core/src/logger/app_logger.dart';
+import 'package:core/src/sync/backends/http_util.dart';
+import 'package:core/src/sync/sync_backend.dart';
 
 /// WebDAV keyring 子目录名（固定常量）
 ///
@@ -166,9 +167,11 @@ class WebDavBackend implements SyncBackend {
     try {
       http.Response res;
       try {
-        res = await _client
-            .get(Uri.parse(_manifestUrl), headers: _authHeaders())
-            .timeout(_httpTimeout);
+        res = await _sendHttp(
+          'GET',
+          Uri.parse(_manifestUrl),
+          headers: _authHeaders(),
+        );
       } on Exception catch (e) {
         // 网络错误：保守假设支持，不阻断 init
         Log.sync.w('[WebDAV] ETag 探测网络错误，保守假设支持', error: e);
@@ -204,16 +207,19 @@ class WebDavBackend implements SyncBackend {
   /// 请求 getetag 属性，检查响应 XML 是否包含 etag 值。
   Future<bool> _probeEtagViaPropfind() async {
     try {
-      final req = http.Request('PROPFIND', Uri.parse(_manifestUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '0';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(_manifestUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '0',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>';
-
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>',
+        ),
+      );
       if (res.statusCode != 207 && res.statusCode != 200) {
         // PROPFIND 失败：保守假设支持
         return true;
@@ -237,15 +243,41 @@ class WebDavBackend implements SyncBackend {
     }
   }
 
+  /// B-H1 修复：后端统一 HTTP 发送入口
+  ///
+  /// 所有请求经 [sendWithRedirectPolicy] 显式处理重定向（followRedirects=false）：
+  ///   - GET/PROPFIND/MKCOL（读取类/无数据写入）：307/308 同源跟随；
+  ///     301/302/303 同源或 http→https 升格时跟随；
+  ///   - PUT/DELETE/COPY（写操作）：仅 307/308 且严格同源时跟随；
+  ///     遇到 301/302/303 原样返回 3xx，由调用方按错误响亮失败，
+  ///     绝不降级为 GET 造成"写成功假象"（manifest 静默丢失）。
+  Future<http.Response> _sendHttp(
+    String method,
+    Uri url, {
+    Map<String, String>? headers,
+    List<int>? bodyBytes,
+  }) {
+    return sendWithRedirectPolicy(
+      client: _client,
+      method: method,
+      url: url,
+      headers: headers,
+      bodyBytes: bodyBytes,
+      timeout: _httpTimeout,
+    );
+  }
+
   @override
   Future<({Uint8List ciphertext, String etag})> getManifest() async {
     _ensureInitialized();
 
     http.Response res;
     try {
-      res = await _client
-          .get(Uri.parse(_manifestUrl), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'GET',
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
     } catch (e) {
       throw BackendUnavailableException('GET manifest network error: $e');
     }
@@ -293,9 +325,12 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .put(Uri.parse(_manifestUrl), headers: headers, body: ciphertext)
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'PUT',
+        Uri.parse(_manifestUrl),
+        headers: headers,
+        bodyBytes: ciphertext,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT manifest network error: $e');
     }
@@ -324,9 +359,11 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .get(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'GET',
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
     }
@@ -349,9 +386,12 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .put(Uri.parse('$_blobsUrl/$hash'), headers: headers, body: data)
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'PUT',
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: headers,
+        bodyBytes: data,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('PUT blob network error: $e');
     }
@@ -374,9 +414,11 @@ class WebDavBackend implements SyncBackend {
 
     http.Response res;
     try {
-      res = await _client
-          .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      res = await _sendHttp(
+        'DELETE',
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('DELETE blob network error: $e');
     }
@@ -400,16 +442,19 @@ class WebDavBackend implements SyncBackend {
     _ensureInitialized();
 
     try {
-      final req = http.Request('PROPFIND', Uri.parse(_blobsUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '1';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(_blobsUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '1',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+        ),
+      );
       // 207 Multi-Status = PROPFIND 成功
       if (res.statusCode != 207 && res.statusCode != 200) {
         return [];
@@ -463,18 +508,23 @@ class WebDavBackend implements SyncBackend {
       );
     }
     try {
-      final copyReq = http.Request('COPY', Uri.parse('$_blobsUrl/$hash'));
-      copyReq.headers.addAll(_authHeaders());
-      copyReq.headers['Destination'] = dest;
-      copyReq.headers['Depth'] = '0';
-      copyReq.headers['Overwrite'] = 'T';
-      final copyRes = await _client.send(copyReq).timeout(_httpTimeout);
-      final copyHttp = await http.Response.fromStream(copyRes);
+      final copyHttp = await _sendHttp(
+        'COPY',
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: {
+          ..._authHeaders(),
+          'Destination': dest,
+          'Depth': '0',
+          'Overwrite': 'T',
+        },
+      );
       if (copyHttp.statusCode >= 200 && copyHttp.statusCode < 300) {
         // 隔离区已有副本：删除原 blob
-        await _client
-            .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
-            .timeout(_httpTimeout);
+        await _sendHttp(
+          'DELETE',
+          Uri.parse('$_blobsUrl/$hash'),
+          headers: _authHeaders(),
+        );
         return;
       }
     } on Exception catch (e) {
@@ -486,9 +536,11 @@ class WebDavBackend implements SyncBackend {
       );
     }
     try {
-      await _client
-          .delete(Uri.parse('$_blobsUrl/$hash'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      await _sendHttp(
+        'DELETE',
+        Uri.parse('$_blobsUrl/$hash'),
+        headers: _authHeaders(),
+      );
     } on Exception catch (e) {
       // 删除失败不抛异常（GC 不阻断同步）
       Log.sync.w(
@@ -506,15 +558,19 @@ class WebDavBackend implements SyncBackend {
   Future<List<String>> listOrphanBlobs() async {
     _ensureInitialized();
     try {
-      final req = http.Request('PROPFIND', Uri.parse(_orphanUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '1';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(_orphanUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '1',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+        ),
+      );
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final hashRegex = RegExp(r'^[a-f0-9]{64}\.');
       final hrefRegex = RegExp(
@@ -545,15 +601,19 @@ class WebDavBackend implements SyncBackend {
   Future<void> purgeOrphans(Duration retention) async {
     _ensureInitialized();
     try {
-      final req = http.Request('PROPFIND', Uri.parse(_orphanUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '1';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(_orphanUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '1',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+        ),
+      );
       if (res.statusCode != 207 && res.statusCode != 200) return;
       final hrefRegex = RegExp(
         r'<(?:[^:>]+:)?href[^>]*>([^<]+)</(?:[^:>]+:)?href>',
@@ -569,12 +629,11 @@ class WebDavBackend implements SyncBackend {
           final ts = int.tryParse(name.substring(dot + 1));
           if (ts != null && ts < cutoff) {
             try {
-              await _client
-                  .delete(
-                    Uri.parse('$_orphanUrl/$name'),
-                    headers: _authHeaders(),
-                  )
-                  .timeout(_httpTimeout);
+              await _sendHttp(
+                'DELETE',
+                Uri.parse('$_orphanUrl/$name'),
+                headers: _authHeaders(),
+              );
             } on Exception catch (e) {
               // 单个删除失败不阻断
               Log.sync.w(
@@ -617,16 +676,12 @@ class WebDavBackend implements SyncBackend {
         error: e,
       );
     }
-    final res = await _client
-        .put(
-          Uri.parse('$_journalUrl/$name'),
-          headers: {
-            ..._authHeaders(),
-            'Content-Type': 'application/octet-stream',
-          },
-          body: ciphertext,
-        )
-        .timeout(_httpTimeout);
+    final res = await _sendHttp(
+      'PUT',
+      Uri.parse('$_journalUrl/$name'),
+      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      bodyBytes: ciphertext,
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw StateError(
         'WebDAV journal 副本上传失败 name=$name: ${res.statusCode} ${res.body}',
@@ -638,9 +693,11 @@ class WebDavBackend implements SyncBackend {
   Future<Uint8List?> getJournalObject(String name) async {
     _ensureInitialized();
     try {
-      final res = await _client
-          .get(Uri.parse('$_journalUrl/$name'), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      final res = await _sendHttp(
+        'GET',
+        Uri.parse('$_journalUrl/$name'),
+        headers: _authHeaders(),
+      );
       if (res.statusCode != 200) return null;
       final bytes = res.bodyBytes;
       // F-M04：journal 副本大小上限，防恶意服务端打爆内存
@@ -656,15 +713,19 @@ class WebDavBackend implements SyncBackend {
   Future<List<String>> listJournalObjects() async {
     _ensureInitialized();
     try {
-      final req = http.Request('PROPFIND', Uri.parse(_journalUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '1';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(_journalUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '1',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+        ),
+      );
       if (res.statusCode != 207 && res.statusCode != 200) return [];
       final result = <String>[];
       final hrefRegex = RegExp(
@@ -719,12 +780,11 @@ class WebDavBackend implements SyncBackend {
     }
     var slot = 0;
     try {
-      final idxRes = await _client
-          .get(
-            Uri.parse('$backupUrl/.manifest-bak-index'),
-            headers: _authHeaders(),
-          )
-          .timeout(_httpTimeout);
+      final idxRes = await _sendHttp(
+        'GET',
+        Uri.parse('$backupUrl/.manifest-bak-index'),
+        headers: _authHeaders(),
+      );
       if (idxRes.statusCode == 200) {
         slot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
       }
@@ -734,27 +794,19 @@ class WebDavBackend implements SyncBackend {
     }
     slot = (slot + 1) % kManifestBackupRingCount;
     // 写轮转索引
-    await _client
-        .put(
-          Uri.parse('$backupUrl/.manifest-bak-index'),
-          headers: {
-            ..._authHeaders(),
-            'Content-Type': 'application/octet-stream',
-          },
-          body: utf8.encode(slot.toString()),
-        )
-        .timeout(_httpTimeout);
+    await _sendHttp(
+      'PUT',
+      Uri.parse('$backupUrl/.manifest-bak-index'),
+      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      bodyBytes: utf8.encode(slot.toString()),
+    );
     // 写备份文件
-    await _client
-        .put(
-          Uri.parse('$backupUrl/manifest.bak-$slot'),
-          headers: {
-            ..._authHeaders(),
-            'Content-Type': 'application/octet-stream',
-          },
-          body: bytes,
-        )
-        .timeout(_httpTimeout);
+    await _sendHttp(
+      'PUT',
+      Uri.parse('$backupUrl/manifest.bak-$slot'),
+      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      bodyBytes: bytes,
+    );
   }
 
   /// P1-1 READ 侧：列出服务端 `manifest-backup/` 目录的备份，从新到旧
@@ -767,15 +819,19 @@ class WebDavBackend implements SyncBackend {
     _ensureInitialized();
     final backupUrl = _manifestBackupUrl;
     try {
-      final req = http.Request('PROPFIND', Uri.parse(backupUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '1';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(backupUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '1',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>';
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+        ),
+      );
       if (res.statusCode != 207 && res.statusCode != 200) return const [];
       final names = <String>[];
       final hrefRegex = RegExp(
@@ -793,12 +849,11 @@ class WebDavBackend implements SyncBackend {
       // 最近写入槽位（读取失败按 0 处理）
       var newestSlot = 0;
       try {
-        final idxRes = await _client
-            .get(
-              Uri.parse('$backupUrl/.manifest-bak-index'),
-              headers: _authHeaders(),
-            )
-            .timeout(_httpTimeout);
+        final idxRes = await _sendHttp(
+          'GET',
+          Uri.parse('$backupUrl/.manifest-bak-index'),
+          headers: _authHeaders(),
+        );
         if (idxRes.statusCode == 200) {
           newestSlot = int.tryParse(utf8.decode(idxRes.bodyBytes).trim()) ?? 0;
         }
@@ -806,8 +861,9 @@ class WebDavBackend implements SyncBackend {
         newestSlot = 0;
       }
       // 从新到旧排序：slot 距离 newestSlot 越近越新
-      int slotOf(String name) =>
-          int.parse(RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!);
+      int slotOf(String name) => int.parse(
+        RegExp(r'^manifest\.bak-(\d+)$').firstMatch(name)!.group(1)!,
+      );
       names.sort((a, b) {
         final da =
             (slotOf(a) - newestSlot + kManifestBackupRingCount) %
@@ -831,12 +887,11 @@ class WebDavBackend implements SyncBackend {
     if (!RegExp(r'^manifest\.bak-\d+$').hasMatch(name)) return null;
     final backupUrl = _manifestBackupUrl;
     try {
-      final res = await _client
-          .get(
-            Uri.parse('$backupUrl/$name'),
-            headers: _authHeaders(),
-          )
-          .timeout(_httpTimeout);
+      final res = await _sendHttp(
+        'GET',
+        Uri.parse('$backupUrl/$name'),
+        headers: _authHeaders(),
+      );
       if (res.statusCode != 200) return null;
       return res.bodyBytes;
     } on Exception catch (e) {
@@ -853,9 +908,11 @@ class WebDavBackend implements SyncBackend {
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {
     _ensureInitialized();
     try {
-      final res = await _client
-          .delete(Uri.parse(_manifestUrl), headers: _authHeaders())
-          .timeout(_httpTimeout);
+      final res = await _sendHttp(
+        'DELETE',
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
       // 204/200 = 删除成功，404 = 不存在（已删除），都视为成功
       if (res.statusCode != 204 &&
           res.statusCode != 200 &&
@@ -879,16 +936,19 @@ class WebDavBackend implements SyncBackend {
     // WebDAV 探测：PROPFIND 深度 0 查询根目录
     // 不依赖 _initialized 标志，允许未 init 时也能探测
     try {
-      final req = http.Request('PROPFIND', Uri.parse(baseUrl));
-      req.headers.addAll(_authHeaders());
-      req.headers['Depth'] = '0';
-      req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-      req.body =
+      final res = await _sendHttp(
+        'PROPFIND',
+        Uri.parse(baseUrl),
+        headers: {
+          ..._authHeaders(),
+          'Depth': '0',
+          'Content-Type': 'application/xml; charset=utf-8',
+        },
+        bodyBytes: utf8.encode(
           '<?xml version="1.0" encoding="utf-8"?>'
-          '<propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
-
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      final res = await http.Response.fromStream(streamedRes);
+          '<propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>',
+        ),
+      );
       // 207 Multi-Status 是 PROPFIND 成功的标准响应
       // 200 某些非标准 WebDAV 服务也会返回
       return res.statusCode == 207 || res.statusCode == 200;
@@ -942,13 +1002,9 @@ class WebDavBackend implements SyncBackend {
   ///   - 401 Unauthorized：认证失败
   ///   - 其他：抛异常
   Future<void> _mkcol(String url) async {
-    final req = http.Request('MKCOL', Uri.parse(url));
-    req.headers.addAll(_authHeaders());
-
     http.Response res;
     try {
-      final streamedRes = await _client.send(req).timeout(_httpTimeout);
-      res = await http.Response.fromStream(streamedRes);
+      res = await _sendHttp('MKCOL', Uri.parse(url), headers: _authHeaders());
     } on Exception catch (e) {
       throw BackendUnavailableException('MKCOL network error: $e');
     }
