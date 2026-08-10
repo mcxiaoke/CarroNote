@@ -86,7 +86,18 @@ class NoteFormWidget extends StatelessWidget {
         fontSize: fontSize,
       ),
       decoration: InputDecoration(
+        // 全 border 显式置 none，防御全局 inputDecorationTheme 的 theme.border
+        // 在部分解析路径生效导致显示 outline 黑框（之前新建笔记界面被改坏
+        // 的根因，与搜索框黑线同源）。
         border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        // 无 padding：borderless 编辑器不需要 outline 输入框的内边距，
+        // 避免被 inputDecorationTheme.contentPadding 撑大行高（"标题框巨大"）。
+        contentPadding: EdgeInsets.zero,
         hintText: titleHint,
       ),
       onChanged: onChangedTitle,
@@ -114,7 +125,15 @@ class NoteFormWidget extends StatelessWidget {
       // },
       style: const TextStyle(fontSize: fontSize),
       decoration: InputDecoration(
+        // 同 _buildTitle：全 border none + 零内边距，防御全局主题副作用，
+        // 恢复 borderless 编辑器的紧凑外观。
         border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        contentPadding: EdgeInsets.zero,
         hintText: hintDescription,
         //hintStyle: TextStyle(color: Colors.white60),
       ),
