@@ -93,7 +93,6 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
   }
 
   Widget _buildPassField(BuildContext context) {
-    const double inputBoxRadius = 10.0;
     const double paddingTextBox = 15.0;
     final String inputBoxHint = 'Encryption Phrase'.tr();
 
@@ -112,9 +111,6 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
           obscureText: _isHiddenImport,
           decoration: InputDecoration(
             hintText: inputBoxHint,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(inputBoxRadius),
-            ),
             prefixIcon: const Icon(Icons.lock),
             suffixIcon: IconButton(
               icon: !_isHiddenImport

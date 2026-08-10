@@ -60,14 +60,14 @@ class SearchWidgetState extends State<SearchWidget> {
         : colorScheme.surfaceContainerLow;
 
     return Container(
-      height: 42,
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      height: 44,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(searchBoxRadius),
         color: boxColor,
-        border: Border.all(color: colorScheme.outlineVariant),
+        // 不再画 outlineVariant 边框：避免深色"黑线"突兀。
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       // 搜索图标、输入框、清除按钮放在同一 Row，由 Row 统一垂直居中。
       // 注意：不要给 TextField 设 textAlignVertical —— 在 isCollapsed + 零内边距下，
       // 它会把文字/hint 额外下移约 4px（真实字体实测）；不设时文字天然居中。
@@ -75,7 +75,7 @@ class SearchWidgetState extends State<SearchWidget> {
       child: Row(
         children: [
           Icon(Icons.search, color: style.color, size: 20),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: TextField(
               enableIMEPersonalizedLearning: enableIMEPLFlag,
@@ -108,7 +108,14 @@ class SearchWidgetState extends State<SearchWidget> {
                 contentPadding: EdgeInsets.zero,
                 hintText: widget.hintText,
                 hintStyle: style,
+                // 全 border 显式置 none，防御全局 inputDecorationTheme 的 theme.border
+                // 仍被某些解析路径采纳导致显示 outline 黑框的问题。
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
               ),
               style: style,
               onChanged: widget.onChanged,

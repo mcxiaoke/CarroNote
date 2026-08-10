@@ -116,10 +116,8 @@ class BackupSettingState extends State<BackupSetting> {
   Widget _bodyBackup(BuildContext context) {
     return SettingsList(
       platform: currentDevicePlatform,
-      darkTheme: SettingsThemeData(
-        settingsListBackground: AppThemes.darkSettingsScaffold,
-        settingsSectionBackground: AppThemes.darkSettingsCanvas,
-      ),
+      lightTheme: appSettingsTheme(context),
+      darkTheme: appSettingsTheme(context),
       sections: [
         SettingsSection(
           tiles: <SettingsTile>[

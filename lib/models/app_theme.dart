@@ -65,7 +65,7 @@ class AppThemes {
           .textTheme,
     );
 
-    return (brightness == Brightness.light
+    final ThemeData base = (brightness == Brightness.light
         ? FlexThemeData.light
         : FlexThemeData.dark)(
       colorScheme: scheme,
@@ -76,6 +76,58 @@ class AppThemes {
       ),
       textTheme: uiText,
       primaryTextTheme: uiText,
+    );
+
+    // 全局按钮/输入框统一（兜底所有未显式定制样式的裸控件）：
+    //   - AppButton / DialogActionBar 用自身显式 style，不受以下 theme 影响；
+    //   - 各设置页/对话框里的 FilledButton/OutlinedButton/ElevatedButton/TextButton
+    //     与 TextFormField/TextField 统一尺寸、圆角、字号。
+    final bool desktop = isDesktopPlatform;
+    final double radius = desktop ? 8 : 12;
+    final ButtonStyle secondaryBtn = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(const Size(0, 44)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+      ),
+      textStyle: WidgetStatePropertyAll(
+        TextStyle(
+          fontSize: desktop ? 14 : 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+    final ButtonStyle textBtn = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(const Size(0, 44)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+      ),
+      textStyle: WidgetStatePropertyAll(
+        TextStyle(fontSize: desktop ? 14 : 14),
+      ),
+    );
+    final OutlineInputBorder inputBorder =
+        OutlineInputBorder(borderRadius: BorderRadius.circular(radius));
+
+    return base.copyWith(
+      // AppBar 滚动时不再叠加 surfaceTint 染色（之前主界面"安全笔记"标题
+      // 滚动会变色；FCS 默认开了 surfaceTint，需要显式关闭）。
+      appBarTheme: base.appBarTheme.copyWith(
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
+      filledButtonTheme: FilledButtonThemeData(style: secondaryBtn),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: secondaryBtn),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: secondaryBtn),
+      textButtonTheme: TextButtonThemeData(style: textBtn),
+      inputDecorationTheme: InputDecorationTheme(
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: desktop ? 12 : 14,
+        ),
+        border: inputBorder,
+        enabledBorder: inputBorder,
+        focusedBorder: inputBorder,
+      ),
     );
   }
 

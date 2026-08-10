@@ -14,24 +14,57 @@
 // Flutter imports:
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/material.dart'
+    show Brightness, BuildContext, Color, Colors, Theme, TextStyle, FontWeight;
 import 'package:settings_ui/settings_ui.dart';
 
-/// 将当前运行平台映射为 settings_ui 的 [DevicePlatform]，
-/// 使设置页在各桌面端呈现对应原生风格（Windows/macOS/Linux），
-/// 而非被写死成 iOS 分组表样式。
+// Project imports:
+import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/utils/platform_ui.dart';
+
+/// 将当前运行平台映射为 settings_ui 的 [DevicePlatform]。
+///
+/// 桌面与 Android 移动端统一渲染 Material 分组（与 App 整体主题一致）；
+/// 仅 iOS 保留 iOS 分组表原生风格。
 DevicePlatform get currentDevicePlatform {
   switch (defaultTargetPlatform) {
-    case TargetPlatform.android:
-      return DevicePlatform.android;
     case TargetPlatform.iOS:
       return DevicePlatform.iOS;
+    case TargetPlatform.android:
     case TargetPlatform.windows:
-      return DevicePlatform.windows;
     case TargetPlatform.macOS:
-      return DevicePlatform.macOS;
     case TargetPlatform.linux:
-      return DevicePlatform.linux;
     case TargetPlatform.fuchsia:
       return DevicePlatform.android;
   }
+}
+
+/// 设置页全局主题。
+///
+/// 桌面端（Windows/Linux/macOS）：tile 用更大的字号与行高
+/// （18 × 1.5 ≈ 27px 文本 + 默认 12.5×2 padding ≈ 52px 行高），
+/// 提高可点击目标高度，接近 Android 原生触控尺寸；
+/// 移动端返回全 null，沿用 settings_ui 默认（tile 16）。
+///
+/// dark 时沿用 [AppThemes] 的自定义背景色，与 settings.dart 现有覆盖一致。
+/// [SettingsThemeData.merge] 使用 `field ?? this.field`，未覆盖字段保持默认。
+SettingsThemeData appSettingsTheme(BuildContext context) {
+  final bool desktop = isDesktopPlatform;
+  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  return SettingsThemeData(
+    titleTextStyle: desktop
+        ? const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)
+        : null,
+    tileTextStyle: desktop
+        ? const TextStyle(fontSize: 18, height: 1.5)
+        : null,
+    tileDescriptionTextStyle: desktop ? const TextStyle(fontSize: 14) : null,
+    settingsListBackground:
+        dark ? AppThemes.darkSettingsScaffold : const Color(0xFFF2F2F7),
+    // Material 分组（AndroidSettingsSection）背景：亮色白、暗色沿用 canvas 灰。
+    // settings_ui 的 android 主题默认 settingsSectionBackground 为 null，
+    // 不设会导致"无背景、无区分度"。
+    settingsSectionBackground:
+        dark ? AppThemes.darkSettingsCanvas : Colors.white,
+  );
 }

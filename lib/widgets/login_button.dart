@@ -15,10 +15,12 @@
 import 'package:flutter/material.dart';
 
 // Project imports:
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/widgets/app_button.dart';
 
 /// 登录/继续等主操作按钮。委托给统一的 [AppButton]，自动按平台适配尺寸
 /// （桌面紧凑、移动端触摸友好），不再写死高 50 / 投影 5 的移动端样式。
+/// 桌面端不撑满宽度（表单限宽后保持自动宽度），移动端全宽便于触控。
 class ButtonWidget extends StatelessWidget {
   final String text;
   final VoidCallback? onClicked;
@@ -30,7 +32,7 @@ class ButtonWidget extends StatelessWidget {
     return AppButton(
       text: text,
       onPressed: onClicked,
-      fullWidth: true,
+      fullWidth: !isDesktopPlatform,
     );
   }
 }

@@ -411,7 +411,6 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           hintText: hint,
           prefixIcon: Icon(icon),
           suffixIcon: suffix,
-          border: const OutlineInputBorder(),
         ),
         // 任何输入变化都要重算「能否保存」：指纹一变，上次测试结果即作废
         onChanged: (_) => setState(() {}),

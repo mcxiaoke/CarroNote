@@ -28,6 +28,7 @@ import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 
 class ChangePassphrase extends StatefulWidget {
   const ChangePassphrase({super.key});
@@ -80,9 +81,15 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       body: SingleChildScrollView(
         //reverse: true,
         controller: _scrollController,
-        child: Padding(
-          padding: EdgeInsets.only(bottom: bottom),
-          child: _buildPassphraseChangeWorkflow(context),
+        child: Center(
+          // 宽屏/桌面限宽 420 居中，与登录/设置密码界面一致
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottom),
+              child: _buildPassphraseChangeWorkflow(context),
+            ),
+          ),
         ),
       ),
     );
@@ -153,7 +160,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   Widget _buildCurrentPassField() {
-    const double inputBoxEdgeRadious = 10.0;
     final String inputHintOld = 'Current Passphrase'.tr();
 
     // 简化方案:validator 只做长度检查
@@ -170,7 +176,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         context,
         'first',
         inputHintOld,
-        inputBoxEdgeRadious,
       ),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
@@ -188,7 +193,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   Widget _buildNewPassField() {
-    const double inputBoxEdgeRadious = 10.0;
     final String inputHintNew = 'New Passphrase'.tr();
 
     return TextFormField(
@@ -201,7 +205,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         context,
         'second',
         inputHintNew,
-        inputBoxEdgeRadious,
       ),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
@@ -227,7 +230,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   Widget _buildNewConfirmPassField() {
-    const double inputBoxEdgeRadious = 10.0;
     final String inputHintConfirm = 'Confirm New Passphrase'.tr();
     final String passPhraseMismatchMsg = 'Passphrase Mismatch!'.tr();
 
@@ -241,7 +243,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         context,
         'third',
         inputHintConfirm,
-        inputBoxEdgeRadious,
       ),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
@@ -257,7 +258,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     BuildContext context,
     String inputFieldID,
     String inputHintText,
-    double inputBoxEdgeRadious,
   ) {
     bool? visibility;
 
@@ -271,9 +271,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
     return InputDecoration(
       hintText: inputHintText,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(inputBoxEdgeRadious),
-      ),
       prefixIcon: const Icon(Icons.lock),
       suffixIcon: IconButton(
         icon: !visibility
@@ -304,22 +301,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       alignment: Alignment.centerRight,
       child: Padding(
         padding: const EdgeInsets.only(right: 10, top: 25, bottom: 20),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(200, 50), //Size.fromHeight(50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            elevation: 5.0, //StadiumBorder(),
-          ),
+        child: AppButton(
+          text: 'Confirm'.tr(),
+          icon: const Icon(Icons.key, size: 20),
           onPressed: _finalSublmitChange,
-          child: Wrap(
-            children: <Widget>[
-              const Icon(Icons.key, size: 25.0),
-              const SizedBox(width: 20),
-              Text('Confirm'.tr(), style: const TextStyle(fontSize: 20)),
-            ],
-          ),
         ),
       ),
     );

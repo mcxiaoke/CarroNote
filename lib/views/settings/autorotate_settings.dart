@@ -21,7 +21,6 @@ import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class AutoRotationSetting extends StatefulWidget {
@@ -48,11 +47,8 @@ class _AutoRotationSettingState extends State<AutoRotationSetting> {
   Widget _settings() {
     return SettingsList(
       platform: currentDevicePlatform,
-      lightTheme: const SettingsThemeData(),
-      darkTheme: SettingsThemeData(
-        settingsListBackground: AppThemes.darkSettingsScaffold,
-        settingsSectionBackground: AppThemes.darkSettingsCanvas,
-      ),
+      lightTheme: appSettingsTheme(context),
+      darkTheme: appSettingsTheme(context),
       sections: [
         SettingsSection(
           title: Text('Close and open app for change to take effect'.tr()),

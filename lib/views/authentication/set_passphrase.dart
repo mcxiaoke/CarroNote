@@ -145,22 +145,28 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
     return Form(
       key: _formKey,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(padding),
-        child: Column(
-          children: [
-            AutofillGroup(
-              child: Column(
-                children: [
-                  _inputFieldFirst(),
-                  const SizedBox(height: inputBoxSeparation),
-                  _inputFieldConfirm(context),
-                ],
-              ),
+      child: Center(
+        // 宽屏/桌面限宽 420 居中，避免输入框与按钮撑满整个窗口
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(padding),
+            child: Column(
+              children: [
+                AutofillGroup(
+                  child: Column(
+                    children: [
+                      _inputFieldFirst(),
+                      const SizedBox(height: inputBoxSeparation),
+                      _inputFieldConfirm(context),
+                    ],
+                  ),
+                ),
+                _buildForgotPassphrase(),
+                _buildLoginButton(),
+              ],
             ),
-            _buildForgotPassphrase(),
-            _buildLoginButton(),
-          ],
+          ),
         ),
       ),
     );
@@ -174,7 +180,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   Widget _inputFieldFirst() {
-    const double inputBoxEdgeRadius = 10.0;
     final String firstHintText = 'New Passphrase'.tr();
 
     return TextFormField(
@@ -187,7 +192,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         inputFieldID: 'first',
         inputHintText: firstHintText,
         label: firstHintText,
-        inputBoxEdgeRadius: inputBoxEdgeRadius,
       ),
       autofillHints: const [AutofillHints.password],
 
@@ -201,7 +205,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   Widget _inputFieldConfirm(BuildContext context) {
-    const double inputBoxEdgeRadius = 10.0;
     const double padding = 10.0;
     final String confirmHintText = 'Re-enter Passphrase'.tr();
 
@@ -216,7 +219,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
           inputFieldID: 'confirm',
           inputHintText: confirmHintText,
           label: confirmHintText,
-          inputBoxEdgeRadius: inputBoxEdgeRadius,
         ),
         autofillHints: const [AutofillHints.password],
         keyboardType: TextInputType.visiblePassword,
@@ -231,7 +233,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     required String inputFieldID,
     required String inputHintText,
     required String label,
-    required double inputBoxEdgeRadius,
   }) {
     bool? visibility;
 
@@ -244,9 +245,6 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     return InputDecoration(
       hintText: inputHintText,
       label: Text(label),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(inputBoxEdgeRadius),
-      ),
       prefixIcon: const Icon(Icons.lock),
       suffixIcon: IconButton(
         icon: !visibility

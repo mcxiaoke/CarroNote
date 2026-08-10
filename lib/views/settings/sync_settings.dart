@@ -55,6 +55,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Widget _buildBody() {
     return SettingsList(
       platform: currentDevicePlatform,
+      lightTheme: appSettingsTheme(context),
+      darkTheme: appSettingsTheme(context),
       sections: [
         // ── 同步总开关 ──
         SettingsSection(

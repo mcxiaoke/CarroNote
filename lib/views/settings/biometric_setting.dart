@@ -21,7 +21,6 @@ import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/utils/styles.dart';
 
@@ -49,11 +48,8 @@ class _BiometricSettingState extends State<BiometricSetting> {
   Widget _settings() {
     return SettingsList(
       platform: currentDevicePlatform,
-      lightTheme: const SettingsThemeData(),
-      darkTheme: SettingsThemeData(
-        settingsListBackground: AppThemes.darkSettingsScaffold,
-        settingsSectionBackground: AppThemes.darkSettingsCanvas,
-      ),
+      lightTheme: appSettingsTheme(context),
+      darkTheme: appSettingsTheme(context),
       sections: [
         SettingsSection(
           tiles: <SettingsTile>[

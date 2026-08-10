@@ -54,11 +54,8 @@ class ColorPalletState extends State<ColorPallet> {
   Widget _settings() {
     return SettingsList(
       platform: currentDevicePlatform,
-      lightTheme: const SettingsThemeData(),
-      darkTheme: SettingsThemeData(
-        settingsListBackground: AppThemes.darkSettingsScaffold,
-        settingsSectionBackground: AppThemes.darkSettingsCanvas,
-      ),
+      lightTheme: appSettingsTheme(context),
+      darkTheme: appSettingsTheme(context),
       sections: [
         SettingsSection(
           //title: Text('General'),

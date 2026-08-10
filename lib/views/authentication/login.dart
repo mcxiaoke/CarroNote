@@ -34,7 +34,9 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_button.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/login_button.dart';
 
@@ -214,16 +216,22 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
     return Form(
       key: _formKey,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(padding),
-        child: Column(
-          children: [
-            _buildTimeOut(),
-            _inputField(),
-            _buildForgotPassphrase(),
-            _buildLoginButton(),
-            _buildBiometricAuthButton(context),
-          ],
+      child: Center(
+        // 宽屏/桌面限宽 420 居中，避免输入框与按钮撑满整个窗口
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(padding),
+            child: Column(
+              children: [
+                _buildTimeOut(),
+                _inputField(),
+                _buildForgotPassphrase(),
+                _buildLoginButton(),
+                _buildBiometricAuthButton(context),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -264,15 +272,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _inputField() {
-    const double inputBoxEdgeRadious = 10.0;
-
     return TextFormField(
       enabled: !_isLocked,
       enableIMEPersonalizedLearning: false,
       controller: passPhraseController,
       autofocus: _isKeyboardFocused!,
       obscureText: _isHidden,
-      decoration: _inputFieldDecoration(inputBoxEdgeRadious),
+      decoration: _inputFieldDecoration(),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
       onEditingComplete: _loginController,
@@ -295,15 +301,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     return null;
   }
 
-  InputDecoration _inputFieldDecoration(double inputBoxEdgeRadious) {
+  InputDecoration _inputFieldDecoration() {
     final String hintText = 'Enter Passphrase'.tr();
 
     return InputDecoration(
       hintText: hintText,
       label: Text('Passphrase'.tr()),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(inputBoxEdgeRadious),
-      ),
       prefixIcon: const Icon(Icons.lock),
       suffixIcon: IconButton(
         icon: !_isHidden
@@ -331,38 +334,23 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildBiometricAuthButton(BuildContext context) {
+    final bool isDesktop = isDesktopPlatform;
+    final bool enabled = PreferencesStorage.isBiometricAuthEnabled &&
+        !forcePassphraseInput &&
+        !_isLocked;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 10),
           child: Text('OR'.tr(), style: const TextStyle(fontSize: 15)),
         ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 20),
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(200, 50), //Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                elevation: 5.0,
-              ),
-              onPressed:
-                  (PreferencesStorage.isBiometricAuthEnabled &&
-                      !forcePassphraseInput &&
-                      !_isLocked)
-                  ? _authenticate
-                  : null,
-              child: Wrap(
-                children: <Widget>[
-                  const Icon(Icons.fingerprint, size: 30.0),
-                  const SizedBox(width: 10),
-                  Text('Biometric'.tr(), style: const TextStyle(fontSize: 20)),
-                ],
-              ),
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 20),
+          child: AppButton(
+            text: 'Biometric'.tr(),
+            icon: Icon(Icons.fingerprint, size: isDesktop ? 22 : 28),
+            fullWidth: !isDesktop,
+            onPressed: enabled ? _authenticate : null,
           ),
         ),
       ],
@@ -610,7 +598,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   Widget _buildForgotPassphrase() {
     final String cantRecoverPassphraseMsg = "Can't decrypt without phrase!"
         .tr();
-    double fontSize = 10;
+    // 桌面端字太小（原固定 10），按平台放大
+    final double fontSize = isDesktopPlatform ? 14 : 12;
 
     return Container(
       alignment: Alignment.centerRight,

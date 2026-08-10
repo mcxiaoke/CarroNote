@@ -376,8 +376,5 @@ InputDecoration _fieldDecoration({
     prefixIcon: prefixIcon,
     suffixIcon: suffixIcon,
     isDense: true,
-    border: const OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(8)),
-    ),
   );
 }

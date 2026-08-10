@@ -18,8 +18,9 @@ import 'package:flutter/material.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 /// 统一的按钮封装，按平台自适应尺寸：
-/// - 桌面（尤其 Windows）：高度 ~36、无投影、小圆角、字号 14，贴近原生控件。
-/// - 移动端：保持较大的触摸友好尺寸（高度 50、圆角 10、字号 18）。
+/// - 桌面（尤其 Windows）：高度 ~48、无投影、小圆角 8、字号 15，
+///   与输入框高度协调，贴近原生控件。
+/// - 移动端：保持较大的触摸友好尺寸（高度 50、圆角 12、字号 18）。
 enum AppButtonVariant { primary, text }
 
 class AppButton extends StatelessWidget {
@@ -43,10 +44,12 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = isDesktopPlatform;
-    final double height = isDesktop ? 36.0 : 50.0;
-    final double borderRadius = isDesktop ? 4.0 : 10.0;
+    // 桌面：高度与输入框（contentPadding v12 ≈ 48）协调，圆角/字号与全局统一
+    //（r8 / fs15）；移动：保持大触控目标 h50，圆角统一为 M3 的 r12。
+    final double height = isDesktop ? 48.0 : 50.0;
+    final double borderRadius = isDesktop ? 8.0 : 12.0;
     final TextStyle textStyle = TextStyle(
-      fontSize: isDesktop ? 14 : 18,
+      fontSize: isDesktop ? 15 : 18,
       fontWeight: FontWeight.w600,
     );
 
@@ -141,7 +144,7 @@ class DialogActionBar extends StatelessWidget {
   ) {
     final ButtonStyle style = ButtonStyle(
       minimumSize: WidgetStateProperty.all(
-        Size(isDesktop ? 72 : 0, isDesktop ? 32 : 40),
+        Size(isDesktop ? 72 : 0, isDesktop ? 36 : 40),
       ),
       padding: WidgetStateProperty.all(
         EdgeInsets.symmetric(
@@ -157,7 +160,7 @@ class DialogActionBar extends StatelessWidget {
       ),
       shape: WidgetStateProperty.all(
         RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(isDesktop ? 4 : 8),
+          borderRadius: BorderRadius.circular(isDesktop ? 8 : 12),
         ),
       ),
       elevation: isDesktop ? WidgetStateProperty.all(0.0) : null,

@@ -54,33 +54,18 @@ class RouteGenerator {
     // 集中记录每一次路由解析(界面切换的底层入口),便于全链路追踪
     Log.ui.d('路由解析: $routeName');
 
-    // 桌面端（尤其 Windows）不使用移动端的整页左推转场，改用 Fluent 风格的
-    // 淡入（轻微、快速），更接近原生窗口/页面切换手感；移动端保留滑动转场。
-    final bool useNativeDesktopTransition = isDesktopPlatform;
-    final Duration transitionDuration = useNativeDesktopTransition
-        ? const Duration(milliseconds: 180)
-        : const Duration(milliseconds: 300);
-    final PageTransitionType transitionType = useNativeDesktopTransition
-        ? PageTransitionType.fade
-        : PageTransitionType.leftToRight;
-
     switch (routeName) {
       case '/':
-        return PageTransition(
-          child: SafeNotesApp(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const SafeNotesApp(), settings);
 
       case '/login':
         if (args is SessionArguments) {
-          return PageTransition(
-            child: EncryptionPhraseLoginPage(
+          return _buildRoute(
+            EncryptionPhraseLoginPage(
               sessionStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: transitionDuration,
-            type: transitionType,
+            settings,
           );
         }
         return _errorRoute(
@@ -88,13 +73,12 @@ class RouteGenerator {
 
       case '/signup':
         if (args is SessionArguments) {
-          return PageTransition(
-            child: SetEncryptionPhrasePage(
+          return _buildRoute(
+            SetEncryptionPhrasePage(
               sessionStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: transitionDuration,
-            type: transitionType,
+            settings,
           );
         }
         return _errorRoute(
@@ -102,13 +86,12 @@ class RouteGenerator {
 
       case '/authwall':
         if (args is SessionArguments) {
-          return PageTransition(
-            child: AuthWall(
+          return _buildRoute(
+            AuthWall(
               sessionStateStream: args.sessionStream,
               isKeyboardFocused: args.isKeyboardFocused,
             ),
-            duration: transitionDuration,
-            type: transitionType,
+            settings,
           );
         }
         return _errorRoute(
@@ -116,11 +99,7 @@ class RouteGenerator {
 
       case '/home':
         if (args is StreamController<SessionState>) {
-          return PageTransition(
-            child: HomePage(sessionStateStream: args),
-            duration: transitionDuration,
-            type: transitionType,
-          );
+          return _buildRoute(HomePage(sessionStateStream: args), settings);
         }
         return _errorRoute(
             route: routeName, argsType: 'StreamController<SessionState>');
@@ -128,132 +107,97 @@ class RouteGenerator {
       case '/viewnote':
         if (args is NoteDetailPageArguments) {
           //SafeNote note = args;
-          return PageTransition(
-            child: NoteDetailPage(
+          return _buildRoute(
+            NoteDetailPage(
               noteId: args.note.id!,
               sessionStateStream: args.sessionStream,
             ),
-            duration: transitionDuration,
-            type: transitionType,
+            settings,
           );
         }
         return _errorRoute(route: routeName, argsType: 'SafeNotes');
 
       case '/addnote':
         if (args is StreamController<SessionState>) {
-          return PageTransition(
-            child: AddEditNotePage(sessionStateStream: args),
-            duration: transitionDuration,
-            type: transitionType,
-          );
+          return _buildRoute(AddEditNotePage(sessionStateStream: args), settings);
         }
         return _errorRoute(
             route: routeName, argsType: 'StreamController<SessionState>');
 
       case '/editnote':
         if (args is AddEditNoteArguments) {
-          return PageTransition(
-            child: AddEditNotePage(
+          return _buildRoute(
+            AddEditNotePage(
               sessionStateStream: args.sessionStream,
               note: args.note,
             ),
-            duration: transitionDuration,
-            type: transitionType,
+            settings,
           );
         }
         return _errorRoute(route: routeName, argsType: 'SafeNotes');
 
       case '/backup':
-        return PageTransition(
-          child: const BackupSetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const BackupSetting(), settings);
 
       case '/changepassphrase':
-        return PageTransition(
-          child: const ChangePassphrase(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const ChangePassphrase(), settings);
 
       case '/syncSettings':
-        return PageTransition(
-          child: const SyncSettingsPage(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const SyncSettingsPage(), settings);
 
       case '/diagnostics':
-        return PageTransition(
-          child: const SyncDiagnosticsPage(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const SyncDiagnosticsPage(), settings);
 
       case '/deletedNotes':
-        return PageTransition(
-          child: const DeletedNotesPage(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const DeletedNotesPage(), settings);
 
       case '/settings':
         if (args is StreamController<SessionState>) {
-          return PageTransition(
-            child: SettingsScreen(sessionStateStream: args),
-            duration: transitionDuration,
-            type: transitionType,
-          );
+          return _buildRoute(SettingsScreen(sessionStateStream: args), settings);
         }
         return _errorRoute(
             route: routeName, argsType: 'StreamController<SessionState>');
 
       case '/chooseColorSettings':
-        return PageTransition(
-          child: const ColorPallet(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const ColorPallet(), settings);
 
       case '/inactivityTimerSettings':
-        return PageTransition(
-          child: const InactivityTimerSetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const InactivityTimerSetting(), settings);
 
       case '/chooseLanguageSettings':
-        return PageTransition(
-          child: const LanguageSetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const LanguageSetting(), settings);
 
       case '/secureDisplaySetting':
-        return PageTransition(
-          child: const SecureDisplaySetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const SecureDisplaySetting(), settings);
 
       case '/biometricSetting':
-        return PageTransition(
-          child: const BiometricSetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const BiometricSetting(), settings);
 
       case '/autoRotateSettings':
-        return PageTransition(
-          child: const AutoRotationSetting(),
-          duration: transitionDuration,
-          type: transitionType,
-        );
+        return _buildRoute(const AutoRotationSetting(), settings);
 
       default:
         return _errorRoute(route: routeName);
     }
+  }
+
+  /// 统一的页面切换过渡：
+  /// - 桌面端（尤其 Windows）用 Fluent 风格的快速淡入，接近原生窗口切换；
+  /// - 移动端用 Material fade-through（两层交叉淡入淡出），
+  ///   替代原 Web 浏览器式整屏左推（leftToRight）转场。
+  static Route<dynamic> _buildRoute(Widget child, RouteSettings settings) {
+    if (isDesktopPlatform) {
+      return PageTransition(
+        child: child,
+        duration: const Duration(milliseconds: 250),
+        type: PageTransitionType.fade,
+      );
+    }
+    return FadeThroughRoute(
+      child: child,
+      settings: settings,
+      duration: const Duration(milliseconds: 500),
+    );
   }
 
   static Route<dynamic> _errorRoute(
@@ -280,6 +224,54 @@ class RouteGenerator {
         ),
       );
     });
+  }
+}
+
+/// Material fade-through 过渡路由（Material Motion 层级导航推荐）
+///
+/// 进入：旧页前半段淡出、新页后半段淡入；返回反向。
+/// 需要 [opaque] 为 false，两层页面在过渡期间都可见才能交叉。
+class FadeThroughRoute<T> extends PageRouteBuilder<T> {
+  FadeThroughRoute({
+    required this.child,
+    super.settings,
+    this.duration = const Duration(milliseconds: 500),
+  }) : super(
+          transitionDuration: duration,
+          reverseTransitionDuration: duration,
+          opaque: false,
+          pageBuilder: (_, _, _) => child,
+          transitionsBuilder: _fadeThroughTransitions,
+        );
+
+  final Widget child;
+  final Duration duration;
+
+  static Widget _fadeThroughTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // 新页：animation 0→1 时在后 60%（0.4~1.0）淡入；返回时前 60% 淡出。
+    final CurvedAnimation fadeIn = CurvedAnimation(
+      parent: animation,
+      curve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
+      reverseCurve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
+    );
+    // 旧页：被覆盖（secondaryAnimation 0→1）时在前 60% 淡出。
+    final CurvedAnimation fadeOut = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
+      reverseCurve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
+    );
+    return FadeTransition(
+      opacity: fadeIn,
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 1.0, end: 0.0).animate(fadeOut),
+        child: child,
+      ),
+    );
   }
 }
 

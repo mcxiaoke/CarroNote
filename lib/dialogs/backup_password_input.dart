@@ -93,9 +93,6 @@ class BackupPasswordInputDialogState extends State<BackupPasswordInputDialog> {
                 enableIMEPersonalizedLearning: false,
                 decoration: InputDecoration(
                   hintText: 'Encryption Phrase'.tr(),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
                   prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
                     icon: Icon(
