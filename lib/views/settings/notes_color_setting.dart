@@ -23,7 +23,6 @@ import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
 
@@ -156,15 +155,10 @@ class ColorPalletState extends State<ColorPallet> {
       padding: EdgeInsets.only(
           left: widthRatio * 5, right: widthRatio * 5, bottom: heightRatio * 1),
       child: Container(
-        decoration: PreferencesStorage.isThemeDark
-            ? BoxDecoration(
-                color: AppThemes.darkSettingsCanvas,
-                borderRadius: BorderRadius.circular(containerRadius),
-              )
-            : BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(containerRadius),
-              ),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(containerRadius),
+        ),
         child: Column(
           children: <Widget>[
             Padding(
@@ -184,15 +178,11 @@ class ColorPalletState extends State<ColorPallet> {
   Widget _buildColourComboList(BuildContext context) {
     return CupertinoPageScaffold(
       child: CupertinoFormSection.insetGrouped(
-        backgroundColor: PreferencesStorage.isThemeDark
-            ? AppThemes.darkSettingsScaffold
-            : const Color(0x00000000),
-        decoration: PreferencesStorage.isThemeDark
-            ? BoxDecoration(
-                color: AppThemes.darkSettingsCanvas,
-                borderRadius: BorderRadius.circular(15),
-              )
-            : null,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(15),
+        ),
         children: [
           ...List.generate(
             items.length,
@@ -231,11 +221,11 @@ class ColorPalletState extends State<ColorPallet> {
               )
             : null,
         child: selected
-            ? const Padding(
-                padding: EdgeInsets.only(right: 5),
+            ? Padding(
+                padding: const EdgeInsets.only(right: 5),
                 child: Icon(
                   CupertinoIcons.check_mark,
-                  color: Color.fromARGB(255, 45, 118, 234),
+                  color: Theme.of(context).colorScheme.primary,
                   size: 20,
                 ),
               )

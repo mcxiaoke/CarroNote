@@ -81,6 +81,12 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 每个 HomePage 生命周期只弹一次，避免 autoSync 反复触发弹窗轰炸
   bool _passwordChangedDialogShown = false;
 
+  /// 笔记列表/网格的滚动控制器：Scrollbar 与 ScrollView 共享同一 controller，
+  /// 不依赖共享的 PrimaryScrollController（多路由共存时后者会被争用导致
+  /// Scrollbar 失去 ScrollPosition 抛框架异常）。
+  final ScrollController _notesListScroll = ScrollController();
+  final ScrollController _notesGridScroll = ScrollController();
+
   //bool isListner = false;
   @override
   void initState() {
@@ -111,6 +117,8 @@ class HomePageState extends State<HomePage> with RouteAware {
       routeObserver.unsubscribe(this);
     }
     _syncStateSub?.cancel();
+    _notesListScroll.dispose();
+    _notesGridScroll.dispose();
     // 注意：此处不停止日志 Web 服务器。
     // HomePage 会因登出 / 页面跳转等原因反复销毁重建，
     // 而日志服务器的生命周期是"应用级"的，只在应用退出时结束。
@@ -620,8 +628,10 @@ class HomePageState extends State<HomePage> with RouteAware {
     // 桌面/大屏适配（P1-4）：桌面端原生滚动条默认隐藏，长列表难以定位。
     // 外包 Scrollbar，桌面常驻可见（thumbVisibility），移动端保持默认覆盖式。
     return Scrollbar(
+      controller: _notesListScroll,
       thumbVisibility: _isDesktopUi,
       child: ListView.separated(
+        controller: _notesListScroll,
         padding: const EdgeInsets.all(15),
       itemCount: notes.length,
       itemBuilder: ((context, index) {
@@ -667,8 +677,10 @@ class HomePageState extends State<HomePage> with RouteAware {
       builder: (context, constraints) {
         final crossAxisCount = max(2, (constraints.maxWidth / 300).floor());
         return Scrollbar(
+          controller: _notesGridScroll,
           thumbVisibility: _isDesktopUi,
           child: AlignedGridView.count(
+            controller: _notesGridScroll,
             itemCount: notes.length,
             padding: const EdgeInsets.all(12),
             crossAxisCount: crossAxisCount,

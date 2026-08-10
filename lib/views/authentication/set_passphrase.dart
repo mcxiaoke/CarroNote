@@ -108,7 +108,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
                     const Spacer(),
                     Padding(
                       padding: const EdgeInsets.only(top: 5),
-                      child: footer(),
+                      child: footer(context),
                     ),
                   ],
                 ),
@@ -121,18 +121,16 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   Widget _buildTopLogo() {
-    final double topPadding = MediaQuery.of(context).size.height * 0.070;
-    final double dimensions =
-        MediaQuery.of(context).orientation == Orientation.portrait
-            ? MediaQuery.of(context).size.width * 0.40
-            : MediaQuery.of(context).size.height * 0.40;
+    // 固定尺寸，不随窗口缩放（此前用屏宽/屏高 40%，桌面大窗口下 logo 巨大）。
+    const double topPadding = 24;
+    const double logoSize = 180;
 
     return Padding(
-      padding: EdgeInsets.only(top: topPadding),
+      padding: const EdgeInsets.only(top: topPadding),
       child: Center(
         child: SizedBox(
-          width: dimensions,
-          height: dimensions,
+          width: logoSize,
+          height: logoSize,
           child: Image.asset(SafeNotesConfig.appLogoPath),
         ),
       ),

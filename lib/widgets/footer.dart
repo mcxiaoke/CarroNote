@@ -18,11 +18,10 @@ import 'package:flutter/material.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/build_info.dart';
 
-Widget footer() {
+Widget footer(BuildContext context) {
   const double fontSize = 12;
-  final Color color = PreferencesStorage.isThemeDark
-      ? const Color(0xFFafb8ba)
-      : const Color(0xFF8e989c);
+  // 统一用主题 onSurfaceVariant，亮暗自动适配（不再硬编码 #afb8ba/#8e989c）。
+  final Color color = Theme.of(context).colorScheme.onSurfaceVariant;
   final TextStyle style = TextStyle(color: color, fontSize: fontSize);
   final versionText = SafeNotesConfig.appVersion;
   // 第一行：版本号

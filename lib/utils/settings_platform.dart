@@ -15,11 +15,10 @@
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart'
-    show Brightness, BuildContext, Color, Colors, Theme, TextStyle, FontWeight;
+    show BuildContext, ColorScheme, Theme, TextStyle, FontWeight;
 import 'package:settings_ui/settings_ui.dart';
 
 // Project imports:
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 /// 将当前运行平台映射为 settings_ui 的 [DevicePlatform]。
@@ -50,7 +49,7 @@ DevicePlatform get currentDevicePlatform {
 /// [SettingsThemeData.merge] 使用 `field ?? this.field`，未覆盖字段保持默认。
 SettingsThemeData appSettingsTheme(BuildContext context) {
   final bool desktop = isDesktopPlatform;
-  final bool dark = Theme.of(context).brightness == Brightness.dark;
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return SettingsThemeData(
     titleTextStyle: desktop
         ? const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)
@@ -59,12 +58,10 @@ SettingsThemeData appSettingsTheme(BuildContext context) {
         ? const TextStyle(fontSize: 18, height: 1.5)
         : null,
     tileDescriptionTextStyle: desktop ? const TextStyle(fontSize: 14) : null,
-    settingsListBackground:
-        dark ? AppThemes.darkSettingsScaffold : const Color(0xFFF2F2F7),
-    // Material 分组（AndroidSettingsSection）背景：亮色白、暗色沿用 canvas 灰。
-    // settings_ui 的 android 主题默认 settingsSectionBackground 为 null，
-    // 不设会导致"无背景、无区分度"。
-    settingsSectionBackground:
-        dark ? AppThemes.darkSettingsCanvas : Colors.white,
+    // 背景统一跟随主题色板（与 App 其它页面一致），不再硬编码 #F2F2F7/#202020/白。
+    // settingsSectionBackground 需显式设置：settings_ui 的 android 主题默认为 null
+    // （透明无背景块）。
+    settingsListBackground: colorScheme.surface,
+    settingsSectionBackground: colorScheme.surfaceContainerLow,
   );
 }

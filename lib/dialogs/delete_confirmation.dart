@@ -56,9 +56,10 @@ class DeleteConfirmationDialog extends StatelessWidget {
   }
 
   Widget _cautionIcon(BuildContext context) {
+    // 固定尺寸，不随窗口缩放（此前为屏宽 17%，桌面大窗口下图标巨大）。
     return Icon(
       Icons.warning_rounded,
-      size: MediaQuery.of(context).size.width * 0.17,
+      size: 48,
       color: Theme.of(context).colorScheme.error,
     );
   }

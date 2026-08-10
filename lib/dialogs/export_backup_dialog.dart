@@ -89,7 +89,9 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
   @override
   void initState() {
     super.initState();
-    _prefillSessionPassword();
+    // 导出是低频操作：密码必须由用户主动输入，不预填内存中的 app 会话密码
+    // （此前把 PhraseHandler.getPass 静默填进密码框，导出的加密备份实际
+    // 用了 app 登录密码，属于隐私隐患）。密码框留空，用户输入后才可导出。
     _loadDefaultDir();
   }
 
@@ -98,15 +100,6 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
-  }
-
-  /// 默认预填会话密码（登录口令原文），允许用户改动；为空则要求输入
-  void _prefillSessionPassword() {
-    final sessionPass = PhraseHandler.getPass;
-    if (sessionPass.isNotEmpty) {
-      _passwordCtrl.text = sessionPass;
-      _confirmCtrl.text = sessionPass;
-    }
   }
 
   Future<void> _loadDefaultDir() async {

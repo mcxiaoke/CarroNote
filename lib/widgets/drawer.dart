@@ -231,9 +231,7 @@ class HomeDrawerState extends State<HomeDrawer> {
             fontWeight: FontWeight.bold,
             letterSpacing: -0.4,
             fontSize: 18,
-            color: PreferencesStorage.isThemeDark
-                ? Colors.white
-                : Colors.grey.shade600,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         trailing: toggle,
@@ -313,12 +311,10 @@ class HomeDrawerState extends State<HomeDrawer> {
   }
 
   Widget _divide({required double topPadding}) {
-    final bool isDarkTheme = PreferencesStorage.isThemeDark;
-
     return Padding(
       padding: EdgeInsets.only(top: topPadding),
       child: Divider(
-        color: isDarkTheme ? Colors.grey.shade700 : Colors.grey.shade500,
+        color: Theme.of(context).colorScheme.outlineVariant,
       ),
     );
   }

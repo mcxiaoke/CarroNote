@@ -27,6 +27,7 @@ import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/routes/route_generator.dart';
+import 'package:safenotes/utils/app_scroll_behavior.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/route_observer.dart';
 
@@ -60,6 +61,7 @@ class App extends StatelessWidget {
           themeMode: themeProvider.themeMode,
           theme: AppThemes.lightTheme,
           darkTheme: AppThemes.darkTheme,
+          scrollBehavior: const AppScrollBehavior(),
           localizationsDelegates: context.localizationDelegates,
           supportedLocales: context.supportedLocales,
           locale: context.locale,

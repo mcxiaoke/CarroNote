@@ -134,9 +134,4 @@ class AppThemes {
   static ThemeData get lightTheme => _build(Brightness.light);
 
   static ThemeData get darkTheme => _build(Brightness.dark);
-
-  // 设置页背景（无 context，给固定语义值；后续可改为 Theme.of(context).colorScheme.surface）
-  // 深色不再用纯黑，改用 Windows 风格的深灰 #202020，更接近系统设置页。
-  static Color get darkSettingsScaffold => const Color(0xFF202020);
-  static Color? get darkSettingsCanvas => Colors.grey.shade900;
 }

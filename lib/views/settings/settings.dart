@@ -61,11 +61,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _settings() {
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
+    return Column(
+      children: [
+        Expanded(
+          child: SettingsList(
+            platform: currentDevicePlatform,
+            lightTheme: appSettingsTheme(context),
+            darkTheme: appSettingsTheme(context),
+            sections: [
         SettingsSection(
           title: Text('General'.tr()),
           tiles: <SettingsTile>[
@@ -334,13 +337,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await launchUrlExternal(Uri.parse(license));
                 } catch (_) {}
               },
-              description: Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: footer(),
-              ),
             ),
           ],
         ),
+      ],
+    ),
+        ),
+        // 版本号等版权信息：独立于设置项的最底部小字（非可点击 item）
+        footer(context),
       ],
     );
   }

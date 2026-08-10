@@ -22,7 +22,6 @@ import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class InactivityTimerSetting extends StatefulWidget {
@@ -84,15 +83,11 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
     return CupertinoPageScaffold(
       child: SingleChildScrollView(
         child: CupertinoFormSection.insetGrouped(
-          backgroundColor: PreferencesStorage.isThemeDark
-              ? AppThemes.darkSettingsScaffold
-              : const Color(0x00000000),
-          decoration: PreferencesStorage.isThemeDark
-              ? BoxDecoration(
-                  color: AppThemes.darkSettingsCanvas,
-                  borderRadius: BorderRadius.circular(15),
-                )
-              : null,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(15),
+          ),
           children: [
             ...List.generate(
               items.length,
@@ -133,11 +128,11 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
               )
             : null,
         child: selected
-            ? const Padding(
-                padding: EdgeInsets.only(right: 5),
+            ? Padding(
+                padding: const EdgeInsets.only(right: 5),
                 child: Icon(
                   CupertinoIcons.check_mark,
-                  color: Color.fromARGB(255, 45, 118, 234),
+                  color: Theme.of(context).colorScheme.primary,
                   size: 20,
                 ),
               )

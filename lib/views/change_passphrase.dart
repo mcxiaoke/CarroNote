@@ -21,7 +21,6 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:core/core.dart';
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
@@ -125,9 +124,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
                 pageTitleName,
                 style: dialogHeadTextStyle.copyWith(
                   fontSize: 22,
-                  color: PreferencesStorage.isThemeDark
-                      ? Colors.white
-                      : Colors.grey.shade600,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),

@@ -15,8 +15,6 @@
 import 'dart:io';
 
 // Flutter imports:
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 // Package imports:
@@ -30,7 +28,6 @@ import 'package:url_launcher/url_launcher.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -38,7 +35,6 @@ import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/storage_permission.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
-import 'package:safenotes/widgets/login_button.dart';
 
 class BackupSetting extends StatefulWidget {
   const BackupSetting({super.key});
@@ -114,16 +110,23 @@ class BackupSettingState extends State<BackupSetting> {
   }
 
   Widget _bodyBackup(BuildContext context) {
+    final String path = validWorkingBackupFullyQualifiedPath;
+    final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
+
     return SettingsList(
       platform: currentDevicePlatform,
       lightTheme: appSettingsTheme(context),
       darkTheme: appSettingsTheme(context),
       sections: [
         SettingsSection(
-          tiles: <SettingsTile>[
+          tiles: [
             SettingsTile.switchTile(
               initialValue: PreferencesStorage.isBackupOn,
               title: Text('Auto Backup'.tr()),
+              description: Text(
+                'This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ.'
+                    .tr(),
+              ),
               onToggle: (value) async {
                 await PreferencesStorage.setIsBackupOn(value);
                 if (value == true) {
@@ -134,162 +137,54 @@ class BackupSettingState extends State<BackupSetting> {
             ),
           ],
         ),
-        CustomSettingsSection(
-          child: CupertinoPageScaffold(
-            child: Column(
-              children: [
-                iosStylePaddedCard(
-                  children: <Widget>[
-                    _buildUpperBackupView(),
-                    const SizedBox(height: 10),
-                    Text(
-                      "This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ."
-                          .tr(),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildLocationControls(),
-                    const SizedBox(height: 10),
-                    _buildBackupNowButton(),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        CustomSettingsSection(
-          child: CupertinoPageScaffold(
-            child: Column(
-              children: [
-                iosStylePaddedCard(
-                  children: <Widget>[
-                    _buildExportTitle(),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Choose to export encrypted (.snbak) or plain text (.json). Encrypted export protects notes with a password; plain export is NOT encrypted, keep it safe."
-                          .tr(),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildExportNowButton(),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget iosStylePaddedCard({required List<Widget> children}) {
-    final double widthRatio = MediaQuery.of(context).size.width / 100;
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: widthRatio * 5),
-      child: Container(
-        decoration: PreferencesStorage.isThemeDark
-            ? BoxDecoration(
-                color: AppThemes.darkSettingsCanvas,
-                borderRadius: BorderRadius.circular(15),
-              )
-            : BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(15),
+        SettingsSection(
+          title: Text('Backup'.tr()),
+          tiles: [
+            SettingsTile(
+              leading: const Icon(Icons.history),
+              title: Text('Last Backup'.tr()),
+              value: Text(
+                lastUpdateTime.isEmpty ? 'Never synced'.tr() : lastUpdateTime,
               ),
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
+              description: _encrypted(),
+            ),
+            SettingsTile.navigation(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text('Location'.tr()),
+              value: Text(
+                path.isEmpty ? '—' : path,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
+              onPressed: canOpen ? (_) => _openBackupDirectory() : null,
+            ),
+            SettingsTile.navigation(
+              leading: const Icon(Icons.edit_location_alt_outlined),
+              title: Text('Change location'.tr()),
+              onPressed: (_) => _pickBackupLocation(),
+            ),
+            SettingsTile.navigation(
+              leading: const Icon(Icons.backup_outlined),
+              title: Text('Backup Now'.tr()),
+              onPressed: path.isNotEmpty ? (_) => onBackupNow() : null,
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildUpperBackupView() {
-    return Row(
-      children: [
-        Icon(
-          Icons.backup,
-          color: !PreferencesStorage.isThemeDark
-              ? AppThemes.darkSettingsCanvas
-              : null,
-          size: 48,
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Last Backup: {lastBackupTime}'.tr(
-                  namedArgs: {'lastBackupTime': lastUpdateTime},
-                ),
-                style: const TextStyle(fontSize: 10),
+        SettingsSection(
+          title: Text('Export'.tr()),
+          tiles: [
+            SettingsTile.navigation(
+              leading: const Icon(Icons.ios_share),
+              title: Text('Export Backup'.tr()),
+              description: Text(
+                'Choose to export encrypted (.snbak) or plain text (.json). Encrypted export protects notes with a password; plain export is NOT encrypted, keep it safe.'
+                    .tr(),
               ),
-              _showLocationPath(context),
-              if (validWorkingBackupFullyQualifiedPath.isNotEmpty &&
-                  lastUpdateTime.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: _encrypted(),
-                ),
-            ],
-          ),
+              onPressed: (_) => _onExportNotes(),
+            ),
+          ],
         ),
       ],
-    );
-  }
-
-  Widget _showLocationPath(BuildContext context) {
-    final String path = validWorkingBackupFullyQualifiedPath;
-    if (path.isEmpty) {
-      return Text(
-        'Location: {locationPath}'.tr(namedArgs: {'locationPath': '—'}),
-        style: const TextStyle(fontSize: 10),
-      );
-    }
-
-    // 路径可点击打开（桌面/移动均尽力支持）：桌面用文件管理器打开目录，
-    // iOS 走 shareddocuments://，Android 尽力而为（失败仅提示路径）。
-    final VoidCallback? onOpen = validWorkingBackupDirectory.isNotEmpty
-        ? () => openBackupDirectory(validWorkingBackupDirectory, context)
-        : null;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: 'Location: {locationPath}'.tr(namedArgs: {'locationPath': path}),
-            style: TextStyle(
-              color: onOpen != null
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-              fontSize: 10,
-            ),
-            recognizer: onOpen == null
-                ? null
-                : (TapGestureRecognizer()..onTap = onOpen),
-          ),
-          if (onOpen != null)
-            WidgetSpan(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 2),
-                child: Icon(
-                  Icons.open_in_new,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 
@@ -299,47 +194,6 @@ class BackupSettingState extends State<BackupSetting> {
         const Icon(Icons.lock, size: 15, color: Colors.green),
         const SizedBox(width: 1),
         Text('Backup encrypted'.tr(), style: const TextStyle(fontSize: 10)),
-      ],
-    );
-  }
-
-  Widget _buildBackupNowButton() {
-    final String loginText = 'Backup Now'.tr();
-
-    // 手动备份（立即备份）与「自动备份」开关完全解耦：无论开关开否都永远可点，
-    // 仅当目标路径为空（极少见，如目录解析失败）时禁用。
-    return ButtonWidget(
-      text: loginText,
-      onClicked: validWorkingBackupFullyQualifiedPath.isNotEmpty
-          ? onBackupNow
-          : null,
-    );
-  }
-
-  /// 选择备份路径 + 打开备份路径 的控制区（移动/桌面通用）
-  Widget _buildLocationControls() {
-    final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
-    final bool canChange = !Platform.isIOS;
-
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: canOpen ? _openBackupDirectory : null,
-            icon: const Icon(Icons.folder_open, size: 18),
-            label: Text('Open folder'.tr()),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: canChange ? _pickBackupLocation : null,
-            icon: const Icon(Icons.edit_location_alt, size: 18),
-            label: Text(
-              Platform.isIOS ? 'Fixed (iOS)'.tr() : 'Change location'.tr(),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -377,36 +231,6 @@ class BackupSettingState extends State<BackupSetting> {
       if (!mounted) return;
       showSnackBarMessage(context, 'Failed to select folder'.tr());
     }
-  }
-
-  Widget _buildExportTitle() {
-    return Row(
-      children: [
-        Icon(
-          Icons.ios_share,
-          color: !PreferencesStorage.isThemeDark
-              ? AppThemes.darkSettingsCanvas
-              : null,
-          size: 48,
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: Text(
-            'Export Backup'.tr(),
-            style: const TextStyle(fontSize: 16),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildExportNowButton() {
-    final String text = 'Export'.tr();
-
-    return ButtonWidget(
-      text: text,
-      onClicked: _onExportNotes,
-    );
   }
 
   Future<void> _onExportNotes() async {
