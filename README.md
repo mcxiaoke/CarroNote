@@ -1,164 +1,161 @@
 # Safe Notes
 
-> 加密、私密的本地优先（local-first）笔记管理器 —— **端到端加密（E2EE）同步版**
+> Encrypted, private, local-first note manager — **end-to-end encrypted (E2EE) sync edition**
 
-Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地设备上加密存储**（AES-256-GCM），不依赖任何第三方云。
+Safe Notes is a privacy-focused note-taking app: all notes are **encrypted at rest on your device by default** (AES-256-GCM) with no dependency on any third-party cloud.
 
-本项目基于上游 [keshav-space/safenotes](https://github.com/keshav-space/safenotes) fork 并进行了大幅改造，**核心新增了一套完整的端到端加密多设备同步子系统**：客户端 `SyncEngine` + 可插拔后端抽象（WebDAV / 自建 HTTP 服务 / 本地文件系统），并配套提供了 **Go 与 Node.js 两种**参考实现的服务端（SafeServer）。
+This project is a fork of the upstream [keshav-space/safenotes](https://github.com/keshav-space/safenotes) with extensive modifications. The centerpiece is a **complete end-to-end encrypted multi-device sync subsystem**: a client-side `SyncEngine` + a pluggable backend abstraction (WebDAV / self-hosted HTTP service / local filesystem), accompanied by two reference server implementations (SafeServer) in **Go and Node.js**.
 
 > [!IMPORTANT]
-> 安全与责任：再强的加密也要求你**牢记自己的主密码（passphrase）**。密码只存在于你的脑中，任何人都无法帮你找回。
+> Security & responsibility: no matter how strong the encryption, you must **remember your master passphrase**. The passphrase lives only in your head — nobody can recover it for you.
 
 ---
 
-## 特性
+## Features
 
-**基础能力（继承自上游）**
-- 本地 AES-256 加密存储，笔记在设备上永不以明文落盘
-- 生物识别（指纹 / 面容）解锁
-- 安卓后台快照保护、隐身键盘、防截屏
-- 暴力破解防护、闲置自动锁定（inactivity guard）
-- 北极风（Arctic Nord）深 / 浅色主题、列表 / 网格视图、彩色笔记
-- 加密备份导出 / 导入（无缝迁移到新设备）
+**Core capabilities (inherited from upstream)**
+- Local AES-256 encrypted storage; notes never touch disk in plaintext
+- Biometric unlock (fingerprint / face)
+- Android background snapshot protection, stealth keyboard, screenshot protection
+- Brute-force protection, inactivity auto-lock guard
+- Arctic Nord light/dark theme, list/grid views, colored notes
+- Encrypted backup export/import (seamless migration to a new device)
 
-**新增能力（本 fork 改造）**
-- 端到端加密同步：**MK + dataKey 两层密钥**，改密码 O(1) 且原子完成
-- 后端无关（backend-agnostic）：WebDAV（坚果云 / NextCloud / 自建）、自建 SafeServer HTTP、本地文件系统任选
-- 内容寻址（content hash）天然去重、软删除 / 墓碑同步
-- 多设备同步 + LWW 冲突解决 + 历史版本保留
-- 同步诊断页、同步状态可视化
+**New capabilities (this fork)**
+- End-to-end encrypted sync: **MK + dataKey two-layer key hierarchy**, password change in O(1), atomic
+- Backend-agnostic: WebDAV (Jianguoyun / NextCloud / self-hosted), self-hosted SafeServer HTTP, or local filesystem
+- Content-addressable (content hash) storage with natural deduplication; soft-delete / tombstone sync
+- Multi-device sync + LWW conflict resolution + historical version retention
+- Sync diagnostics page, sync status visualization
 
 ---
 
-## 架构概览
+## Architecture Overview
 
-### 整体分层
+### Layered layout
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Flutter 客户端                               │
-│  ├─ UI 层 (views / widgets / dialogs)        │
-│  ├─ 状态管理 Provider (models)               │
-│  └─ 状态装配 / 平台注入 (main)               │
+│  Flutter Client                              │
+│  ├─ UI layer (views / widgets / dialogs)     │
+│  ├─ State management Provider (models)       │
+│  └─ State assembly / platform injection (main)│
 └──────────────┬───────────────────────────────┘
                ▼
 ┌──────────────────────────────────────────────┐
-│  packages/core（纯 Dart 核心包，无 Flutter）  │
-│  ├─ 数据层 SQLite (db/database_handler)      │
-│  ├─ 加密层 (crypto/*)                        │
-│  ├─ 模型层 (models/*)                        │
-│  └─ 同步层 SyncEngine (sync/*)               │
-│         │ 依赖 SyncBackend 抽象接口           │
+│  packages/core (pure Dart core, no Flutter)  │
+│  ├─ Data layer SQLite (db/database_handler)  │
+│  ├─ Crypto layer (crypto/*)                  │
+│  ├─ Model layer (models/*)                   │
+│  └─ Sync layer SyncEngine (sync/*)           │
+│         │ depends on SyncBackend interface   │
 └──────────────┬───────────────────────────────┘
-               │ SyncBackend（可插拔）
+               │ SyncBackend (pluggable)
    ┌───────────┼───────────────┬──────────────┐
    ▼           ▼               ▼              ▼
- WebDAV     SafeServer HTTP   Local FS      （可扩展）
- (云盘)     (Go / Node.js)   (单设备/测试)
+ WebDAV     SafeServer HTTP   Local FS      (extensible)
+ (cloud)    (Go / Node.js)   (single-device/test)
 ```
 
-核心逻辑（加密 / 数据库 / 同步引擎）独立为纯 Dart 包 `packages/core`（禁止 Flutter 依赖，由 pub workspace 编译器强制），App 侧只保留 UI 与状态装配，通过 `package:core/core.dart` 单一出口导入。另提供纯 Dart CLI `bin/safenotes_cli.dart`（无需 Flutter SDK 即可读写加密笔记数据库，可编译为 AOT 原生产物，见 [CLI 客户端](#cli-客户端)）。
+The core logic (crypto / database / sync engine) lives in a pure Dart package `packages/core` (Flutter dependencies are forbidden and enforced by the pub workspace compiler). The app side only keeps UI and state assembly, importing through the single entry point `package:core/core.dart`. A pure Dart CLI `bin/safenotes_cli.dart` is also provided (read/write the encrypted note database without the Flutter SDK; can be compiled to an AOT native binary — see [CLI Client](#cli-client)).
 
-### 目录结构（App 侧 `lib/`）
+### App-side directory structure (`lib/`)
 
-| 目录 / 文件 | 职责 |
+| Directory / file | Responsibility |
 |------|------|
-| `lib/main.dart` | 应用入口：初始化 Provider、数据库、同步服务；注入平台能力（数据库工厂 / 日志目录） |
-| `lib/app.dart` | `MaterialApp` 根，路由与主题装配 |
-| `lib/authwall.dart` | 认证闸门：未解锁时显示密码 / 生物识别登录页 |
-| `lib/data/` | App 侧偏好 / 配置持久化（核心数据库逻辑已在 `packages/core`） |
-| `lib/models/` | App 侧状态模型：session、app_theme、editor_state、biometric_auth 等 |
-| `lib/routes/` | `route_generator.dart`：路由表与页面跳转 |
-| `lib/sync/` | App 侧同步装配：`sync_service.dart`（互斥 / 状态广播）、`sync_config.dart`（配置） |
-| `lib/dialogs/` | 通用对话框：备份导入 / 导出、删除确认、退出登录等 |
-| `lib/widgets/` | 复用组件：笔记卡片 / 磁贴、搜索框、抽屉、登录按钮等 |
-| `lib/views/` | 页面：`home`、`add_edit_note`、`note_view`、`deleted_notes`、`change_passphrase`、认证页、设置页（含同步设置 / 诊断页） |
-| `lib/utils/` | App 侧工具：设备信息、生命周期、样式、时间、密码强度等 |
+| `lib/main.dart` | App entry: initializes Provider, database, sync services; injects platform capabilities (db factory / log directory) |
+| `lib/app.dart` | `MaterialApp` root, route & theme assembly |
+| `lib/authwall.dart` | Auth gate: shows password/biometric login page until unlocked |
+| `lib/data/` | App-side preference/config persistence (core DB logic lives in `packages/core`) |
+| `lib/models/` | App-side state models: session, app_theme, editor_state, biometric_auth, etc. |
+| `lib/routes/` | `route_generator.dart`: route table & navigation |
+| `lib/sync/` | App-side sync assembly: `sync_service.dart` (mutex / state broadcast), `sync_config.dart` (configuration) |
+| `lib/dialogs/` | Common dialogs: backup import/export, delete confirmation, sign out, etc. |
+| `lib/widgets/` | Reusable components: note cards/tiles, search box, drawer, login button, etc. |
+| `lib/views/` | Pages: `home`, `add_edit_note`, `note_view`, `deleted_notes`, `change_passphrase`, auth page, settings (incl. sync settings / diagnostics page) |
+| `lib/utils/` | App-side utilities: device info, lifecycle, styling, time, password strength, etc. |
 
-### 核心包（`packages/core/`）
+### Core package (`packages/core/`)
 
-| 目录 / 文件 | 职责 |
+| Directory / file | Responsibility |
 |------|------|
-| `lib/core.dart` | 核心包唯一公开出口（统一 `import 'package:core/core.dart'`） |
-| `lib/src/ports.dart` | 平台能力注入点：PathProvider / KeyValueStore / SecretStore / LogSink |
-| `lib/src/crypto/` | 加密层：`aes_encryption.dart`（本地 AES-256-GCM / CBC）、`crypto.dart`（PBKDF2 / AES / dataKey wrap-unwrap） |
-| `lib/src/db/` | `database_handler.dart`：SQLite CRUD（`dbFactoryOverride` / `dbPathOverride` 注入） |
-| `lib/src/models/` | 数据模型：`safenote`、`parse_import` |
-| `lib/src/logger/` | 统一日志：`app_logger.dart`（`logDirResolverOverride` 注入）、`log_webserver.dart` |
-| `lib/src/sync/` | 同步核心（见下文） |
-| `bin/../` | （CLI 在根 `bin/safenotes_cli.dart`） |
+| `lib/core.dart` | Single public export of the core package (unified `import 'package:core/core.dart'`) |
+| `lib/src/ports.dart` | Platform capability injection points: PathProvider / KeyValueStore / SecretStore / LogSink |
+| `lib/src/crypto/` | Crypto layer: `aes_encryption.dart` (local AES-256-GCM / CBC), `crypto.dart` (PBKDF2 / AES / dataKey wrap-unwrap) |
+| `lib/src/db/` | `database_handler.dart`: SQLite CRUD (`dbFactoryOverride` / `dbPathOverride` injection) |
+| `lib/src/models/` | Data models: `safenote`, `parse_import` |
+| `lib/src/logger/` | Unified logging: `app_logger.dart` (`logDirResolverOverride` injection), `log_webserver.dart` |
+| `lib/src/sync/` | Sync core (see below) |
 
-### 同步子系统（`packages/core/lib/src/sync/`）
+### Sync subsystem (`packages/core/lib/src/sync/`)
 
-| 文件 | 职责 |
+| File | Responsibility |
 |------|------|
-| `crypto.dart` | **密钥核心**：PBKDF2-HMAC-SHA256 派生 MK（600k 迭代）、AES-256-GCM、dataKey 的 wrap / unwrap |
-| `keyring.dart` | Keyring 管理：vault_id、salt、manifest 版本、改密码、多设备重新认证协调 |
-| `sync_models.dart` | 远端 manifest / item 数据模型（hash、deleted、updatedAt） |
-| `sync_backend.dart` | **SyncBackend 抽象接口**：`getManifest / putManifest / getBlob / putBlob` |
-| `sync_engine.dart` | 同步引擎：5 步流程、manifest 比对、LWW 冲突、乐观锁重试 |
-| `journal.dart` | 同步事件日志（跨进程续接、崩溃自愈） |
-| `backends/local_fs_backend.dart` | 后端实现：本地文件系统（单设备 / 测试） |
-| `backends/webdav_backend.dart` | 后端实现：WebDAV（坚果云 / NextCloud，RFC4918 `If-Match` 乐观锁） |
-| `backends/safe_server_backend.dart` | 后端实现：自建 SafeServer HTTP（Bearer Token + ETag） |
+| `crypto.dart` | **Key core**: PBKDF2-HMAC-SHA256 derives MK (600k iterations), AES-256-GCM, dataKey wrap / unwrap |
+| `keyring.dart` | Keyring management: vault_id, salt, manifest version, password change, multi-device re-auth coordination |
+| `sync_models.dart` | Remote manifest / item data models (hash, deleted, updatedAt) |
+| `sync_backend.dart` | **SyncBackend abstraction**: `getManifest / putManifest / getBlob / putBlob` |
+| `sync_engine.dart` | Sync engine: 5-step flow, manifest diff, LWW conflicts, optimistic-lock retry |
+| `journal.dart` | Sync event log (cross-process resumption, crash self-healing) |
+| `backends/local_fs_backend.dart` | Backend impl: local filesystem (single-device / test) |
+| `backends/webdav_backend.dart` | Backend impl: WebDAV (Jianguoyun / NextCloud, RFC4918 `If-Match` optimistic locking) |
+| `backends/safe_server_backend.dart` | Backend impl: self-hosted SafeServer HTTP (Bearer Token + ETag) |
 
-### 加密与密钥（两层架构）
+### Crypto & keys (two-layer architecture)
 
 ```
-密码层（改密码时变化）
+Password layer (changes on password change)
   MK = PBKDF2-HMAC-SHA256(password, salt, 600k)
-  MK 只用于加密 dataKey，不直接加密笔记
-        ↓ 加密
-数据层（永不变化，真正加密笔记的密钥）
-  dataKey = 随机 32 字节（首次启用同步时生成）
-  encryptedDataKey = AES-GCM(MK, dataKey)  ← 存入 manifest 随版本同步
-        ↓ 加密每条笔记
-笔记层
+  MK only encrypts the dataKey, never the notes themselves
+        ↓ encrypt
+Data layer (never changes; the key that actually encrypts notes)
+  dataKey = random 32 bytes (generated on first sync enablement)
+  encryptedDataKey = AES-GCM(MK, dataKey)  ← stored in manifest, synced with versions
+        ↓ encrypts each note
+Note layer
   envelope = AES-256-GCM(dataKey, nonce, AAD=note_id, content)
 ```
 
-**关键设计**
-- `dataKey` 永不变化 → 改密码只需用新 MK 重新包装 32 字节的 dataKey（O(1)，一次 manifest PUT 原子完成），无需重加密所有笔记
-- `encryptedDataKey` 随 manifest 同步，无需独立的 keystore 同步层，规避多密钥冲突
-- 信封 nonce 随机生成，AAD 绑定笔记 id 防重放
+**Key design decisions**
+- `dataKey` never changes → changing the password only re-wraps the 32-byte dataKey with the new MK (O(1), a single atomic manifest PUT), no need to re-encrypt all notes
+- `encryptedDataKey` is synced with the manifest, so no separate keystore sync layer is needed, avoiding multi-key conflicts
+- Envelope nonces are random; AAD binds the note id to prevent replay
 
-### 同步流程（5 步）
+### Sync flow (5 steps)
 
-1. `GET /manifest` → 拉取远端 manifest 密文，用 MK 解密
-2. 比对本地 vs 远端 manifest（上传 / 下载 / 冲突 / 跳过）
-3. 执行传输：上传新 blob / 下载远端 blob / LWW 落败方标记删除或覆盖
-4. 生成合并 manifest（version = 远端 + 1）
-5. `PUT /manifest`（带 `If-Match` 乐观锁）→ 200 成功；412 冲突则回到第 1 步重试（最多 3 次）
+1. `GET /manifest` → pull the remote manifest ciphertext and decrypt it with MK
+2. Diff local vs. remote manifest (upload / download / conflict / skip)
+3. Perform transfers: upload new blobs / download remote blobs / LWW loser marked deleted or overwritten
+4. Produce a merged manifest (version = remote + 1)
+5. `PUT /manifest` (with `If-Match` optimistic lock) → 200 on success; on 412 conflict, loop back to step 1 and retry (max 3 times)
 
-冲突采用 **LWW（Last-Write-Wins）**，乐观锁仅在 manifest 层（一次 PUT）。旧 hash 的 blob 不立即删除，可作为历史版本恢复。
+Conflicts use **LWW (Last-Write-Wins)**; optimistic locking only happens at the manifest layer (one PUT). Blobs referenced by old hashes are not deleted immediately, so they can be restored as historical versions.
 
-### 同步服务端（`server/`）
+### Sync server (`server/`)
 
-本 fork 提供 SafeServer 参考实现，协议版本 **v2.2**，Go 与 Node.js **两种实现协议完全一致、可互换**。`server/` 目录已被 `.gitignore` 排除，仅供本地测试与参考。
+This fork ships a SafeServer reference implementation, **protocol version v2.2**, with Go and Node.js implementations that are **protocol-identical and interchangeable**. The `server/` directory is excluded by `.gitignore` and intended for local testing and reference only.
 
-- `server/go/`：Go 1.21+，**仅标准库**
-- `server/nodejs/`：JavaScript (ESM)，**仅内置模块**
+- `server/go/`: Go 1.21+, **standard library only**
+- `server/nodejs/`: JavaScript (ESM), **built-in modules only**
 
-服务端遵循**零知识**原则：只处理密文，不解析内容、不计算 hash、不维护版本计数器；通过 ETag（`SHA-256(密文)`）实现乐观锁，原子写入（`tmp + fsync + rename`）防 TOCTOU，并提供 Bearer Token 认证、速率限制、路径穿越防护、graceful shutdown。存储层通过 `Storage + Vault` 接口抽象，可切换到 SQLite / 对象存储。
+The server follows a **zero-knowledge** principle: it only handles ciphertext — no content parsing, no hash computation, no version counters. It implements optimistic locking via ETag (`SHA-256(ciphertext)`), atomic writes (`tmp + fsync + rename`) against TOCTOU, plus Bearer Token auth, rate limiting, path-traversal protection, and graceful shutdown. The storage layer is abstracted behind `Storage + Vault` interfaces and can be swapped for SQLite or object storage.
 
-> 说明：WebDAV 后端**零服务端开发**，可直接用你自己的云盘（坚果云 / NextCloud）；SafeServer 仅在需要多用户、推送通知、速率限制等高级能力时自建。
+> Note: the WebDAV backend requires **zero server-side development** — just use your own cloud drive (Jianguoyun / NextCloud). SafeServer is only worth self-hosting when you need multi-user, push notifications, rate limiting, and other advanced capabilities.
 
 ---
 
-## CLI 客户端
+## CLI Client
 
-核心逻辑的**第二个前端**（App 是第一个）：纯 Dart，无需 Flutter SDK，直接读写加密笔记数据库，
-是**真实流程测试**（多目录多设备同步、密钥迁移、冲突、改密码等）的主力工具。
-用 `--data-dir` 指定一个数据目录即视为**一台设备实例**，用两个目录即可模拟两台设备做同步。
+A **second frontend** for the core logic (the app is the first): pure Dart, no Flutter SDK needed, reads and writes the encrypted note database directly. It is the primary tool for **real-flow testing** (multi-directory multi-device sync, key migration, conflicts, password changes, etc.). Pass `--data-dir` to designate a data directory as **one device instance**; use two directories to simulate two devices syncing.
 
 ```bash
-# 编译为 AOT 原生产物（无 build-hooks 噪声，比 dart run 快约 58x；bundle 需整体分发）
+# Compile to an AOT native binary (no build-hooks noise, ~58x faster than dart run; distribute the whole bundle)
 make cli-build        # = task cli-build = just cli-build
-                      # 产物：build/cli/bundle/bin/safenotes_cli.exe + bundle/lib/sqlite3.dll
+                      # Output: build/cli/bundle/bin/safenotes_cli.exe + bundle/lib/sqlite3.dll
 
-# 常用命令（产物位于 PATH 后可直接执行）
+# Common commands (run directly once the binary is on PATH)
 safenotes_cli.exe --data-dir temp/dev-a --password P keyring init
-safenotes_cli.exe --data-dir temp/dev-a --password P note add --title 标题 --body 正文
+safenotes_cli.exe --data-dir temp/dev-a --password P note add --title Title --body Body
 safenotes_cli.exe --data-dir temp/dev-a --password P note list
 safenotes_cli.exe --data-dir temp/dev-a --password P sync setup --type localfs --path temp/vault
 safenotes_cli.exe --data-dir temp/dev-a --password P sync run
@@ -166,184 +163,186 @@ safenotes_cli.exe --data-dir temp/dev-a --password P export --out backup.json
 safenotes_cli.exe --data-dir temp/dev-a --password P db info
 ```
 
-命令分组：`db`（info / wipe）、`keyring`（init / unlock / status / verify / change-password）、
-`note`（add / list / get / update / delete / restore / hard-delete / purge-deleted）、
-`export` / `import`、`sync`（setup / run / repair / status）、`log` / `journal`、`meta`。
-退出码约定：`0` 成功、`1` 用户可预期错误、`2` 异常崩溃。完整说明见
-`docs/cli-client-design-20260803.md`，端到端测试见 [测试](#测试) 中的 `e2e`。
+Command groups: `db` (info / wipe), `keyring` (init / unlock / status / verify / change-password),
+`note` (add / list / get / update / delete / restore / hard-delete / purge-deleted),
+`export` / `import`, `sync` (setup / run / repair / status), `log` / `journal`, `meta`.
+Exit-code convention: `0` success, `1` user-anticipated error, `2` abnormal crash. Full documentation in
+`docs/cli-client-design.md`; end-to-end tests in [Testing](#testing) under `e2e`.
 
 ---
 
-## 日志系统
+## Logging System
 
-Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。日志核心在 `packages/core/lib/src/logger/`，平台目录由 App 侧经 `logDirResolverOverride` 注入。
+Safe Notes ships an **app-wide unified logging system** covering all important business operations and uncaught exceptions, enabled equally on desktop (Windows / macOS / Linux) and mobile (Android / iOS). The log core lives in `packages/core/lib/src/logger/`; the platform directory is injected by the app side via `logDirResolverOverride`.
 
-### 核心设计
-- **统一入口**：`Log.app` / `Log.note` / `Log.db` / `Log.auth` / `Log.sync` / `Log.backup` / `Log.settings` / `Log.crypto` / `Log.web` / `Log.ui` 十类分级日志（trace / debug / info / warn / error / fatal）。
-- **三路输出**：① 调试期 `console`；② 内存环形缓冲（调试面板 / 日志 Web 服务器实时查看）；③ 按日期滚动的日志文件（`safenotes-YYYYMMDD.log`，保留 7 天）。
-- **全平台落地**：桌面端日志落在 exe 同目录 `logs/`，移动端落在应用私有数据目录 `logs/`。
+### Core design
+- **Unified entry points**: `Log.app` / `Log.note` / `Log.db` / `Log.auth` / `Log.sync` / `Log.backup` / `Log.settings` / `Log.crypto` / `Log.web` / `Log.ui` — ten leveled log categories (trace / debug / info / warn / error / fatal).
+- **Three output sinks**: ① `console` during debugging; ② an in-memory ring buffer (debug panel / real-time log web server); ③ date-rotated log files (`safenotes-YYYYMMDD.log`, retained 7 days).
+- **All platforms**: desktop logs land in `logs/` next to the executable; mobile logs in the app-private data directory `logs/`.
 
-### 覆盖范围
-- 笔记新增 / 编辑 / 删除 / 恢复 / 永久删除（含 uuid 与内容哈希，便于定位具体笔记）
-- 数据库建表 / 升级 / 迁移 / 重加密 / 删库
-- 登录 / 登出 / 改密码 / 生物识别
-- 备份导入 / 导出
-- 同步引擎全部动作（上传 / 下载 / 删除 / 冲突 / 迁移 / 修复）
-- **所有未捕获 `Exception` / `Error`**（经 `main.dart` 的 `FlutterError.onError` / `PlatformDispatcher.onError` / `runZonedGuarded` 全局兜底）
+### Coverage
+- Note create / edit / delete / restore / permanent delete (including uuid and content hash for locating specific notes)
+- Database create / upgrade / migration / re-encryption / deletion
+- Login / logout / password change / biometric auth
+- Backup import / export
+- All sync engine actions (upload / download / delete / conflict / migration / repair)
+- **All uncaught `Exception` / `Error`** (global fallback via `FlutterError.onError` / `PlatformDispatcher.onError` / `runZonedGuarded` in `main.dart`)
 
-### 日志 Web 服务器
-进入主界面（HomePage）即自动启动，提供浏览器端实时日志查看器；应用退出时停止。默认访问 `http://127.0.0.1:8888/`。
-
----
-
-## 技术栈
-
-- **框架**：Flutter ≥ 3.44.0 / Dart ≥ 3.12
-- **核心包**：`packages/core`（纯 Dart，pub workspace，禁止 Flutter 依赖；编译器强制）
-- **本地存储**：`sqflite`（移动端）、`sqflite_common_ffi`（桌面端 / 测试 / CLI）
-- **安全存储**：`flutter_secure_storage`（密码 / MK 缓存于系统钥匙串）
-- **加密**：`cryptography` + `cryptography_flutter`（AES-256-GCM / PBKDF2，硬件加速）、`crypto`（SHA-256 内容 hash）
-- **网络**：`http`（WebDAV 客户端）
-- **状态管理**：`provider`
-- **生物识别**：`local_auth`；**本地化**：`easy_localization`
-- **CLI 解析**：`args`（CommandRunner）；**任务管理**：`make` / `task` / `just` 三套等价
-- **同步服务端**：Go（标准库）/ Node.js（内置模块）
+### Log web server
+Starts automatically when entering the home page and provides a real-time log viewer in the browser; stops on app exit. Default at `http://127.0.0.1:8888/`.
 
 ---
 
-## 构建与运行
+## Tech Stack
 
-**任务管理**：`make`（Makefile）、`task`（Taskfile.yml）、`just`（justfile）三份**完全等价**，
-按「依赖 / 构建 / 测试」三类组织，均含 `get`、`clean`、`run`、`cli-build`、`build-*`、`test`、
-`test-core`、`analyze`、`e2e` 等。Windows 下 `make` 默认不在 PATH，推荐用 `task` 或 `just`
-（`task --list` / `just --list` 查看全部任务）。
+- **Framework**: Flutter ≥ 3.44.0 / Dart ≥ 3.12
+- **Core package**: `packages/core` (pure Dart, pub workspace, Flutter dependencies forbidden — enforced by the compiler)
+- **Local storage**: `sqflite` (mobile), `sqflite_common_ffi` (desktop / tests / CLI)
+- **Secure storage**: `flutter_secure_storage` (passphrase / MK cached in the OS keychain)
+- **Crypto**: `cryptography` + `cryptography_flutter` (AES-256-GCM / PBKDF2, hardware accelerated), `crypto` (SHA-256 content hash)
+- **Networking**: `http` (WebDAV client)
+- **State management**: `provider`
+- **Biometrics**: `local_auth`; **i18n**: `easy_localization`
+- **CLI parsing**: `args` (CommandRunner); **task management**: `make` / `task` / `just` (three equivalent)
+- **Sync server**: Go (standard library) / Node.js (built-in modules)
+
+---
+
+## Build & Run
+
+**Task management**: `make` (Makefile), `task` (Taskfile.yml), and `just` (justfile) are **fully equivalent**,
+organized into dependency / build / test groups. All provide `get`, `clean`, `run`, `cli-build`, `build-*`, `test`,
+`test-core`, `analyze`, `e2e`, etc. On Windows `make` is usually not on PATH, so `task` or `just` is recommended
+(`task --list` / `just --list` shows all tasks).
 
 ```bash
-# 安装依赖
-make get              # = task get = just get（自动注入最新构建信息）
+# Install dependencies
+make get              # = task get = just get (auto-injects the latest build info)
 
-# 调试运行
+# Debug run
 make run              # = task run = just run
 
-# 构建 CLI 客户端（AOT 原生产物，见「CLI 客户端」一节）
+# Build the CLI client (AOT native binary; see "CLI Client")
 make cli-build
 
-# 构建 Android 发布包
+# Build Android release packages
 make build-apk        # APK (release)
 make build-aab        # AppBundle (release)
 
-# 桌面端（Windows / macOS / Linux，使用 sqflite_common_ffi）
+# Desktop (Windows / macOS / Linux, uses sqflite_common_ffi)
 flutter config --enable-<platform>-desktop
 make build-windows / build-linux / build-macos
 flutter run -d <platform>
 
-# 查看全部任务
+# List all tasks
 task --list
 just --list
 ```
 
-> 首次启动需设置主密码；笔记在本地加密后写入 SQLite。启用同步需在「设置 → 同步」中配置后端。
+> On first launch you must set a master password; notes are encrypted locally before being written to SQLite. To enable sync, configure a backend under "Settings → Sync".
 
 ---
 
-## 构建信息注入（版本 / Git / 构建时间）
+## Build Info Injection (Version / Git / Build Time)
 
-每次构建都会把 **Git 提交哈希、分支、tag、工作区是否脏、累计提交数** 以及 **构建时间** 注入到应用内，并在启动时打印一份版本详情，便于复现线上问题与溯源。
+Every build injects the **Git commit hash, branch, tag, working-tree dirtiness, cumulative commit count** and the **build time** into the app, then prints a version report on startup to help reproduce issues and trace back to the exact build.
 
-实现方式：构建前由 `scripts/generate_build_info.py` 生成 `lib/utils/build_info.dart`（编译期常量，零运行时开销），`lib/main.dart` 的 `_initLogging()` 在启动时读取并打印。
+Implementation: before building, `scripts/generate_build_info.py` generates `lib/utils/build_info.dart` (compile-time constants, zero runtime overhead); `_initLogging()` in `lib/main.dart` reads and prints it at startup.
 
-**统一使用 `make` 目标构建**（会自动先注入最新构建信息；`task` / `just` 同理）：
+**Always build via `make` targets** (they auto-inject the latest build info first; `task` / `just` behave the same):
 
 ```bash
-make run            # 调试运行（自动注入）
-make build-apk     # Android APK (release)
-make build-aab     # Android AppBundle (release)
-make build-windows # Windows 桌面端 (release)
-make build-linux   # Linux 桌面端 (release)
-make build-macos   # macOS 桌面端 (release)
-make release       # 发布打包（多 ABI 拆分 + AppBundle，先注入最新信息）
+make run            # Debug run (auto-injected)
+make build-apk      # Android APK (release)
+make build-aab      # Android AppBundle (release)
+make build-windows  # Windows desktop (release)
+make build-linux    # Linux desktop (release)
+make build-macos    # macOS desktop (release)
+make release        # Release packaging (multi-ABI split + AppBundle; injects latest info first)
 ```
 
-> 若直接执行 `flutter run` / `flutter build`，会沿用 `lib/utils/build_info.dart` 中**上一次生成**的值（文件始终存在，可正常编译，仅信息可能滞后）。需要最新元数据请用上面的 `make` 目标。
+> If you run `flutter run` / `flutter build` directly, the **previously generated** values in `lib/utils/build_info.dart` are reused (the file always exists and compiles fine; the info may just be stale). Use the `make` targets above for fresh metadata.
 
-**手动生成 / 仅刷新构建信息：**
+**Generate / refresh build info manually:**
 
 ```bash
 make gen-build-info
-# 或
+# or
 python scripts/generate_build_info.py
 ```
 
-`BuildInfo` 暴露字段：`version` / `buildNumber` / `versionString` / `gitHash` / `gitHashShort` / `gitBranch` / `gitTag` / `gitCommitCount` / `gitDirty` / `buildDate`(UTC) / `buildDateReadable`，以及便捷 getter `summary`（单行）与 `detail`（多行，可用于「关于 / 调试」面板）。
+`BuildInfo` exposes: `version` / `buildNumber` / `versionString` / `gitHash` / `gitHashShort` / `gitBranch` / `gitTag` / `gitCommitCount` / `gitDirty` / `buildDate`(UTC) / `buildDateReadable`, plus convenience getters `summary` (one line) and `detail` (multi-line, usable in an About/Debug panel).
 
-启动日志示例：
+Startup log example:
 
 ```
-════════ SafeNotes 启动 ════════
-版本: 2.3.0 (build 10)
-Git: 0a4d888 @ sync-refact-dev (工作区有未提交改动)
+════════ SafeNotes startup ════════
+Version: 2.3.0 (build 10)
+Git: 0a4d888 @ sync-refact-dev (uncommitted changes in workspace)
 Commit: 0a4d888c82a636d3394d6b6c939c61e2adfe4b7d
-Tag: v2.3.0-188-g0a4d888 (累计提交 608)
-构建时间: 2026-08-02 12:21:18 (UTC 2026-08-02T04:21:18Z)
-平台: windows Microsoft Windows [Version 10.0.22631.0]
+Tag: v2.3.0-188-g0a4d888 (cumulative commits 608)
+Build time: 2026-08-02 12:21:18 (UTC 2026-08-02T04:21:18Z)
+Platform: windows Microsoft Windows [Version 10.0.22631.0]
 Dart: 3.44.8
 ```
 
 ---
 
-## 测试
+## Testing
 
-核心逻辑为纯 Dart 包，**无需 Flutter SDK 即可跑核心测试**；App 侧测试需要 Flutter。
+The core logic is a pure Dart package, so **core tests run without the Flutter SDK**; app-side tests need Flutter.
 
 ```bash
-# 运行全部测试（核心 + App）
-make test                # = task test = just test；dart test packages/core/test + flutter test
+# Run all tests (core + app)
+make test                # = task test = just test; dart test packages/core/test + flutter test
 
-# 仅运行核心包测试（纯 Dart，无需 Flutter SDK）
+# Core package tests only (pure Dart, no Flutter SDK required)
 make test-core           # dart test packages/core/test
-dart test packages/core/test/sync/crypto_test.dart    # 仅加密
-dart test packages/core/test/sync                # 仅同步引擎 / 多设备 / 长期存续
+dart test packages/core/test/sync/crypto_test.dart    # crypto only
+dart test packages/core/test/sync                # sync engine / multi-device / long-running only
 
-# CLI 端到端测试（需先 make cli-build，脚本自动优先用编译产物）
+# CLI end-to-end tests (requires `make cli-build` first; the script prefers the compiled binary)
 make e2e                 # = task e2e = just e2e
 
-# 运行 App 侧测试（需 Flutter）
+# App-side tests (requires Flutter)
 flutter test
 ```
 
-**同步集成测试**（`packages/core/test/sync/safe_server_integration_test.dart`）需要启动 SafeServer：
-- 默认使用 **Go** 实现（测试 `setUpAll` 会自动构建 `server/go` 二进制并启动）
-- 切换为 **Node.js** 实现：`$env:SN_SERVER="node"`（PowerShell）后运行 `flutter test`
-- 覆盖：首次同步、新设备同步、增量同步、LWW 冲突、墓碑同步、幂等性、HTTP 协议（404 / 401 / 412 / ETag）、v2.2 资源层、速率限制
-- 清理脚本：`test/scripts/test-cleanup.ps1`（杀残留进程 + 清理临时文件）
+**Sync integration tests** (`packages/core/test/sync/safe_server_integration_test.dart`) need a running SafeServer:
+- Default uses the **Go** implementation (the test `setUpAll` auto-builds the `server/go` binary and starts it)
+- Switch to the **Node.js** implementation: run `flutter test` with `$env:SN_SERVER="node"` (PowerShell)
+- Coverage: first sync, new-device sync, incremental sync, LWW conflicts, tombstone sync, idempotency, HTTP protocol (404 / 401 / 412 / ETag), v2.2 resource layer, rate limiting
+- Cleanup script: `test/scripts/test-cleanup.ps1` (kills leftover processes + cleans temp files)
 
 ---
 
-## 开发文档
+## Documentation
 
-详细设计、协议规范与评审记录在 `docs/` 目录：
-- `docs/sync-protocol-spec.md` / `docs/server-api-spec.md`：客户端 / 服务端协议规范
-- `docs/simplified-sync-design.md` / `docs/sync-feature-design.md`：同步架构设计
-- `docs/server-implementation.md`：SafeServer 实现文档
-- `docs/cli-client-design-20260803.md`：CLI 客户端设计（命令树 / 验收清单 / 实现要点）
-- `docs/pure-dart-core-extraction-research-20260802.md`：核心逻辑纯 Dart 化抽取设计
-- `docs/CHANGES-YYYYMMDD.md`：每日变更日志（按日期归档）
+Detailed design, protocol specs, and review records live in the `docs/` directory:
+- `docs/server-api-spec.md`: server HTTP API spec (endpoints, ETag, auth)
+- `docs/simplified-sync-design.md` / `docs/sync-feature-design.md`: sync architecture design
+- `docs/server-implementation.md` / `docs/server-backup-design.md`: SafeServer implementation docs
+- `docs/manifest-reliability-design.md` / `docs/spec-manifest.md` / `docs/spec-blob.md` / `docs/spec-journal.md`: manifest / blob / journal spec details
+- `docs/cli-client-design.md`: CLI client design (command tree / acceptance checklist / implementation notes)
+- `docs/crypto-overview-20260810.md`: crypto layer overview
+- `docs/backup-encryption-design-20260810.md`: backup encryption design
+- `docs/CHANGES-YYYYMMDD.md`: daily change logs (archived by date)
 
 ---
 
-## 与原版（上游）的主要差异
+## Main Differences from Upstream
 
-| 维度 | 上游 | 本 fork |
+| Dimension | Upstream | This fork |
 |------|------|---------|
-| 同步 | 无（纯本地） | 完整 E2EE 多设备同步子系统 |
-| 服务端 | 无 | Go / Node.js SafeServer v2.2 参考实现 |
-| 加密 | 本地 AES 加密 | 本地加密 + 同步层 MK + dataKey 两层密钥 |
-| 核心分层 | 与 UI 混编 | 核心逻辑抽为纯 Dart 包 `packages/core`（无 Flutter 依赖，可 CLI / 测试独立驱动） |
-| 测试 | 基础 widget 测试 | 新增加密向量、SyncEngine、多设备 / 混沌 / 集成测试（核心测试可脱离 Flutter SDK 运行） |
-| 设置页 | 基础 | 新增同步设置、同步诊断页、最近删除 |
+| Sync | None (local-only) | Complete E2EE multi-device sync subsystem |
+| Server | None | Go / Node.js SafeServer v2.2 reference implementations |
+| Crypto | Local AES encryption | Local encryption + sync-layer MK + dataKey two-layer key hierarchy |
+| Core layering | Mixed with UI | Core logic extracted into pure Dart package `packages/core` (no Flutter dependency; independently drivable by CLI / tests) |
+| Testing | Basic widget tests | New crypto vectors, SyncEngine, multi-device / chaos / integration tests (core tests run without the Flutter SDK) |
+| Settings page | Basic | Added sync settings, sync diagnostics page, recently deleted |
 
 ---
 
-## 许可证
+## License
 
-GPL-3.0-or-later。© Keshav Priyadarshi and others。详见 `LICENSE`、`AUTHORS.md`、`SECURITY.md`。
+GPL-3.0-or-later. © Keshav Priyadarshi and others. See `LICENSE`, `AUTHORS.md`, `SECURITY.md`.
