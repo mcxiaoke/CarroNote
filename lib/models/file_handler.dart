@@ -113,6 +113,11 @@ class FileHandler {
 
   Future<String?> getFileAsString() async {
     try {
+      // 评审 #10：导入文件体积上限，防止误选超大文件把内存打爆。
+      // 基线：单条笔记 ≤ 1MB，正常备份 ≤ 1 万条；上限取 256MB 已远超需要，
+      // 同时阻止普通误操作读到数 GB 的任意文件。
+      const int maxImportBytes = 256 * 1024 * 1024;
+      final String? path;
       if (Platform.isAndroid) {
         // emptyCache to prevent filepicker from picking old cached version
         // starting Android 11 all files are provided through cache mechanism and not directly
@@ -134,10 +139,14 @@ class FileHandler {
         if (result != null) {
           PlatformFile file = result.files.first;
           if (file.size == 0) return null;
-          var jsonFile = File(file.path!);
-
-          String content = jsonFile.readAsStringSync();
-          return content;
+          if (file.size > maxImportBytes) {
+            Log.backup.w('导入失败：备份文件过大 ${file.size} '
+                '>(上限 $maxImportBytes 字节)');
+            return "unrecognized";
+          }
+          path = file.path;
+        } else {
+          return null;
         }
       } else if (Platform.isIOS) {
         FilePickerResult? result = await FilePicker.pickFiles(
@@ -146,25 +155,33 @@ class FileHandler {
           allowMultiple: false,
         );
         if (result != null) {
-          File jsonFile = File(result.files.single.path!);
-          String content = jsonFile.readAsStringSync();
-          return content;
+          final file = result.files.single;
+          if (file.size > maxImportBytes) {
+            Log.backup.w('导入失败：备份文件过大 ${file.size} '
+                '>(上限 $maxImportBytes 字节)');
+            return "unrecognized";
+          }
+          path = file.path;
+        } else {
+          return null;
         }
+      } else {
+        return null;
       }
+      // 评审 #10：主线程同步读任意大文件会卡 UI（甚至整机冻结几十秒），
+      // 改为后台 isolate 异步读取。
+      return await File(path!).readAsString();
     } catch (e) {
       return "unrecognized";
     }
-    return null;
   }
 
   Future<void> insertNotes(List<SafeNote> imported) async {
     Log.backup.i('开始写入导入的笔记: 共 ${imported.length} 条');
     final startedAt = DateTime.now();
-    var ok = 0;
-    for (final note in imported) {
-      await NotesDatabase.instance.storeNote(note);
-      ok++;
-    }
+    // 评审 #10：整个导入放入单个事务，任一条失败整体回滚，
+    // 不再出现「中途崩/错一条 → 半库数据」的脏状态。
+    final ok = await NotesDatabase.instance.storeNotesInTransaction(imported);
     final ms = DateTime.now().difference(startedAt).inMilliseconds;
     Log.backup.i('导入完成: 成功写入 $ok/${imported.length} 条笔记, 耗时 ${ms}ms');
   }

@@ -321,6 +321,19 @@ class SyncCrypto {
     Uint8List aad,
     Uint8List envelope,
   ) async {
+    // 评审 #9：信封长度校验必须在任何 sublist / SecretBox 构造之前，
+    // 否则过短输入会抛裸 RangeError（Error 而非 Exception），
+    // 上层 `on SyncDecryptionException` 无法捕获，被误判为"未预期崩溃"。
+    // 最小合法长度 = nonce(12) + tag(16) = 28。
+    final minEnvelopeLength = _nonceLength + _tagLength;
+    if (envelope.length < minEnvelopeLength) {
+      Log.crypto.w('AES-GCM 解密失败: 信封长度不足 '
+          '(${envelope.length} < $minEnvelopeLength)');
+      throw SyncDecryptionException(
+        '信封长度不足（${envelope.length} < $minEnvelopeLength）',
+        aadId: aad.length <= 32 ? utf8.decode(aad, allowMalformed: true) : null,
+      );
+    }
     // 分离 nonce 和 ciphertext+tag
     final nonce = envelope.sublist(0, _nonceLength);
     final ctAndTag = envelope.sublist(_nonceLength);
@@ -354,5 +367,26 @@ class SyncCrypto {
     return Uint8List.fromList(
       List<int>.generate(length, (_) => random.nextInt(256)),
     );
+  }
+
+  // ──────────────────────────────────────────────
+  // 常数时间比较
+  // ──────────────────────────────────────────────
+
+  /// 常数时间比较两个字节序列是否相等（评审 #16 统一入口）
+  ///
+  /// 用于比较 dataKey / MK，避免因第一处不匹配即可提前返回的时序攻击。
+  /// 长度不同时直接返回 false——各比较对象（dataKey 等）长度固定，
+  /// 长度信息本身不构成可用的侧信道。
+  ///
+  /// 来源：原 `sync_engine._bytesEqual`（常数时间）与 `keyring._sameKey`
+  /// （非常数时间）语义重复，统一收敛为这里的唯一定义。
+  static bool bytesEqual(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
   }
 }

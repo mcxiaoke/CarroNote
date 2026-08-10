@@ -83,6 +83,7 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
   }
 
   Widget _buildTimeList(BuildContext context) {
+    final items = _inactivityItems;
     return CupertinoPageScaffold(
       child: SingleChildScrollView(
         child: CupertinoFormSection.insetGrouped(
@@ -155,12 +156,28 @@ class Item {
   const Item({required this.prefix, this.helper});
 }
 
-List<Item> items = [
-  Item(prefix: '30 seconds'.tr(), helper: null),
-  Item(prefix: '1 minute'.tr(), helper: null),
-  Item(prefix: '2 minutes'.tr(), helper: null),
-  Item(prefix: '3 minutes'.tr(), helper: 'Default'.tr()),
-  Item(prefix: '5 minutes'.tr(), helper: null),
-  Item(prefix: '10 minutes'.tr(), helper: null),
-  Item(prefix: '15 minutes'.tr(), helper: null),
-];
+// 评审 #18：展示列表改为从 PreferenceStorage 的唯一数据源派生，
+// 消除 inactivity_setting.dart 与 preference_and_config.dart 双份硬编码。
+// 翻译键在语言包里按「1 minute / N minutes / 30 seconds」存在，按值生成。
+List<Item> get _inactivityItems =>
+    PreferencesStorage.kInactivityTimeoutChoicesSeconds.asMap().entries.map((
+      entry,
+    ) {
+      final seconds = entry.value;
+      final index = entry.key;
+      String prefix;
+      if (seconds < 60) {
+        prefix = '$seconds seconds'.tr();
+      } else if (seconds == 60) {
+        prefix = '1 minute'.tr();
+      } else {
+        prefix = '${seconds ~/ 60} minutes'.tr();
+      }
+      // 缺省值索引标出「Default」提示（原实现里 3 分钟标记为 Default）
+      return Item(
+        prefix: prefix,
+        helper: index == PreferencesStorage.kDefaultInactivityTimeoutIndex
+            ? 'Default'.tr()
+            : null,
+      );
+    }).toList();

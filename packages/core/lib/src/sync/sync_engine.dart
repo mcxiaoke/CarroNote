@@ -217,8 +217,10 @@ class SyncEngine {
   /// 执行一次完整同步
   ///
   /// 返回 [SyncResult]，包含上传/下载/删除/冲突/迁移统计。
-  /// 如果远端不可用（网络错误），返回 failure 结果。
   /// 如果乐观锁冲突超过 maxRetries 次，返回 failure 结果。
+  ///
+  /// 注意：远端不可用时的 `BackendUnavailableException` **直接抛出**，
+  /// 不返回 failure（文档修正，见评审 #16）；由上层 SyncService 兜底捕获。
   ///
   /// v4（epoch 消除 §8.2[I]）：scenario-b（他端改密码）不再「继续同步 +
   /// passwordEpochMismatch 标志」，而是由 _syncOnce **中止并返回 failure**，
@@ -585,7 +587,7 @@ class SyncEngine {
               remoteDk = null;
             }
           }
-          if (remoteDk != null && _bytesEqual(remoteDk!, _dataKey)) {
+          if (remoteDk != null && SyncCrypto.bytesEqual(remoteDk, _dataKey)) {
             // 能解开 + 解出的 dataKey 与本地一致 → 两端同 MK（密码一致）、
             // 同 dataKey，包裹差异仅来自 nonce 随机性或远端重新 wrap。
             // 本地包裹合法（能解开本地全部 blob），
@@ -685,7 +687,7 @@ class SyncEngine {
         );
         if (migrationResult.success && migrationResult.remoteDataKey != null) {
           // 本地 MK 能解开远端包裹 → 同密码同 salt：
-          if (_bytesEqual(migrationResult.remoteDataKey!, _dataKey)) {
+          if (SyncCrypto.bytesEqual(migrationResult.remoteDataKey!, _dataKey)) {
             // remoteDataKey == 本地 dataKey 但指纹不同（理论上矛盾，防御处理）
             remoteManifest = await ManifestCrypto.deserialize(
               _dataKey,
@@ -1064,7 +1066,6 @@ class SyncEngine {
       Uint8List? workingKey;
       try {
         await _openBlobEnvelope(
-          uuid,
           item.hash,
           blob,
           dataKeyOverride: _dataKey,
@@ -1759,7 +1760,6 @@ class SyncEngine {
         }
         // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
         final plaintext = await _openBlobEnvelope(
-          uuid,
           loserItem.hash,
           envelope,
         );
@@ -2031,7 +2031,6 @@ class SyncEngine {
   ///
   /// [dataKeyOverride] 可选：用指定的 dataKey 解密（默认当前 _dataKey）。
   Future<Uint8List> _openBlobEnvelope(
-    String uuid,
     String hash,
     Uint8List envelope, {
     Uint8List? dataKeyOverride,
@@ -2145,7 +2144,7 @@ class SyncEngine {
     // 删除的 heal 分支曾「用当前纪元重传覆盖他人数据」——正是翻转事故的
     // 制度性根源（见 docs/epoch-elimination-design-20260801.md §5.4）。
     try {
-      final plaintext = await _openBlobEnvelope(uuid, item.hash, envelope);
+      final plaintext = await _openBlobEnvelope(item.hash, envelope);
       final content = SafeNote.fromContentBytes(plaintext);
 
       // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
@@ -2603,8 +2602,11 @@ class SyncEngine {
         // P3-log：隔离区清理失败不阻断同步，但需留痕
         Log.sync.w('_gcOrphanBlobs: purgeOrphans 失败（下次同步重试）', error: e);
       }
-    } on Exception catch (e) {
+    } on Object catch (e) {
       // P3-log：整体 GC 失败不阻断同步，下次同步重试，但需留痕
+      // 评审 #16：外层用 on Object（与全文解密兜底一致），
+      // 防止非 Exception 的 Error（如 RangeError/FormatException）中断同步主流程
+      Log.sync.w('_gcOrphanBlobs: 整体 GC 失败（下次同步重试）', error: e);
       Log.sync.w('_gcOrphanBlobs: 整体 GC 失败（下次同步重试）', error: e);
     }
   }
@@ -2825,19 +2827,6 @@ class SyncEngine {
           '（旧协议数据不做兼容解读/迁移/覆盖）';
     }
     return null;
-  }
-
-  /// 常数时间比较两个字节序列是否相等
-  ///
-  /// 用于比较 dataKey，避免时序攻击。
-  /// 长度不同时直接返回 false（dataKey 长度固定 32 字节，长度泄露无安全意义）。
-  bool _bytesEqual(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    var diff = 0;
-    for (var i = 0; i < a.length; i++) {
-      diff |= a[i] ^ b[i];
-    }
-    return diff == 0;
   }
 }
 

@@ -480,6 +480,40 @@ class NotesDatabase {
     }
   }
 
+  /// 事务式批量新增（导入备份用，评审 #10 修复）
+  ///
+  /// 逐条 `storeNote` 是「隐式提交」：中途任一笔记失败，已插入的笔记不会
+  /// 回滚，留下半库数据。这里把整个导入放入单事务，**全部成功才落库**；
+  /// 任一条失败即回滚并原样抛出，由调用方提示用户「导入失败，原数据未改动」。
+  ///
+  /// 成功返回实际插入数量。
+  Future<int> storeNotesInTransaction(List<SafeNote> notes) async {
+    if (notes.isEmpty) return 0;
+    _checkNotMigrating();
+    final db = await instance.database;
+    try {
+      // 先加密（异步、耗时），再在事务内批量写入，避免事务长时间占用连接
+      final rows = await Future.wait(
+        notes.map((n) async => (note: n, row: await _toEncryptedRow(n))),
+      );
+      await db.transaction((txn) async {
+        for (final entry in rows) {
+          await txn.insert(tableNotes, entry.row);
+        }
+      });
+      // 事务提交成功后再更新缓存（插入执行中缓存不参与，避免读到半状态）
+      for (final entry in rows) {
+        _upsertCacheEntry(entry.note);
+      }
+      Log.note.i('事务批量新增完成: ${notes.length} 条笔记（导入）');
+      return notes.length;
+    } on Object catch (e, st) {
+      Log.note.e('事务批量新增失败，已整体回滚: ${notes.length} 条笔记（导入）',
+          error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
   /// 按 id 读取单条笔记（自动解密）
   Future<SafeNote> readNote(int id) async {
     _checkNotMigrating();
@@ -827,10 +861,16 @@ class NotesDatabase {
       if (decoded is List) {
         return decoded.map((e) => e.toString()).toList();
       }
-    } on Exception {
-      // 解析失败返回空列表
+    } on Exception catch (e) {
+      // 评审 #16：purged 列表损坏时绝不静默返回空列表——
+      // 否则 _mergeAndTransfer 会重新合并远端仍存在的"已硬删除"笔记，
+      // 导致用户已删除的数据从远端复活。这里显式报错让同步链路中止，
+      // 由上层提示用户、停止拉取，而不是带着错误的空列表继续。
+      throw FormatException('MetaKeys.purgedUuids 解析失败（JSON 损坏）: $e');
     }
-    return [];
+    throw const FormatException(
+      'MetaKeys.purgedUuids 格式错误：根节点不是 JSON 数组',
+    );
   }
 
   /// 序列化 uuid 列表为 JSON 字符串
@@ -1301,7 +1341,16 @@ class NotesDatabase {
   /// 切回原后端时旧 version 仍在（继续增量同步）。
   Future<int> getManifestVersion(String providerKey) async {
     final value = await getMeta(_manifestVersionKey(providerKey));
-    return value != null ? int.parse(value) : 0;
+    if (value == null) return 0;
+    // 评审 #16：meta 值损坏时 int.parse 抛 FormatException，会导致上层
+    // 同步链路意外崩溃。这里容错降级为 0（首次同步语义）并留日志。
+    final version = int.tryParse(value);
+    if (version == null) {
+      Log.db.w('getManifestVersion: meta 值非整数（损坏），降级为 0: '
+          'providerKey=$providerKey value=$value');
+      return 0;
+    }
+    return version;
   }
 
   /// 写入 manifest 版本号（按 providerKey 隔离存储）

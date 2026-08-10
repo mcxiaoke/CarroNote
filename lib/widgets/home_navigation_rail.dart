@@ -182,7 +182,7 @@ class HomeSidebar extends StatelessWidget {
               ),
             ),
             Divider(color: divider, height: 1),
-            // 底部外链（全部指向 GitHub 仓库）
+            // 底部外链（评审 #5 修复：分别接应用商店 / FAQ / GitHub，避免全指向 GitHub）
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
@@ -190,13 +190,14 @@ class HomeSidebar extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: Icon(Icons.rate_review_outlined, color: fg),
-                    tooltip: 'GitHub'.tr(),
-                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
+                    tooltip: 'Rate Us'.tr(),
+                    onPressed: () =>
+                        launchExternal(SafeNotesConfig.playStoreUrl),
                   ),
                   IconButton(
                     icon: Icon(Icons.quiz_outlined, color: fg),
-                    tooltip: 'GitHub'.tr(),
-                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
+                    tooltip: 'FAQs'.tr(),
+                    onPressed: () => launchExternal(SafeNotesConfig.faqsUrl),
                   ),
                   IconButton(
                     icon: Icon(Icons.help_outline, color: fg),

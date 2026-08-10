@@ -222,6 +222,13 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   SessionConfig? _prevSessionConfig;
   StreamSubscription<SessionTimeoutState>? _sessionSubscription;
 
+  // 评审 #15：缓存上一次生效的超时配置，build 只在配置真正变化时重建订阅，
+  // 避免每次 build 都取消/重建会话监听、把 SessionTimeoutManager 的超时基准
+  // 重置回满值（表现为「用户从不触发无操作锁定」）。
+  SessionConfig? _cachedSessionConfig;
+  int? _cachedFocusTimeout;
+  int? _cachedInactivityTimeout;
+
   @override
   void initState() {
     super.initState();
@@ -238,6 +245,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     // 避免重建时旧 listener 泄漏 / StreamController 永不关闭
     _sessionSubscription?.cancel();
     _prevSessionConfig?.dispose();
+    _cachedSessionConfig?.dispose();
     sessionStateStream.close();
     super.dispose();
   }
@@ -254,21 +262,33 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   void _rebuildSessionSubscription(SessionConfig sessionConfig) {
     _sessionSubscription?.cancel();
     _prevSessionConfig?.dispose();
+    // 评审 #15：记录当前 config，供下次 swap 时 dispose（原实现未回写，
+    // 新 config 的 stream 从不被释放，且 dispose() 会二次 dispose 旧对象）。
+    _prevSessionConfig = sessionConfig;
     _sessionSubscription = sessionConfig.stream.listen(sessionHandler);
   }
 
   @override
   Widget build(BuildContext context) {
-    final sessionConfig = SessionConfig(
-      invalidateSessionForAppLostFocus:
-          Duration(seconds: PreferencesStorage.focusTimeout),
-      invalidateSessionForUserInactivity:
-          Duration(seconds: PreferencesStorage.inactivityTimeout),
-    );
-    _rebuildSessionSubscription(sessionConfig);
+    final focusTimeout = PreferencesStorage.focusTimeout;
+    final inactivityTimeout = PreferencesStorage.inactivityTimeout;
+    // 评审 #15：超时配置未变化时不重建 sessionConfig 与订阅（避免重置
+    // SessionTimeoutManager 的超时基准）。配置变化时才重建，保证即时生效。
+    if (_cachedSessionConfig == null ||
+        _cachedFocusTimeout != focusTimeout ||
+        _cachedInactivityTimeout != inactivityTimeout) {
+      _cachedFocusTimeout = focusTimeout;
+      _cachedInactivityTimeout = inactivityTimeout;
+      _cachedSessionConfig = SessionConfig(
+        invalidateSessionForAppLostFocus: Duration(seconds: focusTimeout),
+        invalidateSessionForUserInactivity:
+            Duration(seconds: inactivityTimeout),
+      );
+      _rebuildSessionSubscription(_cachedSessionConfig!);
+    }
 
     return SessionTimeoutManager(
-      sessionConfig: sessionConfig,
+      sessionConfig: _cachedSessionConfig!,
       child: App(
         sessionStateStream: sessionStateStream,
         navigatorKey: navigatorKey,
@@ -279,7 +299,14 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   Future<void> sessionHandler(SessionTimeoutState timeoutEvent) async {
     // stop listening, as user will already be in auth page
     sessionStateStream.add(SessionState.stopListening);
-    BuildContext context = navigatorKey.currentContext!;
+    // 评审 #15：navigatorKey.currentContext 在应用首次 build 前为 null，
+    // 强解包会崩溃。取不到 context 时本次超时只停监听、不导航
+    // （下次超时事件到达时通常已挂载）。
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      Log.auth.w('会话超时但 navigator 尚未挂载，跳过导航');
+      return;
+    }
 
     if (timeoutEvent == SessionTimeoutState.userInactivityTimeout &&
         PreferencesStorage.isInactivityTimeoutOn) {

@@ -223,8 +223,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text('Incognito Keyboard'.tr()),
               initialValue: PreferencesStorage.keyboardIncognito,
               onToggle: (bool value) {
-                PreferencesStorage.setKeyboardIncognito(
-                    !PreferencesStorage.keyboardIncognito);
+                // 评审 #18：onToggle 入参即为用户切换后的目标值，直接用入参；
+                // 原实现忽略入参再取反当前值，开关语义相反且违反契约。
+                PreferencesStorage.setKeyboardIncognito(value);
                 setState(() {});
               },
             ),
@@ -343,10 +344,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String inactivityTimeoutValue() {
+    // 评审 #18：取值走 PreferencesStorage 的统一来源，
+    // 不再在设置页维护一份魔法数组 [30,1,2,3,5,10,15]
     var index = PreferencesStorage.inactivityTimeoutIndex;
-    List<int> values = [30, 1, 2, 3, 5, 10, 15];
-    if (index < 1) return '${values[index]} sec';
-    return '${values[index]} min';
+    final seconds = PreferencesStorage.kInactivityTimeoutChoicesSeconds[index];
+    if (seconds < 60) return '$seconds sec';
+    return '${seconds ~/ 60} min';
   }
 
   /// 同步状态显示值

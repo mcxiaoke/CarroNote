@@ -251,25 +251,48 @@ class PreferencesStorage {
   }
 
   static int get inactivityTimeout {
-    //default: 4 minutes
-
-    List<int> choices = [30, 60, 120, 180, 300, 600, 900];
-    var index = _preferences?.getInt(_keyInactivityTimeout);
-    if (!(index != null && index >= 0 && index < choices.length)) {
-      index = 4; // default
-    }
-
-    return choices[index];
+    // 评审 #18：缺失/越界时回退缺省索引，与 inactivityTimeoutIndex 一致（3 分钟）
+    final index = _inactivityTimeoutIndexOr(defaultIndex: kDefaultInactivityTimeoutIndex);
+    return kInactivityTimeoutChoicesSeconds[index];
   }
 
-  static int get inactivityTimeoutIndex =>
-      _preferences?.getInt(_keyInactivityTimeout) ?? 3;
+  static int get inactivityTimeoutIndex {
+    // 评审 #18：缺省统一为 kDefaultInactivityTimeoutIndex（3 分钟 = 180s），
+    // 不再与 inactivityTimeout 的越界回退值（原 300s）双默认值打架
+    return _inactivityTimeoutIndexOr(defaultIndex: kDefaultInactivityTimeoutIndex);
+  }
 
   static Future<void> setInactivityTimeoutIndex({required int index}) async {
     final oldSeconds = inactivityTimeout;
     await _preferences?.setInt(_keyInactivityTimeout, index);
     // 记录实际秒数而非索引，日志才有可读性
     _logPrefChange('无操作锁定时长', '${oldSeconds}s', '${inactivityTimeout}s');
+  }
+
+  // 评审 #18：无操作锁定时长选项的唯一事实来源（秒），
+  // 设置页与 inactivity_setting 页统一从这里取，消除双份魔法数组硬编码。
+  static const List<int> kInactivityTimeoutChoicesSeconds = [
+    30, // 30 秒
+    60, // 1 分钟
+    120, // 2 分钟
+    180, // 3 分钟（缺省）
+    300, // 5 分钟
+    600, // 10 分钟
+    900, // 15 分钟
+  ];
+
+  /// 缺省索引：3 分钟（=180s），与 UI 中「3 minutes (Default)」一致
+  static const int kDefaultInactivityTimeoutIndex = 3;
+
+  /// 读取持久化的索引，越界/缺失时回退 [defaultIndex]，索引始终合法
+  static int _inactivityTimeoutIndexOr({required int defaultIndex}) {
+    final index = _preferences?.getInt(_keyInactivityTimeout);
+    if (index != null &&
+        index >= 0 &&
+        index < kInactivityTimeoutChoicesSeconds.length) {
+      return index;
+    }
+    return defaultIndex;
   }
 
 //default: Same as inactivityTimeout

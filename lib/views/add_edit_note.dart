@@ -151,9 +151,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       //New Note and content is not empty
       if (title.isNotEmpty || description.isNotEmpty) return true;
     } else {
-      // Old Note but content is changed
-      if (widget.note?.title != title && title != '' ||
-          widget.note?.description != description && description != '') {
+      // 评审 #13 修复：原条件把「清空标题」(title=='') 判为未变更，退出丢改动。
+      // 改为与原始内容逐字段比较——只要任一字段不同即视为已变更
+      // （清空标题也属于改动，保存时 addOrUpdateNote 会把空标题归一化为 ' '）。
+      if (widget.note!.title != title ||
+          widget.note!.description != description) {
         return true;
       }
     }

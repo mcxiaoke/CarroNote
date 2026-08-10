@@ -69,8 +69,8 @@ class HomeDrawerState extends State<HomeDrawer> {
     final String lightModeText = 'Light Mode'.tr();
     final String settings = 'Settings'.tr();
     final String helpText = 'GitHub'.tr();
-    final String faqsText = 'GitHub'.tr();
-    final String rateText = 'GitHub'.tr();
+    final String faqsText = 'FAQs'.tr();
+    final String rateText = 'Rate Us'.tr();
     final String logoutText = 'Logout'.tr();
     final String biometrics = 'Biometric'.tr();
     const String deletedNotesText = '最近删除';
@@ -152,7 +152,9 @@ class HomeDrawerState extends State<HomeDrawer> {
                     onClicked: () async {
                       Navigator.of(context).pop();
                       try {
-                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
+                        // 评审 #5 修复：Rate Us 应指向应用商店，而非 GitHub
+                        await launchUrlExternal(
+                            Uri.parse(SafeNotesConfig.playStoreUrl));
                       } catch (_) {}
                     },
                   ),
@@ -163,7 +165,9 @@ class HomeDrawerState extends State<HomeDrawer> {
                     onClicked: () async {
                       Navigator.of(context).pop();
                       try {
-                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
+                        // 评审 #5 修复：FAQs 指向官方 FAQ 页面
+                        await launchUrlExternal(
+                            Uri.parse(SafeNotesConfig.faqsUrl));
                       } catch (_) {}
                     },
                   ),
@@ -174,7 +178,9 @@ class HomeDrawerState extends State<HomeDrawer> {
                     onClicked: () async {
                       Navigator.of(context).pop();
                       try {
-                        await launchUrlExternal(Uri.parse(SafeNotesConfig.githubUrl));
+                        // 评审 #5 修复：Help 保留指向 GitHub 仓库源码
+                        await launchUrlExternal(
+                            Uri.parse(SafeNotesConfig.githubUrl));
                       } catch (_) {}
                     },
                   ),

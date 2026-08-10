@@ -43,14 +43,8 @@ String _fpBrief(String fingerprint) => fingerprint.length > 8
     ? '${fingerprint.substring(0, 8)}…'
     : (fingerprint.isEmpty ? '(空)' : fingerprint);
 
-/// 比较两个字节序列是否相等（dataKey 比较用，非安全敏感）
-bool _sameKey(Uint8List a, Uint8List b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
+// 注：dataKey/MK 比较统一使用 SyncCrypto.bytesEqual（常数时间），
+// 原 _sameKey（非常数时间）已删除（评审 #16）。
 
 /// 密码错误异常（GCM tag 验证失败时抛出）
 class WrongPasswordException implements Exception {
@@ -635,7 +629,7 @@ class Keyring {
     final remoteDataKey = result.remoteDataKey!;
     final remoteEncryptedDataKey = result.remoteEncryptedDataKey!;
     final remoteVaultId = result.remoteVaultId ?? vaultId;
-    final keyChanged = !_sameKey(dataKey, remoteDataKey);
+    final keyChanged = !SyncCrypto.bytesEqual(dataKey, remoteDataKey);
 
     // Layer 2a/3：仅当 dataKey 值真正变化时标记 blob 重传并递增纪元。
     // 改密码场景（dataKey 不变）不标记，避免无谓的全量 blob 重传。
@@ -726,7 +720,7 @@ class Keyring {
     required NotesDatabase database,
   }) async {
     final sw = Stopwatch()..start();
-    final keyChanged = !_sameKey(dataKey, remoteDataKey);
+    final keyChanged = !SyncCrypto.bytesEqual(dataKey, remoteDataKey);
 
     int nextEpoch = dataKeyEpoch;
     if (keyChanged) {

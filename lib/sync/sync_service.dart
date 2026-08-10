@@ -409,59 +409,13 @@ class SyncService {
       return null;
     }
 
-    final engine = _engine;
-    if (engine == null) {
-      _updateState(state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: '同步服务未初始化',
-      ));
-      return null;
-    }
-
-    // Bug A 修复：惰性（重）初始化后端。
-    // 初始化时若离线，backend.init() 失败并保持未就绪状态，后续每次 sync
-    // 都会因 backend 未初始化而抛 "Call init() before using the backend"。
-    // 这里在每次 sync 开始时尝试（重）初始化：联网成功即自动恢复，
-    // 失败则优雅返回"网络不可用，请稍后重试"，不再抛出 cryptic 错误；
-    // 下次同步仍会重试，因此重连后无需杀进程即可恢复。
-    if (!_backendReady) {
-      final backend = _backend;
-      if (backend == null) {
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: '同步服务未初始化',
-        ));
-        return null;
-      }
-      try {
-        Log.sync.i('后端未就绪，尝试重新初始化');
-        await backend.init();
-        _backendReady = true;
-      } on BackendUnavailableException catch (e, st) {
-        Log.sync.w('后端初始化失败（网络不可用）', error: e, stackTrace: st);
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          lastSyncTime: DateTime.now(),
-          errorMessage: '网络不可用，请检查连接后重试：$e',
-        ));
-        return SyncResult.failure('网络不可用，请检查连接后重试：$e');
-      } on Exception catch (e, st) {
-        Log.sync.e('后端初始化失败（未预期异常）', error: e, stackTrace: st);
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          lastSyncTime: DateTime.now(),
-          errorMessage: '后端初始化失败：$e',
-        ));
-        return SyncResult.failure('后端初始化失败：$e');
-      }
-    }
-
-    // 互斥锁
+    // 评审 #6 修复：互斥锁必须放在**入口第一行**（任何 await 之前）抢锁。
+    // 原实现把检查放在 `await backend.init()` 之后，两个并发 sync() 可同时
+    // 通过 `_syncInProgress` 检查（check-then-act 竞态），导致两个引擎并发跑。
     if (_syncInProgress) {
       Log.sync.d('同步被跳过（已有同步进行中）');
       return null;
     }
-
     _syncInProgress = true;
     _updateState(state.copyWith(
       status: SyncStatus.syncing,
@@ -469,6 +423,53 @@ class SyncService {
     ));
 
     try {
+      final engine = _engine;
+      if (engine == null) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: '同步服务未初始化',
+        ));
+        return null;
+      }
+
+      // Bug A 修复：惰性（重）初始化后端。
+      // 初始化时若离线，backend.init() 失败并保持未就绪状态，后续每次 sync
+      // 都会因 backend 未初始化而抛 "Call init() before using the backend"。
+      // 这里在每次 sync 开始时尝试（重）初始化：联网成功即自动恢复，
+      // 失败则优雅返回"网络不可用，请稍后重试"，不再抛出 cryptic 错误；
+      // 下次同步仍会重试，因此重连后无需杀进程即可恢复。
+      if (!_backendReady) {
+        final backend = _backend;
+        if (backend == null) {
+          _updateState(state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: '同步服务未初始化',
+          ));
+          return null;
+        }
+        try {
+          Log.sync.i('后端未就绪，尝试重新初始化');
+          await backend.init();
+          _backendReady = true;
+        } on BackendUnavailableException catch (e, st) {
+          Log.sync.w('后端初始化失败（网络不可用）', error: e, stackTrace: st);
+          _updateState(state.copyWith(
+            status: SyncStatus.error,
+            lastSyncTime: DateTime.now(),
+            errorMessage: '网络不可用，请检查连接后重试：$e',
+          ));
+          return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+        } on Exception catch (e, st) {
+          Log.sync.e('后端初始化失败（未预期异常）', error: e, stackTrace: st);
+          _updateState(state.copyWith(
+            status: SyncStatus.error,
+            lastSyncTime: DateTime.now(),
+            errorMessage: '后端初始化失败：$e',
+          ));
+          return SyncResult.failure('后端初始化失败：$e');
+        }
+      }
+
       final result = await engine.sync();
       _updateState(state.copyWith(
         status: result.success ? SyncStatus.success : SyncStatus.error,
@@ -503,43 +504,9 @@ class SyncService {
   /// 委托给 [SyncEngine.repairRemote]。
   /// 返回修复结果；未初始化 / 正在同步时返回 null。
   Future<SyncResult?> repairRemote() async {
-    final engine = _engine;
-    if (engine == null) {
-      _updateState(state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: '同步服务未初始化',
-      ));
-      return null;
-    }
-
-    // 惰性（重）初始化后端（与 sync 同逻辑，详见 sync() 注释）
-    if (!_backendReady) {
-      final backend = _backend;
-      if (backend == null) {
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: '同步服务未初始化',
-        ));
-        return null;
-      }
-      try {
-        Log.sync.i('repairRemote: 后端未就绪，尝试重新初始化');
-        await backend.init();
-        _backendReady = true;
-      } on BackendUnavailableException catch (e, st) {
-        Log.sync.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
-        return SyncResult.failure('网络不可用，请检查连接后重试：$e');
-      } on Exception catch (e, st) {
-        Log.sync.e('repairRemote: 后端初始化失败（未预期异常）',
-            error: e, stackTrace: st);
-        return SyncResult.failure('后端初始化失败：$e');
-      }
-    }
-
-    // 与同步互斥（修复期间不应并发同步）
+    // 评审 #6 修复（同 sync()）：互斥锁在入口第一行抢锁，避免修复与同步、
+    // 修复与修复并发（原实现把 _syncInProgress 检查放在网络 await 之后）。
     if (_syncInProgress) return null;
-
-    Log.sync.i('repairRemote: 开始修复');
     _syncInProgress = true;
     _updateState(state.copyWith(
       status: SyncStatus.syncing,
@@ -547,6 +514,40 @@ class SyncService {
     ));
 
     try {
+      final engine = _engine;
+      if (engine == null) {
+        _updateState(state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: '同步服务未初始化',
+        ));
+        return null;
+      }
+
+      // 惰性（重）初始化后端（与 sync 同逻辑，详见 sync() 注释）
+      if (!_backendReady) {
+        final backend = _backend;
+        if (backend == null) {
+          _updateState(state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: '同步服务未初始化',
+          ));
+          return null;
+        }
+        try {
+          Log.sync.i('repairRemote: 后端未就绪，尝试重新初始化');
+          await backend.init();
+          _backendReady = true;
+        } on BackendUnavailableException catch (e, st) {
+          Log.sync.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
+          return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+        } on Exception catch (e, st) {
+          Log.sync.e('repairRemote: 后端初始化失败（未预期异常）',
+              error: e, stackTrace: st);
+          return SyncResult.failure('后端初始化失败：$e');
+        }
+      }
+
+      Log.sync.i('repairRemote: 开始修复');
       final result = await engine.repairRemote();
       Log.sync.i('repairRemote: 修复完成 (success=${result.success}, '
           'uploaded=${result.uploaded}, failed=${result.failedNoteUuids.length})');
@@ -596,43 +597,55 @@ class SyncService {
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer(_autoSyncDelay, () {
       Log.sync.d('autoSync: timer 触发，调用 sync()');
-      sync().then((result) {
-        // L3 兜底：如果本次同步因"正在同步"被跳过（返回 null），
-        // 重新排程一次，确保最新变更不丢失
-        if (result == null && _engine != null) {
-          // P3-b：re-schedule 前先检查是否已有用户在 sync 期间新排程的
-          // timer；若有，让用户的 debounce 继续，不覆盖
-          if (_autoSyncTimer?.isActive ?? false) {
-            Log.sync.d('autoSync: 上次被跳过，已有 pending timer，不覆盖');
-          } else {
-            Log.sync.d('autoSync: 上次同步被跳过，重新排程一次');
-            _autoSyncTimer = Timer(_autoSyncDelay, () => sync());
+      // 评审 #12 修复：onError 兜底 `Error`（而非只 catch `Exception`）。
+      // 原实现 `.then((result){...})` 只处理正常返回，sync() 若抛
+      // RangeError/StateError 等 `Error`（不经过 on Exception）会让该
+      // Promise 以未处理错误结束，_syncInProgress 相关状态虽由 finally
+      // 复位，但错误本身无日志、无重试排程，表现为"改了笔记却从此不再同步"。
+      sync().then(
+        (result) {
+          // L3 兜底：如果本次同步因"正在同步"被跳过（返回 null），
+          // 重新排程一次，确保最新变更不丢失
+          if (result == null && _engine != null) {
+            // P3-b：re-schedule 前先检查是否已有用户在 sync 期间新排程的
+            // timer；若有，让用户的 debounce 继续，不覆盖
+            if (_autoSyncTimer?.isActive ?? false) {
+              Log.sync.d('autoSync: 上次被跳过，已有 pending timer，不覆盖');
+            } else {
+              Log.sync.d('autoSync: 上次同步被跳过，重新排程一次');
+              _autoSyncTimer = Timer(_autoSyncDelay, () => sync());
+            }
+            return;
           }
-          return;
-        }
-        // P3-b：sync 失败（result.success=false，如网络抖动）时排程一次重试。
-        // 限制最多 1 次失败重试：用 _autoSyncFailureRetried 标志位防死循环，
-        // 重试成功或再次失败后清零，下次 autoSync 触发的 sync 失败仍可重试一次
-        if (result != null && !result.success && _engine != null) {
-          if (_autoSyncFailureRetried) {
-            Log.sync.d('autoSync: 上次失败已重试过，等待用户下次触发');
+          // P3-b：sync 失败（result.success=false，如网络抖动）时排程一次重试。
+          // 限制最多 1 次失败重试：用 _autoSyncFailureRetried 标志位防死循环，
+          // 重试成功或再次失败后清零，下次 autoSync 触发的 sync 失败仍可重试一次
+          if (result != null && !result.success && _engine != null) {
+            if (_autoSyncFailureRetried) {
+              Log.sync.d('autoSync: 上次失败已重试过，等待用户下次触发');
+              _autoSyncFailureRetried = false;
+            } else if (_autoSyncTimer?.isActive ?? false) {
+              // 用户已新排程 timer，让用户的 debounce 接管
+              Log.sync.d('autoSync: sync 失败但已有 pending timer，不重试');
+            } else {
+              Log.sync.d('autoSync: sync 失败，排程一次重试');
+              _autoSyncFailureRetried = true;
+              _autoSyncTimer = Timer(_autoSyncDelay, () {
+                _autoSyncFailureRetried = false; // 进入重试即清零，允许后续重试
+                sync();
+              });
+            }
+          } else if (result != null && result.success) {
+            // 成功时清零重试标志
             _autoSyncFailureRetried = false;
-          } else if (_autoSyncTimer?.isActive ?? false) {
-            // 用户已新排程 timer，让用户的 debounce 接管
-            Log.sync.d('autoSync: sync 失败但已有 pending timer，不重试');
-          } else {
-            Log.sync.d('autoSync: sync 失败，排程一次重试');
-            _autoSyncFailureRetried = true;
-            _autoSyncTimer = Timer(_autoSyncDelay, () {
-              _autoSyncFailureRetried = false; // 进入重试即清零，允许后续重试
-              sync();
-            });
           }
-        } else if (result != null && result.success) {
-          // 成功时清零重试标志
-          _autoSyncFailureRetried = false;
-        }
-      });
+        },
+        onError: (Object e, StackTrace st) {
+          Log.sync.e('autoSync: sync() 抛出未预期错误，放弃本次自动同步'
+              '（错误已记录，用户下次编辑或手动同步可重试）',
+              error: e, stackTrace: st);
+        },
+      );
     });
   }
 
@@ -805,9 +818,11 @@ class SyncService {
       backendRuntimeType: backend?.runtimeType.toString(),
       providerKey: backend?.providerKey,
       localFsPath: SyncConfig.localFsPath,
-      webdavUrl: SyncConfig.webdavUrl,
-      webdavUsername: SyncConfig.webdavUsername,
-      safeServerUrl: SyncConfig.safeServerUrl,
+      // 评审 #17 修复：诊断快照会经 LogWebServer（局域网可达）暴露，
+      // webdavUrl 可能内嵌 user:pass@，用户名也不应完整公开——统一脱敏。
+      webdavUrl: _redactUrl(SyncConfig.webdavUrl),
+      webdavUsername: _maskUsername(SyncConfig.webdavUsername),
+      safeServerUrl: _redactUrl(SyncConfig.safeServerUrl),
       syncEnabled: SyncConfig.isSyncEnabled,
       autoSyncEnabled: SyncConfig.isAutoSyncEnabled,
       // Keyring 元数据
@@ -893,9 +908,44 @@ class SyncService {
   // 内部辅助
   // ──────────────────────────────────────────────
 
+  /// 评审 #17 修复：诊断快照中的 URL 脱敏。
+  ///
+  /// 处理两类泄露源：
+  ///   1. URL 内嵌 userinfo（`https://user:pass@host/`）→ 整体掩为 `***`
+  ///   2. query 参数（可能携带 token/code）→ 掩为 `***`
+  static String _redactUrl(String url) {
+    if (url.isEmpty) return url;
+    try {
+      final uri = Uri.parse(url);
+      var u = uri;
+      if (u.userInfo.isNotEmpty) {
+        u = u.replace(userInfo: '***');
+      }
+      if (u.hasQuery) {
+        u = u.replace(query: '***');
+      }
+      return u.toString();
+    } on FormatException {
+      // 非合法 URL：对常见的 `scheme://user:pass@` 前缀做正则掩码
+      return url.replaceAll(RegExp(r'(https?://)[^/@\s]+@'), r'$1***@');
+    }
+  }
+
+  /// 评审 #17 修复：用户名脱敏，只保留前 2 字符 + `***`。
+  static String _maskUsername(String username) {
+    if (username.isEmpty) return username;
+    if (username.length <= 2) return '***';
+    return '${username.substring(0, 2)}***';
+  }
+
   void _updateState(SyncServiceState newState) {
     _state = newState;
-    _stateController.add(newState);
+    // 评审 #12 修复：dispose 后 stream controller 已关闭，再 add 会抛
+    // StateError("Cannot add event after closing")。这是安全性守卫——
+    // dispose 是最终行为，关闭后状态同步本身没有意义，直接忽略即可。
+    if (!_stateController.isClosed) {
+      _stateController.add(newState);
+    }
   }
 
   // ──────────────────────────────────────────────

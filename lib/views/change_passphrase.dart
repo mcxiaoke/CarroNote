@@ -48,6 +48,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   final _focusNew = FocusNode();
   final _focusNewConfirm = FocusNode();
 
+  // 评审 #15：记录上次 viewInsets，避免 build() 里每次都触发滚动动画
+  double _lastViewInset = 0;
+
   @override
   void dispose() {
     // F-H11 修复：补齐 TextEditingController 与 ScrollController 的 dispose
@@ -64,7 +67,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
-    scrollToBottomIfOnScreenKeyboard();
+    // 评审 #15：只在键盘从无到有出现时才触发滚动，避免每次 build
+    // （如 setState、主题切换）都重复执行滚动动画
+    if (bottom > 0 && _lastViewInset == 0) {
+      scrollToBottomIfOnScreenKeyboard();
+    }
+    _lastViewInset = bottom;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,

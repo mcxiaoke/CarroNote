@@ -319,10 +319,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       Log.auth.d('设置密码步骤 1/4：表单校验通过 (长度=${enteredPassphrase.length})');
 
       if (enteredPassphrase == enteredPassphraseConfirm) {
-        showSnackBarMessage(context, 'Passphrase set!'.tr());
-
-        // start listening for session inactivity on successful login
-        widget.sessionStream.add(SessionState.startListening);
+      // 评审 #14 修复：成功提示不再前置——原实现先弹 "Passphrase set!" 再
+      // _initKeyring，keyring 失败（如旧 db 残留导致 createNew 被拒）时已误报
+      // 成功。现在 keyring 初始化成功、会话副作用完成后才正式提示成功。
 
         // 初始化 Keyring：生成 dataKey 并注入 database（本地加密存储）
         // 这是 B1 方案的核心——无论是否启用同步，都要初始化 dataKey
@@ -354,6 +353,12 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // 会误走"输入两次密码"的设置页而不是登录页。
         AppBootState.vaultInitialized = true;
         Log.auth.i('设置密码步骤 4/4：保险库初始化标记已刷新 (vaultInitialized=true)');
+
+        // 评审 #14 修复：此处才提示成功——keyring 初始化与所有副作用都成功，
+        // 不会再有"误报成功"。
+        showSnackBarMessage(context, 'Passphrase set!'.tr());
+        // start listening for session inactivity on successful login
+        widget.sessionStream.add(SessionState.startListening);
 
         TextInput.finishAutofillContext();
         Log.auth.i('首次密码设置完成, 总耗时 ${sw.elapsedMilliseconds}ms');

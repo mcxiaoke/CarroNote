@@ -40,6 +40,14 @@ class ScheduledTask {
     final startedAt = DateTime.now();
 
     for (var attempt = 1; attempt <= maxAttempt; attempt++) {
+      // 评审 #11：防止备份失败把重试循环拖成无界阻塞（Session.logout 会 await
+      // 本方法）。超过总超时预算立即中断，保证退出/改密码不被卡死。
+      if (DateTime.now().difference(startedAt) >= _backupTotalTimeout) {
+        Log.backup.w('自动备份：达到总超时 ${_backupTotalTimeout.inSeconds}s，'
+            '中断重试 (attempt=$attempt/$maxAttempt)');
+        lastBackupError ??= '备份重试达到总超时上限';
+        break;
+      }
       if (await unitBackupAttempt() == true) {
         final ms = DateTime.now().difference(startedAt).inMilliseconds;
         Log.backup.i('自动备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
@@ -47,6 +55,8 @@ class ScheduledTask {
       }
       Log.backup.w('自动备份第 $attempt/$maxAttempt 次尝试失败: '
           '${lastBackupError ?? "未知原因"}');
+      // 评审 #11：指数退避（200ms 起，翻倍，封顶 5s），避免失败后打爆网络/磁盘
+      await _waitBackoff(attempt, startedAt);
     }
 
     final ms = DateTime.now().difference(startedAt).inMilliseconds;
@@ -61,13 +71,39 @@ class ScheduledTask {
     } else if (Platform.isIOS) {
       return iosBackup();
     }
-    // 桌面端无自动备份通道（仅移动端实现），记录以免被误认为「备份成功」
-    Log.backup.d('当前平台 ${Platform.operatingSystem} 无自动备份实现，视为跳过');
-    return true;
+    // 评审 #2 修复：桌面端此前直接 return true 造成"假备份"（改密码前置
+    // forceBackup 报告成功但实际未写文件）。桌面端尚未实现真实备份通道，
+    // 这里如实返回 false，让上层（backup 重试循环 / forceBackup）正确感知失败：
+    //   - 自动备份：重试耗尽后以 ERROR 留痕，不再误报成功
+    //   - 改密码前置 forceBackup：弹"备份失败"警告并让用户决定是否继续
+    Log.backup.w('当前平台 ${Platform.operatingSystem} 无自动备份实现，'
+        '视为备份失败（返回 false）');
+    lastBackupError ??= '当前平台（${Platform.operatingSystem}）暂不支持本地备份';
+    return false;
   }
 
   /// 上一次备份失败时的简要错误信息，供调用方（如改密码前置检查）展示。
   static String? lastBackupError;
+
+  // 评审 #11：重试退避参数
+  /// 指数退避基础延迟（第 1 次失败后等 200ms，翻倍，封顶 [_backoffMaxDelay]）
+  static const Duration _backoffBaseDelay = Duration(milliseconds: 200);
+  /// 指数退避封顶延迟
+  static const Duration _backoffMaxDelay = Duration(seconds: 5);
+  /// 整轮重试的总超时预算：超过即中断（防止 Session.logout / 改密码前置被卡死）
+  static const Duration _backupTotalTimeout = Duration(seconds: 30);
+
+  /// 指数退避等待：从 200ms 起翻倍，封顶 5s。
+  /// 若已接近总超时则不再等待，让上层循环立即退出。
+  static Future<void> _waitBackoff(int attempt, DateTime startedAt) async {
+    final elapsed = DateTime.now().difference(startedAt);
+    if (elapsed + _backoffMaxDelay >= _backupTotalTimeout) return;
+    var delayMs = _backoffBaseDelay.inMilliseconds * (1 << (attempt - 1));
+    if (delayMs > _backoffMaxDelay.inMilliseconds) {
+      delayMs = _backoffMaxDelay.inMilliseconds;
+    }
+    await Future<void>.delayed(Duration(milliseconds: delayMs));
+  }
 
   // return true on successful backup
   static Future<bool> androidBackup() async {
@@ -172,6 +208,13 @@ class ScheduledTask {
     final startedAt = DateTime.now();
 
     for (var attempt = 1; attempt <= maxAttempt; attempt++) {
+      // 评审 #11：与自动备份一致，加总超时保护（改密码前置检查不能被卡死）
+      if (DateTime.now().difference(startedAt) >= _backupTotalTimeout) {
+        Log.backup.w('强制备份：达到总超时 ${_backupTotalTimeout.inSeconds}s，'
+            '中断重试 (attempt=$attempt/$maxAttempt)');
+        lastBackupError ??= '备份重试达到总超时上限';
+        break;
+      }
       if (await unitBackupAttempt() == true) {
         final ms = DateTime.now().difference(startedAt).inMilliseconds;
         Log.backup.i('强制备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
@@ -179,6 +222,7 @@ class ScheduledTask {
       }
       Log.backup.w('强制备份第 $attempt/$maxAttempt 次尝试失败: '
           '${lastBackupError ?? "未知原因"}');
+      await _waitBackoff(attempt, startedAt);
     }
 
     final ms = DateTime.now().difference(startedAt).inMilliseconds;

@@ -230,46 +230,37 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildTimeOut() {
-    if (_isLocked) {
-      SystemChannels.textInput.invokeMethod('TextInput.hide');
-      passPhraseController.clear();
+    // 评审 #3 修复：build 只读 stream，绝不在这里启动 Timer / 清输入框——
+    // 否则锁定期内任何 setState（焦点变化、snackbar 等）都会把倒计时重置回满值、
+    // 强制清空用户输入。倒计时只应在进入锁定的那一刻启动一次（见 _onLoginFailure）。
+    if (!_isLocked) return const SizedBox(height: 20);
 
-      _startTimer(() {
-        setState(() {
-          _isLocked = false;
-          _isKeyboardFocused = true;
-          _formKey = GlobalKey<FormState>();
-          // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
-          _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
-        });
-      });
-
-      return StreamBuilder(
-        stream: _controller.stream,
-        builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
-          String? timeLeft = snapshot.hasData
-              ? snapshot.data
-              : _lockoutTime.toString();
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Align(
-              alignment: Alignment.center,
-              child: Text(
-                'Exceeded number of attempts, try after {timeLeft} seconds'.tr(
-                  namedArgs: {'timeLeft': timeLeft.toString()},
-                ),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
+    // 锁定期：文本输入框已由锁定流程禁用（enabled: !_isLocked），
+    // 无需在每次 build 时再次隐藏键盘 / 清空输入。
+    return StreamBuilder(
+      stream: _controller.stream,
+      builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
+        String? timeLeft = snapshot.hasData
+            ? snapshot.data
+            : _lockoutTime.toString();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Align(
+            alignment: Alignment.center,
+            child: Text(
+              'Exceeded number of attempts, try after {timeLeft} seconds'.tr(
+                namedArgs: {'timeLeft': timeLeft.toString()},
+              ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          );
-        },
-      );
-    }
-    return const SizedBox(height: 20);
+          ),
+        );
+      },
+    );
   }
 
   Widget _inputField() {
@@ -289,24 +280,18 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  /// 简化方案:validator 只做长度检查 + 锁定判断
+  /// 简化方案:validator 只做长度检查
   ///
   /// 密码正确性不在 validator 里判断(keyring 解密是 async,1-2 秒),
   /// 改在 _login 里 async 处理,失败时在 _onLoginFailure 递减尝试次数。
+  ///
+  /// 评审 #4 修复:validator 不再拦截最后 1 次尝试(此前 `_noOfAllowedAttempts <= 1`
+  /// 时直接 setState 锁定,密码正确也进不了 `_login`,存在 off-by-one),也不得在
+  /// validator 内调用 setState(反模式)。锁定判定统一收口到 _onLoginFailure。
   String? _passphraseValidator(String? passphrase) {
-    final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
-
-    if (_noOfAllowedAttempts <= 1) {
-      setState(() {
-        _isLocked = true;
-      });
-      return numberOfAttemptExceeded;
-    }
-
     if (passphrase == null || passphrase.isEmpty) {
       return 'Enter Passphrase'.tr();
     }
-
     return null;
   }
 
@@ -509,7 +494,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
 
     if (_noOfAllowedAttempts <= 0) {
-      setState(() => _isLocked = true);
+      // 评审 #3/#4 修复：进入锁定的唯一入口。倒计时 Timer 只在这里启动一次
+      // （build 只读 stream），并在此清空输入框、隐藏键盘、禁用输入。
+      _startLockoutTimer();
       if (mounted) {
         showSnackBarMessage(context, numberOfAttemptExceeded);
       }
@@ -524,6 +511,22 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     }
   }
 
+  /// 进入锁定状态：启动一次倒计时，超时后解除锁定并重置尝试次数
+  void _startLockoutTimer() {
+    setState(() => _isLocked = true);
+    passPhraseController.clear();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+    _startTimer(() {
+      setState(() {
+        _isLocked = false;
+        _isKeyboardFocused = true;
+        _formKey = GlobalKey<FormState>();
+        // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
+        _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
+      });
+    });
+  }
+
   /// 远端验证三态结果(评审 hy3 A7)
   ///
   ///   - verified: 密码正确,已通过远端 manifest header 验证并解锁
@@ -532,18 +535,19 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   Future<RemoteVerifyResult> _tryVerifyPassphraseViaRemote(
     String passphrase,
   ) async {
+    final database = NotesDatabase.instance;
+    // 创建后端实例(直接通过 SyncService 的公开工厂,避免污染单例状态)
+    final backend = SyncService.instance.createBackendForVerification();
+    if (backend == null) return RemoteVerifyResult.unreachable;
     try {
-      final database = NotesDatabase.instance;
-      // 创建后端实例(直接通过 SyncService 的公开工厂,避免污染单例状态)
-      final backend = SyncService.instance.createBackendForVerification();
-      if (backend == null) return RemoteVerifyResult.unreachable;
-
       await backend.init();
       final remoteResponse = await backend.getManifest();
       if (remoteResponse.ciphertext.isEmpty) {
-        // 远端无 manifest:无法验证,视为密码错误(本地也解不开)
-        await backend.close();
-        return RemoteVerifyResult.wrongPassword;
+        // 评审 #7 修复：远端无 manifest（从未同步 / 新后端）时**无法验证**，
+        // 不再判定为密码错误扣尝试次数——否则从未同步过的用户改密码后
+        // 本地 keyring 失效时会因"远端无 manifest"被误锁。
+        Log.auth.w('远端验证: 无 manifest, 无法验证密码(不扣尝试次数)');
+        return RemoteVerifyResult.unreachable;
       }
 
       // 仅解析 header(不需要 dataKey)
@@ -559,7 +563,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       final fp = SyncCrypto.computeKeyFingerprint(mk);
       if (fp != header.keyFingerprint) {
         // fingerprint 不匹配 → 密码错误
-        await backend.close();
         return RemoteVerifyResult.wrongPassword;
       }
 
@@ -576,8 +579,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         database: database,
       );
 
-      await backend.close();
-
       // unlockFromRemoteManifest 内部已持久化 keyring 元数据,
       // 但没有调用 database.setDataKey,需要补上
       // (用刚持久化的远端元数据重新 unlockLocal 拿到 dataKey)
@@ -588,9 +589,18 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       NotesDatabase.instance.setDataKey(keyring.dataKey);
       await SyncService.instance.cacheKeyringFromLogin(keyring);
       return RemoteVerifyResult.verified;
-    } on Exception {
+    } on Exception catch (e, st) {
       // 网络故障、后端不可达、解析失败等 → unreachable(不扣次数)
+      Log.auth.w('远端验证失败(网络/解析异常,不扣尝试次数)', error: e, stackTrace: st);
       return RemoteVerifyResult.unreachable;
+    } finally {
+      // 评审 #7 修复：backend 无论走哪条分支都必须 close，避免每次登录
+      // 验证失败都泄漏一个 HTTP 连接/文件句柄。
+      try {
+        await backend.close();
+      } on Exception catch (e) {
+        Log.auth.d('远端验证 backend.close 失败(忽略): $e');
+      }
     }
   }
 
