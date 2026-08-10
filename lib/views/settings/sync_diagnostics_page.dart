@@ -7,6 +7,7 @@
  *   3. 操作记录：SyncAction 列表（含结构化错误详情）
  *   4. 日志：实时日志查看器（logcat 风格，可过滤/复制/导出/清空）
  *   5. Web 服务器：启动/停止 HTTP 日志服务器（移动端远程查看用）
+ *   6. 测试：PBKDF2 vs Argon2id 性能对比基准
  *
  * 所有面板的信息均可复制，日志支持导出为文本文件。
  */
@@ -20,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // Package 导入
+import 'package:cryptography/cryptography.dart' show Argon2id, Hmac, Pbkdf2, SecretKey;
 import 'package:easy_localization/easy_localization.dart';
 
 // Project 导入
@@ -41,7 +43,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -56,22 +58,23 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('调试面板'.tr(), style: appBarTitle),
+        title: Text('Debug Panel'.tr(), style: appBarTitle),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
-          tabs: const [
-            Tab(text: '状态'),
-            Tab(text: '同步结果'),
-            Tab(text: '操作记录'),
-            Tab(text: '日志'),
-            Tab(text: 'Web 服务器'),
+          tabs: [
+            Tab(text: 'Status'.tr()),
+            Tab(text: 'Sync Results'.tr()),
+            Tab(text: 'Actions'.tr()),
+            Tab(text: 'Logs'.tr()),
+            Tab(text: 'Web Server'.tr()),
+            Tab(text: 'Tests'.tr()),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
+            tooltip: 'Refresh'.tr(),
             onPressed: () => setState(() {}),
           ),
         ],
@@ -84,6 +87,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
           _ActionsTab(),
           _LogsTab(),
           _WebServerTab(onUpdate: () => setState(() {})),
+          const _TestTab(),
         ],
       ),
     );
@@ -104,16 +108,16 @@ class _StatusTab extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('诊断快照', style: Theme.of(context).textTheme.titleMedium),
+            Text('Diagnostics Snapshot'.tr(), style: Theme.of(context).textTheme.titleMedium),
             Row(
               children: [
                 IconButton(
                   icon: const Icon(Icons.copy, size: 20),
-                  tooltip: '复制全部',
+                  tooltip: 'Copy All'.tr(),
                   onPressed: () => _copyToClipboard(
                     context,
                     snapshot.toReadableText(),
-                    '诊断快照已复制',
+                    'Snapshot copied'.tr(),
                   ),
                 ),
               ],
@@ -121,31 +125,31 @@ class _StatusTab extends StatelessWidget {
           ],
         ),
         const Divider(),
-        _buildSection(context, '同步状态', [
-          _KV('状态', snapshot.status),
-          _KV('正在同步', snapshot.isSyncing.toString()),
-          _KV('后端就绪', snapshot.backendReady.toString()),
-          _KV('上次同步', snapshot.lastSyncTime?.toString() ?? 'N/A'),
+        _buildSection(context, 'Sync Status'.tr(), [
+          _KV('Status'.tr(), snapshot.status),
+          _KV('Syncing'.tr(), snapshot.isSyncing.toString()),
+          _KV('Backend Ready'.tr(), snapshot.backendReady.toString()),
+          _KV('Last Sync'.tr(), snapshot.lastSyncTime?.toString() ?? 'N/A'),
           if (snapshot.errorMessage != null)
-            _KV('错误信息', snapshot.errorMessage!, color: Colors.red),
+            _KV('Error Message'.tr(), snapshot.errorMessage!, color: Colors.red),
         ]),
-        _buildSection(context, '后端配置', [
-          _KV('同步总开关', snapshot.syncEnabled ? '已开启' : '已关闭',
+        _buildSection(context, 'Backend Config'.tr(), [
+          _KV('Sync Master Switch'.tr(), snapshot.syncEnabled ? 'On'.tr() : 'Off'.tr(),
               color: snapshot.syncEnabled ? null : Colors.orange),
-          _KV('类型', snapshot.backendDisplayName),
-          _KV('运行时类型', snapshot.backendRuntimeType ?? 'N/A'),
+          _KV('Type'.tr(), snapshot.backendDisplayName),
+          _KV('Runtime Type'.tr(), snapshot.backendRuntimeType ?? 'N/A'),
           _KV('providerKey', snapshot.providerKey ?? 'N/A'),
           if (snapshot.localFsPath.isNotEmpty)
-            _KV('LocalFs 路径', snapshot.localFsPath),
+            _KV('LocalFs Path', snapshot.localFsPath),
           if (snapshot.webdavUrl.isNotEmpty) ...[
             _KV('WebDAV URL', snapshot.webdavUrl),
-            _KV('WebDAV 用户', snapshot.webdavUsername),
+            _KV('WebDAV User', snapshot.webdavUsername),
           ],
           if (snapshot.safeServerUrl.isNotEmpty)
             _KV('SafeServer URL', snapshot.safeServerUrl),
-          _KV('自动同步', snapshot.autoSyncEnabled.toString()),
+          _KV('Auto Sync'.tr(), snapshot.autoSyncEnabled.toString()),
         ]),
-        _buildSection(context, 'Keyring 元数据', [
+        _buildSection(context, 'Keyring Metadata'.tr(), [
           _KV('Keyring ID', snapshot.vaultId ?? 'N/A'),
           _KV('keyVersion', snapshot.keyVersion?.toString() ?? 'N/A'),
           _KV('dataKeyEpoch', snapshot.dataKeyEpoch?.toString() ?? 'N/A'),
@@ -154,17 +158,17 @@ class _StatusTab extends StatelessWidget {
           _KV('KDF',
               '${snapshot.kdfAlgorithm ?? "N/A"} (${snapshot.kdfIterations ?? "N/A"} iterations)'),
         ]),
-        _buildSection(context, '设备', [
-          _KV('设备 ID', snapshot.deviceId ?? 'N/A'),
+        _buildSection(context, 'Device'.tr(), [
+          _KV('Device ID'.tr(), snapshot.deviceId ?? 'N/A'),
         ]),
-        _buildSection(context, '日志', [
-          _KV('日志目录', snapshot.logDirPath ?? 'N/A'),
-          _KV('内存缓冲条目数', snapshot.logBufferCount.toString()),
+        _buildSection(context, 'Logs'.tr(), [
+          _KV('Log Directory'.tr(), snapshot.logDirPath ?? 'N/A'),
+          _KV('Memory Buffer Entries'.tr(), snapshot.logBufferCount.toString()),
         ]),
         const SizedBox(height: 16),
         ElevatedButton.icon(
           icon: const Icon(Icons.download),
-          label: const Text('导出诊断+日志'),
+          label: Text('Export Diagnostics + Logs'.tr()),
           onPressed: () => _exportLogs(context),
         ),
       ],
@@ -210,7 +214,7 @@ class _StatusTab extends StatelessWidget {
   Future<void> _exportLogs(BuildContext context) async {
     final text = await SyncService.instance.exportAllLogsAsText();
     if (context.mounted) {
-      _copyToClipboard(context, text, '诊断+日志已复制到剪贴板');
+      _copyToClipboard(context, text, 'Diagnostics + logs copied'.tr());
     }
   }
 }
@@ -233,30 +237,30 @@ class _SyncResultTab extends StatelessWidget {
     final hasResult = snapshot.lastResultSuccess != null;
 
     if (!hasResult) {
-      return const Center(child: Text('尚无同步结果'));
+      return Center(child: Text('No sync results yet'.tr()));
     }
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('最近同步结果', style: Theme.of(context).textTheme.titleMedium),
+        Text('Latest Sync Result'.tr(), style: Theme.of(context).textTheme.titleMedium),
         const Divider(),
-        _buildKVRow(context, '成功',
+        _buildKVRow(context, 'Success'.tr(),
             snapshot.lastResultSuccess!.toString(),
             color: snapshot.lastResultSuccess! ? Colors.green : Colors.red),
-        _buildKVRow(context, '重试次数', snapshot.lastResultAttempts?.toString() ?? 'N/A'),
+        _buildKVRow(context, 'Retry Count'.tr(), snapshot.lastResultAttempts?.toString() ?? 'N/A'),
         const SizedBox(height: 12),
-        Text('统计', style: Theme.of(context).textTheme.titleSmall),
+        Text('Statistics'.tr(), style: Theme.of(context).textTheme.titleSmall),
         _buildStatGrid(context, snapshot),
         const SizedBox(height: 12),
-        _buildKVRow(context, '需要重新登录',
+        _buildKVRow(context, 'Requires Relogin'.tr(),
             snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
             color: (snapshot.lastResultRequiresRelogin ?? false)
                 ? Colors.red
                 : null),
         if (snapshot.lastResultErrorMessage != null) ...[
           const SizedBox(height: 12),
-          Text('错误信息', style: Theme.of(context).textTheme.titleSmall),
+          Text('Error Message'.tr(), style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           Container(
             padding: const EdgeInsets.all(8),
@@ -273,7 +277,8 @@ class _SyncResultTab extends StatelessWidget {
         if (snapshot.lastResultFailedNoteUuids != null &&
             snapshot.lastResultFailedNoteUuids!.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text('失败笔记 (${snapshot.lastResultFailedNoteUuids!.length})',
+          Text('Failed Notes ({count})'.tr(
+              namedArgs: {'count': '${snapshot.lastResultFailedNoteUuids!.length}'}),
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           ...snapshot.lastResultFailedNoteUuids!.map(
@@ -291,12 +296,12 @@ class _SyncResultTab extends StatelessWidget {
   Widget _buildStatGrid(
       BuildContext context, SyncDiagnosticsSnapshot snapshot) {
     final stats = [
-      ('上传', snapshot.lastResultUploaded ?? 0, Icons.upload, Colors.blue),
-      ('下载', snapshot.lastResultDownloaded ?? 0, Icons.download, Colors.green),
-      ('删除', snapshot.lastResultDeleted ?? 0, Icons.delete, Colors.red),
-      ('冲突', snapshot.lastResultConflicts ?? 0, Icons.warning, Colors.orange),
-      ('迁移', snapshot.lastResultMigrated ?? 0, Icons.swap_horiz, Colors.purple),
-      ('跳过', snapshot.lastResultSkipped ?? 0, Icons.skip_next, Colors.grey),
+      ('Upload'.tr(), snapshot.lastResultUploaded ?? 0, Icons.upload, Colors.blue),
+      ('Download'.tr(), snapshot.lastResultDownloaded ?? 0, Icons.download, Colors.green),
+      ('Delete'.tr(), snapshot.lastResultDeleted ?? 0, Icons.delete, Colors.red),
+      ('Conflicts'.tr(), snapshot.lastResultConflicts ?? 0, Icons.warning, Colors.orange),
+      ('Migrated'.tr(), snapshot.lastResultMigrated ?? 0, Icons.swap_horiz, Colors.purple),
+      ('Skipped'.tr(), snapshot.lastResultSkipped ?? 0, Icons.skip_next, Colors.grey),
     ];
     // 用 LayoutBuilder + Wrap 取代固定 childAspectRatio 的 GridView：
     // 窄屏下固定宽高比会让单元格高度不足以容纳内容，导致 RenderFlex 底部溢出。
@@ -386,7 +391,7 @@ class _ActionsTab extends StatelessWidget {
     final actions = allActions.where((a) => a.type != 'skip').toList();
 
     if (actions.isEmpty) {
-      return const Center(child: Text('尚无操作记录'));
+      return Center(child: Text('No actions yet'.tr()));
     }
 
     return ListView.builder(
@@ -455,11 +460,11 @@ class _ActionsTab extends StatelessWidget {
                 if (action.hash != null)
                   _buildDetail('Hash', action.hash!),
                 if (action.message != null)
-                  _buildDetail('消息', action.message!),
+                  _buildDetail('Message'.tr(), action.message!),
                 if (action.errorLabel != null)
-                  _buildDetail('错误类型', action.errorLabel!, color: Colors.red),
+                  _buildDetail('Error Type'.tr(), action.errorLabel!, color: Colors.red),
                 if (action.errorDisplay != null)
-                  _buildDetail('错误详情', action.errorDisplay!, color: Colors.red),
+                  _buildDetail('Error Details'.tr(), action.errorDisplay!, color: Colors.red),
               ],
             ),
           ),
@@ -570,7 +575,7 @@ class _LogsTabState extends State<_LogsTab> {
               // 级别过滤按钮
               PopupMenuButton<AppLogLevel>(
                 icon: const Icon(Icons.filter_list, size: 20),
-                tooltip: '级别过滤',
+                tooltip: 'Level Filter'.tr(),
                 onSelected: (level) {
                   setState(() {
                     _levelFilter[level] = !(_levelFilter[level] ?? true);
@@ -595,34 +600,35 @@ class _LogsTabState extends State<_LogsTab> {
               IconButton(
                 icon: Icon(_autoScroll ? Icons.vertical_align_bottom : Icons.vertical_align_top,
                     size: 20),
-                tooltip: _autoScroll ? '自动滚动：开' : '自动滚动：关',
+                tooltip: _autoScroll ? 'Auto-scroll: On'.tr() : 'Auto-scroll: Off'.tr(),
                 onPressed: () => setState(() => _autoScroll = !_autoScroll),
               ),
               const Spacer(),
               // 复制
               IconButton(
                 icon: const Icon(Icons.copy, size: 20),
-                tooltip: '复制全部日志',
+                tooltip: 'Copy All Logs'.tr(),
                 onPressed: () {
                   final text = entries.map((e) => e.formattedLine).join('\n');
-                  _copyToClipboard(context, text, '已复制 ${entries.length} 条日志');
+                  _copyToClipboard(context, text, 'Copied {count} log entries'
+                      .tr(namedArgs: {'count': '${entries.length}'}));
                 },
               ),
               // 导出（复制诊断+日志）
               IconButton(
                 icon: const Icon(Icons.download, size: 20),
-                tooltip: '导出诊断+日志',
+                tooltip: 'Export Diagnostics + Logs'.tr(),
                 onPressed: () async {
                   final text = await SyncService.instance.exportAllLogsAsText();
                   if (context.mounted) {
-                    _copyToClipboard(context, text, '诊断+日志已复制');
+                    _copyToClipboard(context, text, 'Diagnostics + logs copied'.tr());
                   }
                 },
               ),
               // 清空（仅清空内存缓冲，不影响文件）
               IconButton(
                 icon: const Icon(Icons.delete_sweep, size: 20),
-                tooltip: '清空内存日志',
+                tooltip: 'Clear In-memory Logs'.tr(),
                 onPressed: () {
                   SyncService.instance.clearLogBuffer();
                   setState(() {
@@ -639,14 +645,17 @@ class _LogsTabState extends State<_LogsTab> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Text(
-            '${entries.length} 条日志（共 ${_entries.length} 条）',
+            '{count} log entries (total {total})'.tr(namedArgs: {
+              'count': '${entries.length}',
+              'total': '${_entries.length}',
+            }),
             style: TextStyle(fontSize: 11, color: Colors.grey[600]),
           ),
         ),
         // 日志列表
         Expanded(
           child: entries.isEmpty
-              ? const Center(child: Text('暂无日志'))
+              ? Center(child: Text('No logs yet'.tr()))
               : ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -726,7 +735,7 @@ class _WebServerTab extends StatefulWidget {
 }
 
 class _WebServerTabState extends State<_WebServerTab> {
-  String _statusText = '未启动';
+  String _statusText = 'Not started'.tr();
   bool _isStarting = false;
 
   @override
@@ -741,22 +750,21 @@ class _WebServerTabState extends State<_WebServerTab> {
   /// 刷新状态文本（显示 IP 和端口）
   Future<void> _refreshStatus() async {
     if (!LogWebServer.instance.isRunning) {
-      setState(() => _statusText = '未启动');
+      setState(() => _statusText = 'Not started'.tr());
       return;
     }
     final ip = await _getLocalIp();
     final port = LogWebServer.instance.port;
     setState(() {
-      _statusText = '运行中\n'
-          '局域网访问: http://$ip:$port\n'
-          '本机访问: http://localhost:$port';
+      _statusText = 'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
+          .tr(namedArgs: {'ip': ip, 'port': '$port'});
     });
   }
 
   Future<void> _toggleServer() async {
     if (LogWebServer.instance.isRunning) {
       await LogWebServer.instance.stop();
-      setState(() => _statusText = '已停止');
+      setState(() => _statusText = 'Stopped'.tr());
     } else {
       setState(() => _isStarting = true);
       try {
@@ -764,12 +772,12 @@ class _WebServerTabState extends State<_WebServerTab> {
         // 获取本机 IP
         final ip = await _getLocalIp();
         setState(() {
-          _statusText = '运行中\n'
-              '局域网访问: http://$ip:$port\n'
-              '本机访问: http://localhost:$port';
+          _statusText = 'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
+              .tr(namedArgs: {'ip': ip, 'port': '$port'});
         });
       } on Object catch (e) {
-        setState(() => _statusText = '启动失败: $e');
+        setState(() => _statusText = 'Startup failed: {error}'.tr(
+            namedArgs: {'error': '$e'}));
       } finally {
         setState(() => _isStarting = false);
       }
@@ -802,17 +810,11 @@ class _WebServerTabState extends State<_WebServerTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('日志 Web 服务器', style: Theme.of(context).textTheme.titleMedium),
+        Text('Log Web Server'.tr(), style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          '启动后可在 PC 浏览器中实时查看本机日志，无需导出文件。\n'
-          '适用于移动端（SD 卡导出受限的场景）。\n\n'
-          '服务器为全局单例，离开此页面不会停止，'
-          '只有手动停止或应用退出才关闭。\n\n'
-          '端点：\n'
-          '  /            → 实时日志查看器（WebSocket）\n'
-          '  /logs        → 全量日志文本（可 curl 下载）\n'
-          '  /diagnostics → 诊断快照文本',
+          'Start to view local logs in a PC browser in real time, no export needed.\nSuitable for mobile (where SD card export is limited).\n\nThe server is a global singleton; leaving this page does not stop it, only manual stop or app exit does.\n\nEndpoints:\n  /            → Real-time log viewer (WebSocket)\n  /logs        → Full log text (downloadable via curl)\n  /diagnostics → Diagnostics snapshot text'
+              .tr(),
           style: TextStyle(fontSize: 13, color: Colors.grey[600]),
         ),
         const SizedBox(height: 24),
@@ -838,8 +840,12 @@ class _WebServerTabState extends State<_WebServerTab> {
                   const SizedBox(width: 8),
                   Text(
                     isRunning
-                        ? '运行中 (端口 ${LogWebServer.instance.port})'
-                        : '已停止',
+                        ? 'Running (port {port})'.tr(
+                            namedArgs: {
+                              'port': '${LogWebServer.instance.port}',
+                            },
+                          )
+                        : 'Stopped'.tr(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isRunning ? Colors.green : Colors.grey,
@@ -869,7 +875,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Icon(isRunning ? Icons.stop : Icons.play_arrow),
-          label: Text(isRunning ? '停止' : '启动'),
+          label: Text(isRunning ? 'Stop'.tr() : 'Start'.tr()),
         ),
         const SizedBox(height: 16),
         // 安全提示
@@ -886,16 +892,233 @@ class _WebServerTabState extends State<_WebServerTab> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '安全提示：服务器绑定 0.0.0.0，同一局域网内的设备均可访问。'
-                  '日志不含密码/Token 等敏感信息。'
-                  '当前为 debug 阶段，服务器会随同步服务自动启动；'
-                  '发布版本会改为默认关闭。',
+                  'Security note: the server binds 0.0.0.0, so any device on the same LAN can access it. Logs do not contain sensitive information such as passwords/tokens. Currently in debug stage, the server starts automatically with the sync service; release builds will default to off.'
+                      .tr(),
                   style: TextStyle(fontSize: 12, color: Colors.orange[800]),
                 ),
               ),
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Tab 6: 测试（KDF 性能对比）
+// ──────────────────────────────────────────────
+
+/// 一组基准测试参数
+class _BenchCase {
+  final String name;
+  final String params;
+  final int type; // 0 = PBKDF2, 1 = Argon2id
+  final int iterations;
+  final int memory;
+  final int parallelism;
+
+  const _BenchCase.pbkdf2(this.name, this.params, this.iterations)
+      : type = 0,
+        memory = 0,
+        parallelism = 0;
+
+  const _BenchCase.argon2id(
+      this.name, this.params, this.iterations, this.memory, this.parallelism)
+      : type = 1;
+}
+
+/// 一组基准测试结果
+class _BenchResult {
+  final String name;
+  final String params;
+  final String algo;
+  final int elapsedMs;
+  final bool failed;
+  final String error;
+
+  const _BenchResult({
+    required this.name,
+    required this.params,
+    required this.algo,
+    required this.elapsedMs,
+    this.failed = false,
+    this.error = '',
+  });
+
+  String get summary => '$name: $algo ${failed ? 'failed: $error' : '${elapsedMs}ms'}';
+}
+
+class _TestTab extends StatefulWidget {
+  const _TestTab();
+
+  @override
+  State<_TestTab> createState() => _TestTabState();
+}
+
+class _TestTabState extends State<_TestTab> {
+  static const List<_BenchCase> _cases = [
+    // PBKDF2-HMAC-SHA256
+    _BenchCase.pbkdf2('PBKDF2 Current', '200,000 iterations (current app)', 200000),
+    _BenchCase.pbkdf2('PBKDF2 OWASP-2023', '600,000 iterations', 600000),
+    _BenchCase.pbkdf2('PBKDF2 OWASP-2024', '1,000,000 iterations', 1000000),
+    _BenchCase.pbkdf2('PBKDF2 Stress', '2,000,000 iterations', 2000000),
+    // Argon2id
+    _BenchCase.argon2id('Argon2id Light', '19MiB, t=2, p=1 (OWASP baseline)', 2, 19456, 1),
+    _BenchCase.argon2id('Argon2id Medium', '32MiB, t=2, p=1', 2, 32768, 1),
+    _BenchCase.argon2id('Argon2id Medium Parallel', '32MiB, t=2, p=4', 2, 32768, 4),
+    _BenchCase.argon2id('Argon2id High', '64MiB, t=3, p=4', 3, 65536, 4),
+  ];
+
+  bool _running = false;
+  final List<_BenchResult> _results = [];
+
+  /// 派生 32 字节密钥所需的固定 salt（基准测试用）
+  static final Uint8List _salt = Uint8List.fromList(
+      List<int>.generate(16, (i) => i + 1));
+
+  Future<String> _runCase(_BenchCase c) async {
+    final sw = Stopwatch()..start();
+    try {
+      if (c.type == 0) {
+        final algo = Pbkdf2(
+          macAlgorithm: Hmac.sha256(),
+          iterations: c.iterations,
+          bits: 256,
+        );
+        final key =
+            await algo.deriveKeyFromPassword(password: 'test-password', nonce: _salt);
+        await key.extractBytes();
+      } else {
+        final algo = Argon2id(
+          parallelism: c.parallelism,
+          memory: c.memory,
+          iterations: c.iterations,
+          hashLength: 32,
+        );
+        final key = await algo.deriveKey(
+          secretKey: SecretKey('test-password'.codeUnits),
+          nonce: _salt,
+        );
+        await key.extractBytes();
+      }
+      sw.stop();
+      return '${sw.elapsedMilliseconds}';
+    } on Object catch (e) {
+      sw.stop();
+      return 'ERR:$e';
+    }
+  }
+
+  Future<void> _runAll() async {
+    setState(() {
+      _running = true;
+      _results.clear();
+    });
+    final results = <_BenchResult>[];
+    for (final c in _cases) {
+      final out = await _runCase(c);
+      final failed = out.startsWith('ERR:');
+      final elapsed = failed ? 0 : int.parse(out);
+      results.add(_BenchResult(
+        name: c.name,
+        params: c.params,
+        algo: c.type == 0 ? 'PBKDF2' : 'Argon2id',
+        elapsedMs: elapsed,
+        failed: failed,
+        error: failed ? out.substring(4) : '',
+      ));
+      setState(() => _results.add(results.last));
+    }
+    setState(() => _running = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('KDF Performance Comparison'.tr(),
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          'Compare PBKDF2-HMAC-SHA256 and Argon2id derivation time on the current device. Reference only: PBKDF2 is serial iterations; Argon2id additionally consumes memory.'
+              .tr(),
+          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: _running ? null : _runAll,
+          icon: _running
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.speed),
+          label: Text(_running ? 'Running...'.tr() : 'Run All Benchmarks'.tr()),
+        ),
+        const SizedBox(height: 16),
+        for (final c in _cases)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  c.type == 0 ? Icons.timelapse : Icons.memory,
+                  size: 18,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${c.name}\n${c.params}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_results.isNotEmpty) ...[
+          const Divider(height: 32),
+          Text('Results'.tr(), style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              )),
+          const SizedBox(height: 8),
+          for (final r in _results)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 140,
+                    child: Text(r.name,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                  ),
+                  Expanded(
+                    child: r.failed
+                        ? SelectableText(r.error,
+                            style:
+                                const TextStyle(fontSize: 13, color: Colors.red))
+                        : SelectableText('${r.elapsedMs} ms',
+                            style: const TextStyle(fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            icon: const Icon(Icons.copy, size: 18),
+            label: Text('Copy Results'.tr()),
+            onPressed: () => _copyToClipboard(
+              context,
+              _results.map((r) => r.summary).join('\n'),
+              'Benchmark results copied'.tr(),
+            ),
+          ),
+        ],
       ],
     );
   }

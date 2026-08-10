@@ -17,6 +17,9 @@
 // Flutter 导入
 import 'package:flutter/material.dart';
 
+// Package 导入
+import 'package:easy_localization/easy_localization.dart';
+
 // Project 导入
 import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_service.dart';
@@ -57,14 +60,14 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '最近删除',
+          'Recently Deleted'.tr(),
           style: appBarTitle,
         ),
         actions: [
           if (_deletedNotes.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
-              tooltip: '清空全部',
+              tooltip: 'Clear All'.tr(),
               onPressed: _confirmClearAll,
             ),
         ],
@@ -78,9 +81,9 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_deletedNotes.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          '没有已删除的笔记',
+          'No deleted notes'.tr(),
           style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
       );
@@ -111,7 +114,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     SyncService.instance.autoSync();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已恢复："${_truncateTitle(note.title)}"')),
+        SnackBar(
+          content: Text('Restored: "{title}"'
+              .tr(namedArgs: {'title': _truncateTitle(note.title)})),
+        ),
       );
       _refresh();
     }
@@ -126,7 +132,8 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已永久删除："${_truncateTitle(note.title)}"'),
+          content: Text('Permanently deleted: "{title}"'
+              .tr(namedArgs: {'title': _truncateTitle(note.title)})),
         ),
       );
       _refresh();
@@ -142,12 +149,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('清空全部已删除笔记'),
+        title: Text('Clear All Deleted Notes'.tr()),
         content: Text(
-          '将永久删除 ${_deletedNotes.length} 条笔记，此操作不可恢复。'
-          '\n\n注意：远端 manifest 中的墓碑仍会保留，'
-          '下次同步时这些笔记可能从远端重新同步回来。'
-          '\n要真正清理远端墓碑，需要等待"过期墓碑清理"功能。',
+          'This will permanently delete {count} notes. This action cannot be undone.\n\nNote: tombstones in the remote manifest remain; these notes may be re-synced from remote on the next sync.\nTo truly clean remote tombstones, wait for the "expired tombstone cleanup" feature.'
+              .tr(namedArgs: {'count': '${_deletedNotes.length}'}),
         ),
         actions: [
           TextButton(
@@ -155,7 +160,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
               Log.ui.i('用户取消清空回收站');
               Navigator.pop(context);
             },
-            child: const Text('取消'),
+            child: Text('Cancel'.tr()),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -163,7 +168,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
               Navigator.pop(context);
               await _clearAll();
             },
-            child: const Text('永久删除'),
+            child: Text('Permanently Delete'.tr()),
           ),
         ],
       ),
@@ -183,7 +188,8 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     SyncService.instance.autoSync();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已清空 ${_deletedNotes.length} 条笔记')),
+        SnackBar(content: Text('Cleared {count} notes'
+            .tr(namedArgs: {'count': '${_deletedNotes.length}'}))),
       );
       _refresh();
     }
@@ -221,7 +227,7 @@ class _DeletedNoteTile extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.delete_outline, color: Colors.grey),
         title: Text(
-          note.title.isEmpty ? '(无标题)' : note.title,
+          note.title.isEmpty ? '(Untitled)'.tr() : note.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(decoration: TextDecoration.lineThrough),
@@ -240,7 +246,7 @@ class _DeletedNoteTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '删除于 $timeStr',
+              'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey.shade500,
@@ -261,19 +267,19 @@ class _DeletedNoteTile extends StatelessWidget {
             }
           },
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'restore',
               child: ListTile(
                 leading: Icon(Icons.restore),
-                title: Text('恢复'),
+                title: Text('Restore'.tr()),
                 dense: true,
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
               child: ListTile(
                 leading: Icon(Icons.delete_forever, color: Colors.red),
-                title: Text('永久删除',
+                title: Text('Permanently Delete'.tr(),
                     style: TextStyle(color: Colors.red)),
                 dense: true,
               ),
@@ -289,13 +295,13 @@ class _DeletedNoteTile extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('永久删除'),
-        content: Text('确定要永久删除"${note.title.isEmpty ? '无标题' : note.title}"吗？\n'
-            '此操作不可恢复。'),
+        title: Text('Permanently Delete'.tr()),
+        content: Text('Permanently delete "{title}"? This cannot be undone.'
+            .tr(namedArgs: {'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text('Cancel'.tr()),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -303,7 +309,7 @@ class _DeletedNoteTile extends StatelessWidget {
               Navigator.pop(context);
               onPermanentDelete();
             },
-            child: const Text('永久删除'),
+            child: Text('Permanently Delete'.tr()),
           ),
         ],
       ),

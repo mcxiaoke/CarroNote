@@ -249,12 +249,13 @@ void main() {
     });
 
     test('displayNameOf 覆盖全部类型', () {
-      expect(SyncConfig.displayNameOf(SyncBackendType.none), equals('未配置'));
-      expect(
-          SyncConfig.displayNameOf(SyncBackendType.localFs), equals('本地文件夹'));
+      expect(SyncConfig.displayNameOf(SyncBackendType.none),
+          equals('Not configured'));
+      expect(SyncConfig.displayNameOf(SyncBackendType.localFs),
+          equals('Local folder'));
       expect(SyncConfig.displayNameOf(SyncBackendType.webdav), equals('WebDAV'));
-      expect(
-          SyncConfig.displayNameOf(SyncBackendType.safeServer), equals('SafeServer'));
+      expect(SyncConfig.displayNameOf(SyncBackendType.safeServer),
+          equals('SafeServer'));
     });
   });
 
@@ -280,7 +281,7 @@ void main() {
       final draft = SyncBackendDraft(type: SyncBackendType.none);
       final result = await SyncService.instance.testBackendConfig(draft);
       expect(result.success, isFalse);
-      expect(result.error, contains('未选择'));
+      expect(result.error, contains('No sync backend type selected'));
     });
 
     test('字段不完整的草稿直接报错', () async {
@@ -291,7 +292,7 @@ void main() {
       );
       final result = await SyncService.instance.testBackendConfig(draft);
       expect(result.success, isFalse);
-      expect(result.error, contains('配置不完整'));
+      expect(result.error, contains('Configuration incomplete'));
     });
   });
 }

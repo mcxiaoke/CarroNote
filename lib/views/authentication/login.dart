@@ -427,7 +427,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误,不扣尝试次数
           if (mounted) {
-            showSnackBarMessage(context, '无法验证密码(网络不可用),请检查网络后重试');
+            showSnackBarMessage(context,
+                'Unable to verify password (network unavailable). Check your connection and try again.'.tr());
           }
           return;
         }
@@ -470,7 +471,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       if (!backendResult.success && mounted) {
         showSnackBarMessage(
           context,
-          '同步初始化失败:${backendResult.error ?? "未知错误"}',
+          'Sync initialization failed: {error}'.tr(
+            namedArgs: {'error': backendResult.error ?? 'Unknown error'.tr()},
+          ),
         );
       }
       // 登录后执行一次初始同步,拉取远端最新数据
@@ -741,7 +744,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
     } on Exception catch (e) {
       if (mounted) {
-        showSnackBarMessage(context, '重置失败:$e');
+        showSnackBarMessage(context,
+            'Reset failed: {error}'.tr(namedArgs: {'error': '$e'}));
       }
     }
   }

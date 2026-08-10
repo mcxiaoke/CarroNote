@@ -169,12 +169,12 @@ class HomeSidebar extends StatelessWidget {
                   ),
                   sideItem(
                     Icons.bug_report_outlined,
-                    '调试面板'.tr(),
+                    'Debug Panel'.tr(),
                     onDiagnosticsCallback,
                   ),
                   sideItem(
                     Icons.delete_outline,
-                    '最近删除'.tr(),
+                    'Recently Deleted'.tr(),
                     onDeletedNotesCallback,
                   ),
                   sideItem(Icons.logout, 'Logout'.tr(), onLogoutCallback),

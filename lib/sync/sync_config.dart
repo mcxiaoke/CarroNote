@@ -23,6 +23,7 @@
  */
 
 // Package 导入
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -261,9 +262,9 @@ class SyncConfig {
   static String displayNameOf(SyncBackendType type) {
     switch (type) {
       case SyncBackendType.none:
-        return '未配置';
+        return 'Not configured'.tr();
       case SyncBackendType.localFs:
-        return '本地文件夹';
+        return 'Local folder'.tr();
       case SyncBackendType.webdav:
         return 'WebDAV';
       case SyncBackendType.safeServer:

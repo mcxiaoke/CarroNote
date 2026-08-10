@@ -73,8 +73,8 @@ class HomeDrawerState extends State<HomeDrawer> {
     final String rateText = 'Rate Us'.tr();
     final String logoutText = 'Logout'.tr();
     final String biometrics = 'Biometric'.tr();
-    const String deletedNotesText = '最近删除';
-    const String diagnosticsText = '调试面板';
+    final String deletedNotesText = 'Recently Deleted'.tr();
+    final String diagnosticsText = 'Debug Panel'.tr();
 
     return OrientationBuilder(
       builder: (context, orientation) {

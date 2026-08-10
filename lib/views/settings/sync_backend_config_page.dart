@@ -20,6 +20,7 @@
 import 'package:flutter/material.dart';
 
 // Package 导入
+import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 
 // Project 导入
@@ -69,7 +70,7 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
       fullscreenDialog: true,
       builder: (_) => Scaffold(
         appBar: AppBar(
-          title: const Text('同步配置'),
+          title: Text('Sync Configuration'.tr()),
         ),
         body: SafeArea(
           bottom: false,
@@ -98,13 +99,13 @@ class _DialogHeader extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              '同步配置',
+              'Sync Configuration'.tr(),
               style: theme.textTheme.titleMedium,
             ),
           ),
           IconButton(
             icon: const Icon(Icons.close),
-            tooltip: '取消',
+            tooltip: 'Cancel'.tr(),
             onPressed: onClose,
           ),
         ],
@@ -252,9 +253,9 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   String _typeTitle(SyncBackendType type) {
     switch (type) {
       case SyncBackendType.none:
-        return '不同步';
+        return 'No Sync'.tr();
       case SyncBackendType.localFs:
-        return '本地文件夹';
+        return 'Local Folder'.tr();
       case SyncBackendType.webdav:
         return 'WebDAV';
       case SyncBackendType.safeServer:
@@ -265,13 +266,13 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   String _typeSubtitle(SyncBackendType type) {
     switch (type) {
       case SyncBackendType.none:
-        return '清除后端选择，不与任何远端同步';
+        return 'Clears the backend selection; no sync with any remote.'.tr();
       case SyncBackendType.localFs:
-        return '同步到本地目录（测试 / 单设备）';
+        return 'Syncs to a local directory (testing / single device).'.tr();
       case SyncBackendType.webdav:
-        return '坚果云 / NextCloud / 自建';
+        return 'Nutstore / NextCloud / self-hosted'.tr();
       case SyncBackendType.safeServer:
-        return '自建轻量同步服务（HTTP API）';
+        return 'Self-hosted lightweight sync service (HTTP API).'.tr();
     }
   }
 
@@ -282,23 +283,23 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   List<Widget> _buildTypeFields() {
     switch (_type) {
       case SyncBackendType.none:
-        return const [
+        return [
           Padding(
             padding: EdgeInsets.only(top: 16),
-            child: Text('已选择「不同步」，保存后将清除后端选择。'),
+            child: Text('Selected "No Sync"; saving will clear the backend selection.'.tr()),
           ),
         ];
       case SyncBackendType.localFs:
         return [
-          _sectionTitle('本地文件夹'),
+          _sectionTitle('Local Folder'.tr()),
           _textField(
             controller: _localFsPathCtrl,
-            label: '同步目录',
-            hint: r'例如 D:\SafeNotesSync',
+            label: 'Sync Directory'.tr(),
+            hint: 'e.g. D:\\SafeNotesSync',
             icon: Icons.folder_outlined,
             suffix: IconButton(
               icon: const Icon(Icons.folder_open),
-              tooltip: '选择目录',
+              tooltip: 'Choose Directory'.tr(),
               onPressed: _testing ? null : _pickLocalFsPath,
             ),
           ),
@@ -308,21 +309,21 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           _sectionTitle('WebDAV'),
           _textField(
             controller: _webdavUrlCtrl,
-            label: '服务器地址',
+            label: 'Server Address'.tr(),
             hint: 'https://dav.jianguoyun.com/dav/',
             icon: Icons.link,
             keyboardType: TextInputType.url,
           ),
           _textField(
             controller: _webdavUsernameCtrl,
-            label: '用户名',
+            label: 'Username'.tr(),
             hint: 'user@example.com',
             icon: Icons.person_outline,
           ),
           _textField(
             controller: _webdavPasswordCtrl,
-            label: '密码',
-            hint: '应用专用密码（非登录密码）',
+            label: 'Password'.tr(),
+            hint: 'App Password (not login password)'.tr(),
             icon: Icons.lock_outline,
             obscure: _obscureWebdavPassword,
             suffix: _obscureToggle(
@@ -332,14 +333,14 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
               ),
             ),
           ),
-          _hint('客户端会自动在该地址下创建 safenotes-vault 子目录存放同步数据。'),
+          _hint('The client automatically creates a safenotes-vault subdirectory under this address for sync data.'.tr()),
         ];
       case SyncBackendType.safeServer:
         return [
           _sectionTitle('SafeServer'),
           _textField(
             controller: _safeServerUrlCtrl,
-            label: '服务器地址',
+            label: 'Server Address'.tr(),
             hint: 'http://192.168.1.118:2025',
             icon: Icons.dns_outlined,
             keyboardType: TextInputType.url,
@@ -347,7 +348,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           _textField(
             controller: _safeServerTokenCtrl,
             label: 'Token',
-            hint: '部署时配置的固定 Bearer Token',
+            hint: 'Fixed Bearer Token configured at deployment'.tr(),
             icon: Icons.key,
             obscure: _obscureSafeServerToken,
             suffix: _obscureToggle(
@@ -383,7 +384,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   }) =>
       IconButton(
         icon: Icon(obscured ? Icons.visibility_off : Icons.visibility),
-        tooltip: obscured ? '显示' : '隐藏',
+        tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
         onPressed: _testing ? null : onPressed,
       );
 
@@ -449,7 +450,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.network_check),
-                    label: Text(_testing ? '测试中…' : '测试连接'),
+                    label: Text(_testing ? 'Testing...'.tr() : 'Test Connection'.tr()),
                     onPressed: (_testing || !_canTest) ? null : _runTest,
                   ),
                 ),
@@ -457,7 +458,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
                 Expanded(
                   child: FilledButton.icon(
                     icon: const Icon(Icons.save_outlined),
-                    label: const Text('保存'),
+                    label: Text('Save'.tr()),
                     onPressed: (_testing || !_canSave) ? null : _save,
                   ),
                 ),
@@ -476,27 +477,28 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     final IconData icon;
 
     if (_testing) {
-      message = '正在连接后端…';
+      message = 'Connecting to backend…'.tr();
       color = theme.colorScheme.onSurfaceVariant;
       icon = Icons.hourglass_empty;
     } else if (_type == SyncBackendType.none) {
-      message = '「不同步」无需测试，可直接保存。';
+      message = '"No Sync" does not require testing; you can save directly.'.tr();
       color = theme.colorScheme.onSurfaceVariant;
       icon = Icons.info_outline;
     } else if (!_draft.isComplete) {
-      message = '请填写完所有必填项。';
+      message = 'Please fill in all required fields.'.tr();
       color = theme.colorScheme.onSurfaceVariant;
       icon = Icons.edit_outlined;
     } else if (!_hasFreshResult) {
-      message = '配置已修改，请先测试连接再保存。';
+      message = 'Configuration has changed; test the connection before saving.'.tr();
       color = theme.colorScheme.onSurfaceVariant;
       icon = Icons.info_outline;
     } else if (_resultError == null) {
-      message = '连接测试通过，可以保存。';
+      message = 'Connection test passed; you can save.'.tr();
       color = Colors.green;
       icon = Icons.check_circle_outline;
     } else {
-      message = '连接失败：$_resultError';
+      message = 'Connection failed: {error}'.tr(
+          namedArgs: {'error': _resultError ?? ''});
       color = theme.colorScheme.error;
       icon = Icons.error_outline;
     }
@@ -534,7 +536,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     setState(() {
       _testing = false;
       _resultSignature = signature;
-      _resultError = result.success ? null : (result.error ?? '未知错误');
+      _resultError = result.success ? null : (result.error ?? 'Unknown error'.tr());
       // 只有成功才记录「已通过」的指纹，保存按钮据此解锁
       if (result.success) _passedSignature = signature;
     });

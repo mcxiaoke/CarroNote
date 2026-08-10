@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 
 // Package 导入
+import 'package:easy_localization/easy_localization.dart';
 import 'package:settings_ui/settings_ui.dart';
 import 'package:safenotes/utils/settings_platform.dart';
 
@@ -45,7 +46,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('同步设置'),
+        title: Text('Sync Settings'.tr()),
       ),
       body: _buildBody(),
     );
@@ -57,12 +58,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       sections: [
         // ── 同步总开关 ──
         SettingsSection(
-          title: const Text('同步开关'),
+          title: Text('Sync Switch'.tr()),
           tiles: [
             SettingsTile.switchTile(
               leading: const Icon(Icons.cloud_sync_outlined),
-              title: const Text('启用同步'),
-              description: const Text('关闭后不会与远端发生任何通信，后端配置保留'),
+              title: Text('Enable Sync'.tr()),
+              description: Text('Disables all communication with remote; backend config is kept.'.tr()),
               initialValue: SyncConfig.isSyncEnabled,
               onToggle: _toggleSyncEnabled,
             ),
@@ -71,23 +72,23 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
         // ── 同步状态 ──
         SettingsSection(
-          title: const Text('同步状态'),
+          title: Text('Sync Status'.tr()),
           tiles: [
             SettingsTile.navigation(
               leading: const Icon(Icons.sync),
-              title: const Text('立即同步'),
+              title: Text('Sync Now'.tr()),
               value: Text(_syncStatusText()),
               onPressed: (_) => _triggerSync(),
             ),
             SettingsTile.navigation(
               leading: const Icon(Icons.build_outlined),
-              title: const Text('修复同步数据'),
-              description: const Text('扫描并修复远端无法解密的 blob'),
+              title: Text('Repair Sync Data'.tr()),
+              description: Text('Scans and repairs blobs that the remote cannot decrypt.'.tr()),
               onPressed: (_) => _triggerRepair(),
             ),
             SettingsTile.navigation(
               leading: const Icon(Icons.info_outline),
-              title: const Text('上次同步'),
+              title: Text('Last Sync'.tr()),
               value: Text(_lastSyncText()),
             ),
           ],
@@ -95,11 +96,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
         // ── 后端配置 ──
         SettingsSection(
-          title: const Text('后端配置'),
+          title: Text('Backend Config'.tr()),
           tiles: [
             SettingsTile.navigation(
               leading: const Icon(Icons.settings_ethernet),
-              title: const Text('同步配置'),
+              title: Text('Sync Configuration'.tr()),
               description: Text(_backendSummaryText()),
               value: Text(SyncConfig.backendDisplayName),
               onPressed: (_) => _openBackendConfigPanel(),
@@ -109,11 +110,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
         // ── 自动同步 ──
         SettingsSection(
-          title: const Text('自动同步'),
+          title: Text('Auto Sync'.tr()),
           tiles: [
             SettingsTile.switchTile(
               leading: const Icon(Icons.autorenew),
-              title: const Text('笔记变更后自动同步'),
+              title: Text('Auto sync after note changes'.tr()),
               initialValue: SyncConfig.isAutoSyncEnabled,
               onToggle: (value) async {
                 await SyncConfig.setAutoSyncEnabled(value);
@@ -125,11 +126,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
         // ── Keyring 管理 ──
         SettingsSection(
-          title: const Text('加密 Keyring'),
+          title: Text('Encrypted Keyring'.tr()),
           tiles: [
             SettingsTile.navigation(
               leading: const Icon(Icons.vpn_key_outlined),
-              title: const Text('Keyring 状态'),
+              title: Text('Keyring Status'.tr()),
               value: Text(_vaultStatusText()),
             ),
           ],
@@ -143,20 +144,20 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   // ──────────────────────────────────────────────
 
   String _syncStatusText() {
-    if (!SyncConfig.isSyncEnabled) return '已关闭';
-    if (!SyncConfig.hasBackendConfig) return '未配置后端';
+    if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
+    if (!SyncConfig.hasBackendConfig) return 'No backend configured'.tr();
     final state = SyncService.instance.state;
     switch (state.status) {
       case SyncStatus.uninitialized:
-        return '未初始化';
+        return 'Not initialized'.tr();
       case SyncStatus.idle:
-        return '就绪';
+        return 'Ready'.tr();
       case SyncStatus.syncing:
-        return '同步中...';
+        return 'Syncing…'.tr();
       case SyncStatus.success:
-        return '同步成功';
+        return 'Sync successful'.tr();
       case SyncStatus.error:
-        return '同步失败';
+        return 'Sync failed'.tr();
     }
   }
 
@@ -164,24 +165,24 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   String _backendSummaryText() {
     switch (SyncConfig.backendType) {
       case SyncBackendType.none:
-        return '尚未选择同步后端，点击进行配置';
+        return 'No backend selected yet. Tap to configure.'.tr();
       case SyncBackendType.localFs:
         final path = SyncConfig.localFsPath;
-        return path.isEmpty ? '未设置同步目录' : path;
+        return path.isEmpty ? 'Sync folder not set'.tr() : path;
       case SyncBackendType.webdav:
         final url = SyncConfig.webdavUrl;
-        if (url.isEmpty) return '未设置服务器地址';
-        return '$url（${SyncConfig.webdavUsername}）';
+        if (url.isEmpty) return 'Server address not set'.tr();
+        return '$url (${SyncConfig.webdavUsername})';
       case SyncBackendType.safeServer:
         final url = SyncConfig.safeServerUrl;
-        return url.isEmpty ? '未设置服务器地址' : url;
+        return url.isEmpty ? 'Server address not set'.tr() : url;
     }
   }
 
   String _lastSyncText() {
     final state = SyncService.instance.state;
     if (state.lastSyncTime == null) {
-      return '从未同步';
+      return 'Never synced'.tr();
     }
     final time = state.lastSyncTime!;
     String result = '${time.month}/${time.day} ${time.hour}:${time.minute.toString().padLeft(2, '0')}';
@@ -192,14 +193,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         if (r.deleted > 0) result += ' ✗${r.deleted}';
         result += ')';
       } else {
-        result += ' (失败)';
+        result += ' (failed)'.tr();
       }
     }
     return result;
   }
 
   String _vaultStatusText() {
-    return SyncService.instance.keyring != null ? '已解锁' : '未初始化';
+    return SyncService.instance.keyring != null
+        ? 'Unlocked'.tr()
+        : 'Not initialized'.tr();
   }
 
   // ──────────────────────────────────────────────
@@ -219,9 +222,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     setState(() {});
 
     if (enabled && !SyncConfig.hasBackendConfig) {
-      _showMessage('同步已启用，但尚未配置后端，请先完成同步配置');
+      _showMessage('Sync enabled, but no backend configured. Please complete the sync configuration.'.tr());
     } else if (enabled && !result.success) {
-      _showMessage('同步已启用，但初始化失败：${result.error ?? "未知错误"}');
+      _showMessage('Sync enabled, but initialization failed: {error}'.tr(
+          namedArgs: {'error': result.error ?? 'Unknown error'.tr()}));
     } else if (enabled && SyncService.instance.state.isInitialized) {
       // 刚启用就拉一次远端，行为与登录后一致
       SyncService.instance.autoSync();
@@ -244,12 +248,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     setState(() {});
 
     if (!result.success) {
-      _showMessage('配置已保存，但应用失败：${result.error ?? "未知错误"}');
+      _showMessage('Config saved, but failed to apply: {error}'.tr(
+          namedArgs: {'error': result.error ?? 'Unknown error'.tr()}));
     } else if (!SyncConfig.isSyncEnabled &&
         saved.type != SyncBackendType.none) {
-      _showMessage('配置已保存。同步开关当前为关闭状态，打开后才会生效');
+      _showMessage('Config saved. Sync is currently off; it will take effect when enabled.'.tr());
     } else {
-      _showMessage('同步配置已保存');
+      _showMessage('Sync configuration saved'.tr());
     }
   }
 
@@ -272,14 +277,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     // （登录时 keyring 已缓存，配置完后端即可直接初始化）
     if (!SyncService.instance.state.isInitialized) {
       if (SyncService.instance.keyring == null) {
-        _showMessage('Keyring 未初始化，请重新登录');
+        _showMessage('Keyring not initialized. Please log in again.'.tr());
         return;
       }
       final result = await SyncService.instance.initBackend(
         database: NotesDatabase.instance,
       );
       if (!result.success) {
-        _showMessage(result.error ?? '后端初始化失败');
+        _showMessage(result.error ?? 'Backend initialization failed'.tr());
         return;
       }
     }
@@ -288,9 +293,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     if (mounted) {
       setState(() {});
       if (result != null && !result.success) {
-        _showMessage('同步失败：${result.errorMessage}');
+        _showMessage('Sync failed: {error}'.tr(
+            namedArgs: {'error': '${result.errorMessage}'}));
       } else if (result != null && result.hasChanges) {
-        _showMessage('同步完成：↑${result.uploaded} ↓${result.downloaded}');
+        _showMessage('Sync complete: ↑{uploaded} ↓{downloaded}'.tr(
+            namedArgs: {
+              'uploaded': '${result.uploaded}',
+              'downloaded': '${result.downloaded}',
+            }));
       }
     }
   }
@@ -305,32 +315,38 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     if (!_ensureSyncUsable()) return;
     if (!SyncService.instance.state.isInitialized) {
       if (SyncService.instance.keyring == null) {
-        _showMessage('Keyring 未初始化，请重新登录');
+        _showMessage('Keyring not initialized. Please log in again.'.tr());
         return;
       }
       final result = await SyncService.instance.initBackend(
         database: NotesDatabase.instance,
       );
       if (!result.success) {
-        _showMessage(result.error ?? '后端初始化失败');
+        _showMessage(result.error ?? 'Backend initialization failed'.tr());
         return;
       }
     }
 
-    _showMessage('正在校验并修复远端数据…');
+    _showMessage('Verifying and repairing remote data…'.tr());
     final result = await SyncService.instance.repairRemote();
 
     if (mounted) {
       setState(() {});
       if (result == null) {
-        _showMessage('修复未执行：正在同步中或无权限');
+        _showMessage('Repair skipped: syncing in progress or no permission'.tr());
       } else if (!result.success) {
-        _showMessage('修复失败：${result.errorMessage}');
+        _showMessage('Repair failed: {error}'.tr(
+            namedArgs: {'error': '${result.errorMessage}'}));
       } else if (result.failedNoteUuids.isNotEmpty) {
-        _showMessage('修复完成：治愈 ${result.uploaded} 条，'
-            '${result.failedNoteUuids.length} 条仍无法解密（无密钥/明文）');
+        _showMessage(
+            'Repair complete: fixed {fixed} entries, {failed} still unreadable (no key/plaintext).'
+                .tr(namedArgs: {
+              'fixed': '${result.uploaded}',
+              'failed': '${result.failedNoteUuids.length}',
+            }));
       } else {
-        _showMessage('修复完成：治愈 ${result.uploaded} 条，无残留损坏');
+        _showMessage('Repair complete: fixed {fixed} entries, no remaining corruption.'
+            .tr(namedArgs: {'fixed': '${result.uploaded}'}));
       }
     }
   }
@@ -340,11 +356,11 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   /// 返回 false 表示已给出提示、调用方应直接返回。
   bool _ensureSyncUsable() {
     if (!SyncConfig.isSyncEnabled) {
-      _showMessage('同步已关闭，请先打开「启用同步」开关');
+      _showMessage('Sync is disabled. Enable "Enable Sync" first.'.tr());
       return false;
     }
     if (!SyncConfig.hasBackendConfig) {
-      _showMessage('尚未配置同步后端，请先完成同步配置');
+      _showMessage('No sync backend configured. Please complete the sync configuration first.'.tr());
       return false;
     }
     return true;

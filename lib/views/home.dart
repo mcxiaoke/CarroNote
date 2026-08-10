@@ -171,7 +171,8 @@ class HomePageState extends State<HomePage> with RouteAware {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${failed.length} 条笔记因密钥不匹配未能同步，将在下次同步重试',
+              '{count} notes failed to sync due to key mismatch and will be retried on the next sync'
+                  .tr(namedArgs: {'count': '${failed.length}'}),
             ),
             duration: const Duration(seconds: 4),
           ),
@@ -192,11 +193,9 @@ class HomePageState extends State<HomePage> with RouteAware {
         // 强制：不可用系统返回键关闭
         canPop: false,
         child: AlertDialog(
-          title: Text('密码已在其他设备修改'.tr()),
+          title: Text('Password Changed on Another Device'.tr()),
           content: Text(
-            '检测到同步密码已在其他设备上修改，当前密码已失效。\n\n'
-                    '本地笔记不会丢失，尚未同步的更改已保留在本地。'
-                    '请重新登录并使用新密码继续使用。'
+            'The sync passphrase was changed on another device; the current passphrase is no longer valid.\n\nLocal notes are not lost; unsynced changes are kept locally. Please log in again with the new passphrase.'
                 .tr(),
           ),
           actions: [
@@ -205,7 +204,7 @@ class HomePageState extends State<HomePage> with RouteAware {
                 Navigator.of(dialogContext).pop();
                 await _logoutToLogin();
               },
-              child: Text('退出并重新登录'.tr()),
+              child: Text('Logout and Login Again'.tr()),
             ),
           ],
         ),
@@ -251,7 +250,8 @@ class HomePageState extends State<HomePage> with RouteAware {
           allnotes = notes = <SafeNote>[];
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载笔记失败：$e')),
+          SnackBar(content: Text('Failed to load notes: {error}'
+              .tr(namedArgs: {'error': '$e'}))),
         );
       }
     } finally {
@@ -414,15 +414,15 @@ class HomePageState extends State<HomePage> with RouteAware {
   String _syncTooltip(SyncStatus status) {
     switch (status) {
       case SyncStatus.uninitialized:
-        return '同步未初始化';
+        return 'Sync not initialized'.tr();
       case SyncStatus.idle:
-        return '同步就绪';
+        return 'Sync ready'.tr();
       case SyncStatus.syncing:
-        return '同步中…';
+        return 'Syncing…'.tr();
       case SyncStatus.success:
-        return '同步成功';
+        return 'Sync successful'.tr();
       case SyncStatus.error:
-        return '同步失败';
+        return 'Sync failed'.tr();
     }
   }
 
@@ -433,7 +433,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _diagnosticsButton() {
     return IconButton(
       icon: const Icon(Icons.bug_report_outlined),
-      tooltip: '调试面板',
+      tooltip: 'Debug Panel'.tr(),
       onPressed: () async {
         Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics)');
         await Navigator.pushNamed(context, '/diagnostics');

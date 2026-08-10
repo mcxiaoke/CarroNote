@@ -90,6 +90,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await showImportDialog(context);
               },
             ),
+            SettingsTile.navigation(
+              leading: const Icon(Icons.language_outlined),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Language'.tr()),
+                  if (context.locale.toString() != 'en_US')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 5),
+                      child: Text(
+                        'Language',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+              value: Text(
+                  SafeNotesConfig.mapLocaleName[context.locale.toString()]!),
+              onPressed: (context) async {
+                await Navigator.pushNamed(context, '/chooseLanguageSettings');
+                setState(() {});
+              },
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: Text('Style'.tr()),
+          tiles: <SettingsTile>[
             SettingsTile.switchTile(
               leading: Icon(Icons.compress),
               title: Text('Compact Notes'.tr()),
@@ -156,29 +184,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : Text('On'.tr()),
               onPressed: (context) async {
                 await Navigator.pushNamed(context, '/chooseColorSettings');
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.language_outlined),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Language'.tr()),
-                  if (context.locale.toString() != 'en_US')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 5),
-                      child: Text(
-                        'Language',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-              value: Text(
-                  SafeNotesConfig.mapLocaleName[context.locale.toString()]!),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/chooseLanguageSettings');
                 setState(() {});
               },
             ),
@@ -267,11 +272,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         SettingsSection(
-          title: const Text('同步'),
+          title: Text('Sync'.tr()),
           tiles: <SettingsTile>[
             SettingsTile.navigation(
               leading: const Icon(Icons.cloud_sync_outlined),
-              title: const Text('同步设置'),
+              title: Text('Sync Settings'.tr()),
               value: Text(_syncStatusValue()),
               onPressed: (context) async {
                 await Navigator.pushNamed(context, '/syncSettings');
@@ -357,8 +362,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 三态：总开关关掉 → 「已关闭」；开着但后端没配全 → 「未配置」；
   /// 都就绪 → 显示后端名称。
   String _syncStatusValue() {
-    if (!SyncConfig.isSyncEnabled) return '已关闭';
-    if (!SyncConfig.hasBackendConfig) return '未配置';
+    if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
+    if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();
     return SyncConfig.backendDisplayName;
   }
 }

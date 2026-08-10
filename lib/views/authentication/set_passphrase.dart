@@ -397,7 +397,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       // 路由异常场景：已有 keyring 却走到设置页，拒绝覆盖以防数据丢失
       Log.crypto.e('拒绝创建新 Keyring：检测到已存在的加密元数据(应走登录流程)');
       if (mounted) {
-        showSnackBarMessage(context, '检测到已有加密数据,请返回登录');
+        showSnackBarMessage(context, 'Encrypted data detected. Please go back and log in.'.tr());
       }
       return false;
     }
@@ -417,7 +417,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       if (mounted) {
         showSnackBarMessage(
           context,
-          '加密初始化失败：${result.error ?? "未知错误"}',
+          'Encryption initialization failed: {error}'.tr(
+            namedArgs: {'error': result.error ?? 'Unknown error'.tr()},
+          ),
         );
       }
       return false;
@@ -440,7 +442,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       if (!backendResult.success && mounted) {
         showSnackBarMessage(
           context,
-          '同步初始化失败：${backendResult.error ?? "未知错误"}',
+          'Sync initialization failed: {error}'.tr(
+            namedArgs: {'error': backendResult.error ?? 'Unknown error'.tr()},
+          ),
         );
       }
       // 后端失败不阻断进入 home——keyring 已就绪，用户可在设置页修复后端

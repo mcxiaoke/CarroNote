@@ -353,7 +353,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // keyring 为 null 说明未登录或状态异常,中止
         Log.auth.e('改密码中止：Keyring 未初始化（未登录或状态异常）');
         if (mounted) {
-          showSnackBarMessage(context, 'Keyring 未初始化,请重新登录');
+          showSnackBarMessage(context, 'Keyring not initialized. Please log in again.'.tr());
         }
         return;
       }
@@ -373,7 +373,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 其他异常(简化方案:失败必须中止)
         Log.auth.e('改密码中止：校验旧密码时发生异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(context, '验证旧密码失败:$e');
+          showSnackBarMessage(context, 'Failed to verify old passphrase: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         }
         return;
       }
@@ -407,7 +408,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
         Log.auth.e('改密码失败：持久化新 keyring 时异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(context, '改密码失败:$e');
+          showSnackBarMessage(context, 'Failed to change passphrase: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         }
         return;
       }
@@ -459,12 +461,14 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     if (!backupOk && mounted) {
       final errMsg = ScheduledTask.lastBackupError;
       final proceed = await _showWarningDialog(
-        title: '备份失败',
+        title: 'Backup Failed'.tr(),
         content: errMsg != null
-            ? '改密码前的本地备份写入失败：$errMsg\n\n是否仍要继续改密码？'
-            : '改密码前的本地备份写入失败，建议先解决备份问题再继续。\n\n是否仍要继续改密码？',
-        confirmText: '继续改密码',
-        cancelText: '取消',
+            ? 'Local backup write failed before passphrase change: {error}\n\nContinue changing the passphrase anyway?'
+                .tr(namedArgs: {'error': errMsg})
+            : 'Local backup write failed before passphrase change. It is recommended to fix the backup issue first.\n\nContinue changing the passphrase anyway?'
+                .tr(),
+        confirmText: 'Continue Changing Passphrase'.tr(),
+        cancelText: 'Cancel'.tr(),
       );
       if (!proceed) return false;
     }
@@ -477,12 +481,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       final online = await backend.ping();
       if (!online && mounted) {
         final proceed = await _showWarningDialog(
-          title: '同步服务器不可用',
+          title: 'Sync Server Unavailable'.tr(),
           content:
-              '无法连接同步服务器，改密码后新密钥无法立即推送。\n'
-              '他端在下次同步时可能触发密钥迁移，期间无法正常同步。\n\n是否仍要继续改密码？',
-          confirmText: '继续改密码',
-          cancelText: '取消',
+              'Cannot reach the sync server; the new key cannot be pushed immediately.\nOther devices may trigger key migration on next sync and cannot sync normally during that period.\n\nContinue changing the passphrase anyway?'
+                  .tr(),
+          confirmText: 'Continue Changing Passphrase'.tr(),
+          cancelText: 'Cancel'.tr(),
         );
         if (!proceed) return false;
       }
@@ -494,12 +498,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         final unsynced = await NotesDatabase.instance.readUnsyncedNotes();
         if (unsynced.isNotEmpty && mounted) {
           final proceed = await _showWarningDialog(
-            title: '本地仍有未同步笔记',
+            title: 'Unsynchronized Notes Remain'.tr(),
             content:
-                '当前有 ${unsynced.length} 条笔记未成功同步（可能是远端临时不可达）。\n'
-                '改密码后这些笔记仍会保留在本地，下次同步时推送。\n\n是否仍要继续改密码？',
-            confirmText: '继续改密码',
-            cancelText: '取消',
+                '{count} notes are not yet synced (the remote may be temporarily unreachable).\nThey will remain local and be pushed on the next sync.\n\nContinue changing the passphrase anyway?'
+                    .tr(namedArgs: {'count': '${unsynced.length}'}),
+            confirmText: 'Continue Changing Passphrase'.tr(),
+            cancelText: 'Cancel'.tr(),
           );
           if (!proceed) return false;
         }

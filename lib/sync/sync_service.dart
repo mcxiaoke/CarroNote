@@ -23,6 +23,7 @@
 import 'dart:async';
 
 // 第三方导入
+import 'package:easy_localization/easy_localization.dart';
 import 'package:path_provider/path_provider.dart';
 
 // 项目导入
@@ -404,7 +405,7 @@ class SyncService {
       Log.sync.d('sync 被跳过：同步总开关已关闭');
       _updateState(state.copyWith(
         status: SyncStatus.error,
-        errorMessage: '同步已在设置中关闭',
+        errorMessage: 'Sync is disabled in settings'.tr(),
       ));
       return null;
     }
@@ -427,7 +428,7 @@ class SyncService {
       if (engine == null) {
         _updateState(state.copyWith(
           status: SyncStatus.error,
-          errorMessage: '同步服务未初始化',
+          errorMessage: 'Sync service not initialized'.tr(),
         ));
         return null;
       }
@@ -443,7 +444,7 @@ class SyncService {
         if (backend == null) {
           _updateState(state.copyWith(
             status: SyncStatus.error,
-            errorMessage: '同步服务未初始化',
+            errorMessage: 'Sync service not initialized'.tr(),
           ));
           return null;
         }
@@ -456,17 +457,21 @@ class SyncService {
           _updateState(state.copyWith(
             status: SyncStatus.error,
             lastSyncTime: DateTime.now(),
-            errorMessage: '网络不可用，请检查连接后重试：$e',
+            errorMessage: 'Network unavailable; check your connection and retry: {error}'
+                .tr(namedArgs: {'error': '$e'}),
           ));
-          return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+          return SyncResult.failure('Network unavailable; check your connection and retry: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         } on Exception catch (e, st) {
           Log.sync.e('后端初始化失败（未预期异常）', error: e, stackTrace: st);
           _updateState(state.copyWith(
             status: SyncStatus.error,
             lastSyncTime: DateTime.now(),
-            errorMessage: '后端初始化失败：$e',
+            errorMessage: 'Backend initialization failed: {error}'
+                .tr(namedArgs: {'error': '$e'}),
           ));
-          return SyncResult.failure('后端初始化失败：$e');
+          return SyncResult.failure('Backend initialization failed: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         }
       }
 
@@ -483,17 +488,17 @@ class SyncService {
       _updateState(state.copyWith(
         status: SyncStatus.error,
         lastSyncTime: DateTime.now(),
-        errorMessage: '后端不可用：$e',
+        errorMessage: 'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
       ));
-      return SyncResult.failure('后端不可用：$e');
+      return SyncResult.failure('Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
     } on Exception catch (e, st) {
       Log.sync.e('同步失败（未预期异常）', error: e, stackTrace: st);
       _updateState(state.copyWith(
         status: SyncStatus.error,
         lastSyncTime: DateTime.now(),
-        errorMessage: '同步异常：$e',
+        errorMessage: 'Sync error: {error}'.tr(namedArgs: {'error': '$e'}),
       ));
-      return SyncResult.failure('同步异常：$e');
+      return SyncResult.failure('Sync error: {error}'.tr(namedArgs: {'error': '$e'}));
     } finally {
       _syncInProgress = false;
     }
@@ -518,7 +523,7 @@ class SyncService {
       if (engine == null) {
         _updateState(state.copyWith(
           status: SyncStatus.error,
-          errorMessage: '同步服务未初始化',
+          errorMessage: 'Sync service not initialized'.tr(),
         ));
         return null;
       }
@@ -529,7 +534,7 @@ class SyncService {
         if (backend == null) {
           _updateState(state.copyWith(
             status: SyncStatus.error,
-            errorMessage: '同步服务未初始化',
+            errorMessage: 'Sync service not initialized'.tr(),
           ));
           return null;
         }
@@ -539,11 +544,13 @@ class SyncService {
           _backendReady = true;
         } on BackendUnavailableException catch (e, st) {
           Log.sync.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
-          return SyncResult.failure('网络不可用，请检查连接后重试：$e');
+          return SyncResult.failure('Network unavailable; check your connection and retry: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         } on Exception catch (e, st) {
           Log.sync.e('repairRemote: 后端初始化失败（未预期异常）',
               error: e, stackTrace: st);
-          return SyncResult.failure('后端初始化失败：$e');
+          return SyncResult.failure('Backend initialization failed: {error}'
+              .tr(namedArgs: {'error': '$e'}));
         }
       }
 
@@ -560,10 +567,10 @@ class SyncService {
       return result;
     } on BackendUnavailableException catch (e, st) {
       Log.sync.e('repairRemote: 后端不可用', error: e, stackTrace: st);
-      return SyncResult.failure('后端不可用：$e');
+      return SyncResult.failure('Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
     } on Exception catch (e, st) {
       Log.sync.e('repairRemote: 修复异常', error: e, stackTrace: st);
-      return SyncResult.failure('修复异常：$e');
+      return SyncResult.failure('Repair error: {error}'.tr(namedArgs: {'error': '$e'}));
     } finally {
       _syncInProgress = false;
     }
@@ -675,7 +682,7 @@ class SyncService {
     if (_syncInProgress) {
       // P3-log：拒绝切换（避免 StateError 抛出后从日志看不出原因）
       Log.sync.w('switchBackend 被拒绝（同步进行中），抛 StateError');
-      throw StateError('同步进行中，无法切换后端，请稍后重试');
+      throw StateError('Sync in progress; cannot switch backend. Please retry later.'.tr());
     }
     final oldType = _backend?.runtimeType.toString() ?? 'null';
     Log.sync.i('切换同步后端: $oldType → ${backend.runtimeType}');
@@ -763,10 +770,12 @@ class SyncService {
       return (success: false, error: '$e');
     } on BackendUnavailableException catch (e) {
       Log.sync.w('applyConfigToService: 新后端不可用', error: e);
-      return (success: false, error: '后端不可用：$e');
+      return (success: false,
+          error: 'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
     } on Exception catch (e, st) {
       Log.sync.e('applyConfigToService: 切换后端失败', error: e, stackTrace: st);
-      return (success: false, error: '切换后端失败：$e');
+      return (success: false,
+          error: 'Failed to switch backend: {error}'.tr(namedArgs: {'error': '$e'}));
     }
   }
 
@@ -991,9 +1000,11 @@ class SyncService {
 
       return (success: true, error: null);
     } on WrongPasswordException catch (e) {
-      return (success: false, error: '密码错误：$e');
+      return (success: false,
+          error: 'Wrong passphrase: {error}'.tr(namedArgs: {'error': '$e'}));
     } on Exception catch (e) {
-      return (success: false, error: 'Keyring 初始化失败：$e');
+      return (success: false,
+          error: 'Keyring initialization failed: {error}'.tr(namedArgs: {'error': '$e'}));
     }
   }
 
@@ -1011,12 +1022,12 @@ class SyncService {
   }) async {
     final keyring = _keyring;
     if (keyring == null) {
-      return (success: false, error: 'Keyring 未初始化，请重新登录');
+      return (success: false, error: 'Keyring not initialized. Please log in again.'.tr());
     }
 
     final backend = _createBackendFromConfig();
     if (backend == null) {
-      return (success: false, error: '后端配置不完整');
+      return (success: false, error: 'Backend configuration is incomplete'.tr());
     }
 
     Log.sync.i('启用同步: 后端类型=${SyncConfig.backendType.name}'
@@ -1029,7 +1040,8 @@ class SyncService {
       );
       return (success: true, error: null);
     } on Exception catch (e) {
-      return (success: false, error: '后端初始化失败：$e');
+      return (success: false,
+          error: 'Backend initialization failed: {error}'.tr(namedArgs: {'error': '$e'}));
     }
   }
 
@@ -1062,11 +1074,12 @@ class SyncService {
     SyncBackendDraft draft,
   ) async {
     if (draft.type == SyncBackendType.none) {
-      return (success: false, error: '未选择同步后端类型');
+      return (success: false, error: 'No sync backend type selected'.tr());
     }
     final backend = draft.buildBackend();
     if (backend == null) {
-      return (success: false, error: '配置不完整，请填写必填项');
+      return (success: false,
+          error: 'Configuration incomplete; please fill in required fields'.tr());
     }
 
     Log.sync.i('测试同步后端连接: type=${draft.type.name}');
