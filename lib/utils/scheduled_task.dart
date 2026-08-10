@@ -16,6 +16,7 @@ import 'dart:io';
 
 // Package imports:
 import 'package:media_scanner/media_scanner.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 // Project imports:
@@ -65,21 +66,36 @@ class ScheduledTask {
         '最后错误=${lastBackupError ?? "未知原因"}');
   }
 
+  /// 解析最终备份落盘目录（选择备份路径功能的核心）
+  ///
+  /// 优先返回用户自定义目录 [PreferencesStorage.backupDirectory]（已持久化记住）；
+  /// 未设置时回退平台默认目录（[FileHandler.defaultBackupDirectory]，即
+  /// Android=Download/Safe Notes，iOS/桌面=应用文档目录）。所有备份通道
+  /// （androidBackup/iosBackup/desktopBackup）与 UI 指示路径统一从此取，避免
+  /// 「UI 显示的路径」与「真实落盘路径」再次错位。
+  static Future<String> resolveBackupDirectory() async {
+    final custom = PreferencesStorage.backupDirectory;
+    if (custom.isNotEmpty) return custom;
+    return FileHandler.defaultBackupDirectory();
+  }
+
   static Future<bool> unitBackupAttempt() async {
+    // 自动/改密前备份统一走「加密导出」（docs/backup-encryption-design-20260810.md
+    // §6 密码来源落地 1）：用会话内存密码 PhraseHandler.getPass 派生 B-KEY。
+    // 密码为空说明会话态异常，如实失败（不能写明文备份）。
+    if (PhraseHandler.getPass.isEmpty) {
+      Log.backup.w('自动备份：会话密码为空，无法加密备份（返回 false）');
+      lastBackupError ??= '会话密码不可用，无法加密备份';
+      return false;
+    }
     if (Platform.isAndroid) {
       return androidBackup();
     } else if (Platform.isIOS) {
       return iosBackup();
     }
-    // 评审 #2 修复：桌面端此前直接 return true 造成"假备份"（改密码前置
-    // forceBackup 报告成功但实际未写文件）。桌面端尚未实现真实备份通道，
-    // 这里如实返回 false，让上层（backup 重试循环 / forceBackup）正确感知失败：
-    //   - 自动备份：重试耗尽后以 ERROR 留痕，不再误报成功
-    //   - 改密码前置 forceBackup：弹"备份失败"警告并让用户决定是否继续
-    Log.backup.w('当前平台 ${Platform.operatingSystem} 无自动备份实现，'
-        '视为备份失败（返回 false）');
-    lastBackupError ??= '当前平台（${Platform.operatingSystem}）暂不支持本地备份';
-    return false;
+    // 评审 #2 修复 + 本设计补全：桌面端此前直接 return true 造成"假备份"。
+    // 现在实现真实桌面端备份通道（写应用文档目录，加密内容）。
+    return desktopBackup();
   }
 
   /// 上一次备份失败时的简要错误信息，供调用方（如改密码前置检查）展示。
@@ -108,9 +124,12 @@ class ScheduledTask {
   // return true on successful backup
   static Future<bool> androidBackup() async {
     try {
-      final String chosenDirectory = SafeNotesConfig.androidBackupDirectory;
+      // 选择备份路径：优先用户自定义目录，否则回退平台默认目录
+      final String chosenDirectory = await resolveBackupDirectory();
       final String jsonOutputContent =
-          await FileHandler.encryptedOutputBackupContent();
+          await FileHandler.encryptedOutputBackupContent(
+        password: PhraseHandler.getPass,
+      );
       final String fileName = SafeNotesConfig.backupFileName;
       final int bytes = jsonOutputContent.length;
 
@@ -121,7 +140,7 @@ class ScheduledTask {
       //    （Android 分区存储下该目录可能无直接写入权限，会抛 FileSystemException）
       if (chosenDirectory.isNotEmpty) {
         try {
-          final jsonFile = File('$chosenDirectory/$fileName');
+          final jsonFile = File(p.join(chosenDirectory, fileName));
           jsonFile.writeAsStringSync(jsonOutputContent, mode: FileMode.write);
           MediaScanner.loadMedia(path: jsonFile.path);
           wrote = true;
@@ -133,14 +152,14 @@ class ScheduledTask {
           lastBackupError =
               '默认备份目录不可用（权限不足或目录不存在），已回退到应用私有目录。';
           Log.backup.w('首选备份目录不可写，回退到应用私有目录: '
-              '$chosenDirectory/$fileName', error: e);
+              '${p.join(chosenDirectory, fileName)}', error: e);
         }
       }
 
       // 2) 所选目录不可用时，回退到应用私有目录（始终可写，无需外部存储权限）
       if (!wrote) {
         final dir = await getApplicationDocumentsDirectory();
-        final jsonFile = File('${dir.path}/$fileName');
+        final jsonFile = File(p.join(dir.path, fileName));
         jsonFile.writeAsStringSync(jsonOutputContent, mode: FileMode.write);
         wrote = true;
         Log.backup.i('Android 备份已写入应用私有目录: ${jsonFile.path} '
@@ -171,15 +190,16 @@ class ScheduledTask {
   }
 
   static Future<bool> iosBackup() async {
-    final Directory downloadsDir = await getApplicationDocumentsDirectory();
-
-    String? validChosenDirectory = downloadsDir.path;
+    final String dir = await resolveBackupDirectory();
+    String? validChosenDirectory = dir;
 
     if (validChosenDirectory.isNotEmpty) {
       String jsonOutputContent =
-          await FileHandler.encryptedOutputBackupContent();
+          await FileHandler.encryptedOutputBackupContent(
+        password: PhraseHandler.getPass,
+      );
       final String fileName = SafeNotesConfig.backupFileName;
-      final jsonFile = File('$validChosenDirectory/$fileName');
+      final jsonFile = File(p.join(validChosenDirectory, fileName));
 
       jsonFile.writeAsStringSync(jsonOutputContent);
       Log.backup.i('iOS 备份已写入: ${jsonFile.path} '
@@ -191,6 +211,38 @@ class ScheduledTask {
       Log.backup.w('iOS 备份跳过：应用文档目录路径为空');
     }
     return true;
+  }
+
+  /// 桌面端（Windows/Linux/macOS）本地备份
+  ///
+  /// 本设计补全：此前桌面端在 [unitBackupAttempt] 直接返回 false（无真实备份
+  /// 通道）。现在把加密备份写入应用文档目录（path_provider 在桌面返回
+  /// Documents 目录），与 iOS 行为对齐。
+  static Future<bool> desktopBackup() async {
+    try {
+      // 选择备份路径：优先用户自定义目录，否则回退应用文档目录
+      final dir = Directory(await resolveBackupDirectory());
+      final String content = await FileHandler.encryptedOutputBackupContent(
+        password: PhraseHandler.getPass,
+      );
+      final String fileName = SafeNotesConfig.backupFileName;
+      final jsonFile = File(p.join(dir.path, fileName));
+
+      // 目录可能尚未创建（首次），确保父目录存在
+      await jsonFile.parent.create(recursive: true);
+      jsonFile.writeAsStringSync(content, mode: FileMode.write);
+      Log.backup.i('桌面端备份已写入: ${jsonFile.path} '
+          '(${content.length} 字节)');
+
+      await PreferencesStorage.setLastBackupTime();
+      await PreferencesStorage.setIsBackupNeeded(false);
+      return true;
+    } catch (err, st) {
+      lastBackupError = _simplifyBackupError(err);
+      Log.backup.e('桌面端备份写入失败: $lastBackupError',
+          error: err, stackTrace: st);
+      return false;
+    }
   }
 
   /// 强制备份一次（绕过 isBackupOn / isBackupNeeded 开关）

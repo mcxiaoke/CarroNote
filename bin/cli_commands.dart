@@ -603,34 +603,61 @@ class NotePurgeDeletedCommand extends SafeNotesCommand {
 
 class ExportCommand extends SafeNotesCommand {
   ExportCommand() {
-    argParser.addOption('out', help: '输出文件路径（默认 <data-dir>/backup.json）');
+    argParser
+      ..addOption('out', help: '输出文件路径（默认 <data-dir>/backup.json 或 backup.snbak）')
+      ..addOption(
+        'format',
+        allowed: ['plaintext', 'encrypted'],
+        help: '导出格式：encrypted=加密 snbak（默认）/ plaintext=明文 json',
+      )
+      ..addOption(
+        'backup-password',
+        help: '加密导出口令（默认取解锁密码；缺失时交互输入）',
+      );
   }
 
   @override
   String get name => 'export';
 
   @override
-  String get description => '导出明文备份（records/plaintext-v1 格式，与 App 兼容）';
+  String get description =>
+      '导出备份：--format encrypted（默认，snbak，需口令）/ plaintext（明文 json）';
 
   @override
   Future<String?> run() => withCtx((ctx) async {
-    await unlocked(ctx);
-    final notes = await ctx.database.readAllNotes();
-    final out = a['out'] as String? ?? p.join(ctx.dataDir, 'backup.json');
-    final record = jsonEncode(notes.map((n) => n.toJson()).toList());
-    final content =
-        '{ "records" : $record, '
-        '"recordHandlerHash" : "plaintext-v1", '
-        '"total" : ${notes.length} }';
-    await File(out).writeAsString(content, flush: true);
-    return '已导出 ${notes.length} 条笔记 → $out';
-  });
+        await unlocked(ctx);
+        final notes = await ctx.database.readAllNotes();
+        final records = notes.map((n) => n.toJson()).toList();
+        final format = a['format'] as String? ?? 'encrypted';
+        final out = a['out'] as String? ??
+            p.join(ctx.dataDir, format == 'encrypted' ? 'backup.snbak' : 'backup.json');
+
+        final String content;
+        if (format == 'encrypted') {
+          final password = await _requireBackupPassword(
+            g,
+            a['backup-password'] as String?,
+          );
+          content = await BackupFileCodec.encodeEncrypted(
+            password: password,
+            records: records,
+          );
+        } else {
+          content = BackupFileCodec.encodePlaintext(records);
+        }
+        await File(out).writeAsString(content, flush: true);
+        return '已导出 ${notes.length} 条笔记（$format）→ $out';
+      });
 }
 
 class ImportCommand extends SafeNotesCommand {
   ImportCommand() {
     argParser
       ..addOption('in', help: '导入文件路径（必须）')
+      ..addOption(
+        'backup-password',
+        help: '加密备份解密口令（默认取解锁密码；缺失时交互输入）',
+      )
       ..addFlag('json', help: '机器可读输出');
   }
 
@@ -638,18 +665,51 @@ class ImportCommand extends SafeNotesCommand {
   String get name => 'import';
 
   @override
-  String get description => '从备份文件导入笔记（与 App FileHandler 同解析逻辑）';
+  String get description =>
+      '从备份文件导入笔记（snbak 加密需口令；plaintext-v1 明文直接导入）';
 
   @override
   Future<String?> run() => withCtx((ctx) async {
-    await unlocked(ctx);
-    final path = a['in'] as String?;
-    if (path == null || path.isEmpty) throw CliException('需要 --in <文件>');
-    final file = File(path);
-    if (!file.existsSync()) throw CliException('文件不存在: $path');
-        final parsed = ImportParser.fromJson(
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>,
-        );
+        await unlocked(ctx);
+        final path = a['in'] as String?;
+        if (path == null || path.isEmpty) throw CliException('需要 --in <文件>');
+        final file = File(path);
+        if (!file.existsSync()) throw CliException('文件不存在: $path');
+
+        // 自动按格式分流：snbak 加密 / plaintext-v1 明文（与 App FileHandler 同逻辑）
+        final BackupFile backup;
+        try {
+          backup = BackupFileCodec.parse(await file.readAsString());
+        } on FormatException catch (e) {
+          throw CliException('无法识别的备份文件：${e.message}');
+        }
+
+        final ImportParser parsed;
+        if (backup is BackupFileEncrypted) {
+          final password = await _requireBackupPassword(
+            g,
+            a['backup-password'] as String?,
+          );
+          final List<dynamic> records;
+          try {
+            records =
+                await BackupFileCodec.decryptEncrypted(backup, password);
+          } on SyncDecryptionException {
+            throw CliException('备份密码错误或文件损坏');
+          }
+          parsed = ImportParser.fromDecryptedPlaintext(
+            records,
+            expectedTotal: backup.header.total,
+          );
+        } else if (backup is BackupFilePlaintext) {
+          parsed = ImportParser.fromDecryptedPlaintext(
+            backup.records,
+            expectedTotal: backup.total,
+          );
+        } else {
+          throw CliException('无法识别的备份文件格式');
+        }
+
         // 幂等导入：已存在同 uuid 的笔记跳过（App 直接 storeNote 会 UNIQUE 冲突，
         // CLI 作为测试工具改为跳过，便于重复导入 / 恢复流程验证）。
         var imported = 0;
@@ -672,7 +732,27 @@ class ImportCommand extends SafeNotesCommand {
         }
         return '已导入 $imported 条笔记（跳过已存在 $skipped 条）'
             '${parsed.isNoteCountMissmatched ? '（数量与备份不一致，请核对）' : ''}';
-  });
+      });
+}
+
+/// 解析备份加密口令：显式 --backup-password > 全局解锁密码 > 交互输入。
+///
+/// 加密链路对密码来源无绑定（密码只是参数），CLI 每次独立进程，无会话态，
+/// 因此不能假设有"当前会话密码"，交互输入为兜底。
+Future<String> _requireBackupPassword(
+  ArgResults global,
+  String? explicit,
+) async {
+  if (explicit != null && explicit.isNotEmpty) return explicit;
+  final pw = resolveCliPassword(global);
+  if (pw != null && pw.isNotEmpty) return pw;
+  // 交互输入（仅在无任何口令来源时触发）
+  stdout.write('备份密码: ');
+  final line = stdin.readLineSync();
+  if (line == null || line.isEmpty) {
+    throw CliException('需要备份密码：--backup-password 或交互输入');
+  }
+  return line;
 }
 
 // ──────────────────────────────────────────────

@@ -75,6 +75,29 @@ const String kMkKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
 /// dataKey 包装算法名称（写入 manifest header 供未来算法迁移）
 const String kDataKeyWrapAlgorithm = 'AES-256-GCM';
 
+/// 备份文件格式标识（写入 snbak 文件头的 `format` 字段）
+///
+/// 加密导出文件扩展名为 `.snbak`（与明文 `.json` 区分，见 docs/
+/// backup-encryption-design-20260810.md §4）。无此字段且为 `records`
+/// 根键的文件即明文格式（plaintext-v1）。
+const String kBackupFormat = 'snbak';
+
+/// 备份文件格式版本（当前 1）
+const int kBackupFormatVersion = 1;
+
+/// 备份 AAD 域分隔常量（domain separator）
+///
+/// 仅用于分隔「备份密文」与其它 GCM 消费方（如同步 blob），**不做防篡改
+/// 绑定**（GCM tag 天然覆盖完整性）。v2 起改为 `backup-v2` 即可防止 v1
+/// 密文被误用，常量随代码演进硬编码，无需写入文件头。
+const String kBackupAad = 'backup-v1';
+
+/// 备份 KDF 算法名称（写入 snbak 文件头的 `enc.kdf.algorithm` 字段）
+const String kBackupKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
+
+/// 备份对称加密算法名称（写入 snbak 文件头的 `enc.algorithm` 字段）
+const String kBackupEncAlgorithm = 'AES-256-GCM';
+
 /// 同步加密工具类
 ///
 /// 所有方法均为静态、无状态，可在任意线程调用。
@@ -263,6 +286,61 @@ class SyncCrypto {
   ) async {
     final aad = _blobAad(id);
     return _aesGcmDecrypt(dataKey, aad, envelope);
+  }
+
+  // ──────────────────────────────────────────────
+  // 备份加解密（B-KEY，读写 snbak 备份文件）
+  // ──────────────────────────────────────────────
+
+  /// 派生备份密钥 B-KEY = PBKDF2(password, 独立备份salt, iterations)
+  ///
+  /// 恒等封装 [deriveMasterKey]：与登录 MK 同族（PBKDF2-HMAC-SHA256），但
+  /// salt 为每份备份独立随机生成的备份 salt（与登录 keyring 的 salt 无关），
+  /// 实现导入端只需口令 + 文件头参数即可跨设备派生同一 B-KEY。
+  ///
+  /// [password] 必须是「登录口令原文」或用户自定义备份口令——不是 MK 也不是
+  /// 其它派生值，否则跨设备派生出的 B-KEY 不一致，备份解不开。
+  /// [iterations] 从文件头读取、按文件参数派生（默认当前常量，未来调参时
+  /// 以文件头写入值为准）。
+  static Future<Uint8List> deriveBackupKey(
+    String password, {
+    required Uint8List salt,
+    int iterations = kPbkdf2Iterations,
+  }) {
+    return deriveMasterKey(password, salt: salt, iterations: iterations);
+  }
+
+  /// 加密整份备份明文（一次性），返回 AES-256-GCM 信封字节
+  ///
+  /// 信封格式：nonce(12) ‖ ciphertext ‖ tag(16)。
+  /// [aadHeader] 仅作域分隔符（默认 [kBackupAad]），不绑定任何明文长度/头字段
+  /// ——防篡改由 GCM tag 天然覆盖，本方案只聚焦防暴力破解。
+  static Future<Uint8List> sealBackup(
+    Uint8List backupKey,
+    Uint8List plaintext, {
+    Uint8List? nonce,
+    String aadHeader = kBackupAad,
+  }) async {
+    final aad = Uint8List.fromList(utf8.encode(aadHeader));
+    return _aesGcmEncrypt(
+      backupKey,
+      nonce ?? _secureRandom(_nonceLength),
+      aad,
+      plaintext,
+    );
+  }
+
+  /// 解密整份备份信封（一次性），返回明文字节
+  ///
+  /// 密码 / salt / iterations 不符时 GCM tag 验证失败，抛出
+  /// [SyncDecryptionException]（由 _aesGcmDecrypt 底层包装）。
+  static Future<Uint8List> openBackup(
+    Uint8List backupKey,
+    Uint8List envelope, {
+    String aadHeader = kBackupAad,
+  }) async {
+    final aad = Uint8List.fromList(utf8.encode(aadHeader));
+    return _aesGcmDecrypt(backupKey, aad, envelope);
   }
 
   // ──────────────────────────────────────────────

@@ -26,8 +26,10 @@ import 'package:safenotes/widgets/app_button.dart';
 
 class ImportConfirm extends StatefulWidget {
   final int importCount;
+  /// 附加提示（如明文备份「未加密，已按明文导入」），展示在确认文案下方
+  final String? notice;
 
-  const ImportConfirm({super.key, required this.importCount});
+  const ImportConfirm({super.key, required this.importCount, this.notice});
 
   @override
   ImportConfirmState createState() => ImportConfirmState();
@@ -80,7 +82,23 @@ class ImportConfirmState extends State<ImportConfirm> {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: EdgeInsets.only(top: topSpacing, bottom: padding),
-        child: Text(cautionMessage, style: dialogBodyTextStyle),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(cautionMessage, style: dialogBodyTextStyle),
+            if (widget.notice != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  widget.notice!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

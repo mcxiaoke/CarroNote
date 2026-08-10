@@ -54,6 +54,7 @@ class PreferencesStorage {
   static const _keyDarkThemeEnum = 'isDarkThemeEnum';
   static const _keyIsAutoRotate = 'isAutoRotate';
   static const _keyIsBackupNeeded = 'isBackupNeeded';
+  static const _keyBackupDirectory = 'backupDirectory';
   static const _keyIsLocalDarkSwitchEnabled = 'isLocalDarkSwitchEnabled';
   static const _keyIsSystemDarkLightSwitchEnabled =
       'isSystemDarkLightSwitchEnabled';
@@ -404,6 +405,19 @@ class PreferencesStorage {
     await _preferences?.setBool(_keyIsBackupNeeded, flag);
     _logPrefChange('待备份标记', old, flag, important: false);
   }
+
+  /// 用户自定义备份目录（选择备份路径功能，移动+桌面通用，持久化记住）
+  ///
+  /// 空串表示「未设置」，此时备份落盘回退到平台默认目录
+  /// （Android=Download/Safe Notes，iOS/桌面=应用文档目录）。
+  static String get backupDirectory =>
+      _preferences?.getString(_keyBackupDirectory) ?? '';
+  static Future<void> setBackupDirectory(String path) async {
+    final old = backupDirectory;
+    await _preferences?.setString(_keyBackupDirectory, path);
+    _logPrefChange('备份目录', old.isEmpty ? '未设置' : old,
+        path.isEmpty ? '未设置' : path);
+  }
 }
 
 class PhraseHandler {
@@ -458,9 +472,12 @@ class SafeNotesConfig {
   static const String _appLogoPath = 'assets/images/splash_500.png';
   static const String _appLogoAsProfilePath = 'assets/images/splash.png';
   static const String _exportFileNamePrefix = 'safenotes_';
-  static const String _allowedFileExtensionsForImport = 'json';
+  // 导入允许的扩展名：明文 .json + 加密 .snbak（见 docs/
+  // backup-encryption-design-20260810.md §4，双扩展名均需文件选择器可识别）
+  static const List<String> _allowedFileExtensionsForImport = ['json', 'snbak'];
   static const String _exportFileNameExtension = '.json';
-  static const String _backupExtension = '.json';
+  static const String _encryptedExportFileNameExtension = '.snbak';
+  static const String _backupExtension = '.snbak';
   static const String _backupFileNamePrefix = 'safenotes_backup';
   static const String _githubUrl = 'https://github.com/keshav-space/safenotes';
   static const String _faqsUrl = 'https://safenotes.dev/faqs.html';
@@ -529,7 +546,10 @@ class SafeNotesConfig {
   static String get appSlogan => _appSlogan;
   static String get appLogoPath => _appLogoPath;
   static String get exportFileExtension => _exportFileNameExtension;
-  static String get importFileExtension => _allowedFileExtensionsForImport;
+
+  /// 导入允许的文件扩展名列表：明文 `.json` + 加密 `.snbak`
+  static List<String> get importFileExtensions =>
+      _allowedFileExtensionsForImport;
   static String get faqsUrl => _faqsUrl;
   static String get androidDownloadDirectory => _androidDownloadDirectory;
   static String get androidBackupDirectory => _androidBackupDirectory;
@@ -564,14 +584,23 @@ class SafeNotesConfig {
     return '$_backupFileNamePrefix$redundancyCounter$_backupExtension';
   }
 
-  static String get exportFileName {
+  static String get exportFileName => exportFileNameFor(encrypted: false);
+
+  /// 导出文件名：加密导出 `.snbak`，明文导出 `.json`
+  ///
+  /// 文件名带时间戳（safenotes_YYYYMMDD_HHMMSS），避免同目录覆盖。
+  static String exportFileNameFor({required bool encrypted}) {
     var dateNow = DateTime.now()
         .toString()
         .replaceAll("-", "")
         .replaceAll(" ", "_")
         .replaceAll(":", "")
         .substring(0, 15);
-    return (_exportFileNamePrefix + dateNow + _exportFileNameExtension);
+    return (_exportFileNamePrefix +
+        dateNow +
+        (encrypted
+            ? _encryptedExportFileNameExtension
+            : _exportFileNameExtension));
   }
 }
 

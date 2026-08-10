@@ -185,8 +185,10 @@ Assert (Has-Line '\[已删除\] B设备新增') 'B 收到墓碑'
 
 Write-Host "`n=== S5: export / import 往返 ===" -ForegroundColor Cyan
 
+# 加密导出（默认格式，全局密码作备份口令）
 Invoke-Cli $dirB $pw2 @('export', '--out', $backup)
-Assert (Has-Line '已导出 2 条') 'B 导出 2 条'
+Assert (Has-Line '已导出 2 条') 'B 加密导出 2 条（默认 encrypted）'
+Assert (Has-Line 'encrypted') 'B 导出格式为 encrypted'
 
 Invoke-Cli $dirB $pw2 @('note', 'purge-deleted', '--yes')
 Assert (Has-Line '已清空回收站') 'B 清空回收站'
@@ -194,14 +196,32 @@ Assert (Has-Line '已清空回收站') 'B 清空回收站'
 Invoke-Cli $dirB $pw2 @('note', 'list')
 Assert ((Out-Text).Split("`n") -match '^\S+\t' | Measure-Object).Count -eq 2 'B 剩 2 条未删'
 
+# 加密导入：错误口令 → 失败；正确口令 → 幂等跳过
+Invoke-Cli $dirB $pw2 @('import', '--in', $backup, '--backup-password', 'wrong-pass')
+Assert ($script:Code -eq 1) '加密导入错误口令失败（exit 1）'
+
 Invoke-Cli $dirB $pw2 @('import', '--in', $backup)
 Assert (Has-Line '跳过已存在 2 条') 'B 重导入幂等（跳过 2）'
 
+# 新设备 C：加密备份完整还原（指定 --backup-password）
 Invoke-Cli $dirC $pw2 @('keyring', 'init')
-Invoke-Cli $dirC $pw2 @('import', '--in', $backup)
-Assert (Has-Line '已导入 2 条') 'C 新设备导入完整还原'
+Invoke-Cli $dirC $pw2 @('import', '--in', $backup, '--backup-password', $pw2)
+Assert (Has-Line '已导入 2 条') 'C 新设备导入加密备份完整还原'
 Invoke-Cli $dirC $pw2 @('note', 'list')
 Assert ((Out-Text).Split("`n") -match '^\S+\t' | Measure-Object).Count -eq 2 'C 导入后 2 条'
+
+# 明文导出（--format plaintext）→ 无密码即可导入
+$backupPlain = Join-Path $work 'backup-plain.json'
+Invoke-Cli $dirC $pw2 @('export', '--out', $backupPlain, '--format', 'plaintext')
+Assert (Has-Line 'plaintext') 'C 明文导出 plaintext'
+Assert (Has-Line '已导出 2 条') 'C 明文导出 2 条'
+
+Invoke-Cli $dirC $pw2 @('db', 'wipe', '--yes')
+Invoke-Cli $dirC $pw2 @('keyring', 'init')
+Invoke-Cli $dirC $pw2 @('import', '--in', $backupPlain)
+Assert (Has-Line '已导入 2 条') 'C 明文备份无密码导入还原'
+Invoke-Cli $dirC $pw2 @('note', 'list')
+Assert ((Out-Text).Split("`n") -match '^\S+\t' | Measure-Object).Count -eq 2 'C 明文导入后 2 条'
 
 Write-Host "`n=== S6: db wipe / journal / log ===" -ForegroundColor Cyan
 
