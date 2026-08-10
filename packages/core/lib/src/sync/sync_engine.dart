@@ -2150,7 +2150,9 @@ class SyncEngine {
       // M7 修复：校验解密后内容的 hash 与 manifest 中记录的 hash 一致
       // 防止服务端返回"对的上 uuid、但内容不同"的合法信封
       // 注意：hash 计算使用 SafeNote.computeHash（title\ndescription 格式），
-      // 而不是 SyncCrypto.contentHash(plaintext)（JSON 字节格式），两者不一致。
+      // 而不是 SyncCrypto.sha256Hex(plaintext)（JSON 字节格式），两者不一致。
+      // 前者是 blob 身份的唯一来源，改口径会让存量 blob 全部失联；
+      // 不变量见 test/sync/blob_addressing_test.dart。
       final actualHash = SafeNote.computeHash(
         content.title,
         content.description,

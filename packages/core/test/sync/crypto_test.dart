@@ -219,10 +219,10 @@ void main() {
       expect(hash, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
     });
 
-    test('contentHash 与 hashString 一致（相同输入）', () async {
+    test('sha256Hex 与 hashString 一致（相同输入）', () async {
       final text = 'test content';
       final h1 = SyncCrypto.hashString(text);
-      final h2 = SyncCrypto.contentHash(Uint8List.fromList(utf8.encode(text)));
+      final h2 = SyncCrypto.sha256Hex(Uint8List.fromList(utf8.encode(text)));
       expect(h1, h2);
     });
   });

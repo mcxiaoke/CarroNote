@@ -6,7 +6,8 @@
 > 权威实现：
 > - 加密/解密：`packages/core/lib/src/crypto/crypto.dart`（`SyncCrypto.seal` / `open`）
 > - payload 序列化：`packages/core/lib/src/models/safenote.dart`（`toContentBytes` / `fromContentBytes` / `computeHash`）
-> - 内容哈希：`SyncCrypto.contentHash` / `hashString`
+> - 哈希原语：`SyncCrypto.sha256Hex` / `hashString`（通用 SHA-256，**不定义 blob 身份**）
+> - 寻址不变量测试：`packages/core/test/sync/blob_addressing_test.dart`
 >
 > 关联格式规范：
 > - manifest 格式见 [spec-manifest.md](spec-manifest.md)
@@ -39,6 +40,9 @@ hash = SHA-256( title + "\n" + description )
 
 - 哈希输入是 `title` 与 `description` 用 `"\n"` 拼接后的 UTF-8 字节。
 - 该哈希是**逻辑内容身份**，与 blob 存储字节（payload 含 `"v"` 字段）属不同域。
+  `SafeNote.computeHash` 是 blob 身份的**唯一合法来源**；`SyncCrypto.sha256Hex`
+  只是通用哈希原语，对 payload 字节求哈希得到的**不是** blob id，不可混用
+  （该原语 2026-08-10 前名为 `contentHash`，因与此处身份语义易混已更名）。
 - **已知非单射**：`"A\nB" + "C"` 与 `"A" + "B\nC"` 的哈希相同（概率极低，
   改动牵连面广，保留现状）。这不影响寻址正确性，仅理论边界。
 - 相同明文必然产生相同哈希，与加密 nonce 无关 → 去重有效。

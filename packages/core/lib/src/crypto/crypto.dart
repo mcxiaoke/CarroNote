@@ -142,7 +142,7 @@ class SyncCrypto {
   /// [masterKey] 32 字节的 MK
   /// 返回 SHA-256(MK) 的十六进制字符串
   static String computeKeyFingerprint(Uint8List masterKey) {
-    return _sha256Hex(masterKey);
+    return sha256Hex(masterKey);
   }
 
   /// 计算 dataKey 指纹 = H(dataKey)（v4 epoch 消除设计新增）
@@ -161,11 +161,15 @@ class SyncCrypto {
   /// [dataKey] 32 字节的数据主密钥
   /// 返回 SHA-256(dataKey) 的十六进制字符串
   static String computeDataKeyFingerprint(Uint8List dataKey) {
-    return _sha256Hex(dataKey);
+    return sha256Hex(dataKey);
   }
 
   /// SHA-256 十六进制摘要（统一指纹/哈希入口，替代 crypto 包散落调用）
-  static String _sha256Hex(Uint8List bytes) {
+  ///
+  /// 这是一个**通用密码学原语**，不承载任何协议语义。特别注意：它不是
+  /// blob 的身份。blob id / AAD 只由 `SafeNote.computeHash` 定义，见
+  /// [hashString] 的说明。
+  static String sha256Hex(Uint8List bytes) {
     return sha256.convert(bytes).toString();
   }
 
@@ -262,20 +266,21 @@ class SyncCrypto {
   }
 
   // ──────────────────────────────────────────────
-  // 内容哈希（用于 manifest 比对和 blob 寻址）
+  // 字符串哈希（通用原语）
   // ──────────────────────────────────────────────
 
-  /// 计算明文内容的 SHA-256 哈希（十六进制字符串）
+  /// [sha256Hex] 的字符串输入形式：SHA-256(utf8(text)) 的十六进制。
   ///
-  /// 用于：
-  /// 1. manifest 中记录每条笔记的 hash，比对本地/远端是否一致
-  /// 2. blob 文件名/键名，实现内容寻址和天然去重
-  /// 相同明文必定产生相同 hash，与 nonce 无关。
-  static String contentHash(Uint8List plaintext) => _sha256Hex(plaintext);
-
-  /// 计算 SHA-256 哈希的简化别名（字符串输入）
+  /// **命名域说明**（曾用名 `contentHash`，与 `SafeNote.contentHash` 字段和
+  /// DB 列 `content_hash` 重名但语义不同，已于 2026-08-10 更名消歧）：
+  /// 本函数只是通用哈希原语，调用方自行决定喂什么。blob 的身份（文件名 +
+  /// GCM AAD）**只**由 `SafeNote.computeHash`（`title\ndescription` 文本）
+  /// 定义，与 `SafeNote.toContentBytes` 的 JSON payload 字节哈希不是同一个
+  /// 值——身份与 payload 编码刻意解耦，这样 payload 加字段不会让已寻址的
+  /// blob 失效。不要用本函数对 payload 字节求哈希去当 blob id。
+  /// 不变量由 `packages/core/test/sync/blob_addressing_test.dart` 锁定。
   static String hashString(String text) =>
-      contentHash(Uint8List.fromList(utf8.encode(text)));
+      sha256Hex(Uint8List.fromList(utf8.encode(text)));
 
   // ──────────────────────────────────────────────
   // AES-256-GCM 内部实现（cryptography_flutter）
