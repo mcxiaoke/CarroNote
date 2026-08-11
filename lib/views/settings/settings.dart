@@ -52,10 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Text('Settings'.tr(), style: appBarTitle),
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        children: _settingsGroups(context),
-      ),
+      body: shadSettingsList(_settingsGroups(context)),
     );
   }
 

@@ -54,9 +54,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Widget _buildBody() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      children: [
+    return shadSettingsList([
         shadSettingsCard([
           shadSwitchTile(
             context,
@@ -127,8 +125,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           ),
         ]),
         const SizedBox(height: 12),
-      ],
-    );
+      ]);
   }
 
   // ──────────────────────────────────────────────

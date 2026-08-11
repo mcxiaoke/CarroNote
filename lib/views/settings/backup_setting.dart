@@ -110,9 +110,7 @@ class BackupSettingState extends State<BackupSetting> {
     final String path = validWorkingBackupFullyQualifiedPath;
     final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      children: [
+    return shadSettingsList([
         shadSettingsCard([
           shadSwitchTile(
             context,
@@ -173,8 +171,7 @@ class BackupSettingState extends State<BackupSetting> {
           ),
         ]),
         const SizedBox(height: 12),
-      ],
-    );
+    ]);
   }
 
   Widget _encryptedBadge() {

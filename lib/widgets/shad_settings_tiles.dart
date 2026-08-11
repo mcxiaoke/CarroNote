@@ -10,13 +10,20 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// 设置类页面的标准内容容器：统一内边距，便于所有设置页视觉一致。
+/// 设置类页面的标准内容容器：统一内边距 + 桌面端限宽居中。
 ///
-/// 桌面端限宽等全局调整只需改这里一处。
-Widget shadSettingsList(List<Widget> children) {
-  return ListView(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    children: children,
+/// 桌面窗口可以拉得很宽，设置项撑满整行会让开关跑到视线之外、阅读动线断裂，
+/// 因此这里统一把内容限制在 [maxWidth] 内并水平居中；移动端不受影响
+/// （屏幕本来就窄于该阈值）。所有设置页共用这一处逻辑。
+Widget shadSettingsList(List<Widget> children, {double maxWidth = 720}) {
+  return Center(
+    child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        children: children,
+      ),
+    ),
   );
 }
 
