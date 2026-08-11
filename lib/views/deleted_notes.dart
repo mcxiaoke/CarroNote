@@ -89,9 +89,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       itemCount: _deletedNotes.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      // 与主界面笔记列表 12px 间距保持一致。
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final note = _deletedNotes[index];
         return _DeletedNoteTile(

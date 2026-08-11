@@ -632,7 +632,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       thumbVisibility: _isDesktopUi,
       child: ListView.separated(
         controller: _notesListScroll,
-        padding: const EdgeInsets.all(15),
+        padding: const EdgeInsets.all(14),
       itemCount: notes.length,
       itemBuilder: ((context, index) {
         final note = notes[index];
@@ -657,10 +657,8 @@ class HomePageState extends State<HomePage> with RouteAware {
         );
       }),
       separatorBuilder: (BuildContext context, int index) {
-        return Container(
-          height: 7,
-          color: Colors.transparent,
-        );
+        // 与网格视图 12px 间距保持一致（原 7px 偏挤）。
+        return const SizedBox(height: 12);
       },
       ),
     );
@@ -682,10 +680,12 @@ class HomePageState extends State<HomePage> with RouteAware {
           child: AlignedGridView.count(
             controller: _notesGridScroll,
             itemCount: notes.length,
-            padding: const EdgeInsets.all(12),
+            // 卡片间距：原 4px 过挤，网格里相邻卡片几乎黏在一起。
+            // 12px 让每张卡片成为独立视觉单元，外边距同步放到 14px。
+            padding: const EdgeInsets.all(14),
             crossAxisCount: crossAxisCount,
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
             itemBuilder: (context, index) {
               final note = notes[index];
               return GestureDetector(
