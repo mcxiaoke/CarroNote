@@ -76,7 +76,7 @@ class ColorPalletState extends State<ColorPallet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${'Selected'.tr()}: ${items[_selectedIndex].prefix.tr()}',
+            '${'Selected'.tr()}: ${items[_selectedIndex].prefix}',
             style: theme.textTheme.small,
           ),
           const SizedBox(height: 10),
@@ -136,7 +136,7 @@ class ColorPalletState extends State<ColorPallet> {
                 children: [
                   Expanded(
                     child: Text(
-                      items[i].prefix.tr(),
+                      items[i].prefix,
                       style: theme.textTheme.p.copyWith(
                         fontSize: 13,
                         fontWeight: selected ? FontWeight.w600 : null,
@@ -167,6 +167,9 @@ class ColorPalletState extends State<ColorPallet> {
     double? width,
     double radius = 10,
   }) {
+    // 每个色块用 Container 显式给定高度：Row 中 Expanded 默认 crossAxisAlignment
+    // 为 center，不会把无 child 的 ColoredBox 纵向拉伸，导致色块高度为 0（空白）。
+    // 原版（settings_ui 时期）就是给 Container 写死 height 才正常显示。
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox(
@@ -175,7 +178,12 @@ class ColorPalletState extends State<ColorPallet> {
         child: Row(
           children: [
             for (final color in colors)
-              Expanded(child: ColoredBox(color: color as Color)),
+              Expanded(
+                child: Container(
+                  height: height,
+                  color: color as Color,
+                ),
+              ),
           ],
         ),
       ),
