@@ -22,7 +22,8 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 加密备份导入时的密码输入框（docs/backup-encryption-design-20260810.md §7）
 ///
@@ -86,34 +87,32 @@ class BackupPasswordInputDialogState extends State<BackupPasswordInputDialog> {
                     ),
                   ),
                 ),
-              TextField(
+              ShadInput(
                 controller: _controller,
                 autofocus: true,
                 obscureText: _hidden,
                 enableIMEPersonalizedLearning: false,
-                decoration: InputDecoration(
-                  hintText: 'Encryption Phrase'.tr(),
-                  prefixIcon: const Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _hidden ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () =>
-                        setState(() => _hidden = !_hidden),
+                placeholder: Text('Encryption Phrase'.tr()),
+                leading: const Icon(Icons.lock),
+                trailing: IconButton(
+                  icon: Icon(
+                    _hidden ? Icons.visibility : Icons.visibility_off,
                   ),
+                  onPressed: () =>
+                      setState(() => _hidden = !_hidden),
                 ),
                 onSubmitted: (_) => _submit(),
               ),
               const SizedBox(height: 12),
-              DialogActionBar(
+              shadDialogActionBar(
                 actions: [
-                  DialogButton(
+                  ShadDialogAction(
                     label: 'Cancel'.tr(),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  DialogButton(
+                  ShadDialogAction(
                     label: 'Submit'.tr(),
-                    isPrimary: true,
+                    primary: true,
                     onPressed: _submit,
                   ),
                 ],

@@ -25,7 +25,7 @@ import 'package:safenotes/models/file_handler.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class FileImportDialog extends StatelessWidget {
   final VoidCallback callback;
@@ -92,11 +92,11 @@ class FileImportDialog extends StatelessWidget {
   }
 
   Widget _buildButtons() {
-    return DialogActionBar(
+    return shadDialogActionBar(
       actions: [
-        DialogButton(
+        ShadDialogAction(
           label: 'Select file'.tr(),
-          isPrimary: true,
+          primary: true,
           onPressed: callback,
         ),
       ],

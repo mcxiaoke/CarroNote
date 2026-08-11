@@ -24,7 +24,7 @@ import 'package:easy_localization/easy_localization.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class PreInactivityLogOff extends StatefulWidget {
   const PreInactivityLogOff({super.key});
@@ -137,15 +137,15 @@ class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
   }
 
   Widget _buildButtons(BuildContext context) {
-    return DialogActionBar(
+    return shadDialogActionBar(
       actions: [
-        DialogButton(
+        ShadDialogAction(
           label: 'Cancel'.tr(),
           onPressed: () => Navigator.of(context).pop(true),
         ),
-        DialogButton(
+        ShadDialogAction(
           label: 'Logout'.tr(),
-          isDestructive: true,
+          destructive: true,
           onPressed: () => Navigator.of(context).pop(false),
         ),
       ],

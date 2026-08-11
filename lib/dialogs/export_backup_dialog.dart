@@ -28,7 +28,8 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 导出面板返回的选项（docs/backup-encryption-design-20260810.md §6）
 class ExportOptions {
@@ -198,17 +199,17 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
                   const SizedBox(height: 12),
                   _buildLocationRow(),
                   const SizedBox(height: 16),
-                  DialogActionBar(
+                  shadDialogActionBar(
                     actions: [
-                      DialogButton(
+                      ShadDialogAction(
                         label: 'Cancel'.tr(),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
-                      DialogButton(
+                      ShadDialogAction(
                         label: 'Export'.tr(),
-                        isPrimary: true,
-                        onPressed:
-                            (_encrypted && !_passwordValid) ? null : _onSubmit,
+                        primary: true,
+                        enabled: !(_encrypted && !_passwordValid),
+                        onPressed: _onSubmit,
                       ),
                     ],
                   ),
@@ -227,36 +228,30 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       children: [
         Text('Format'.tr(), style: dialogBodyTextStyle),
         const SizedBox(height: 6),
-        RadioGroup<String>(
-          groupValue: _encrypted ? 'encrypted' : 'plaintext',
+        ShadRadioGroup<String>(
+          initialValue: _encrypted ? 'encrypted' : 'plaintext',
           onChanged: (value) {
             if (value == null) return;
             setState(() => _encrypted = value == 'encrypted');
           },
-          child: Column(
-            children: [
-              RadioListTile<String>(
-                value: 'encrypted',
-                title: Text('Encrypted (.snbak) (Recommended)'.tr()),
-                subtitle: Text(
-                  'Encrypted with a password, safe to store or share.'.tr(),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
+          items: [
+            ShadRadio<String>(
+              value: 'encrypted',
+              label: Text('Encrypted (.snbak) (Recommended)'.tr()),
+              sublabel: Text(
+                'Encrypted with a password, safe to store or share.'.tr(),
+                style: const TextStyle(fontSize: 12),
               ),
-              RadioListTile<String>(
-                value: 'plaintext',
-                title: Text('Plain text (.json)'.tr()),
-                subtitle: Text(
-                  'Not encrypted; anyone with the file can read it.'.tr(),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
+            ),
+            ShadRadio<String>(
+              value: 'plaintext',
+              label: Text('Plain text (.json)'.tr()),
+              sublabel: Text(
+                'Not encrypted; anyone with the file can read it.'.tr(),
+                style: const TextStyle(fontSize: 12),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -268,32 +263,28 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       children: [
         Text('Password'.tr(), style: dialogBodyTextStyle),
         const SizedBox(height: 6),
-        TextField(
+        ShadInput(
           controller: _passwordCtrl,
           obscureText: _hidden,
           enableIMEPersonalizedLearning: false,
           onChanged: (_) => setState(() {}),
-          decoration: _fieldDecoration(
-            hintText: 'Encryption Phrase'.tr(),
-            prefixIcon: const Icon(Icons.lock),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _hidden ? Icons.visibility : Icons.visibility_off,
-              ),
-              onPressed: () => setState(() => _hidden = !_hidden),
+          placeholder: Text('Encryption Phrase'.tr()),
+          leading: const Icon(Icons.lock),
+          trailing: IconButton(
+            icon: Icon(
+              _hidden ? Icons.visibility : Icons.visibility_off,
             ),
+            onPressed: () => setState(() => _hidden = !_hidden),
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
+        ShadInput(
           controller: _confirmCtrl,
           obscureText: _hidden,
           enableIMEPersonalizedLearning: false,
           onChanged: (_) => setState(() {}),
-          decoration: _fieldDecoration(
-            hintText: 'Confirm password'.tr(),
-            prefixIcon: const Icon(Icons.lock_outline),
-          ),
+          placeholder: Text('Confirm password'.tr()),
+          leading: const Icon(Icons.lock_outline),
         ),
         if (_passwordCtrl.text.isNotEmpty &&
             _passwordCtrl.text != _confirmCtrl.text)
@@ -302,7 +293,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
             child: Text(
               'Passwords do not match'.tr(),
               style: TextStyle(
-                color: Theme.of(context).colorScheme.error,
+                color: ShadTheme.of(context).colorScheme.destructive,
                 fontSize: 12,
               ),
             ),
@@ -317,7 +308,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       'safe place.'.tr(),
       style: TextStyle(
         fontSize: 13,
-        color: Theme.of(context).colorScheme.error,
+        color: ShadTheme.of(context).colorScheme.destructive,
       ),
     );
   }
@@ -356,18 +347,4 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       ],
     );
   }
-}
-
-/// 导出面板输入框统一样式
-InputDecoration _fieldDecoration({
-  String? hintText,
-  Widget? prefixIcon,
-  Widget? suffixIcon,
-}) {
-  return InputDecoration(
-    hintText: hintText,
-    prefixIcon: prefixIcon,
-    suffixIcon: suffixIcon,
-    isDense: true,
-  );
 }

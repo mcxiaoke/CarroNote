@@ -22,7 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class GenericDialog extends StatelessWidget {
   final IconData icon;
@@ -64,11 +64,11 @@ class GenericDialog extends StatelessWidget {
   }
 
   Widget _buildButtons(BuildContext context) {
-    return DialogActionBar(
+    return shadDialogActionBar(
       actions: [
-        DialogButton(
+        ShadDialogAction(
           label: 'OK'.tr(),
-          isPrimary: true,
+          primary: true,
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
