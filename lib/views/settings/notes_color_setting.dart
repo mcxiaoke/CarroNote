@@ -22,6 +22,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -56,40 +57,103 @@ class ColorPalletState extends State<ColorPallet> {
           ),
         ]),
         const SizedBox(height: 12),
+        // 顶部大预览：始终可见，滚到底部也能看到当前配色
         _preview(context),
         shadSectionTitle(context, 'Notes Color'.tr()),
-        shadSettingsCard([
-          for (var i = 0; i < items.length; i++)
-            shadRadioTile(
-              context,
-              title: items[i].prefix.tr(),
-              description: items[i].helper?.tr(),
-              selected: _selectedIndex == i,
-              leading: _swatch(items[i].colorList, height: 36, width: 36),
-              onTap: () {
-                PreferencesStorage.setColorfulNotesColorIndex(i);
-                setState(() => _selectedIndex = i);
-              },
-            ),
-        ]),
+        // 网格：每个主题卡自带色条预览（item 本身即颜色预览），
+        // 整体紧凑，顶部预览始终在视野内。
+        _grid(context),
         const SizedBox(height: 12),
       ]),
     );
   }
 
-  /// 当前所选配色的大色条预览。
+  /// 当前所选配色的大色条预览（常驻顶部，滚动后仍可见）。
   Widget _preview(BuildContext context) {
+    final theme = ShadTheme.of(context);
     return ShadCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            items[_selectedIndex].prefix.tr(),
-            style: ShadTheme.of(context).textTheme.small,
+            '${'Selected'.tr()}: ${items[_selectedIndex].prefix.tr()}',
+            style: theme.textTheme.small,
           ),
           const SizedBox(height: 10),
-          _swatch(items[_selectedIndex].colorList, height: 44, radius: 12),
+          _swatch(items[_selectedIndex].colorList, height: 48, radius: 12),
         ],
+      ),
+    );
+  }
+
+  /// 主题选择网格：桌面 3 列、移动 2 列。
+  ///
+  /// 整体紧凑，配合顶部常驻预览，滚动后仍能看到当前配色。
+  Widget _grid(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: isDesktopPlatform ? 3 : 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 2.0,
+      children: [
+        for (var i = 0; i < items.length; i++) _themeCard(context, i),
+      ],
+    );
+  }
+
+  /// 单个主题卡：顶部色条即该主题的颜色预览，下方主题名 + 选中勾。
+  Widget _themeCard(BuildContext context, int i) {
+    final theme = ShadTheme.of(context);
+    final selected = _selectedIndex == i;
+    return Material(
+      color: theme.colorScheme.card,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          PreferencesStorage.setColorfulNotesColorIndex(i);
+          setState(() => _selectedIndex = i);
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _swatch(items[i].colorList, height: 30, width: double.infinity),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      items[i].prefix.tr(),
+                      style: theme.textTheme.p.copyWith(
+                        fontSize: 13,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                        color: selected ? theme.colorScheme.primary : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (selected)
+                    Icon(LucideIcons.check,
+                        size: 16, color: theme.colorScheme.primary),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
