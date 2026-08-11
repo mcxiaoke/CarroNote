@@ -40,12 +40,16 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
   BuildContext context, {
   required SyncBackendDraft initialDraft,
 }) {
+  final theme = ShadTheme.of(context);
   if (isDesktopPlatform) {
     return showDialog<SyncBackendDraft>(
       context: context,
       // 点遮罩 = 取消（返回 null），与移动端返回键语义一致
       barrierDismissible: true,
       builder: (dialogContext) => Dialog(
+        // 与 shadcn 设置页同源的背景与圆角，避免"没样式"的观感
+        backgroundColor: theme.colorScheme.background,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         insetPadding: const EdgeInsets.all(24),
         child: ConstrainedBox(
           // 限宽限高：弹框而非整窗，桌面端居中显示
@@ -70,6 +74,7 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
     MaterialPageRoute<SyncBackendDraft>(
       fullscreenDialog: true,
       builder: (_) => Scaffold(
+        backgroundColor: theme.colorScheme.background,
         appBar: AppBar(
           title: Text('Sync Configuration'.tr()),
         ),
@@ -445,42 +450,48 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   // ──────────────────────────────────────────────
 
   Widget _buildBottomBar() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildResultBanner(),
-            Row(
-              children: [
-                Expanded(
-                  child: ShadButton.outline(
-                    onPressed: (_testing || !_canTest) ? null : _runTest,
-                    leading: _testing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(LucideIcons.plug),
-                    child: Text(
-                      _testing ? 'Testing...'.tr() : 'Test Connection'.tr(),
+    final theme = ShadTheme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.colorScheme.border)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildResultBanner(),
+              Row(
+                children: [
+                  Expanded(
+                    child: ShadButton.outline(
+                      onPressed: (_testing || !_canTest) ? null : _runTest,
+                      leading: _testing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(LucideIcons.plug),
+                      child: Text(
+                        _testing ? 'Testing...'.tr() : 'Test Connection'.tr(),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ShadButton(
-                    onPressed: (_testing || !_canSave) ? null : _save,
-                    leading: const Icon(LucideIcons.save),
-                    child: Text('Save'.tr()),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ShadButton(
+                      onPressed: (_testing || !_canSave) ? null : _save,
+                      leading: const Icon(LucideIcons.save),
+                      child: Text('Save'.tr()),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
