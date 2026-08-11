@@ -35,10 +35,10 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
 import 'package:safenotes/widgets/footer.dart';
-import 'package:safenotes/widgets/login_button.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class EncryptionPhraseLoginPage extends StatefulWidget {
   final StreamController<SessionState> sessionStream;
@@ -258,7 +258,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                 namedArgs: {'timeLeft': timeLeft.toString()},
               ),
               style: TextStyle(
-                color: Theme.of(context).colorScheme.error,
+                color: ShadTheme.of(context).colorScheme.destructive,
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
               ),
@@ -270,13 +270,21 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _inputField() {
-    return TextFormField(
+    return ShadInputFormField(
       enabled: !_isLocked,
       enableIMEPersonalizedLearning: false,
       controller: passPhraseController,
       autofocus: _isKeyboardFocused!,
       obscureText: _isHidden,
-      decoration: _inputFieldDecoration(),
+      leading: const Icon(LucideIcons.lock),
+      trailing: IconButton(
+        icon: _isHidden
+            ? const Icon(LucideIcons.eye)
+            : const Icon(LucideIcons.eyeOff),
+        onPressed: _togglePasswordVisibility,
+      ),
+      label: Text('Passphrase'.tr()),
+      placeholder: Text('Enter Passphrase'.tr()),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
       onEditingComplete: _loginController,
@@ -292,27 +300,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   /// 评审 #4 修复:validator 不再拦截最后 1 次尝试(此前 `_noOfAllowedAttempts <= 1`
   /// 时直接 setState 锁定,密码正确也进不了 `_login`,存在 off-by-one),也不得在
   /// validator 内调用 setState(反模式)。锁定判定统一收口到 _onLoginFailure。
-  String? _passphraseValidator(String? passphrase) {
-    if (passphrase == null || passphrase.isEmpty) {
+  String? _passphraseValidator(String passphrase) {
+    if (passphrase.isEmpty) {
       return 'Enter Passphrase'.tr();
     }
     return null;
-  }
-
-  InputDecoration _inputFieldDecoration() {
-    final String hintText = 'Enter Passphrase'.tr();
-
-    return InputDecoration(
-      hintText: hintText,
-      label: Text('Passphrase'.tr()),
-      prefixIcon: const Icon(Icons.lock),
-      suffixIcon: IconButton(
-        icon: !_isHidden
-            ? const Icon(Icons.visibility_off)
-            : const Icon(Icons.visibility),
-        onPressed: _togglePasswordVisibility,
-      ),
-    );
   }
 
   void _togglePasswordVisibility() {
@@ -323,11 +315,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     // 简化方案:验证中(_isLoggingIn)或锁定(_isLocked)时禁用按钮防重入
     final String loginText = _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
-    return ButtonWidget(
-      text: loginText,
-      onClicked: (_isLocked || _isLoggingIn)
-          ? null
-          : () async => _loginController(),
+    return ShadButton(
+      width: isDesktopPlatform ? null : double.infinity,
+      enabled: !(_isLocked || _isLoggingIn),
+      onPressed: (_isLocked || _isLoggingIn) ? null : () => _loginController(),
+      child: Text(loginText),
     );
   }
 
@@ -344,11 +336,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         ),
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 20),
-          child: AppButton(
-            text: 'Biometric'.tr(),
-            icon: Icon(Icons.fingerprint, size: isDesktop ? 22 : 28),
-            fullWidth: !isDesktop,
+          child: ShadButton(
+            width: isDesktop ? null : double.infinity,
+            leading: Icon(LucideIcons.fingerprint, size: isDesktop ? 22 : 28),
             onPressed: enabled ? _authenticate : null,
+            child: Text('Biometric'.tr()),
           ),
         ),
       ],
@@ -624,9 +616,25 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   void _showForgotPassphraseDialog() {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => ShadDialog(
         title: Text('Forgot Passphrase'.tr()),
-        content: Column(
+        actions: [
+          shadDialogActionBar(actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            ShadDialogAction(
+              label: 'Reset Local Data'.tr(),
+              destructive: true,
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _confirmResetLocalData();
+              },
+            ),
+          ]),
+        ],
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -643,28 +651,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                       'undone.'
                   .tr(),
               style: TextStyle(
-                color: Theme.of(context).colorScheme.error,
+                color: ShadTheme.of(context).colorScheme.destructive,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text('Cancel'.tr()),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _confirmResetLocalData();
-            },
-            child: Text('Reset Local Data'.tr()),
-          ),
-        ],
       ),
     );
   }
@@ -673,29 +665,29 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   void _confirmResetLocalData() {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => ShadDialog(
         title: Text('Confirm Reset'.tr()),
-        content: Text(
+        actions: [
+          shadDialogActionBar(actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+            ShadDialogAction(
+              label: 'Delete Everything'.tr(),
+              destructive: true,
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _performLocalDataReset();
+              },
+            ),
+          ]),
+        ],
+        child: Text(
           'This will permanently delete all local notes and keyring data. '
                   'This action CANNOT be undone. Are you absolutely sure?'
               .tr(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text('Cancel'.tr()),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              await _performLocalDataReset();
-            },
-            child: Text('Delete Everything'.tr()),
-          ),
-        ],
       ),
     );
   }

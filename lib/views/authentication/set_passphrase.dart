@@ -32,9 +32,10 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/platform_ui.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
-import 'package:safenotes/widgets/login_button.dart';
 
 class SetEncryptionPhrasePage extends StatefulWidget {
   final StreamController<SessionState> sessionStream;
@@ -180,22 +181,25 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   Widget _inputFieldFirst() {
     final String firstHintText = 'New Passphrase'.tr();
 
-    return TextFormField(
+    return ShadInputFormField(
       enableIMEPersonalizedLearning: false,
       controller: _passPhraseController,
-      autofocus: widget.isKeyboardFocused ?? true, //true,
+      autofocus: widget.isKeyboardFocused ?? true,
       obscureText: _isHiddenFirst,
       focusNode: _focusFirst,
-      decoration: _inputBoxDecoration(
-        inputFieldID: 'first',
-        inputHintText: firstHintText,
-        label: firstHintText,
+      leading: const Icon(LucideIcons.lock),
+      trailing: IconButton(
+        icon: _isHiddenFirst
+            ? const Icon(LucideIcons.eye)
+            : const Icon(LucideIcons.eyeOff),
+        onPressed: () => setState(() => _isHiddenFirst = !_isHiddenFirst),
       ),
+      label: Text(firstHintText),
+      placeholder: Text(firstHintText),
       autofillHints: const [AutofillHints.password],
-
       keyboardType: TextInputType.visiblePassword,
       textInputAction: TextInputAction.next,
-      onFieldSubmitted: (v) {
+      onSubmitted: (v) {
         FocusScope.of(context).requestFocus(_focusSecond);
       },
       validator: _firstInputValidator,
@@ -208,16 +212,20 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
     return Padding(
       padding: const EdgeInsets.only(top: padding),
-      child: TextFormField(
+      child: ShadInputFormField(
         enableIMEPersonalizedLearning: false,
         controller: _passPhraseControllerConfirm,
         focusNode: _focusSecond,
         obscureText: _isHiddenConfirm,
-        decoration: _inputBoxDecoration(
-          inputFieldID: 'confirm',
-          inputHintText: confirmHintText,
-          label: confirmHintText,
+        leading: const Icon(LucideIcons.lock),
+        trailing: IconButton(
+          icon: _isHiddenConfirm
+              ? const Icon(LucideIcons.eye)
+              : const Icon(LucideIcons.eyeOff),
+          onPressed: () => setState(() => _isHiddenConfirm = !_isHiddenConfirm),
         ),
+        label: Text(confirmHintText),
+        placeholder: Text(confirmHintText),
         autofillHints: const [AutofillHints.password],
         keyboardType: TextInputType.visiblePassword,
         textInputAction: TextInputAction.done,
@@ -227,70 +235,35 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     );
   }
 
-  InputDecoration _inputBoxDecoration({
-    required String inputFieldID,
-    required String inputHintText,
-    required String label,
-  }) {
-    bool? visibility;
-
-    if (inputFieldID == 'first') {
-      visibility = _isHiddenFirst;
-    } else {
-      visibility = _isHiddenConfirm;
-    }
-
-    return InputDecoration(
-      hintText: inputHintText,
-      label: Text(label),
-      prefixIcon: const Icon(Icons.lock),
-      suffixIcon: IconButton(
-        icon: !visibility
-            ? const Icon(Icons.visibility_off)
-            : const Icon(Icons.visibility),
-        onPressed: () {
-          if (inputFieldID == 'first') {
-            return setState(() => _isHiddenFirst = !_isHiddenFirst);
-          } else {
-            return setState(() => _isHiddenConfirm = !_isHiddenConfirm);
-          }
-        },
-      ),
-    );
-  }
-
-  String? _firstInputValidator(String? passphrase) {
+  String? _firstInputValidator(String passphrase) {
     const int minPassphraseLength = 8;
     const double minPassphraseStrength = 0.5;
 
-    return passphrase == null || passphrase.length < minPassphraseLength
+    return passphrase.length < minPassphraseLength
         ? 'Must be at least 8 characters long!'.tr()
         : (estimateBruteforceStrength(passphrase) < minPassphraseStrength)
             ? 'Passphrase is too weak!'.tr()
             : null;
   }
 
-  String? _confirmInputValidator(String? passphraseConfirm) {
-    return passphraseConfirm == null ||
-            passphraseConfirm != _passPhraseController.text
+  String? _confirmInputValidator(String passphraseConfirm) {
+    return passphraseConfirm != _passPhraseController.text
         ? 'Passphrase mismatch!'.tr()
         : null;
   }
 
   Widget _buildLoginButton() {
-    return ButtonWidget(
-      text: 'Confirm'.tr(),
-      onClicked: () async {
-        _loginController();
-      },
+    return ShadButton(
+      width: isDesktopPlatform ? null : double.infinity,
+      onPressed: () => _loginController(),
+      child: Text('Confirm'.tr()),
     );
   }
 
   Widget _buildForgotPassphrase() {
     return Container(
       alignment: Alignment.centerRight,
-      child: TextButton(
-        child: Text('What is passphrase?'.tr()),
+      child: ShadButton.link(
         onPressed: () {
           showGenericDialog(
             context: context,
@@ -300,6 +273,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
                     .tr(),
           );
         },
+        child: Text('What is passphrase?'.tr()),
       ),
     );
   }

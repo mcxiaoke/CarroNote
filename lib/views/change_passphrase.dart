@@ -26,8 +26,10 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/platform_ui.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/app_button.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class ChangePassphrase extends StatefulWidget {
   const ChangePassphrase({super.key});
@@ -162,26 +164,30 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     // 简化方案:validator 只做长度检查
     // 旧密码正确性在 _finalSublmitChange 里通过 keyring.changePassword 内部验证
     // (keyring.changePassword 会用旧密码派生 MK 解 dataKey,失败抛 WrongPasswordException)
-    return TextFormField(
+    return ShadInputFormField(
       enableIMEPersonalizedLearning: false,
+      enableInteractiveSelection: false,
       controller: _oldPassphraseController,
       autofocus: true,
       focusNode: _focusOld,
-      enableInteractiveSelection: false,
       obscureText: _isHiddenOld,
-      decoration: _inputBoxDecoration(
-        context,
-        'first',
-        inputHintOld,
+      leading: const Icon(LucideIcons.lock),
+      trailing: IconButton(
+        icon: _isHiddenOld
+            ? const Icon(LucideIcons.eye)
+            : const Icon(LucideIcons.eyeOff),
+        onPressed: _toggleOldPasswordVisibility,
       ),
+      label: Text(inputHintOld),
+      placeholder: Text(inputHintOld),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
-      onFieldSubmitted: (v) {
+      onSubmitted: (v) {
         FocusScope.of(context).requestFocus(_focusNew);
       },
       textInputAction: TextInputAction.next,
       validator: (passphrase) {
-        if (passphrase == null || passphrase.isEmpty) {
+        if (passphrase.isEmpty) {
           return 'Enter Passphrase'.tr();
         }
         return null;
@@ -192,20 +198,24 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   Widget _buildNewPassField() {
     final String inputHintNew = 'New Passphrase'.tr();
 
-    return TextFormField(
+    return ShadInputFormField(
       enableIMEPersonalizedLearning: false,
+      enableInteractiveSelection: false,
       controller: _newPassphraseController,
       focusNode: _focusNew,
-      enableInteractiveSelection: false,
       obscureText: _isHiddenNew,
-      decoration: _inputBoxDecoration(
-        context,
-        'second',
-        inputHintNew,
+      leading: const Icon(LucideIcons.lock),
+      trailing: IconButton(
+        icon: _isHiddenNew
+            ? const Icon(LucideIcons.eye)
+            : const Icon(LucideIcons.eyeOff),
+        onPressed: _toggleNewPasswordVisibility,
       ),
+      label: Text(inputHintNew),
+      placeholder: Text(inputHintNew),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
-      onFieldSubmitted: (v) {
+      onSubmitted: (v) {
         FocusScope.of(context).requestFocus(_focusNewConfirm);
       },
       textInputAction: TextInputAction.next,
@@ -213,13 +223,13 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     );
   }
 
-  String? _firstInputValidator(String? passphrase) {
+  String? _firstInputValidator(String passphrase) {
     const int minPassphraseLength = 8;
     const double minPassphraseStrength = 0.5;
     final String minpCharacterMsg = 'Minimum 8 characters long!'.tr();
     final String tooWeakMsg = 'Passphrase is too weak!'.tr();
 
-    return passphrase == null || passphrase.length < minPassphraseLength
+    return passphrase.length < minPassphraseLength
         ? minpCharacterMsg
         : (estimateBruteforceStrength(passphrase) < minPassphraseStrength)
         ? tooWeakMsg
@@ -230,17 +240,21 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     final String inputHintConfirm = 'Confirm New Passphrase'.tr();
     final String passPhraseMismatchMsg = 'Passphrase Mismatch!'.tr();
 
-    return TextFormField(
+    return ShadInputFormField(
       enableIMEPersonalizedLearning: false,
+      enableInteractiveSelection: false,
       controller: _newConfirmPassphraseController,
       focusNode: _focusNewConfirm,
-      enableInteractiveSelection: false,
       obscureText: _isHiddenNewConfirm,
-      decoration: _inputBoxDecoration(
-        context,
-        'third',
-        inputHintConfirm,
+      leading: const Icon(LucideIcons.lock),
+      trailing: IconButton(
+        icon: _isHiddenNewConfirm
+            ? const Icon(LucideIcons.eye)
+            : const Icon(LucideIcons.eyeOff),
+        onPressed: _toggleNewConfirmPasswordVisibility,
       ),
+      label: Text(inputHintConfirm),
+      placeholder: Text(inputHintConfirm),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
@@ -248,41 +262,6 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       validator: (password) => password != _newPassphraseController.text
           ? passPhraseMismatchMsg
           : null,
-    );
-  }
-
-  InputDecoration _inputBoxDecoration(
-    BuildContext context,
-    String inputFieldID,
-    String inputHintText,
-  ) {
-    bool? visibility;
-
-    if (inputFieldID == 'first') {
-      visibility = _isHiddenOld;
-    } else if (inputFieldID == 'second') {
-      visibility = _isHiddenNew;
-    } else {
-      visibility = _isHiddenNewConfirm;
-    }
-
-    return InputDecoration(
-      hintText: inputHintText,
-      prefixIcon: const Icon(Icons.lock),
-      suffixIcon: IconButton(
-        icon: !visibility
-            ? const Icon(Icons.visibility_off)
-            : const Icon(Icons.visibility),
-        onPressed: () {
-          if (inputFieldID == 'first') {
-            return _toggleOldPasswordVisibility();
-          } else if (inputFieldID == 'second') {
-            return _toggleNewPasswordVisibility();
-          } else {
-            return _toggleNewConfirmPasswordVisibility();
-          }
-        },
-      ),
     );
   }
 
@@ -298,10 +277,11 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       alignment: Alignment.centerRight,
       child: Padding(
         padding: const EdgeInsets.only(right: 10, top: 25, bottom: 20),
-        child: AppButton(
-          text: 'Confirm'.tr(),
-          icon: const Icon(Icons.key, size: 20),
+        child: ShadButton(
+          width: isDesktopPlatform ? null : double.infinity,
+          leading: const Icon(LucideIcons.key, size: 20),
           onPressed: _finalSublmitChange,
+          child: Text('Confirm'.tr()),
         ),
       ),
     );
@@ -508,19 +488,22 @@ class ChangePassphraseState extends State<ChangePassphrase> {
           context: context,
           barrierDismissible: false,
           builder: (BuildContext dialogContext) {
-            return AlertDialog(
+            return ShadDialog(
               title: Text(title),
-              content: Text(content),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: Text(cancelText),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: Text(confirmText),
-                ),
+                shadDialogActionBar(actions: [
+                  ShadDialogAction(
+                    label: cancelText,
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                  ),
+                  ShadDialogAction(
+                    label: confirmText,
+                    primary: true,
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                  ),
+                ]),
               ],
+              child: Text(content),
             );
           },
         ) ??
