@@ -144,13 +144,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             setState(() {});
           },
         ),
-        shadNavigationTile(
+        shadSwitchTile(
           context,
           icon: LucideIcons.rotateCw,
           title: 'Auto Rotate'.tr(),
-          value: !PreferencesStorage.isAutoRotate ? 'Off'.tr() : 'On'.tr(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/autoRotateSettings');
+          description: 'Close and open app for change to take effect'.tr(),
+          value: PreferencesStorage.isAutoRotate,
+          onChanged: (v) {
+            PreferencesStorage.setIsAutoRotate(v);
             setState(() {});
           },
         ),
@@ -201,13 +202,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             setState(() {});
           },
         ),
-        shadNavigationTile(
+        shadSwitchTile(
           context,
-          icon: LucideIcons.smartphone,
+          icon: LucideIcons.monitorOff,
           title: 'Secure Display'.tr(),
-          value: PreferencesStorage.isFlagSecure ? 'On'.tr() : 'Off'.tr(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/secureDisplaySetting');
+          description:
+              'When turned on, the content on the screen is treated as secure, '
+                      'blocking background snapshots and preventing it from '
+                      'appearing in screenshots or from being viewed on '
+                      'non-secure displays.'
+                  .tr(),
+          value: PreferencesStorage.isFlagSecure,
+          onChanged: (v) {
+            PreferencesStorage.setIsFlagSecure(v);
             setState(() {});
           },
         ),

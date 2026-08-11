@@ -34,13 +34,11 @@ import 'package:safenotes/views/authentication/set_passphrase.dart';
 import 'package:safenotes/views/change_passphrase.dart';
 import 'package:safenotes/views/deleted_notes.dart';
 import 'package:safenotes/views/home.dart';
-import 'package:safenotes/views/settings/autorotate_settings.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
 import 'package:safenotes/views/settings/language_setting.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
-import 'package:safenotes/views/settings/secure_display_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
@@ -153,14 +151,8 @@ class RouteGenerator {
       case '/chooseLanguageSettings':
         return _buildRoute(const LanguageSetting(), settings);
 
-      case '/secureDisplaySetting':
-        return _buildRoute(const SecureDisplaySetting(), settings);
-
       case '/biometricSetting':
         return _buildRoute(const BiometricSetting(), settings);
-
-      case '/autoRotateSettings':
-        return _buildRoute(const AutoRotationSetting(), settings);
 
       default:
         return _errorRoute(route: routeName);
