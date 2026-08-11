@@ -106,11 +106,19 @@ Widget shadNavigationTile(
           ),
         ),
         if (value != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Text(
-              value,
-              style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 13),
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ShadTheme.of(context)
+                    .textTheme
+                    .muted
+                    .copyWith(fontSize: 13),
+              ),
             ),
           ),
         const SizedBox(width: 4),
@@ -250,9 +258,20 @@ Widget shadInfoTile(
             ],
           ),
         ),
-        Text(
-          value,
-          style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 13),
+        Flexible(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ShadTheme.of(context)
+                  .textTheme
+                  .muted
+                  .copyWith(fontSize: 13),
+            ),
+          ),
         ),
       ],
     ),
