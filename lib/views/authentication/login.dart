@@ -544,10 +544,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         remoteResponse.ciphertext,
       );
 
-      // 用输入密码 + 远端 salt 派生 MK,比对 fingerprint
+      // 用输入密码 + 远端 KDF 参数派生 MK,比对 fingerprint
       final mk = await SyncCrypto.deriveMasterKeyAsync(
         passphrase,
-        salt: header.kdf.saltBytes,
+        kdf: header.kdf,
       );
       final fp = SyncCrypto.computeKeyFingerprint(mk);
       if (fp != header.keyFingerprint) {
@@ -770,6 +770,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       if (authenticated) await _login(await BiometricAuth.authKey);
       if (authenticated) Log.auth.i('生物识别认证通过');
     }
+    // _login 内部会 pushReplacement 跳转主界面并销毁本页，await 返回后可能已
+    // unmounted；不判空直接 setState 会触发 "setState() called after dispose"
+    // 的 FATAL。Argon2id 为纯 Dart 派生（无原生加速），移动端耗时更长，该竞态
+    // 窗口被放大，故必须守卫 mounted（生物识别登录路径专属修复）。
+    if (!mounted) return authenticated;
     setState(() {
       forcePassphraseInput =
           PreferencesStorage.biometricAttemptAllTimeCount % 5 == 0;

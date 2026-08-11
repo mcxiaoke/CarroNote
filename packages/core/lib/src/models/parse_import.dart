@@ -17,6 +17,7 @@ import 'dart:typed_data';
 
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/models/safenote.dart';
+import 'package:core/src/sync/sync_models.dart';
 
 class ImportParser {
   final List<SafeNote> parsedNotes;
@@ -88,11 +89,17 @@ class BackupHeader {
   /// 对称加密算法（"AES-256-GCM"）
   final String encAlgorithm;
 
-  /// KDF 算法（"PBKDF2-HMAC-SHA256"）
+  /// KDF 算法（"ARGON2ID" 或 "PBKDF2-HMAC-SHA256"）
   final String kdfAlgorithm;
 
-  /// KDF 迭代次数（当前 200000，写入头以便未来调参时按文件参数派生）
+  /// KDF 迭代次数（PBKDF2 的 iterations；Argon2id 的 t）
   final int iterations;
+
+  /// Argon2id 内存占用（KiB）。PBKDF2 备份为 null。
+  final int? memoryKiB;
+
+  /// Argon2id 并行度（lane 数）。PBKDF2 备份为 null。
+  final int? parallelism;
 
   /// 备份 salt（16B，每份导出随机）
   final Uint8List salt;
@@ -112,6 +119,8 @@ class BackupHeader {
     required this.encAlgorithm,
     required this.kdfAlgorithm,
     required this.iterations,
+    this.memoryKiB,
+    this.parallelism,
     required this.salt,
     required this.createdAt,
     required this.total,
@@ -139,7 +148,7 @@ class BackupHeader {
     final encAlgorithm = enc?['algorithm'] as String?;
     final kdfAlgorithm = kdf?['algorithm'] as String?;
     if (encAlgorithm != kBackupEncAlgorithm ||
-        kdfAlgorithm != kBackupKdfAlgorithm) {
+        !const {kPbkdf2Algorithm, kArgon2idAlgorithm}.contains(kdfAlgorithm)) {
       throw FormatException('不支持的备份加密算法'
           '（enc=$encAlgorithm kdf=$kdfAlgorithm）');
     }
@@ -148,6 +157,10 @@ class BackupHeader {
     if (iterations == null || iterations <= 0) {
       throw const FormatException('备份 KDF 迭代次数非法');
     }
+
+    // Argon2id 参数（PBKDF2 备份无此字段，为 null）
+    final memoryKiB = kdf?['memoryKiB'] as int?;
+    final parallelism = kdf?['parallelism'] as int?;
 
     final saltB64 = json['salt'] as String?;
     final payloadB64 = json['payload'] as String?;
@@ -173,10 +186,23 @@ class BackupHeader {
       encAlgorithm: encAlgorithm!,
       kdfAlgorithm: kdfAlgorithm!,
       iterations: iterations,
+      memoryKiB: memoryKiB,
+      parallelism: parallelism,
       salt: salt,
       createdAt: json['createdAt'] as int? ?? 0,
       total: json['total'] as int? ?? 0,
       payload: payload,
     );
   }
+
+  /// 把文件头字段组装成 [KdfParams]，供 [SyncCrypto.deriveBackupKey] 按文件
+  /// 参数派发（Argon2id 用 memory/parallelism，PBKDF2 忽略）。salt 重新
+  /// base64 编码为 KdfParams 所需的字符串形式。
+  KdfParams get kdfParams => KdfParams(
+        algorithm: kdfAlgorithm,
+        salt: base64Encode(salt),
+        iterations: iterations,
+        memoryKiB: memoryKiB,
+        parallelism: parallelism,
+      );
 }

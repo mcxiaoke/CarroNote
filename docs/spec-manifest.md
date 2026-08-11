@@ -108,13 +108,15 @@ manifest 在线上是以 **v5 二进制容器** 形式存储的（`ManifestCrypt
 
 `kdf` 子对象（`KdfParams.toJson`）：
 
-| 字段        | 类型   | 说明                                         |
-|-------------|--------|----------------------------------------------|
-| `algorithm` | string | KDF 算法，当前为 `'PBKDF2-HMAC-SHA256'`      |
-| `salt`      | string | PBKDF2 salt，base64（`per-vault` 随机 16 字节）|
-| `iterations`| int    | PBKDF2 迭代次数，当前为 `200000`             |
+| 字段         | 类型   | 说明                                                                       |
+|--------------|--------|----------------------------------------------------------------------------|
+| `algorithm`  | string | KDF 算法。**新 vault 默认 `'ARGON2ID'`**；存量 vault 为 `'PBKDF2-HMAC-SHA256'`（按此字段回退，不重加密数据） |
+| `salt`       | string | per-vault 随机 16 字节，base64（Argon2id 与 PBKDF2 共用）                    |
+| `iterations` | int    | 迭代轮数：Argon2id 为 `t`（默认 3）；PBKDF2 为迭代次数（默认 `200000`）     |
+| `memoryKiB`  | int?   | **仅 Argon2id**：内存硬度 `m`，单位 KiB（默认 `32768` = 32 MiB）；PBKDF2 不写 |
+| `parallelism`| int?   | **仅 Argon2id**：并行度 `p`（默认 `2`）；PBKDF2 不写                        |
 
-示例（来自源码文档注释，字段名一致）：
+示例（新 vault，Argon2id 默认）：
 
 ```json
 {
@@ -127,9 +129,11 @@ manifest 在线上是以 **v5 二进制容器** 形式存储的（`ManifestCrypt
   "keyVersion": 1,
   "encryptedDataKey": "base64...",
   "kdf": {
-    "algorithm": "PBKDF2-HMAC-SHA256",
+    "algorithm": "ARGON2ID",
     "salt": "base64(per-vault-random)",
-    "iterations": 200000
+    "iterations": 3,
+    "memoryKiB": 32768,
+    "parallelism": 2
   },
   "dataKeyWrap": "AES-256-GCM",
   "dataKeyEpoch": 1,
@@ -137,6 +141,9 @@ manifest 在线上是以 **v5 二进制容器** 形式存储的（`ManifestCrypt
   "lastModifiedBy": "android-xxx"
 }
 ```
+
+> 存量 PBKDF2 vault 的 `kdf` 不含 `memoryKiB` / `parallelism`；解析与派生均按
+> `algorithm` 字段分派（见 `crypto.dart` 的 `deriveKeyFromKdf`），两种格式互操作。
 
 ---
 

@@ -1,6 +1,7 @@
 # SafeNotes 加密解密总览（参数与流程）
 
 > 生成时间：2026-08-10 09:52 (GMT+8)
+> 最后更新：2026-08-11（KDF 默认迁移 Argon2id + 生物识别凭据登录时刷新，见 §2.2 / §5.5 / §6.x）
 > 覆盖范围：Flutter App 侧（`lib/`）+ 纯 Dart 核心包（`packages/core/`）+ CLI（`bin/`）
 > 相关规范：`docs/spec-blob.md`、`docs/spec-manifest.md`、`docs/spec-journal.md`、
 > `docs/manifest-reliability-design.md`、`docs/simplified-sync-design.md`
@@ -10,11 +11,14 @@
 ## 1. 总览
 
 SafeNotes 采用**两层密钥 + 单一算法族**设计：所有对称加密统一为 AES-256-GCM，
-所有哈希/指纹统一为 SHA-256，唯一的口令派生算法为 PBKDF2-HMAC-SHA256。
+所有哈希/指纹统一为 SHA-256，口令派生**默认 Argon2id**、存量 PBKDF2 按 header
+算法字段自动回退（详见 §2.2）。
 
 ```
 用户密码 password
-   │  PBKDF2-HMAC-SHA256(salt=per-vault 随机 16B, iter=200000, out=32B)
+   │  Argon2id(salt=per-vault 随机 16B, m=32MiB, t=3, p=2, out=32B)   ← 默认（2026-08-11 起）
+   │  （存量 vault / 老备份按 manifest/snbak 头中 algorithm 字段回退到
+   │    PBKDF2-HMAC-SHA256(salt, iter=200000)，不重加密数据）
    ▼
   MK (Master Key, 32B)          ← 改密码时变化；只用来包裹 dataKey，不直接加密任何业务数据
    │  AES-256-GCM(AAD='datakey-wrap')
@@ -64,29 +68,56 @@ SafeNotes 采用**两层密钥 + 单一算法族**设计：所有对称加密统
 | `_keyLength` | 32 B | crypto.dart:48 | AES-256 密钥长度，MK / dataKey 均为 32 字节 |
 | `_nonceLength` | 12 B | crypto.dart:46 | AES-GCM 推荐 nonce 长度 |
 | `_tagLength` | 16 B | crypto.dart:47 | GCM 认证标签长度 |
-| `kSaltLength` / `_saltLength` | 16 B | crypto.dart:49,70 | PBKDF2 per-vault 随机 salt |
-| `kPbkdf2Iterations` | 200000 | crypto.dart:63 | PBKDF2 迭代次数 |
-| `kMkKdfAlgorithm` | `"PBKDF2-HMAC-SHA256"` | crypto.dart:73 | 写入 manifest header，供未来算法迁移 |
+| `kSaltLength` / `_saltLength` | 16 B | crypto.dart:49,70 | per-vault 随机 salt（Argon2id 与 PBKDF2 共用） |
+| `kPbkdf2Iterations` | 200000 | crypto.dart:63 | **仅 PBKDF2 回退分支**使用的迭代次数（存量 vault） |
+| `kPbkdf2Algorithm` | `"PBKDF2-HMAC-SHA256"` | crypto.dart | PBKDF2 算法标识（header 算法字段取值之一） |
+| `kArgon2idAlgorithm` | `"ARGON2ID"` | crypto.dart | Argon2id 算法标识（新 vault 默认取值） |
+| `kMkKdfAlgorithm` | `"ARGON2ID"` | crypto.dart:73 | 新 vault / 新 keyring 的默认 KDF，写入 manifest header |
+| `kArgon2idMemoryKib` | 32768 (32 MiB) | crypto.dart | Argon2id 内存硬度（m） |
+| `kArgon2idIterations` | 3 | crypto.dart | Argon2id 迭代轮数（t，对应 KdfParams.iterations） |
+| `kArgon2idParallelism` | 2 | crypto.dart | Argon2id 并行度（p） |
+| `kBackupKdfAlgorithm` | `"ARGON2ID"` | crypto.dart | 加密 .snbak 备份 B-KEY 派生默认 KDF |
 | `kDataKeyWrapAlgorithm` | `"AES-256-GCM"` | crypto.dart:76 | 写入 manifest header |
 
-**迭代次数 200k 的取舍**（crypto.dart:51-62 原注释）：OWASP 2023 推荐 600k，但纯 Dart 在
-手机端需 4-5 秒；200k 约 1-1.5 秒。安全评估基线为 RTX 4090 约 6000 H/s，8 位混合密码
-理论破解约 1153 年。定位为个人笔记场景，不对抗 GPU 集群。
+**默认 KDF：Argon2id（2026-08-11 起）**。参数 `m=32MiB, t=3, p=2`，本机 Windows 实测约
+200–330ms，比 PBKDF2 200k（约 788ms）更快且内存硬化、对 GPU/ASIC 暴力破解抗性远强。
+Argon2id 随现有 `cryptography` 包内置（`Argon2id` 类），**零新增依赖**。
+**迭代次数 200k 仅存量 PBKDF2 回退使用**：OWASP 2023 推荐 600k，但纯 Dart 在手机端需
+4-5 秒；200k 约 1-1.5 秒，定位为个人笔记场景，不对抗 GPU 集群。
 
-### 2.2 密钥派生 PBKDF2
+### 2.2 密钥派生（Argon2id 默认 + PBKDF2 回退）
+
+统一入口 `deriveKeyFromKdf(password, {required KdfParams kdf})` 按 `kdf.algorithm`
+派发：
 
 ```dart
+// 新 vault / 新备份（默认）
+SyncCrypto.deriveKeyFromKdf(password, kdf: KdfParams(
+    algorithm: 'ARGON2ID', salt: <16B>, iterations: 3,
+    memoryKiB: 32768, parallelism: 2))
+// = Argon2id(parallelism: 2, memory: 32768, iterations: 3, hashLength: 32)
+//     .deriveKey(secretKey: SecretKey(password.codeUnits), nonce: salt)
+
+// 存量 PBKDF2 vault / 老备份（按 header 算法字段回退）
 SyncCrypto.deriveMasterKey(password, salt: <16B>, iterations: 200000)
 // = Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 200000, bits: 256)
 //     .deriveKeyFromPassword(password: password, nonce: salt)
 ```
 
-- `deriveMasterKeyAsync` 是同一实现的带计时日志封装（`Log.crypto`），登录卡顿定位用。
+- `deriveMasterKeyAsync` / `deriveBackupKey` 现均经 `deriveKeyFromKdf` 派发，带计时
+  日志（`Log.crypto`）用于登录卡顿定位。
 - **salt 是 per-vault 随机 16 字节**，在 keyring 首次创建时生成，写入本地账本
   与远端 manifest header 的 `kdf.salt`（base64）。新设备从 header 读取 salt，
-  保证「相同密码 + 相同 salt → 相同 MK」。
+  保证「相同密码 + 相同 salt → 相同 MK」。Argon2id 与 PBKDF2 共用同一 salt。
 - 历史演进（crypto.dart:13-16）：v0 用 `vaultId` 作 salt（新设备拿不到）→
   v1 全局固定 salt `'safenotes-v1'` → v2（当前）per-vault 随机 salt。
+- **兼容性**：存量 PBKDF2 老 vault / 老备份按 manifest/snbak 头中 `algorithm` 字段
+  自动回退到 PBKDF2，**存量数据零重加密迁移**；改密码时若仍为 PBKDF2 则自动升级为
+  Argon2id（沿用同 salt、不重加密笔记），已是 Argon2id 则沿用。
+- ⚠️ **平台加速差异（移动端）**：`cryptography_flutter` 仅加速 AES-GCM 与 PBKDF2
+  （原生 JCE / CryptoKit / 后台 isolate），**不加速 Argon2id（纯 Dart）**。移动端
+  Argon2id 派生耗时可能高于桌面；按决策沿用现有 `deriveMasterKeyAsync` 异步模式，
+  未额外加 `compute()` 隔离（见 §9 弱点 #3 已解决）。
 
 ### 2.3 对称加密 AES-256-GCM
 
@@ -188,7 +219,7 @@ JSON。单键 `setMeta` 天然原子，杜绝旧实现「7 次 setMeta 双写不
 | 字段 | 变化时机 | 说明 |
 |---|---|---|
 | `vaultId` | 创建时生成；scenario-d 迁移时整体切换 | UUIDv4（`Random.secure()` + RFC 4122 version/variant 位修正），**仅作同步组标识，不再作 salt** |
-| `kdf` | 创建时固定；scenario-d 时采用远端 | `{algorithm, salt(base64), iterations}` |
+| `kdf` | 创建时固定；scenario-d 时采用远端；改密码若为 PBKDF2 则自动升级为 Argon2id | `{algorithm, salt(base64), iterations, memoryKiB?, parallelism?}`（Argon2id 带 memoryKiB/parallelism，PBKDF2 仅前三项） |
 | `keyFingerprint` | 改密码时变 | `H(MK)` |
 | `encryptedDataKey` | 改密码 / 迁移时变 | `base64(AES-GCM(MK, AAD='datakey-wrap', dataKey))`，固定 60 字节明文长度 |
 | `keyVersion` | 改密码 +1 | 防止旧密码设备回滚新包裹 |
@@ -284,7 +315,7 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 **header 明文字段**（新设备无 dataKey 也能读）：
 
 `schemaVersion`(=5) / `version` / `vaultId` / `createdAt` / `updatedAt` /
-`keyFingerprint` / `keyVersion` / `encryptedDataKey` / `kdf{algorithm,salt,iterations}` /
+`keyFingerprint` / `keyVersion` / `encryptedDataKey` / `kdf{algorithm,salt,iterations,memoryKiB?,parallelism?}` /
 `dataKeyWrap` / `dataKeyEpoch` / `dataKeyFingerprint` / `dataKeyCreatedAt` /
 `dataKeyCreatedBy` / `lastModifiedBy`
 
@@ -336,6 +367,17 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 - 兼容：无 `v1:` 前缀的旧值按明文密码原样返回，下次写入自动升级为 v1。
 - 关闭生物识别时两个键都删除；重新开启时**先删 KEY 再生成新的**，防止开关周期内密钥复用。
 - 解包失败一律返回空串（指纹登录走失败分支），**绝不回退明文**。
+- **凭据刷新时机（2026-08-11 修正）**：生物识别包裹凭据须与当前有效密码保持一致，
+  刷新点有两处：
+  1. `Session.login(passphrase)` —— **所有密码登录成功的唯一汇聚点**（本地解锁 /
+     远端 fingerprint 比对通过），在 `isBiometricAuthEnabled` 时调用
+     `BiometricAuth.setAuthKey()`。覆盖「他端改密码后本端用新密码重新登录」「普通
+     密码登录」「生物识别登录自身（用解出的当前密码重新包裹，幂等）」；
+  2. `Session.onPasswordSet(newPassword)` —— 本地改密码页 `change_passphrase.dart:408`
+     调用，覆盖本地显式改密码。
+  二者幂等：写入的密码必为已验证正确的当前密码，secure storage 写入为包裹态不存明文。
+  **历史坑**：此前仅 `onPasswordSet` 刷新，导致他端改密后本端用旧密码指纹登录失败、
+  改用新密码重登却未刷新 biometric，下次指纹登录即报密码错误。
 
 ### 5.6 备份导出 / 导入（导出面板支持加密 .snbak；自动备份仍为明文）
 
@@ -370,8 +412,8 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 ```
 1. vaultId  = UUIDv4(Random.secure)
 2. dataKey  = random 32B
-3. salt     = random 16B → kdf = {PBKDF2-HMAC-SHA256, base64(salt), 200000}
-4. MK       = PBKDF2(password, salt, 200k)
+3. salt     = random 16B → kdf = {ARGON2ID, base64(salt), iterations=3, memoryKiB=32768, parallelism=2}
+4. MK       = Argon2id(password, salt, m=32MiB, t=3, p=2)   ← 默认；存量 PBKDF2 vault 用 deriveKeyFromKdf 回退
 5. keyFingerprint   = hex(SHA-256(MK))
 6. encryptedDataKey = base64(AES-GCM(MK, 'datakey-wrap', dataKey))
 7. 写 sync_meta['keyring'] = ledger JSON   （keyVersion=1, dataKeyEpoch=1, reason=create）
@@ -390,7 +432,8 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 2. MK      = PBKDF2(password, ledger.kdf.saltBytes, ledger.kdf.iterations)
 3. dataKey = AES-GCM-open(MK, 'datakey-wrap', base64d(ledger.current.encryptedDataKey))
              失败 → WrongPasswordException（即「密码错误」的唯一判定方式）
-4. database.setDataKey(dataKey) → Session.login(password)（明文密码进 PhraseHandler 内存）
+4. database.setDataKey(dataKey) → Session.login(password)（明文密码进 PhraseHandler 内存；
+   若生物识别已启用，同时刷新 biometric 包裹凭据，见 §5.5）
 ```
 
 **登录即验证**：没有独立的密码哈希表，「能解开 dataKey」就是密码正确。
@@ -404,7 +447,7 @@ UI 侧 `_isLoggingIn` 防重入（PBKDF2 需 1-2s，防连点），失败递减
 
 ```
 1. GET manifest → ManifestCrypto.deserializeHeaderOnly(bytes)   ← 无需 dataKey
-2. MK_try = PBKDF2(password, header.kdf.saltBytes)
+2. MK_try = deriveKeyFromKdf(password, header.kdf)   ← 按 header.kdf.algorithm 派发（Argon2id / PBKDF2）
 3. hex(SHA-256(MK_try)) == header.keyFingerprint ?
      否 → wrongPassword（扣尝试次数）
      是 → 密码正确
@@ -424,12 +467,14 @@ UI 侧 `_isLoggingIn` 防重入（PBKDF2 需 1-2s，防连点），失败递减
 
 ```
 salt 不变（沿用 kdf.saltBytes）
-1. oldMK = PBKDF2(oldPassword, salt) → 解 encryptedDataKey 验证；失败 → WrongPasswordException
-2. newMK = PBKDF2(newPassword, salt)
+1. oldMK = deriveKeyFromKdf(oldPassword, kdf) → 解 encryptedDataKey 验证；失败 → WrongPasswordException
+2. newMK = deriveKeyFromKdf(newPassword, newKdf)；若为 PBKDF2 vault 改密码则 newKdf 自动升级为
+   Argon2id（沿用同 salt，不重加密笔记），已是 Argon2id 则沿用
 3. newEncryptedDataKey = base64(AES-GCM(newMK, 'datakey-wrap', dataKey))   ← dataKey 原样
 4. newKeyFingerprint   = hex(SHA-256(newMK))
 5. keyVersion + 1；dataKeyEpoch 不变；reason=changePassword；一次 persist
-6. Session.onPasswordSet → PhraseHandler 更新 + 刷新生物识别包裹凭据
+6. Session.onPasswordSet → PhraseHandler 更新 + 刷新生物识别包裹凭据（另见 §5.5：所有密码登录
+   成功的 Session.login 也会刷新 biometric，覆盖他端改密后重登场景）
 ```
 
 **改密码不触碰任何笔记、不重传任何 blob**（只改 60 字节的包裹）。
@@ -442,7 +487,7 @@ UI 用 `verifyPassword()` 先只验不写，通过后才做备份/同步/ping �
 |---|---|---|
 | 无需迁移 | 远端 `encryptedDataKey` == 本地 | 直接返回 |
 | 同 vault 换 dataKey | 本地 MK 能解开远端包裹，但解出的 dataKey 与本地不同 | `migrateToRemote` |
-| scenario-d（不同 vault，密码相同） | `hex(SHA-256(PBKDF2(password, 远端 salt))) == 远端 keyFingerprint` | `migrateToRemoteVault`（连 kdf/salt/vaultId 一起换） |
+| scenario-d（不同 vault，密码相同） | `hex(SHA-256(deriveKeyFromKdf(password, 远端 kdf))) == 远端 keyFingerprint` | `migrateToRemoteVault`（连 kdf/salt/vaultId 一起换） |
 | scenario-c（密码不同） | 上式不成立 | `tryDeriveRemoteDataKey` 返回 null，不迁移 |
 
 迁移的原子性（B1 修复，epoch 消除 P0 五项）：
@@ -528,7 +573,7 @@ keyVersion、encryptedDataKey、kdf 参数、dataKeyFingerprint、lastModifiedBy
 |---|---|---|---|
 | 1 | 备份导出/导入完全明文，无密码校验 | `file_handler.dart:39-49` | 用 MK 或独立口令封装为 AES-GCM 容器；至少 UI 强提示 |
 | 2 | 生物识别包裹密钥与密文同处 secure storage | `biometric_auth.dart:103-113` | 移到平台 Keystore/Keychain 的硬件绑定密钥（`setUserAuthenticationRequired`） |
-| 3 | PBKDF2 200k 低于 OWASP 2023 的 600k | `crypto.dart:63` | 迁移 Argon2id，或按设备性能动态提高迭代并写入 `kdf.iterations` |
+| 3 | ~~PBKDF2 200k 低于 OWASP 2023 的 600k~~ | `crypto.dart:63` | **已解决（2026-08-11）**：新 vault / 新备份默认 Argon2id（`m=32MiB, t=3, p=2`），存量 PBKDF2 按 header 算法字段回退并在改密码时自动升级；Argon2id 为纯 Dart 派生（无原生加速），移动端耗时较长（见 §2.2 / §2.6） |
 | 4 | 会话明文密码常驻内存 `PhraseHandler._passphrase` | `preference_and_config.dart:409-429` | Dart 无法安全擦除 String；可改存派生的 MK 字节并在用后置零 |
 | 5 | blob 文件名泄露内容哈希 | 设计固有 | 若要消除，需改用 `HMAC(dataKey, blobId)` 作对象名（牺牲跨 vault 去重） |
 | 6 | ~~`SafeNote.computeHash` 与 `SyncCrypto.contentHash` 语义相近但不等价~~ | — | **已处理（2026-08-10）**：后者更名 `sha256Hex` + 补 `blob_addressing_test.dart` 锁定不变量 |
@@ -542,7 +587,7 @@ keyVersion、encryptedDataKey、kdf 参数、dataKeyFingerprint、lastModifiedBy
 |---|---|
 | 迭代次数 / nonce 长度 / 算法名常量 | `packages/core/lib/src/crypto/crypto.dart:46-76` |
 | AES-GCM 封/解封实现 | `crypto.dart:295-355` |
-| PBKDF2 派生 | `crypto.dart:103-134` |
+| KDF 派发（Argon2id / PBKDF2） | `crypto.dart`（`deriveKeyFromKdf` / `deriveMasterKey` / `_deriveArgon2id`） |
 | 各类指纹计算 | `crypto.dart:144-170` |
 | 密钥创建 / 解锁 / 改密码 / 迁移 | `packages/core/lib/src/sync/keyring.dart:442-839` |
 | 本地字段加解密 | `packages/core/lib/src/db/database_handler.dart:267-319` |
@@ -561,7 +606,7 @@ keyVersion、encryptedDataKey、kdf 参数、dataKeyFingerprint、lastModifiedBy
 
 | 文件 | 覆盖 |
 |---|---|
-| `crypto_test.dart` | PBKDF2 / AES-GCM 信封 / 指纹 / 常数时间比较等原语 |
+| `crypto_test.dart` | PBKDF2 / Argon2id 派生与互异、AES-GCM 信封 / 指纹 / 常数时间比较等原语 |
 | `keyring_test.dart` | 创建 / 解锁 / 改密码 / 迁移 / 账本持久化 |
 | `journal_test.dart` | journal 写入、滚动、远端密文副本 |
 | `multi_device_test.dart` | 多设备同密码/异密码 join（scenario-c/d） |

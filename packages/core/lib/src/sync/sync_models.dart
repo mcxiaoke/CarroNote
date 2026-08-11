@@ -287,34 +287,50 @@ class ManifestItem {
 /// 写入 manifest header 明文部分，供新设备加入时按相同参数派生 MK。
 /// per-vault 随机 salt 随 header 传播，确保跨用户预计算失效。
 class KdfParams {
-  /// KDF 算法名称（如 'PBKDF2-HMAC-SHA256'）
+  /// KDF 算法名称（如 'ARGON2ID' 或 'PBKDF2-HMAC-SHA256'）
   final String algorithm;
 
-  /// PBKDF2 salt（base64 编码，per-vault 随机生成）
+  /// 随机 salt（base64 编码，per-vault / per-backup 随机生成）
   final String salt;
 
-  /// PBKDF2 迭代次数
+  /// 迭代次数（PBKDF2 的 iterations；Argon2id 的 t）
   final int iterations;
+
+  /// Argon2id 内存占用（KiB，如 32768 = 32 MiB）。PBKDF2 为 null。
+  final int? memoryKiB;
+
+  /// Argon2id 并行度（lane 数）。PBKDF2 为 null。
+  final int? parallelism;
 
   const KdfParams({
     required this.algorithm,
     required this.salt,
     required this.iterations,
+    this.memoryKiB,
+    this.parallelism,
   });
 
-  /// 创建 KDF 参数（使用传入的 per-vault salt）
+  /// 创建 KDF 参数（使用传入的 salt）
+  ///
+  /// 默认新 vault 走 Argon2id（[kMkKdfAlgorithm]、[kArgon2idIterations]、
+  /// [kArgon2idMemoryKib]、[kArgon2idParallelism]）。存量 PBKDF2 老 vault
+  /// 走 [KdfParams.fromJson] 反序列化，[memoryKiB]/[parallelism] 为 null。
   ///
   /// [salt] 随机生成的 16 字节 salt
   factory KdfParams.create({required Uint8List salt}) => KdfParams(
         algorithm: kMkKdfAlgorithm,
         salt: base64.encode(salt),
-        iterations: kPbkdf2Iterations,
+        iterations: kArgon2idIterations,
+        memoryKiB: kArgon2idMemoryKib,
+        parallelism: kArgon2idParallelism,
       );
 
   Map<String, dynamic> toJson() => {
         'algorithm': algorithm,
         'salt': salt,
         'iterations': iterations,
+        if (memoryKiB != null) 'memoryKiB': memoryKiB,
+        if (parallelism != null) 'parallelism': parallelism,
       };
 
   factory KdfParams.fromJson(Map<String, dynamic> json) {
@@ -322,6 +338,8 @@ class KdfParams {
       algorithm: json['algorithm'] as String,
       salt: json['salt'] as String,
       iterations: json['iterations'] as int,
+      memoryKiB: json['memoryKiB'] as int?,
+      parallelism: json['parallelism'] as int?,
     );
   }
 
@@ -330,7 +348,8 @@ class KdfParams {
 
   @override
   String toString() =>
-      'KdfParams(algorithm=$algorithm, iterations=$iterations, salt=$salt)';
+      'KdfParams(algorithm=$algorithm, iterations=$iterations, '
+      'memoryKiB=$memoryKiB, parallelism=$parallelism, salt=$salt)';
 }
 
 /// 远端 manifest 明文头部

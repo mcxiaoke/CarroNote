@@ -36,10 +36,11 @@ import 'dart:typed_data';
 // 仅取用所需符号，避免命名冲突（Mac / Hmac / SecretKey 等）。
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart' show
-    AesGcm, Hmac, Mac, Pbkdf2, SecretBox, SecretKey;
+    AesGcm, Argon2id, Hmac, Mac, Pbkdf2, SecretBox, SecretKey;
 
 // 项目导入
 import 'package:core/src/sync/sync_error.dart';
+import 'package:core/src/sync/sync_models.dart';
 import 'package:core/src/logger/app_logger.dart';
 
 // 信封各部分的固定长度
@@ -50,7 +51,10 @@ const int _saltLength = 16; // PBKDF2 salt 16 字节
 
 /// PBKDF2 迭代次数（200,000 次）
 ///
-/// 选型依据：
+/// 仅作为 PBKDF2 回退分支（存量老 vault / 老备份）的默认迭代次数，
+/// 以及单元测试低迭代加速用。新 vault 默认改用 Argon2id（见下方常量）。
+///
+/// 选型依据（历史）：
 ///   - OWASP 2023 推荐 600,000 次，但实测在手机端纯 Dart 实现耗时 4-5 秒，
 ///     严重影响登录体验。
 ///   - 200,000 次在手机端约 1-1.5 秒，配合 Isolate 后台线程 UI 不卡顿。
@@ -62,15 +66,37 @@ const int _saltLength = 16; // PBKDF2 salt 16 字节
 /// 公开为常量供 manifest header 写入 KDF 参数（算法透明性）。
 const int kPbkdf2Iterations = 200000;
 
+/// MK 派生算法名称（新 vault 默认使用 Argon2id）
+///
+/// 存量 vault 按 manifest header 中存储的 `algorithm` 字段自动回退到
+/// PBKDF2-HMAC-SHA256，实现无缝兼容（见 [deriveKeyFromKdf]）。
+const String kMkKdfAlgorithm = 'ARGON2ID';
+
+/// PBKDF2 算法标识（存量数据 / 回退分支）
+const String kPbkdf2Algorithm = 'PBKDF2-HMAC-SHA256';
+
+/// Argon2id 算法标识（新 vault / 新备份默认）
+///
+/// 内存硬化（memory-hard）KDF，对 GPU/ASIC 暴力破解的抗性远强于 PBKDF2。
+/// 本包 `cryptography` 已内置（调试面板 KDF 基准已验证），零新增依赖。
+/// 注意：`cryptography_flutter` 不加速 Argon2id（仅加速 AES-GCM/PBKDF2），
+/// 移动端为纯 Dart 实现，派生耗时可能高于桌面。
+const String kArgon2idAlgorithm = 'ARGON2ID';
+
+/// Argon2id 默认参数（新 vault / 新备份）
+///
+/// memory = 32 MiB，t = 3，p = 2，hashLength = 32。
+/// Windows 实测约 200–330ms，比 PBKDF2 200k（788ms）更快且更抗破解。
+const int kArgon2idMemoryKib = 32768; // 32 MiB
+const int kArgon2idIterations = 3;
+const int kArgon2idParallelism = 2;
+
 /// per-vault 随机 salt 长度（字节）
 ///
 /// 每个 keyring 创建时生成独立的随机 salt，写入 manifest header。
 /// 相同密码 + 不同 salt → 不同 MK，跨用户预计算彩虹表直接失效。
 /// 多端一致性：salt 随 manifest header 传播，新设备按 header 中的 salt 派生 MK。
 const int kSaltLength = 16;
-
-/// MK 派生算法名称（写入 manifest header 供未来算法迁移）
-const String kMkKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
 
 /// dataKey 包装算法名称（写入 manifest header 供未来算法迁移）
 const String kDataKeyWrapAlgorithm = 'AES-256-GCM';
@@ -93,7 +119,10 @@ const int kBackupFormatVersion = 1;
 const String kBackupAad = 'backup-v1';
 
 /// 备份 KDF 算法名称（写入 snbak 文件头的 `enc.kdf.algorithm` 字段）
-const String kBackupKdfAlgorithm = 'PBKDF2-HMAC-SHA256';
+///
+/// 新备份默认 Argon2id；老 PBKDF2 备份仍可导入（[BackupHeader.fromJson]
+/// 同时接受两种算法）。
+const String kBackupKdfAlgorithm = 'ARGON2ID';
 
 /// 备份对称加密算法名称（写入 snbak 文件头的 `enc.algorithm` 字段）
 const String kBackupEncAlgorithm = 'AES-256-GCM';
@@ -110,11 +139,14 @@ class SyncCrypto {
   // 密钥派生
   // ──────────────────────────────────────────────
 
-  /// 用 PBKDF2-HMAC-SHA256 从用户密码派生主密钥 MK
+  /// 用 PBKDF2-HMAC-SHA256 从用户密码派生主密钥 MK（回退分支）
   ///
   /// [password] 用户输入的明文密码
   /// [salt] per-vault 随机 salt（必填，从 manifest header 或本地 meta 读取）
   /// 返回 32 字节的 MK
+  ///
+  /// 仅用于存量 PBKDF2 老 vault / 老备份的向后兼容派生，以及单元测试。
+  /// 新 vault 默认走 Argon2id（见 [deriveKeyFromKdf]）。
   ///
   /// 多端一致性关键：相同密码 + 相同 salt → 相同 MK。
   /// salt 随 manifest header 传播，新设备按 header 中的 salt 派生 MK。
@@ -137,20 +169,77 @@ class SyncCrypto {
     return Uint8List.fromList(await key.extractBytes());
   }
 
-  /// 异步派生 MK（不阻塞 UI 线程）
+  /// 用 Argon2id 从用户密码派生主密钥 MK
   ///
-  /// 参数与 [deriveMasterKey] 一致。cryptography 的 PBKDF2 实现本身
-  /// 在原生/Background 路径已负责后台化，这里保留计时日志便于定位登录卡顿。
-  static Future<Uint8List> deriveMasterKeyAsync(
+  /// [password] 用户输入的明文密码
+  /// [salt] per-vault 随机 salt（必填，从 manifest header 或本地 meta 读取）
+  /// [memoryKiB] 内存占用（KiB，如 32768 = 32 MiB）
+  /// [parallelism] 并行度（lane 数）
+  /// [iterations] 迭代次数（t）
+  /// 返回 32 字节的 MK
+  ///
+  /// 内存硬化 KDF，对 GPU/ASIC 暴力破解抗性远强于 PBKDF2。
+  /// 注意：`cryptography` 的 Argon2id 为纯 Dart 实现（无原生加速），
+  /// 移动端派生耗时可能高于桌面，但本机实测 32MiB/t3/p2 仅约 200–330ms。
+  static Future<Uint8List> _deriveArgon2id(
     String password, {
     required Uint8List salt,
-    int iterations = kPbkdf2Iterations,
+    required int memoryKiB,
+    required int parallelism,
+    required int iterations,
+  }) async {
+    final algo = Argon2id(
+      parallelism: parallelism,
+      memory: memoryKiB,
+      iterations: iterations,
+      hashLength: _keyLength,
+    );
+    final key = await algo.deriveKey(
+      secretKey: SecretKey(password.codeUnits),
+      nonce: salt,
+    );
+    return Uint8List.fromList(await key.extractBytes());
+  }
+
+  /// 按 [KdfParams.algorithm] 选择派发算法，统一 KDF 入口
+  ///
+  /// - `algorithm == kArgon2idAlgorithm` → [_deriveArgon2id]
+  ///   （用 [KdfParams.memoryKiB] / [KdfParams.parallelism] / [KdfParams.iterations]）
+  /// - 其它（含存量 PBKDF2-HMAC-SHA256）→ [deriveMasterKey]
+  ///
+  /// 这是登录 MK 派生与备份 B-KEY 派生的唯一分发点，保证老数据按存储算法
+  /// 回退、新数据走 Argon2id，两者无缝共存。
+  static Future<Uint8List> deriveKeyFromKdf(
+    String password, {
+    required KdfParams kdf,
+  }) async {
+    if (kdf.algorithm == kArgon2idAlgorithm) {
+      return _deriveArgon2id(
+        password,
+        salt: kdf.saltBytes,
+        memoryKiB: kdf.memoryKiB ?? kArgon2idMemoryKib,
+        parallelism: kdf.parallelism ?? kArgon2idParallelism,
+        iterations: kdf.iterations,
+      );
+    }
+    // 默认 / 存量数据：PBKDF2-HMAC-SHA256
+    return deriveMasterKey(password, salt: kdf.saltBytes, iterations: kdf.iterations);
+  }
+
+  /// 异步派生 MK（不阻塞 UI 线程）
+  ///
+  /// 按 [kdf] 中记录的算法与参数派发（见 [deriveKeyFromKdf]）。
+  /// cryptography 的 PBKDF2 在原生/Background 路径已负责后台化；Argon2id
+  /// 为纯 Dart，这里保留计时日志便于定位登录卡顿。
+  static Future<Uint8List> deriveMasterKeyAsync(
+    String password, {
+    required KdfParams kdf,
   }) async {
     final sw = Stopwatch()..start();
-    Log.crypto.d('开始派生主密钥 MK: 算法=$kMkKdfAlgorithm 迭代=$iterations '
-        'salt=${salt.length}字节');
-    final result =
-        await deriveMasterKey(password, salt: salt, iterations: iterations);
+    Log.crypto.d('开始派生主密钥 MK: 算法=${kdf.algorithm} 迭代=${kdf.iterations} '
+        'memory=${kdf.memoryKiB}KiB parallelism=${kdf.parallelism} '
+        'salt=${kdf.saltBytes.length}字节');
+    final result = await deriveKeyFromKdf(password, kdf: kdf);
     Log.crypto.i('主密钥 MK 派生完成: ${result.length} 字节, '
         '耗时 ${sw.elapsedMilliseconds}ms');
     return result;
@@ -292,22 +381,20 @@ class SyncCrypto {
   // 备份加解密（B-KEY，读写 snbak 备份文件）
   // ──────────────────────────────────────────────
 
-  /// 派生备份密钥 B-KEY = PBKDF2(password, 独立备份salt, iterations)
+  /// 派生备份密钥 B-KEY（按备份文件头 KDF 参数派发）
   ///
-  /// 恒等封装 [deriveMasterKey]：与登录 MK 同族（PBKDF2-HMAC-SHA256），但
-  /// salt 为每份备份独立随机生成的备份 salt（与登录 keyring 的 salt 无关），
-  /// 实现导入端只需口令 + 文件头参数即可跨设备派生同一 B-KEY。
+  /// 恒等封装 [deriveKeyFromKdf]：与登录 MK 同族，但 salt 为每份备份独立
+  /// 随机生成的备份 salt（与登录 keyring 的 salt 无关），实现导入端只需
+  /// 口令 + 文件头参数即可跨设备派生同一 B-KEY。
   ///
   /// [password] 必须是「登录口令原文」或用户自定义备份口令——不是 MK 也不是
   /// 其它派生值，否则跨设备派生出的 B-KEY 不一致，备份解不开。
-  /// [iterations] 从文件头读取、按文件参数派生（默认当前常量，未来调参时
-  /// 以文件头写入值为准）。
+  /// [kdf] 来自备份文件头的 KDF 参数（algorithm/salt/iterations/memory/parallelism）。
   static Future<Uint8List> deriveBackupKey(
     String password, {
-    required Uint8List salt,
-    int iterations = kPbkdf2Iterations,
+    required KdfParams kdf,
   }) {
-    return deriveMasterKey(password, salt: salt, iterations: iterations);
+    return deriveKeyFromKdf(password, kdf: kdf);
   }
 
   /// 加密整份备份明文（一次性），返回 AES-256-GCM 信封字节

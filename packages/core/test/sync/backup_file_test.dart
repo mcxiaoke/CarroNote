@@ -10,6 +10,17 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:core/core.dart';
 
+/// 测试用轻量 Argon2id 参数（128KiB, p=1）：保留较大 t 以验证头字段往返，
+/// 但用极小内存保证 t=1000 也在 30s 测试超时内完成。salt 由 encodeEncrypted
+/// 内部随机生成，这里给占位值即可。
+KdfParams _lightBackupKdf(int iterations) => KdfParams(
+      algorithm: kBackupKdfAlgorithm,
+      salt: base64Encode(List.filled(16, 0)),
+      iterations: iterations,
+      memoryKiB: 128,
+      parallelism: 1,
+    );
+
 void main() {
   // 测试用的笔记 JSON 数组（与 SafeNote.toJson 字段一致）
   List<Map<String, dynamic>> sampleRecords() => [
@@ -87,7 +98,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: records,
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
 
       final decoded = jsonDecode(content) as Map<String, dynamic>;
@@ -125,7 +136,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: sampleRecords(),
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
       final encrypted = BackupFileCodec.parse(content) as BackupFileEncrypted;
       await expectLater(
@@ -138,7 +149,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: sampleRecords(),
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
       // 篡改 salt 后仍可解析（头合法），但密钥派生结果不同必失败
       final decoded = jsonDecode(content) as Map<String, dynamic>;
@@ -157,7 +168,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: sampleRecords(),
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       ((decoded['enc'] as Map<String, dynamic>)['kdf']
@@ -174,7 +185,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: sampleRecords(),
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       decoded['formatVersion'] = 99;
@@ -194,7 +205,7 @@ void main() {
       final content = await BackupFileCodec.encodeEncrypted(
         password: testPassword,
         records: sampleRecords(),
-        iterations: lowIterations,
+        kdf: _lightBackupKdf(lowIterations),
       );
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       (decoded['enc'] as Map<String, dynamic>)['algorithm'] = 'RC4';
@@ -231,16 +242,13 @@ void main() {
   group('SyncCrypto - B-KEY 备份原语', () {
     test('sealBackup/openBackup 往返（相同 B-KEY）', () async {
       final salt = SyncCrypto.generateSalt();
-      final key1 = await SyncCrypto.deriveBackupKey(
-        testPassword,
-        salt: salt,
+      final kdf = KdfParams(
+        algorithm: kPbkdf2Algorithm,
+        salt: base64Encode(salt),
         iterations: lowIterations,
       );
-      final key2 = await SyncCrypto.deriveBackupKey(
-        testPassword,
-        salt: salt,
-        iterations: lowIterations,
-      );
+      final key1 = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
+      final key2 = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
       expect(key1, equals(key2)); // 相同密码+salt → 相同 B-KEY（多端一致）
 
       final plaintext =
@@ -255,16 +263,14 @@ void main() {
     test('错误密码派生不同 B-KEY → openBackup 抛 SyncDecryptionException',
         () async {
       final salt = SyncCrypto.generateSalt();
-      final correct = await SyncCrypto.deriveBackupKey(
-        testPassword,
-        salt: salt,
+      final kdf = KdfParams(
+        algorithm: kPbkdf2Algorithm,
+        salt: base64Encode(salt),
         iterations: lowIterations,
       );
-      final wrong = await SyncCrypto.deriveBackupKey(
-        'wrong-password',
-        salt: salt,
-        iterations: lowIterations,
-      );
+      final correct = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
+      final wrong =
+          await SyncCrypto.deriveBackupKey('wrong-password', kdf: kdf);
       final envelope = await SyncCrypto.sealBackup(
         correct,
         Uint8List.fromList(utf8.encode('secret')),
@@ -278,13 +284,19 @@ void main() {
     test('每次导出 salt 独立 → B-KEY 不同', () async {
       final a = await SyncCrypto.deriveBackupKey(
         testPassword,
-        salt: SyncCrypto.generateSalt(),
-        iterations: lowIterations,
+        kdf: KdfParams(
+          algorithm: kPbkdf2Algorithm,
+          salt: base64Encode(SyncCrypto.generateSalt()),
+          iterations: lowIterations,
+        ),
       );
       final b = await SyncCrypto.deriveBackupKey(
         testPassword,
-        salt: SyncCrypto.generateSalt(),
-        iterations: lowIterations,
+        kdf: KdfParams(
+          algorithm: kPbkdf2Algorithm,
+          salt: base64Encode(SyncCrypto.generateSalt()),
+          iterations: lowIterations,
+        ),
       );
       expect(a, isNot(equals(b)));
     });

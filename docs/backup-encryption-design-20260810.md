@@ -29,7 +29,7 @@
 | 方案 | 加密密钥 | 优点 | 缺点 | 结论 |
 |---|---|---|---|---|
 | 1. dataKey | 复用同步 dataKey | 实现最省事 | ①导入端拿不到旧 dataKey（换机/重装时新设备没有 dataKey，文件必须携带 encryptedDataKey，等价于绕回密码）；②dataKey 会随 scenario-c/d 迁移变化，旧备份锁死在旧 key 上；③备份与世界耦合 | **否** |
-| 2. 密码派生独立密钥 | `B-KEY = PBKDF2(password, 独立备份salt)` | ①用户零记忆负担（用的就是已记住的登录口令）；②三层密钥（MK/dataKey/B-KEY）彻底分离；③每份备份独立 salt → 离线暴力破解逐个文件打满迭代；④导入端只需口令，天然跨设备 | 改登录口令后，`用旧口令导出的旧备份`需旧口令才能解（可接受的固有属性） | **首选** |
+| 2. 密码派生独立密钥 | `B-KEY = deriveKeyFromKdf(password, 备份 kdf)`（默认 Argon2id，存量 PBKDF2 回退） | ①用户零记忆负担（用的就是已记住的登录口令）；②三层密钥（MK/dataKey/B-KEY）彻底分离；③每份备份独立 salt → 离线暴力破解逐个文件打满 KDF 成本；④导入端只需口令，天然跨设备 | 改登录口令后，`用旧口令导出的旧备份`需旧口令才能解（可接受的固有属性） | **首选** |
 | 3. 独立备份口令 | 用户单独设的备份口令 | 信任级别最灵活；且是「忘记登录口令」时恢复备份的唯一逃生通道 | 用户要多记一个口令，导入/导出都要弹框 | **建议 CLI 与 GUI 均支持**（导出面板本就要做明文/密文选择与导出路径，顺带提供"用单独口令保护"入口） |
 
 **核心设计原则（用户决策）**：密码只是一个**参数**，不要写死它的来源。
@@ -44,10 +44,10 @@
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| KDF | `PBKDF2-HMAC-SHA256` | 与登录 MK 派生同族（`kMkKdfAlgorithm`） |
-| 备份 salt | 随机 16B（`SyncCrypto.generateSalt`） | **每份备份导出时重新生成**，写入文件头；跨备份 salt 独立 |
-| 迭代次数 | `kPbkdf2Iterations = 200000` | 与登录一致，纳入文件头供未来调整 |
-| 备份密钥 | 派生 32B `B-KEY` | `deriveMasterKey(password, salt: backupSalt, iterations)` |
+| KDF | `ARGON2ID`（默认，2026-08-11 起与登录 MK 派生同族 `kBackupKdfAlgorithm`）；存量 PBKDF2 备份按文件头 `algorithm` 字段回退 |
+| 备份 salt | 随机 16B（`SyncCrypto.generateSalt`） | **每份备份导出时重新生成**，写入文件头；跨备份 salt 独立；Argon2id 与 PBKDF2 共用 |
+| 迭代 / 内存 / 并行 | Argon2id：`t=3, m=32MiB(32768KiB), p=2`，写入文件头 `enc.kdf`；PBKDF2：`iterations=200000` | 参数纳入文件头，按文件参数派生 |
+| 备份密钥 | 派生 32B `B-KEY` | `deriveBackupKey(password, kdf: header.kdfParams)`（经 `deriveKeyFromKdf` 按 algorithm 派发） |
 | 对称加密 | `AES-256-GCM` | 信封格式 `nonce(12) ‖ ciphertext ‖ tag(16)` |
 | nonce | 每次导出随机 12B | `SyncCrypto.generateNonce` |
 | AAD | 固定常量 `backup-v1` | 仅作**域分隔符**（domain separator），防止备份密文被其它 GCM 消费方误用；不绑定任何明文/头字段（详见 §5） |
@@ -58,13 +58,12 @@
 **新增 SyncCrypto API（核心包，纯 Dart）**：
 
 ```dart
-// 导出备份密钥（恒等封装：B-KEY = PBKDF2(password, salt, iterations)）
+// 导出备份密钥（恒等封装：B-KEY = deriveKeyFromKdf(password, kdf)，默认 Argon2id）
 // 注意：password 必须是「登录口令原文」（与登录派生 MK 同一字符串），
 // 不是 MK 也不是其它派生值——否则跨设备派生出的 B-KEY 不一致，备份解不开。
 static Future<Uint8List> deriveBackupKey(
   String password, {
-  required Uint8List salt,
-  int iterations = kPbkdf2Iterations,   // 从文件头读取，按文件参数派生
+  required KdfParams kdf,   // 从文件头读取，按 algorithm/memory/parallelism/iterations 派生
 }) =>
     deriveMasterKey(password, salt: salt, iterations: iterations);
 
@@ -104,8 +103,10 @@ static Future<Uint8List> openBackup(
   "enc": {
     "algorithm": "AES-256-GCM",
     "kdf": {
-      "algorithm": "PBKDF2-HMAC-SHA256",
-      "iterations": 200000
+      "algorithm": "ARGON2ID",
+      "iterations": 3,
+      "memoryKiB": 32768,
+      "parallelism": 2
     }
   },
   "salt": "<base64 16B，每份导出随机>",
@@ -122,8 +123,10 @@ static Future<Uint8List> openBackup(
 | `format` | string | 是 | 固定 `"snbak"`，判文件类型（无此字段且为 `records` 根键的即明文格式，见 §8） |
 | `formatVersion` | int | 是 | 当前 `1`；升格式时新老版本导入均支持 |
 | `enc.algorithm` | string | 是 | `"AES-256-GCM"` |
-| `enc.kdf.algorithm` | string | 是 | `"PBKDF2-HMAC-SHA256"` |
-| `enc.kdf.iterations` | int | 是 | 当前 `200000`；写入头以便未来调参时按文件参数派生 |
+| `enc.kdf.algorithm` | string | 是 | `"ARGON2ID"`（默认）；存量备份为 `"PBKDF2-HMAC-SHA256"`，导入按此字段回退 |
+| `enc.kdf.iterations` | int | 是 | Argon2id 为 `t`（默认 `3`）；PBKDF2 为迭代次数（默认 `200000`） |
+| `enc.kdf.memoryKiB` | int? | 否 | 仅 Argon2id：内存硬度 `m`（默认 `32768` = 32 MiB） |
+| `enc.kdf.parallelism` | int? | 否 | 仅 Argon2id：并行度 `p`（默认 `2`） |
 | `salt` | string | 是 | base64 编码的备份 salt（16B） |
 | `createdAt` | int | 是 | Unix 毫秒，导出时刻 |
 | `total` | int | 是 | 笔记条数（明文 JSON 数组长度）。**修复原 `'{'.allMatches` 计数 bug** |
@@ -199,10 +202,12 @@ AAD 仅取一个**固定常量** `backup-v1` 作为域分隔符（domain separat
                "total": <数组长度> } → jsonEncode → 返回（现状不变，含评审 #1 计数修正：total 用数组长度）
   4. 若选择加密导出：
       salt = SyncCrypto.generateSalt()                  // 每份随机
-      iterations = kPbkdf2Iterations                    // 当前 200000，写入头供未来调参
-      backupKey = SyncCrypto.deriveBackupKey(password, salt, iterations: iterations)
+      kdf  = KdfParams(algorithm: kBackupKdfAlgorithm,  // ARGON2ID（默认）
+                        salt: base64(salt), iterations: kArgon2idIterations,
+                        memoryKiB: kArgon2idMemoryKib, parallelism: kArgon2idParallelism)
+      backupKey = SyncCrypto.deriveBackupKey(password, kdf: kdf)
       envelope = SyncCrypto.sealBackup(backupKey, utf8(notes))
-      组装头（§4）→ jsonEncode → 返回
+      组装头（§4，含 enc.kdf 完整字段）→ jsonEncode → 返回
   5. 由调用方写盘（Android/iOS 现有 writeAsStringSync 路径不变）
 ```
 
@@ -267,8 +272,8 @@ AAD 仅取一个**固定常量** `backup-v1` 作为域分隔符（domain separat
 
 | 威胁 | 防护 | 残余风险 |
 |---|---|---|
-| 加密备份文件被窃取后明文泄露 | AES-256-GCM 加密 + 200k 迭代 PBKDF2 | 口令强度决定暴力破解成本（与登录同） |
-| 离线字典/暴力破解对密文逐份破解 | 每份独立随机 salt → 攻击者须逐文件、逐口令重跑完整 KDF（200k 迭代/次） | 弱口令可在 62^8 ≈ 2×10¹⁴ 组合内被枚举；强口令（≥12 位混合）实际不可破 |
+| 加密备份文件被窃取后明文泄露 | AES-256-GCM 加密 + Argon2id（m=32MiB,t=3,p=2；存量 PBKDF2 200k 备份按文件头回退） | 口令强度决定暴力破解成本（与登录同） |
+| 离线字典/暴力破解对密文逐份破解 | 每份独立随机 salt → 攻击者须逐文件、逐口令重跑完整 KDF（Argon2id 内存硬化成本/次） | 弱口令可在 62^8 ≈ 2×10¹⁴ 组合内被枚举；强口令（≥12 位混合）实际不可破 |
 | 密文被篡改 | GCM tag 天然覆盖完整性，任何篡改即解密失败（本设计不额外做防篡改绑定） | 无（fail closed） |
 | **忘记登录口令** | — | **全部加密备份（含自动备份）永久不可恢复**；属本方案最致命残余风险，需用户牢记口令或改用方案 3 独立备份口令作为逃生通道 |
 | 改登录口令后旧备份打不开 | 设计使然（旧口令解锁旧备份） | 需用户保留旧口令记忆，属固有属性 |

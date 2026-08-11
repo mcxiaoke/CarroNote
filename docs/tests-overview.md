@@ -22,6 +22,7 @@
 纯 Windows 可跑、秒级反馈。验证：
 
 - PBKDF2 确定性：相同密码 + salt → 相同 MK；不同密码/不同 salt → 不同 MK。
+- Argon2id 派生（2026-08-11 新增）：确定性、与 PBKDF2 互异、wrap/unwrap、经 `deriveMasterKeyAsync` 派发；新 vault / 新备份默认 Argon2id（`m=32MiB, t=3, p=2`）。
 - MK 长度恒为 32 字节（AES-256）；自定义迭代次数生效。
 - AES-256-GCM 往返、dataKey wrap/unwrap。
 - 错误密码 / 错误 AAD 导致解密失败。

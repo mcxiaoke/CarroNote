@@ -380,12 +380,12 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
 
-    // 共享密钥素材（PBKDF2 200k 迭代只算两次）
+    // 共享密钥素材（与 KdfParams.create 的默认算法保持一致：Argon2id）
     dataKey = SyncCrypto.generateDataKey();
     salt = SyncCrypto.generateSalt();
     kdf = KdfParams.create(salt: salt);
-    mkOld = await SyncCrypto.deriveMasterKey(kOldPassword, salt: salt);
-    mkNew = await SyncCrypto.deriveMasterKey(kNewPassword, salt: salt);
+    mkOld = await SyncCrypto.deriveKeyFromKdf(kOldPassword, kdf: kdf);
+    mkNew = await SyncCrypto.deriveKeyFromKdf(kNewPassword, kdf: kdf);
     edkOld = base64.encode(await SyncCrypto.wrapDataKey(mkOld, dataKey));
     edkNew = base64.encode(await SyncCrypto.wrapDataKey(mkNew, dataKey));
     fpOld = SyncCrypto.computeKeyFingerprint(mkOld);
@@ -526,8 +526,8 @@ void main() {
 
       // —— login.dart._tryVerifyPassphraseViaRemote 的行为 ——
       final header = await _remoteHeader(backend);
-      final mkTry = await SyncCrypto.deriveMasterKey(kNewPassword,
-          salt: header.kdf.saltBytes);
+      final mkTry = await SyncCrypto.deriveKeyFromKdf(kNewPassword,
+          kdf: header.kdf);
       expect(SyncCrypto.computeKeyFingerprint(mkTry), header.keyFingerprint,
           reason: '远端 header 是新纪元 → fingerprint 匹配新密码');
 

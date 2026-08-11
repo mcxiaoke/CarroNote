@@ -77,7 +77,7 @@
 | `keyFingerprint` | H(MK)，检测他端改密码 |
 | `keyVersion` | 密码版本（改一次 +1） |
 | `encryptedDataKey` | MK 加密的 dataKey（base64） |
-| `kdf.{algorithm,salt,iterations}` | PBKDF2-HMAC-SHA256 / per-vault salt / 200000 |
+| `kdf.{algorithm,salt,iterations,memoryKiB?,parallelism?}` | 新 vault 默认 `ARGON2ID`（m=32MiB,t=3,p=2）；存量 `PBKDF2-HMAC-SHA256`/per-vault salt/200000，按 `algorithm` 字段分派，互操作 |
 | `dataKeyWrap` | `AES-256-GCM` |
 | `dataKeyEpoch` | v4 后仅审计元数据 |
 | `dataKeyFingerprint` / `dataKeyCreatedAt` / `dataKeyCreatedBy` | v4 新增自描述审计字段 |

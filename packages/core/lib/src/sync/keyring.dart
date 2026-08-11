@@ -449,7 +449,7 @@ class Keyring {
     final dataKey = SyncCrypto.generateDataKey();
     final salt = SyncCrypto.generateSalt();
     final kdf = KdfParams.create(salt: salt);
-    final mk = await _deriveMk(password, salt: salt);
+    final mk = await _deriveMk(password, kdf: kdf);
     final keyFingerprint = SyncCrypto.computeKeyFingerprint(mk);
     final encryptedDataKey = base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
     final createdAt = DateTime.now().millisecondsSinceEpoch;
@@ -491,7 +491,7 @@ class Keyring {
       throw KeyringNotInitializedException('本地无 keyring 账本');
     }
 
-    final mk = await _deriveMk(password, salt: ledger.kdf.saltBytes);
+    final mk = await _deriveMk(password, kdf: ledger.kdf);
     final dataKey = await _unwrapOrThrow(mk, ledger.current.encryptedDataKey);
 
     Log.crypto.i('本地 Keyring 解锁成功: vaultId=${ledger.vaultId} '
@@ -528,7 +528,7 @@ class Keyring {
     Log.crypto.i('从远端 manifest 解锁 Keyring: vaultId=$remoteVaultId '
         'keyVersion=$remoteKeyVersion epoch=$remoteDataKeyEpoch '
         'fp=${_fpBrief(remoteKeyFingerprint)}');
-    final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
+    final mk = await _deriveMk(password, kdf: remoteKdf);
     final dataKey = await _unwrapOrThrow(mk, remoteEncryptedDataKey);
 
     final keyring = Keyring(
@@ -684,7 +684,7 @@ class Keyring {
     required String remoteEncryptedDataKey,
     required String remoteKeyFingerprint,
   }) async {
-    final mk = await _deriveMk(password, salt: remoteKdf.saltBytes);
+    final mk = await _deriveMk(password, kdf: remoteKdf);
     if (SyncCrypto.computeKeyFingerprint(mk) != remoteKeyFingerprint) {
       Log.crypto.i('远端密码判别: 指纹不匹配(场景 c, 远端与本地密码不同) '
           'remoteFp=${_fpBrief(remoteKeyFingerprint)}');
@@ -773,7 +773,7 @@ class Keyring {
   /// 验证密码是否正确（不持久化，不改状态）
   Future<void> verifyPassword(String password) async {
     final sw = Stopwatch()..start();
-    final probe = await _deriveMk(password, salt: kdf.saltBytes);
+    final probe = await _deriveMk(password, kdf: kdf);
     try {
       await SyncCrypto.unwrapDataKey(probe, base64.decode(encryptedDataKey));
       Log.crypto.d('密码校验通过 (耗时 ${sw.elapsedMilliseconds}ms)');
@@ -793,12 +793,12 @@ class Keyring {
     required NotesDatabase database,
   }) async {
     final sw = Stopwatch()..start();
-    final salt = kdf.saltBytes;
     Log.crypto.i('Keyring 改密码开始: vaultId=$vaultId '
-        '当前 keyVersion=$keyVersion epoch=$dataKeyEpoch');
+        '当前 keyVersion=$keyVersion epoch=$dataKeyEpoch '
+        '当前算法=${kdf.algorithm}');
 
-    // 1. 验证旧密码
-    final oldMk = await _deriveMk(oldPassword, salt: salt);
+    // 1. 验证旧密码（按当前 kdf 派生旧 MK）
+    final oldMk = await _deriveMk(oldPassword, kdf: kdf);
     try {
       await SyncCrypto.unwrapDataKey(oldMk, base64.decode(encryptedDataKey));
       Log.crypto.d('Keyring 改密码: 旧密码验证通过');
@@ -807,17 +807,30 @@ class Keyring {
       throw WrongPasswordException('旧密码错误：$e');
     }
 
-    // 2. 新 MK 重新 wrap（dataKey 本身不变）
-    final newMk = await _deriveMk(newPassword, salt: salt);
+    // 2. 决定新 kdf：若当前为 PBKDF2 老 vault，则升级到 Argon2id（沿用同 salt，
+    //    不重加密笔记）；已是 Argon2id 则沿用现有参数。
+    final newKdf = (kdf.algorithm == kArgon2idAlgorithm)
+        ? kdf
+        : KdfParams(
+            algorithm: kMkKdfAlgorithm,
+            salt: kdf.salt,
+            iterations: kArgon2idIterations,
+            memoryKiB: kArgon2idMemoryKib,
+            parallelism: kArgon2idParallelism,
+          );
+    final upgraded = newKdf.algorithm != kdf.algorithm;
+
+    // 3. 新 MK 重新 wrap（dataKey 本身不变）
+    final newMk = await _deriveMk(newPassword, kdf: newKdf);
     final newEncryptedDataKey =
         base64.encode(await SyncCrypto.wrapDataKey(newMk, dataKey));
     final newKeyFingerprint = SyncCrypto.computeKeyFingerprint(newMk);
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    // 3. 生成新 current（一次 persist 取代旧实现的 4 次写）
+    // 4. 生成新 current（一次 persist 取代旧实现的 4 次写）
     final changed = Keyring(
       vaultId: vaultId,
-      kdf: kdf, // salt 不变
+      kdf: newKdf, // 可能升级算法（沿用 salt）
       createdAt: createdAt,
       current: KeyringEntry(
         keyFingerprint: newKeyFingerprint,
@@ -833,6 +846,7 @@ class Keyring {
     await changed.persist(database);
     Log.crypto.i('Keyring 改密码完成: keyVersion $keyVersion → ${keyVersion + 1}, '
         'fp ${_fpBrief(keyFingerprint)} → ${_fpBrief(newKeyFingerprint)}, '
+        '${upgraded ? "KDF 升级 ${kdf.algorithm} → $kArgon2idAlgorithm" : "KDF 不变($kArgon2idAlgorithm)"}, '
         'dataKey 未变(epoch=$dataKeyEpoch, 无需重加密笔记) '
         '(耗时 ${sw.elapsedMilliseconds}ms)');
     return changed;
@@ -881,12 +895,12 @@ class Keyring {
   // 内部辅助
   // ──────────────────────────────────────────────
 
-  /// 从密码派生 MK（Isolate 后台执行，避免阻塞 UI）
+  /// 从密码派生 MK（按 [kdf] 记录的算法与参数派发，避免阻塞 UI）
   static Future<Uint8List> _deriveMk(
     String password, {
-    required Uint8List salt,
+    required KdfParams kdf,
   }) =>
-      SyncCrypto.deriveMasterKeyAsync(password, salt: salt);
+      SyncCrypto.deriveMasterKeyAsync(password, kdf: kdf);
 
   /// 生成 vaultId（UUIDv4，RFC 4122，Random.secure）
   static String _generateVaultId() {

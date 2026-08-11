@@ -29,6 +29,20 @@ class Session {
     // 只记录长度，绝不记录密码明文（隐私红线）
     Log.auth.i('会话登录: 已装载密码短语 (长度=${passphrase.length})');
     PhraseHandler.initPass(passphrase);
+    // F-? 修复：用密码成功登录后，同步刷新生物识别凭据。
+    //
+    // 覆盖两类「biometric 凭据与当前密码不一致」的场景：
+    //   1) 他端改密码后，本地用新密码重新登录——biometric 仍存旧密码会导致
+    //      后续指纹登录解 keyring 失败，必须在此用已验证正确的新密码重写凭据；
+    //   2) 普通密码登录——保证 biometric 凭据始终等于当前有效密码（幂等、无害）。
+    //
+    // 仅在 biometric 已启用时刷新；passphrase 已通过本次登录验证（本地解锁或
+    // 远端 fingerprint 比对成功），重新包裹安全存储凭据是安全的。
+    // （本地改密码路径另有 Session.onPasswordSet 兜底，这里收口所有密码登录入口，
+    //   含他端改密后的重新登录。）
+    if (PreferencesStorage.isBiometricAuthEnabled) {
+      BiometricAuth.setAuthKey();
+    }
   }
 
   static Future<void> logout() async {

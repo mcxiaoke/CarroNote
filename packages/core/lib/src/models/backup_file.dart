@@ -18,6 +18,7 @@ import 'dart:typed_data';
 // 项目导入
 import 'package:core/src/models/parse_import.dart';
 import 'package:core/src/crypto/crypto.dart';
+import 'package:core/src/sync/sync_models.dart';
 
 /// 明文备份格式的 `recordHandlerHash` 标识
 const String kPlaintextBackupHandler = 'plaintext-v1';
@@ -62,19 +63,34 @@ class BackupFileCodec {
   ///
   /// [password] 是「登录口令原文」或用户自定义备份口令；每份导出随机生成
   /// 独立 salt，密钥派生与密文封装见 crypto.dart（B-KEY）。
-  /// [iterations] 默认 [kPbkdf2Iterations]，写入文件头供未来调参（测试可传
-  /// 低迭代加速）。
+  /// [kdf] 自定义 KDF 参数（用于测试加速，如小内存 + 低迭代）；为 null 时
+  /// 用当前 Argon2id 默认参数（[kBackupKdfAlgorithm] / [kArgon2idMemoryKib] /
+  /// [kArgon2idIterations] / [kArgon2idParallelism]）。传入的 [kdf] 的 salt
+  /// 会被忽略——salt 始终由本方法随机生成并写入文件头，保证每份备份独立。
+  /// [iterations] 仅在使用默认 KDF 时生效（覆盖 Argon2id 的 t）。
   static Future<String> encodeEncrypted({
     required String password,
     required List<Map<String, dynamic>> records,
-    int iterations = kPbkdf2Iterations,
+    KdfParams? kdf,
+    int iterations = kArgon2idIterations,
   }) async {
     final salt = SyncCrypto.generateSalt();
-    final backupKey = await SyncCrypto.deriveBackupKey(
-      password,
-      salt: salt,
-      iterations: iterations,
-    );
+    final effectiveKdf = kdf == null
+        ? KdfParams(
+            algorithm: kBackupKdfAlgorithm,
+            salt: base64Encode(salt),
+            iterations: iterations,
+            memoryKiB: kArgon2idMemoryKib,
+            parallelism: kArgon2idParallelism,
+          )
+        : KdfParams(
+            algorithm: kdf.algorithm,
+            salt: base64Encode(salt),
+            iterations: kdf.iterations,
+            memoryKiB: kdf.memoryKiB,
+            parallelism: kdf.parallelism,
+          );
+    final backupKey = await SyncCrypto.deriveBackupKey(password, kdf: effectiveKdf);
     final plaintext = Uint8List.fromList(utf8.encode(jsonEncode(records)));
     final payload = await SyncCrypto.sealBackup(backupKey, plaintext);
 
@@ -84,8 +100,10 @@ class BackupFileCodec {
       'enc': {
         'algorithm': kBackupEncAlgorithm,
         'kdf': {
-          'algorithm': kBackupKdfAlgorithm,
-          'iterations': iterations,
+          'algorithm': effectiveKdf.algorithm,
+          'iterations': effectiveKdf.iterations,
+          if (effectiveKdf.memoryKiB != null) 'memoryKiB': effectiveKdf.memoryKiB,
+          if (effectiveKdf.parallelism != null) 'parallelism': effectiveKdf.parallelism,
         },
       },
       'salt': base64Encode(salt),
@@ -134,8 +152,7 @@ class BackupFileCodec {
     final header = file.header;
     final backupKey = await SyncCrypto.deriveBackupKey(
       password,
-      salt: header.salt,
-      iterations: header.iterations,
+      kdf: header.kdfParams,
     );
     final plaintext = await SyncCrypto.openBackup(backupKey, header.payload);
     final Object? decoded;

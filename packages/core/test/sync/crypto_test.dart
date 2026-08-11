@@ -249,4 +249,60 @@ void main() {
       expect(k1, isNot(equals(k2)));
     });
   });
+
+  group('SyncCrypto - Argon2id 密钥派生（新默认 KDF）', () {
+    // 测试用轻量参数（128KiB, t=1, p=1），仅验证确定性与正确性，不追求强度
+    KdfParams argon2idKdf(Uint8List salt) => KdfParams(
+          algorithm: kArgon2idAlgorithm,
+          salt: base64.encode(salt),
+          iterations: 1,
+          memoryKiB: 128,
+          parallelism: 1,
+        );
+
+    test('相同密码+salt 派生出相同 MK（确定性 / 多端一致）', () async {
+      final salt = Uint8List.fromList(List.filled(16, 7));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf('mypassword', kdf: argon2idKdf(salt));
+      final mk2 = await SyncCrypto.deriveKeyFromKdf('mypassword', kdf: argon2idKdf(salt));
+      expect(mk1.length, 32);
+      expect(mk1, equals(mk2));
+    });
+
+    test('不同密码派生出不同 MK', () async {
+      final salt = Uint8List.fromList(List.filled(16, 7));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf('password1', kdf: argon2idKdf(salt));
+      final mk2 = await SyncCrypto.deriveKeyFromKdf('password2', kdf: argon2idKdf(salt));
+      expect(mk1, isNot(equals(mk2)));
+    });
+
+    test('不同 salt 派生出不同 MK', () async {
+      final salt1 = Uint8List.fromList(List.filled(16, 1));
+      final salt2 = Uint8List.fromList(List.filled(16, 2));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt1));
+      final mk2 = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt2));
+      expect(mk1, isNot(equals(mk2)));
+    });
+
+    test('Argon2id 与 PBKDF2 对相同输入产出不同 MK', () async {
+      final salt = Uint8List.fromList(List.filled(16, 9));
+      final argon = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt));
+      final pbkdf2 = await SyncCrypto.deriveMasterKey('same', salt: salt);
+      expect(argon, isNot(equals(pbkdf2)));
+    });
+
+    test('Argon2id 派生的 MK 能正确 wrap/unwrap dataKey', () async {
+      final salt = SyncCrypto.generateSalt();
+      final mk = await SyncCrypto.deriveKeyFromKdf('pw', kdf: argon2idKdf(salt));
+      final dataKey = SyncCrypto.generateDataKey();
+      final wrapped = await SyncCrypto.wrapDataKey(mk, dataKey);
+      final unwrapped = await SyncCrypto.unwrapDataKey(mk, wrapped);
+      expect(unwrapped, equals(dataKey));
+    });
+
+    test('deriveMasterKeyAsync 按 KdfParams 派发 Argon2id', () async {
+      final salt = SyncCrypto.generateSalt();
+      final mk = await SyncCrypto.deriveMasterKeyAsync('pw', kdf: argon2idKdf(salt));
+      expect(mk.length, 32);
+    });
+  });
 }
