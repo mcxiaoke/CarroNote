@@ -12,17 +12,15 @@
 */
 
 // Flutter imports:
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class LanguageSetting extends StatefulWidget {
   const LanguageSetting({super.key});
@@ -34,101 +32,34 @@ class LanguageSetting extends StatefulWidget {
 class _LanguageSettingState extends State<LanguageSetting> {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Language'.tr(),
-          style: appBarTitle,
-        ),
-      ),
-      body: _settings(),
-    );
-  }
+    final items = SafeNotesConfig.languageItems;
 
-  Widget _settings() {
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
-        CustomSettingsSection(
-          child: CustomSettingsTile(
-            child: _buildLanguageList(context),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLanguageList(BuildContext context) {
+    // 当前语言在列表中的下标：由 locale 反查语言显示名，再查下标。
     var selectedIndex = 0;
-
-    if (SafeNotesConfig.mapLocaleName.containsKey(context.locale.toString())) {
-      selectedIndex = indexofLanguage(
-          SafeNotesConfig.mapLocaleName[context.locale.toString()]!);
+    final localeKey = context.locale.toString();
+    if (SafeNotesConfig.mapLocaleName.containsKey(localeKey)) {
+      selectedIndex =
+          indexofLanguage(SafeNotesConfig.mapLocaleName[localeKey]!);
     }
 
-    var items = SafeNotesConfig.languageItems;
-
-    return CupertinoPageScaffold(
-      child: SingleChildScrollView(
-        child: CupertinoFormSection.insetGrouped(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          children: [
-            ...List.generate(
-              items.length,
-              (index) => GestureDetector(
-                onTap: () => setState(() {
-                  selectedIndex = index;
-                  context.setLocale(
-                      SafeNotesConfig.allLocale[items[index].prefix]!);
-                  setState(() {});
-                }),
-                child: AbsorbPointer(
-                  child: buildCupertinoFormRow(
-                    items[index].prefix,
-                    items[index].helper,
-                    selected: selectedIndex == index,
-                  ),
-                ),
-              ),
+    return Scaffold(
+      appBar: AppBar(title: Text('Language'.tr(), style: appBarTitle)),
+      body: shadSettingsList([
+        shadSettingsCard([
+          for (var i = 0; i < items.length; i++)
+            shadRadioTile(
+              context,
+              title: items[i].prefix,
+              description: items[i].helper,
+              selected: selectedIndex == i,
+              onTap: () {
+                context.setLocale(SafeNotesConfig.allLocale[items[i].prefix]!);
+                setState(() {});
+              },
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildCupertinoFormRow(
-    String prefix,
-    String? helper, {
-    bool selected = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 5, bottom: 5),
-      child: CupertinoFormRow(
-        prefix: Text(prefix),
-        helper: helper != null
-            ? Text(
-                helper,
-                style: Theme.of(context).textTheme.bodySmall,
-              )
-            : null,
-        child: selected
-            ? Padding(
-                padding: const EdgeInsets.only(right: 5),
-                child: Icon(
-                  CupertinoIcons.check_mark,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                ),
-              )
-            : Container(),
-      ),
+        ]),
+        const SizedBox(height: 12),
+      ]),
     );
   }
 }

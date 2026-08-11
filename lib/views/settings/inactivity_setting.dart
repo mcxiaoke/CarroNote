@@ -12,17 +12,16 @@
 */
 
 // Flutter imports:
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class InactivityTimerSetting extends StatefulWidget {
   const InactivityTimerSetting({super.key});
@@ -36,108 +35,42 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
 
   @override
   Widget build(BuildContext context) {
+    final items = _inactivityItems;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Inactivity Timeout'.tr(),
-          style: appBarTitle,
-        ),
+        title: Text('Inactivity Timeout'.tr(), style: appBarTitle),
       ),
-      body: _settings(),
-    );
-  }
-
-  Widget _settings() {
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
-        SettingsSection(
-          //title: Text('Always on'),
-          tiles: <SettingsTile>[
-            SettingsTile.switchTile(
-              initialValue: PreferencesStorage.isInactivityTimeoutOn,
-              title: Text('Logout upon inactivity'.tr()),
-              onToggle: (value) {
-                PreferencesStorage.setIsInactivityTimeoutOn(value);
-                setState(() {});
+      body: shadSettingsList([
+        shadSettingsCard([
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.smartphone,
+            title: 'Logout upon inactivity'.tr(),
+            description: 'Close and open app for change to take effect'.tr(),
+            value: PreferencesStorage.isInactivityTimeoutOn,
+            onChanged: (value) {
+              PreferencesStorage.setIsInactivityTimeoutOn(value);
+              setState(() {});
+            },
+          ),
+        ]),
+        shadSectionTitle(context, 'Inactivity Timeout'.tr()),
+        shadSettingsCard([
+          for (var i = 0; i < items.length; i++)
+            shadRadioTile(
+              context,
+              title: items[i].prefix,
+              description: items[i].helper,
+              selected: _selectedIndex == i,
+              onTap: () {
+                PreferencesStorage.setInactivityTimeoutIndex(index: i);
+                setState(() => _selectedIndex = i);
               },
-              enabled: true,
-              description:
-                  Text('Close and open app for change to take effect'.tr()),
             ),
-          ],
-        ),
-        CustomSettingsSection(
-          child: CustomSettingsTile(
-            child: _buildTimeList(context),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTimeList(BuildContext context) {
-    final items = _inactivityItems;
-    return CupertinoPageScaffold(
-      child: SingleChildScrollView(
-        child: CupertinoFormSection.insetGrouped(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          children: [
-            ...List.generate(
-              items.length,
-              (index) => GestureDetector(
-                onTap: () => setState(() {
-                  _selectedIndex = index;
-                  PreferencesStorage.setInactivityTimeoutIndex(index: index);
-                  setState(() {});
-                }),
-                child: AbsorbPointer(
-                  child: buildCupertinoFormRow(
-                    items[index].prefix,
-                    items[index].helper,
-                    selected: _selectedIndex == index,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildCupertinoFormRow(
-    String prefix,
-    String? helper, {
-    bool selected = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 5, bottom: 5),
-      child: CupertinoFormRow(
-        prefix: Text(prefix),
-        helper: helper != null
-            ? Text(
-                helper,
-                style: Theme.of(context).textTheme.bodySmall,
-              )
-            : null,
-        child: selected
-            ? Padding(
-                padding: const EdgeInsets.only(right: 5),
-                child: Icon(
-                  CupertinoIcons.check_mark,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                ),
-              )
-            : Container(),
-      ),
+        ]),
+        const SizedBox(height: 12),
+      ]),
     );
   }
 }
@@ -169,8 +102,7 @@ List<Item> get _inactivityItems =>
     ) {
       final seconds = entry.value;
       final index = entry.key;
-      final prefix = (_inactivityTimeoutKeyBySeconds[seconds] ?? '')
-          .tr();
+      final prefix = (_inactivityTimeoutKeyBySeconds[seconds] ?? '').tr();
       // 缺省值索引标出「Default」提示（原实现里 3 分钟标记为 Default）
       return Item(
         prefix: prefix,

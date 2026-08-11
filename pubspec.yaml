@@ -44,7 +44,6 @@ dependencies:
   permission_handler: ^12.0.3
   provider: ^6.0.3
   rename: ^3.0.2
-  settings_ui: ^3.0.1
   shared_preferences: ^2.0.6
   sqflite: ^2.4.3
   sqflite_common: ^2.5.11

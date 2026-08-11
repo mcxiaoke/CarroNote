@@ -10,6 +10,16 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+/// 设置类页面的标准内容容器：统一内边距，便于所有设置页视觉一致。
+///
+/// 桌面端限宽等全局调整只需改这里一处。
+Widget shadSettingsList(List<Widget> children) {
+  return ListView(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    children: children,
+  );
+}
+
 /// 分区小标题（shadcn section 风格：小写、柔和色）。
 Widget shadSectionTitle(BuildContext context, String label) {
   final theme = ShadTheme.of(context);
@@ -142,6 +152,59 @@ Widget shadSwitchTile(
           ),
         ),
         ShadSwitch(value: value, onChanged: onChanged),
+      ],
+    ),
+  );
+}
+
+/// 单选型设置项（一组里选一个，选中项右侧显示勾）。
+///
+/// [leading] 优先于 [icon]，用于色板等自定义前置图形。
+Widget shadRadioTile(
+  BuildContext context, {
+  required String title,
+  String? description,
+  required bool selected,
+  required void Function() onTap,
+  IconData? icon,
+  Widget? leading,
+}) {
+  final theme = ShadTheme.of(context);
+  return _TileSurface(
+    onTap: onTap,
+    child: Row(
+      children: [
+        if (leading != null) ...[
+          leading,
+          const SizedBox(width: 14),
+        ] else if (icon != null) ...[
+          _TileIcon(icon: icon),
+          const SizedBox(width: 14),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.p.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : null,
+                  color: selected ? theme.colorScheme.primary : null,
+                ),
+              ),
+              if (description != null && description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    description,
+                    style: theme.textTheme.muted.copyWith(fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (selected)
+          Icon(LucideIcons.check, size: 18, color: theme.colorScheme.primary),
       ],
     ),
   );

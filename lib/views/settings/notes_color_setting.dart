@@ -12,19 +12,18 @@
 */
 
 // Flutter imports:
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class ColorPallet extends StatefulWidget {
   const ColorPallet({super.key});
@@ -35,201 +34,86 @@ class ColorPallet extends StatefulWidget {
 
 class ColorPalletState extends State<ColorPallet> {
   var _selectedIndex = PreferencesStorage.colorfulNotesColorIndex;
-  var items = allNotesColorTheme;
+  final items = allNotesColorTheme;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Notes Color'.tr(),
-          style: appBarTitle,
-        ),
-      ),
-      body: _settings(),
-    );
-  }
-
-  Widget _settings() {
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
-        SettingsSection(
-          //title: Text('General'),
-          tiles: <SettingsTile>[
-            SettingsTile.switchTile(
-              initialValue: PreferencesStorage.isColorful,
-              title: Text('Colorful Notes'.tr()),
-              onToggle: (value) {
-                final provider =
-                    Provider.of<NotesColor>(context, listen: false);
-                provider.toggleColor();
-                setState(() {});
+      appBar: AppBar(title: Text('Notes Color'.tr(), style: appBarTitle)),
+      body: shadSettingsList([
+        shadSettingsCard([
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.palette,
+            title: 'Colorful Notes'.tr(),
+            description: 'Choose the note color theme from below'.tr(),
+            value: PreferencesStorage.isColorful,
+            onChanged: (_) {
+              // 颜色开关走 Provider，主界面卡片配色需要立即刷新。
+              Provider.of<NotesColor>(context, listen: false).toggleColor();
+              setState(() {});
+            },
+          ),
+        ]),
+        const SizedBox(height: 12),
+        _preview(context),
+        shadSectionTitle(context, 'Notes Color'.tr()),
+        shadSettingsCard([
+          for (var i = 0; i < items.length; i++)
+            shadRadioTile(
+              context,
+              title: items[i].prefix.tr(),
+              description: items[i].helper?.tr(),
+              selected: _selectedIndex == i,
+              leading: _swatch(items[i].colorList, height: 36, width: 36),
+              onTap: () {
+                PreferencesStorage.setColorfulNotesColorIndex(i);
+                setState(() => _selectedIndex = i);
               },
-              description: Text('Choose the note color theme from below'.tr()),
             ),
-          ],
-        ),
-        CustomSettingsSection(
-          child: Column(
-            children: [
-              _colourPreview(),
-              _buildColourComboList(context),
-            ],
-          ),
-        ),
-      ],
+        ]),
+        const SizedBox(height: 12),
+      ]),
     );
   }
 
-  Widget _colourPreview() {
-    return Column(
-      children: [
-        iosStylePaddedCard(
-          children: <Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _colorBox(),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  List<Widget> _colorBox() {
-    List<Widget> colorPallets = [];
-    final double heightRatio = MediaQuery.of(context).size.height / 100;
-    final double boxHeight = heightRatio * 5;
-    const double radius = 20;
-    var first = const BorderRadius.horizontal(left: Radius.circular(radius));
-    var last = const BorderRadius.horizontal(right: Radius.circular(radius));
-    var colors = items[_selectedIndex].colorList;
-
-    colorPallets.add(
-      Expanded(
-        child: Container(
-          decoration: BoxDecoration(
-            color: colors[0],
-            borderRadius: first,
-          ),
-          height: boxHeight,
-        ),
-      ),
-    );
-    if (colors.length > 1) {
-      for (final color in colors.sublist(1, colors.length - 1)) {
-        colorPallets.add(
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(color: color),
-              height: boxHeight,
-              //color: color,
-            ),
-          ),
-        );
-      }
-    }
-    colorPallets.add(
-      Expanded(
-        child: Container(
-          decoration: BoxDecoration(
-            color: colors[colors.length - 1],
-            borderRadius: last,
-          ),
-          height: boxHeight,
-        ),
-      ),
-    );
-    return colorPallets;
-  }
-
-  Widget iosStylePaddedCard({required List<Widget> children}) {
-    final double widthRatio = MediaQuery.of(context).size.width / 100;
-    final double heightRatio = MediaQuery.of(context).size.height / 100;
-    const double containerRadius = 30;
-
-    return Padding(
-      padding: EdgeInsets.only(
-          left: widthRatio * 5, right: widthRatio * 5, bottom: heightRatio * 1),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(containerRadius),
-        ),
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildColourComboList(BuildContext context) {
-    return CupertinoPageScaffold(
-      child: CupertinoFormSection.insetGrouped(
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(15),
-        ),
+  /// 当前所选配色的大色条预览。
+  Widget _preview(BuildContext context) {
+    return ShadCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ...List.generate(
-            items.length,
-            (index) => GestureDetector(
-              onTap: () => setState(() {
-                PreferencesStorage.setColorfulNotesColorIndex(index);
-                _selectedIndex = index;
-              }),
-              child: AbsorbPointer(
-                child: buildCupertinoFormRow(
-                  items[index].prefix,
-                  items[index].helper,
-                  selected: _selectedIndex == index,
-                ),
-              ),
-            ),
+          Text(
+            items[_selectedIndex].prefix.tr(),
+            style: ShadTheme.of(context).textTheme.small,
           ),
+          const SizedBox(height: 10),
+          _swatch(items[_selectedIndex].colorList, height: 44, radius: 12),
         ],
       ),
     );
   }
 
-  Widget buildCupertinoFormRow(
-    String prefix,
-    String? helper, {
-    bool selected = false,
+  /// 色板：把一组主题色横向平铺成圆角色条。
+  ///
+  /// [width] 为空时撑满可用宽度（用于顶部大预览）。
+  Widget _swatch(
+    List<dynamic> colors, {
+    required double height,
+    double? width,
+    double radius = 10,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 5, bottom: 5),
-      child: CupertinoFormRow(
-        prefix: Text(prefix.tr()),
-        helper: helper != null
-            ? Text(
-                helper.tr(),
-                style: Theme.of(context).textTheme.bodySmall,
-              )
-            : null,
-        child: selected
-            ? Padding(
-                padding: const EdgeInsets.only(right: 5),
-                child: Icon(
-                  CupertinoIcons.check_mark,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                ),
-              )
-            : Container(),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: SizedBox(
+        width: width ?? double.infinity,
+        height: height,
+        child: Row(
+          children: [
+            for (final color in colors)
+              Expanded(child: ColoredBox(color: color as Color)),
+          ],
+        ),
       ),
     );
   }

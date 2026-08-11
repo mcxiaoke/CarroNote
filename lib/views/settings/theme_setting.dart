@@ -18,25 +18,29 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
-import 'package:safenotes/utils/ios_style_list_tiles.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 void showThemeBottomSheet(BuildContext context) {
+  final theme = ShadTheme.of(context);
   showModalBottomSheet(
     context: context,
-    builder: (context) {
-      return const ThemeBottomSheet();
-    },
+    backgroundColor: theme.colorScheme.background,
+    // 桌面端弹窗宽度跟随内容居中，避免在宽窗口上被拉成一条横带。
+    constraints: const BoxConstraints(maxWidth: 560),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) => const ThemeBottomSheet(),
   );
 }
 
 class ThemeBottomSheet extends StatefulWidget {
-  const ThemeBottomSheet({
-    super.key,
-  });
+  const ThemeBottomSheet({super.key});
 
   @override
   ThemeBottomSheetState createState() => ThemeBottomSheetState();
@@ -44,109 +48,83 @@ class ThemeBottomSheet extends StatefulWidget {
 
 class ThemeBottomSheetState extends State<ThemeBottomSheet> {
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final darkModeText = 'Dark mode'.tr();
-    final systemDefaultSettingsText = "Use device settings".tr();
-    final systemDefaultSettingsSubtitleText =
-        "Use device's light or dark mode setting for the app.".tr();
+    final theme = ShadTheme.of(context);
 
-    bool isPlatformDark =
+    final isPlatformDark =
         MediaQuery.of(context).platformBrightness == Brightness.dark;
 
-    bool darkModeSwitchValue =
-        (PreferencesStorage.isSystemDarkLightSwitchEnabled)
+    // 跟随系统时展示系统当前明暗，否则展示本地开关值。
+    final darkModeSwitchValue =
+        PreferencesStorage.isSystemDarkLightSwitchEnabled
             ? isPlatformDark
             : PreferencesStorage.isLocalDarkSwitchEnabled;
 
-    final symmetricPadding = MediaQuery.of(context).size.width * 0.04;
-    const headTextStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 20);
-    final innerTextStyle =
-        Theme.of(context).textTheme.titleMedium!.copyWith(fontSize: 16);
-
-    return Stack(
-      alignment: AlignmentDirectional.topCenter,
-      clipBehavior: Clip.none,
-      children: [
-        Positioned(
-          top: -15,
-          child: Container(
-            width: 40,
-            height: 7,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(5),
-              color: Theme.of(context).secondaryHeaderColor,
-            ),
-          ),
-        ),
-        Column(
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: EdgeInsets.only(
-                  left: symmetricPadding,
-                  right: symmetricPadding,
-                  top: symmetricPadding),
-              child: Column(
-                children: [
-                  Text(
-                    darkModeText,
-                    style: headTextStyle,
-                    textAlign: TextAlign.center,
-                  ),
-                  CupertinoSwitchListTile(
-                    title: Text(
-                      darkModeText,
-                      style: innerTextStyle,
-                    ),
-                    value: darkModeSwitchValue,
-                    onChanged: (bool value) async {
-                      final provider =
-                          Provider.of<ThemeProvider>(context, listen: false);
-                      provider.setIsDarkMode(value);
-
-                      await PreferencesStorage.setLocalDarkSwitchEnabled(value);
-                      await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                          false);
-
-                      setState(() {});
-                    },
-                  ),
-                  CupertinoSwitchListTile(
-                    title: Text(
-                      systemDefaultSettingsText,
-                      style: innerTextStyle,
-                    ),
-                    subtitle: Text(
-                      systemDefaultSettingsSubtitleText,
-                      style: const TextStyle(
-                        fontSize: 11,
-                      ),
-                    ),
-                    value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
-                    onChanged: (bool value) async {
-                      final provider =
-                          Provider.of<ThemeProvider>(context, listen: false);
-                      provider.setIsDarkMode(isPlatformDark);
-
-                      await PreferencesStorage.setLocalDarkSwitchEnabled(
-                          isPlatformDark);
-                      await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                          value);
-                      setState(() {});
-                    },
-                  ),
-                ],
+            // 顶部抓手
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  color: theme.colorScheme.border,
+                ),
               ),
             ),
+            const SizedBox(height: 14),
+            Text(
+              'Dark mode'.tr(),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.h4,
+            ),
+            const SizedBox(height: 14),
+            shadSettingsCard([
+              shadSwitchTile(
+                context,
+                icon: LucideIcons.moon,
+                title: 'Dark mode'.tr(),
+                value: darkModeSwitchValue,
+                onChanged: (value) async {
+                  Provider.of<ThemeProvider>(context, listen: false)
+                      .setIsDarkMode(value);
+
+                  await PreferencesStorage.setLocalDarkSwitchEnabled(value);
+                  await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                      false);
+
+                  if (mounted) setState(() {});
+                },
+              ),
+              shadSwitchTile(
+                context,
+                icon: LucideIcons.monitorSmartphone,
+                title: 'Use device settings'.tr(),
+                description:
+                    "Use device's light or dark mode setting for the app.".tr(),
+                value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
+                onChanged: (value) async {
+                  Provider.of<ThemeProvider>(context, listen: false)
+                      .setIsDarkMode(isPlatformDark);
+
+                  await PreferencesStorage.setLocalDarkSwitchEnabled(
+                      isPlatformDark);
+                  await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                      value);
+
+                  if (mounted) setState(() {});
+                },
+              ),
+            ]),
           ],
         ),
-      ],
+      ),
     );
   }
 }
