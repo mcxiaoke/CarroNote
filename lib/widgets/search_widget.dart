@@ -78,7 +78,7 @@ class SearchWidgetState extends State<SearchWidget> {
           Icon(LucideIcons.search, color: style.color, size: 20),
           const SizedBox(width: 10),
           Expanded(
-            child: TextField(
+            child: ShadInput(
               enableIMEPersonalizedLearning: enableIMEPLFlag,
               textDirection: getTextDirecton(widget.text),
               controller: controller,
@@ -104,21 +104,20 @@ class SearchWidgetState extends State<SearchWidget> {
                   buttonItems: buttonItems,
                 );
               },
-              decoration: InputDecoration(
-                isCollapsed: true,
-                contentPadding: EdgeInsets.zero,
-                hintText: widget.hintText,
-                hintStyle: style,
-                // 全 border 显式置 none，防御全局 inputDecorationTheme 的 theme.border
-                // 仍被某些解析路径采纳导致显示 outline 黑框的问题。
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
+              // 沿用外层 Container 的彩色圆角框，内部输入框保持无边框/透明，
+              // 与迁移前 TextField(isCollapsed + zero padding + border none) 视觉一致。
+              placeholder: Text(widget.hintText, style: styleHint),
+              style: styleActive,
+              inputPadding: EdgeInsets.zero,
+              decoration: const ShadDecoration(
+                border: ShadBorder.none,
+                focusedBorder: ShadBorder.none,
+                errorBorder: ShadBorder.none,
+                secondaryBorder: ShadBorder.none,
+                secondaryFocusedBorder: ShadBorder.none,
+                secondaryErrorBorder: ShadBorder.none,
+                color: Colors.transparent,
               ),
-              style: style,
               onChanged: widget.onChanged,
             ),
           ),
