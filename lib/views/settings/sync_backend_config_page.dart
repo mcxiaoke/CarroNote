@@ -230,7 +230,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   Widget _buildTypeSelector() {
     final theme = ShadTheme.of(context);
     return ShadCard(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: ShadRadioGroup<SyncBackendType>(
         initialValue: _type,
         enabled: !_testing,
@@ -305,7 +305,10 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             hint: 'e.g. D:\\SafeNotesSync',
             icon: LucideIcons.folderOpen,
             suffix: IconButton(
-              icon: const Icon(LucideIcons.folderOpen),
+              icon: const Icon(LucideIcons.folderOpen, size: 18),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               tooltip: 'Choose Directory'.tr(),
               onPressed: _testing ? null : _pickLocalFsPath,
             ),
@@ -393,7 +396,10 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     required VoidCallback onPressed,
   }) =>
       IconButton(
-        icon: Icon(obscured ? LucideIcons.eyeOff : LucideIcons.eye),
+        icon: Icon(obscured ? LucideIcons.eyeOff : LucideIcons.eye, size: 18),
+        iconSize: 18,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
         tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
         onPressed: _testing ? null : onPressed,
       );
@@ -424,7 +430,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           ShadInput(
             controller: controller,
             placeholder: Text(hint),
-            leading: Icon(icon),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            leading: Icon(icon, size: 18),
             trailing: suffix,
             obscureText: obscure,
             keyboardType: keyboardType,
