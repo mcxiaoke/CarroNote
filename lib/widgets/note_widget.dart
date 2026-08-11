@@ -24,6 +24,7 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -70,35 +71,29 @@ class NoteFormWidget extends StatelessWidget {
     //Disable IMEPL if keyboard incognito mode is true
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
 
-    return TextFormField(
+    return ShadInputFormField(
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: maxLinesToShowAtTimeTitle,
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      // contextMenuBuilder: (context, editableTextState) {
-      // Use contextMenuBuilder to control which text selection toolbar are enabled
-      // https://docs.flutter.dev/release/breaking-changes/context-menus#migration-guide
-      // },
       style: const TextStyle(
         fontWeight: FontWeight.bold,
         fontSize: fontSize,
       ),
-      decoration: InputDecoration(
-        // 全 border 显式置 none，防御全局 inputDecorationTheme 的 theme.border
-        // 在部分解析路径生效导致显示 outline 黑框（之前新建笔记界面被改坏
-        // 的根因，与搜索框黑线同源）。
-        border: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        focusedBorder: InputBorder.none,
-        disabledBorder: InputBorder.none,
-        errorBorder: InputBorder.none,
-        focusedErrorBorder: InputBorder.none,
-        // 无 padding：borderless 编辑器不需要 outline 输入框的内边距，
-        // 避免被 inputDecorationTheme.contentPadding 撑大行高（"标题框巨大"）。
-        contentPadding: EdgeInsets.zero,
-        hintText: titleHint,
+      placeholder: Text(titleHint),
+      inputPadding: EdgeInsets.zero,
+      // 全 border 显式置 none + 透明背景，维持 borderless 编辑器的紧凑外观，
+      // 防御 shadcn 输入框默认描边/填充（与搜索框同源，避免被主题副作用改出黑框）。
+      decoration: const ShadDecoration(
+        border: ShadBorder.none,
+        focusedBorder: ShadBorder.none,
+        errorBorder: ShadBorder.none,
+        secondaryBorder: ShadBorder.none,
+        secondaryFocusedBorder: ShadBorder.none,
+        secondaryErrorBorder: ShadBorder.none,
+        color: Colors.transparent,
       ),
       onChanged: onChangedTitle,
     );
@@ -112,30 +107,24 @@ class NoteFormWidget extends StatelessWidget {
     final String hintDescription = 'Type something...'.tr();
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
 
-    return TextFormField(
+    return ShadInputFormField(
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,
       initialValue: description,
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
-      // contextMenuBuilder: (context, editableTextState) {
-      // Use contextMenuBuilder to control which text selection toolbar are enabled
-      // https://docs.flutter.dev/release/breaking-changes/context-menus#migration-guide
-      // },
       style: const TextStyle(fontSize: fontSize),
-      decoration: InputDecoration(
-        // 同 _buildTitle：全 border none + 零内边距，防御全局主题副作用，
-        // 恢复 borderless 编辑器的紧凑外观。
-        border: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        focusedBorder: InputBorder.none,
-        disabledBorder: InputBorder.none,
-        errorBorder: InputBorder.none,
-        focusedErrorBorder: InputBorder.none,
-        contentPadding: EdgeInsets.zero,
-        hintText: hintDescription,
-        //hintStyle: TextStyle(color: Colors.white60),
+      placeholder: Text(hintDescription),
+      inputPadding: EdgeInsets.zero,
+      decoration: const ShadDecoration(
+        border: ShadBorder.none,
+        focusedBorder: ShadBorder.none,
+        errorBorder: ShadBorder.none,
+        secondaryBorder: ShadBorder.none,
+        secondaryFocusedBorder: ShadBorder.none,
+        secondaryErrorBorder: ShadBorder.none,
+        color: Colors.transparent,
       ),
       onChanged: onChangedDescription,
     );

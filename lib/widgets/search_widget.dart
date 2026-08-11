@@ -13,6 +13,7 @@
 
 // Flutter imports:
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -74,7 +75,7 @@ class SearchWidgetState extends State<SearchWidget> {
       // 也不用 InputDecoration 的 leading icon / suffixIcon，避免内部布局差异。
       child: Row(
         children: [
-          Icon(Icons.search, color: style.color, size: 20),
+          Icon(LucideIcons.search, color: style.color, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
@@ -123,7 +124,7 @@ class SearchWidgetState extends State<SearchWidget> {
           ),
           if (widget.text.isNotEmpty)
             GestureDetector(
-              child: Icon(Icons.close, color: style.color),
+              child: Icon(LucideIcons.x, color: style.color),
               onTap: () {
                 controller.clear();
                 widget.onChanged('');

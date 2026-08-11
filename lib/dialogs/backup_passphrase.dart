@@ -25,6 +25,7 @@ import 'package:easy_localization/easy_localization.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 class ImportPassPhraseDialog extends StatefulWidget {
@@ -103,22 +104,21 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
       ),
       child: Form(
         key: _formKey,
-        child: TextFormField(
+        child: ShadInputFormField(
           enableIMEPersonalizedLearning: false,
           controller: importPassphraseController,
           autofocus: true,
           enableInteractiveSelection: false,
           obscureText: _isHiddenImport,
-          decoration: InputDecoration(
-            hintText: inputBoxHint,
-            prefixIcon: const Icon(Icons.lock),
-            suffixIcon: IconButton(
-              icon: !_isHiddenImport
-                  ? const Icon(Icons.visibility_off)
-                  : const Icon(Icons.visibility),
-              onPressed: _togglePasswordVisibility,
-            ),
+          leading: const Icon(LucideIcons.lock),
+          trailing: IconButton(
+            icon: _isHiddenImport
+                ? const Icon(LucideIcons.eye)
+                : const Icon(LucideIcons.eyeOff),
+            onPressed: _togglePasswordVisibility,
           ),
+          label: Text(inputBoxHint),
+          placeholder: Text(inputBoxHint),
           keyboardType: TextInputType.visiblePassword,
           validator: _passphraseValidator,
           onEditingComplete: _onEditonComplete,
@@ -137,10 +137,10 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
     }
   }
 
-  String? _passphraseValidator(String? passphrase) {
+  String? _passphraseValidator(String passphrase) {
     final wrongPhraseMsg = 'Wrong passphrase!'.tr();
 
-    return sha256.convert(utf8.encode(passphrase!)).toString() !=
+    return sha256.convert(utf8.encode(passphrase)).toString() !=
             ImportPassPhraseHandler.getImportPassPhraseHash()
         ? wrongPhraseMsg
         : null;

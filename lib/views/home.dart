@@ -37,6 +37,8 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/route_observer.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/drawer.dart';
 import 'package:safenotes/widgets/home_navigation_rail.dart';
@@ -200,21 +202,24 @@ class HomePageState extends State<HomePage> with RouteAware {
       builder: (dialogContext) => PopScope(
         // 强制：不可用系统返回键关闭
         canPop: false,
-        child: AlertDialog(
+        child: ShadDialog(
           title: Text('Password Changed on Another Device'.tr()),
-          content: Text(
+          actions: [
+            shadDialogActionBar(actions: [
+              ShadDialogAction(
+                label: 'Logout and Login Again'.tr(),
+                primary: true,
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop();
+                  await _logoutToLogin();
+                },
+              ),
+            ]),
+          ],
+          child: Text(
             'The sync passphrase was changed on another device; the current passphrase is no longer valid.\n\nLocal notes are not lost; unsynced changes are kept locally. Please log in again with the new passphrase.'
                 .tr(),
           ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
-                await _logoutToLogin();
-              },
-              child: Text('Logout and Login Again'.tr()),
-            ),
-          ],
         ),
       ),
     );

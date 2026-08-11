@@ -24,6 +24,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class DeletedNotesPage extends StatefulWidget {
   const DeletedNotesPage({super.key});
@@ -149,29 +151,31 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     Log.ui.i('用户请求清空回收站, 待确认条数=${_deletedNotes.length}');
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => ShadDialog(
         title: Text('Clear All Deleted Notes'.tr()),
-        content: Text(
+        actions: [
+          shadDialogActionBar(actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () {
+                Log.ui.i('用户取消清空回收站');
+                Navigator.pop(context);
+              },
+            ),
+            ShadDialogAction(
+              label: 'Permanently Delete'.tr(),
+              destructive: true,
+              onPressed: () async {
+                Navigator.pop(context);
+                await _clearAll();
+              },
+            ),
+          ]),
+        ],
+        child: Text(
           'This will permanently delete {count} notes. This action cannot be undone.\n\nNote: tombstones in the remote manifest remain; these notes may be re-synced from remote on the next sync.\nTo truly clean remote tombstones, wait for the "expired tombstone cleanup" feature.'
               .tr(namedArgs: {'count': '${_deletedNotes.length}'}),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Log.ui.i('用户取消清空回收站');
-              Navigator.pop(context);
-            },
-            child: Text('Cancel'.tr()),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () async {
-              Navigator.pop(context);
-              await _clearAll();
-            },
-            child: Text('Permanently Delete'.tr()),
-          ),
-        ],
       ),
     );
   }
@@ -295,24 +299,26 @@ class _DeletedNoteTile extends StatelessWidget {
   void _confirmPermanentDelete(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => ShadDialog(
         title: Text('Permanently Delete'.tr()),
-        content: Text('Permanently delete "{title}"? This cannot be undone.'
-            .tr(namedArgs: {'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title})),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'.tr()),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(context);
-              onPermanentDelete();
-            },
-            child: Text('Permanently Delete'.tr()),
-          ),
+          shadDialogActionBar(actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.pop(context),
+            ),
+            ShadDialogAction(
+              label: 'Permanently Delete'.tr(),
+              destructive: true,
+              onPressed: () {
+                Navigator.pop(context);
+                onPermanentDelete();
+              },
+            ),
+          ]),
         ],
+        child: Text('Permanently delete "{title}"? This cannot be undone.'
+            .tr(namedArgs: {'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title})),
       ),
     );
   }

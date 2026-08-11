@@ -30,6 +30,8 @@ import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/utils/url_launcher.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 未保存退出弹框的三种选择。
 enum UnsavedAction { save, discard, cancel }
@@ -147,25 +149,28 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     return showDialog<UnsavedAction>(
       context: context,
       builder: (BuildContext ctx) {
-        return AlertDialog(
+        return ShadDialog(
           title: Text('Unsaved changes'.tr()),
-          content: Text(
+          actions: [
+            shadDialogActionBar(actions: [
+              ShadDialogAction(
+                label: 'Cancel'.tr(),
+                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.cancel),
+              ),
+              ShadDialogAction(
+                label: 'Discard'.tr(),
+                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.discard),
+              ),
+              ShadDialogAction(
+                label: 'Save'.tr(),
+                primary: true,
+                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.save),
+              ),
+            ]),
+          ],
+          child: Text(
             'You have unsaved changes. Save before leaving?'.tr(),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(UnsavedAction.cancel),
-              child: Text('Cancel'.tr()),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(UnsavedAction.discard),
-              child: Text('Discard'.tr()),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(UnsavedAction.save),
-              child: Text('Save'.tr()),
-            ),
-          ],
         );
       },
     );
@@ -194,14 +199,14 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     final bool isPreview = _previewMode;
     return IconButton(
       tooltip: isPreview ? 'Edit'.tr() : 'Preview'.tr(),
-      icon: Icon(isPreview ? Icons.edit_outlined : Icons.visibility_outlined),
+      icon: Icon(isPreview ? LucideIcons.squarePen : LucideIcons.eye),
       onPressed: () => setState(() => _previewMode = !_previewMode),
     );
   }
 
   Widget _deleteButton() {
     return IconButton(
-      icon: const Icon(Icons.delete_outline),
+      icon: const Icon(LucideIcons.trash2),
       tooltip: 'Delete'.tr(),
       onPressed: () async {
         if (widget.note == null) return;
@@ -278,7 +283,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     // AppBar 内用图标按钮（与预览/删除图标风格一致），不再用文字按钮。
     return IconButton(
       tooltip: 'Save'.tr(),
-      icon: const Icon(Icons.save_outlined),
+      icon: const Icon(LucideIcons.save),
       onPressed: isFormValid ? onSaveCallback : null,
     );
   }

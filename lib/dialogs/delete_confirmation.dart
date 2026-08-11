@@ -22,6 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 class DeleteConfirmationDialog extends StatelessWidget {
@@ -58,9 +59,9 @@ class DeleteConfirmationDialog extends StatelessWidget {
   Widget _cautionIcon(BuildContext context) {
     // 固定尺寸，不随窗口缩放（此前为屏宽 17%，桌面大窗口下图标巨大）。
     return Icon(
-      Icons.warning_rounded,
+      LucideIcons.triangleAlert,
       size: 48,
-      color: Theme.of(context).colorScheme.error,
+      color: ShadTheme.of(context).colorScheme.destructive,
     );
   }
 
