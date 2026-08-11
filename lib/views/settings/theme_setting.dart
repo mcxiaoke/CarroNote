@@ -26,10 +26,12 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 void showThemeBottomSheet(BuildContext context) {
-  final theme = ShadTheme.of(context);
   showModalBottomSheet(
     context: context,
-    backgroundColor: theme.colorScheme.background,
+    // 背景色不在此固定：若取打开时的旧主题色，切明暗时弹层背景会停在原色。
+    // 改为内容根 Material 跟随当前主题动态着色（见 ThemeBottomSheet.build）。
+    backgroundColor: Colors.transparent,
+    elevation: 0,
     // 桌面端弹窗宽度跟随内容居中，避免在宽窗口上被拉成一条横带。
     constraints: const BoxConstraints(maxWidth: 560),
     shape: const RoundedRectangleBorder(
@@ -49,6 +51,8 @@ class ThemeBottomSheet extends StatefulWidget {
 class ThemeBottomSheetState extends State<ThemeBottomSheet> {
   @override
   Widget build(BuildContext context) {
+    // 订阅 ThemeProvider：切明暗时本弹层随之重建，根 Material 背景色跟随新主题。
+    Provider.of<ThemeProvider>(context);
     final theme = ShadTheme.of(context);
 
     final isPlatformDark =
@@ -60,8 +64,11 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
             ? isPlatformDark
             : PreferencesStorage.isLocalDarkSwitchEnabled;
 
-    return SafeArea(
-      child: Padding(
+    return Material(
+      color: theme.colorScheme.background,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      child: SafeArea(
+        child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -124,6 +131,7 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
             ]),
           ],
         ),
+      ),
       ),
     );
   }

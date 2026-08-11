@@ -109,15 +109,20 @@ Widget shadNavigationTile(
           Flexible(
             child: Padding(
               padding: const EdgeInsets.only(left: 8),
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: ShadTheme.of(context)
-                    .textTheme
-                    .muted
-                    .copyWith(fontSize: 13),
+              // Align 让 value 真正靠右到行末：Flexible 内 Text 只按内容宽度排布，
+              // 仅靠 textAlign 无法推到末尾（文字会停在标题右侧即行中间）。
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ShadTheme.of(context)
+                      .textTheme
+                      .muted
+                      .copyWith(fontSize: 13),
+                ),
               ),
             ),
           ),
