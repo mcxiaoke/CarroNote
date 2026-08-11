@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 // Package 导入
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project 导入
 import 'package:safenotes/sync/sync_config.dart';
@@ -89,10 +90,10 @@ class _DialogHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ShadTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        border: Border(bottom: BorderSide(color: theme.colorScheme.border)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
       child: Row(
@@ -100,11 +101,11 @@ class _DialogHeader extends StatelessWidget {
           Expanded(
             child: Text(
               'Sync Configuration'.tr(),
-              style: theme.textTheme.titleMedium,
+              style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(LucideIcons.x),
             tooltip: 'Cancel'.tr(),
             onPressed: onClose,
           ),
@@ -222,30 +223,28 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   // ──────────────────────────────────────────────
 
   Widget _buildTypeSelector() {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Column(
-        children: [
-          for (final type in SyncBackendType.values)
-            ListTile(
-              dense: true,
-              enabled: !_testing,
-              leading: Icon(
-                _type == type
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: _type == type ? theme.colorScheme.primary : null,
-              ),
-              title: Text(_typeTitle(type)),
-              subtitle: Text(
-                _typeSubtitle(type),
-                style: theme.textTheme.bodySmall,
-              ),
-              // 切换类型只改 _type，各类型输入框内容原样保留
-              onTap: _testing ? null : () => setState(() => _type = type),
+    final theme = ShadTheme.of(context);
+    return ShadCard(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ShadRadioGroup<SyncBackendType>(
+        initialValue: _type,
+        enabled: !_testing,
+        onChanged: (value) {
+          if (value != null) setState(() => _type = value);
+        },
+        items: SyncBackendType.values.map((type) {
+          return ShadRadio<SyncBackendType>(
+            value: type,
+            label: Text(
+              _typeTitle(type),
+              style: theme.textTheme.p,
             ),
-        ],
+            sublabel: Text(
+              _typeSubtitle(type),
+              style: theme.textTheme.muted.copyWith(fontSize: 12),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -285,8 +284,11 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
       case SyncBackendType.none:
         return [
           Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: Text('Selected "No Sync"; saving will clear the backend selection.'.tr()),
+            padding: const EdgeInsets.only(top: 16),
+            child: Text(
+              'Selected "No Sync"; saving will clear the backend selection.'.tr(),
+              style: ShadTheme.of(context).textTheme.muted,
+            ),
           ),
         ];
       case SyncBackendType.localFs:
@@ -296,9 +298,9 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             controller: _localFsPathCtrl,
             label: 'Sync Directory'.tr(),
             hint: 'e.g. D:\\SafeNotesSync',
-            icon: Icons.folder_outlined,
+            icon: LucideIcons.folderOpen,
             suffix: IconButton(
-              icon: const Icon(Icons.folder_open),
+              icon: const Icon(LucideIcons.folderOpen),
               tooltip: 'Choose Directory'.tr(),
               onPressed: _testing ? null : _pickLocalFsPath,
             ),
@@ -311,20 +313,20 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             controller: _webdavUrlCtrl,
             label: 'Server Address'.tr(),
             hint: 'https://dav.jianguoyun.com/dav/',
-            icon: Icons.link,
+            icon: LucideIcons.link,
             keyboardType: TextInputType.url,
           ),
           _textField(
             controller: _webdavUsernameCtrl,
             label: 'Username'.tr(),
             hint: 'user@example.com',
-            icon: Icons.person_outline,
+            icon: LucideIcons.user,
           ),
           _textField(
             controller: _webdavPasswordCtrl,
             label: 'Password'.tr(),
             hint: 'App Password (not login password)'.tr(),
-            icon: Icons.lock_outline,
+            icon: LucideIcons.lock,
             obscure: _obscureWebdavPassword,
             suffix: _obscureToggle(
               obscured: _obscureWebdavPassword,
@@ -342,14 +344,14 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             controller: _safeServerUrlCtrl,
             label: 'Server Address'.tr(),
             hint: 'http://192.168.1.118:2025',
-            icon: Icons.dns_outlined,
+            icon: LucideIcons.server,
             keyboardType: TextInputType.url,
           ),
           _textField(
             controller: _safeServerTokenCtrl,
             label: 'Token',
             hint: 'Fixed Bearer Token configured at deployment'.tr(),
-            icon: Icons.key,
+            icon: LucideIcons.key,
             obscure: _obscureSafeServerToken,
             suffix: _obscureToggle(
               obscured: _obscureSafeServerToken,
@@ -366,7 +368,10 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
         padding: const EdgeInsets.only(top: 20, bottom: 4),
         child: Text(
           text,
-          style: Theme.of(context).textTheme.titleSmall,
+          style: ShadTheme.of(context)
+              .textTheme
+              .small
+              .copyWith(fontWeight: FontWeight.w600),
         ),
       );
 
@@ -374,7 +379,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
         padding: const EdgeInsets.only(top: 4),
         child: Text(
           text,
-          style: Theme.of(context).textTheme.bodySmall,
+          style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 12),
         ),
       );
 
@@ -383,7 +388,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     required VoidCallback onPressed,
   }) =>
       IconButton(
-        icon: Icon(obscured ? Icons.visibility_off : Icons.visibility),
+        icon: Icon(obscured ? LucideIcons.eyeOff : LucideIcons.eye),
         tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
         onPressed: _testing ? null : onPressed,
       );
@@ -397,23 +402,33 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     Widget? suffix,
     TextInputType? keyboardType,
   }) {
+    final theme = ShadTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: TextField(
-        controller: controller,
-        enabled: !_testing,
-        obscureText: obscure,
-        keyboardType: keyboardType,
-        autocorrect: false,
-        enableSuggestions: false,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          prefixIcon: Icon(icon),
-          suffixIcon: suffix,
-        ),
-        // 任何输入变化都要重算「能否保存」：指纹一变，上次测试结果即作废
-        onChanged: (_) => setState(() {}),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.small.copyWith(
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ShadInput(
+            controller: controller,
+            placeholder: Text(hint),
+            leading: Icon(icon),
+            trailing: suffix,
+            obscureText: obscure,
+            keyboardType: keyboardType,
+            enabled: !_testing,
+            autocorrect: false,
+            enableSuggestions: false,
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
       ),
     );
   }
@@ -441,24 +456,26 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    icon: _testing
+                  child: ShadButton.outline(
+                    onPressed: (_testing || !_canTest) ? null : _runTest,
+                    leading: _testing
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.network_check),
-                    label: Text(_testing ? 'Testing...'.tr() : 'Test Connection'.tr()),
-                    onPressed: (_testing || !_canTest) ? null : _runTest,
+                        : const Icon(LucideIcons.plug),
+                    child: Text(
+                      _testing ? 'Testing...'.tr() : 'Test Connection'.tr(),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.save_outlined),
-                    label: Text('Save'.tr()),
+                  child: ShadButton(
                     onPressed: (_testing || !_canSave) ? null : _save,
+                    leading: const Icon(LucideIcons.save),
+                    child: Text('Save'.tr()),
                   ),
                 ),
               ],
@@ -470,36 +487,38 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   }
 
   Widget _buildResultBanner() {
-    final theme = Theme.of(context);
+    final theme = ShadTheme.of(context);
     final String message;
     final Color color;
     final IconData icon;
 
     if (_testing) {
       message = 'Connecting to backend…'.tr();
-      color = theme.colorScheme.onSurfaceVariant;
-      icon = Icons.hourglass_empty;
+      color = theme.colorScheme.mutedForeground;
+      icon = LucideIcons.info;
     } else if (_type == SyncBackendType.none) {
-      message = '"No Sync" does not require testing; you can save directly.'.tr();
-      color = theme.colorScheme.onSurfaceVariant;
-      icon = Icons.info_outline;
+      message =
+          '"No Sync" does not require testing; you can save directly.'.tr();
+      color = theme.colorScheme.mutedForeground;
+      icon = LucideIcons.info;
     } else if (!_draft.isComplete) {
       message = 'Please fill in all required fields.'.tr();
-      color = theme.colorScheme.onSurfaceVariant;
-      icon = Icons.edit_outlined;
+      color = theme.colorScheme.mutedForeground;
+      icon = LucideIcons.circleHelp;
     } else if (!_hasFreshResult) {
-      message = 'Configuration has changed; test the connection before saving.'.tr();
-      color = theme.colorScheme.onSurfaceVariant;
-      icon = Icons.info_outline;
+      message = 'Configuration has changed; test the connection before saving.'
+          .tr();
+      color = theme.colorScheme.mutedForeground;
+      icon = LucideIcons.info;
     } else if (_resultError == null) {
       message = 'Connection test passed; you can save.'.tr();
       color = Colors.green;
-      icon = Icons.check_circle_outline;
+      icon = LucideIcons.circleCheck;
     } else {
       message = 'Connection failed: {error}'.tr(
           namedArgs: {'error': _resultError ?? ''});
-      color = theme.colorScheme.error;
-      icon = Icons.error_outline;
+      color = theme.colorScheme.destructive;
+      icon = LucideIcons.circleAlert;
     }
 
     return Padding(
@@ -512,7 +531,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           Expanded(
             child: Text(
               message,
-              style: theme.textTheme.bodySmall?.copyWith(color: color),
+              style: theme.textTheme.muted.copyWith(fontSize: 12, color: color),
             ),
           ),
         ],

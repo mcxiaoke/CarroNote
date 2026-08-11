@@ -5,9 +5,6 @@
 * You may use, distribute and modify this code under the
 * terms of the GPL-3.0+ license.
 *
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
-*
 * See https://safenotes.dev for support or download.
 */
 
@@ -21,8 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // Project imports:
@@ -35,6 +31,7 @@ import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/storage_permission.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class BackupSetting extends StatefulWidget {
   const BackupSetting({super.key});
@@ -113,88 +110,84 @@ class BackupSettingState extends State<BackupSetting> {
     final String path = validWorkingBackupFullyQualifiedPath;
     final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
 
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
-        SettingsSection(
-          tiles: [
-            SettingsTile.switchTile(
-              initialValue: PreferencesStorage.isBackupOn,
-              title: Text('Auto Backup'.tr()),
-              description: Text(
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      children: [
+        shadSettingsCard([
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.cloud,
+            title: 'Auto Backup'.tr(),
+            description:
                 'This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ.'
                     .tr(),
-              ),
-              onToggle: (value) async {
-                await PreferencesStorage.setIsBackupOn(value);
-                if (value == true) {
-                  await onBackupNow();
-                }
-                setState(() => isBackupOn = value);
-              },
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: Text('Backup'.tr()),
-          tiles: [
-            SettingsTile(
-              leading: const Icon(Icons.history),
-              title: Text('Last Backup'.tr()),
-              value: Text(
-                lastUpdateTime.isEmpty ? 'Never synced'.tr() : lastUpdateTime,
-              ),
-              description: _encrypted(),
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.folder_outlined),
-              title: Text('Location'.tr()),
-              value: Text(
-                path.isEmpty ? '—' : path,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onPressed: canOpen ? (_) => _openBackupDirectory() : null,
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.edit_location_alt_outlined),
-              title: Text('Change location'.tr()),
-              onPressed: (_) => _pickBackupLocation(),
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.backup_outlined),
-              title: Text('Backup Now'.tr()),
-              onPressed: path.isNotEmpty ? (_) => onBackupNow() : null,
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: Text('Export'.tr()),
-          tiles: [
-            SettingsTile.navigation(
-              leading: const Icon(Icons.ios_share),
-              title: Text('Export Backup'.tr()),
-              description: Text(
+            value: isBackupOn,
+            onChanged: (value) async {
+              await PreferencesStorage.setIsBackupOn(value);
+              if (value == true) {
+                await onBackupNow();
+              }
+              setState(() => isBackupOn = value);
+            },
+          ),
+        ]),
+        shadSectionTitle(context, 'Backup'.tr()),
+        shadSettingsCard([
+          shadInfoTile(
+            context,
+            icon: LucideIcons.history,
+            title: 'Last Backup'.tr(),
+            value: lastUpdateTime.isEmpty ? 'Never synced'.tr() : lastUpdateTime,
+          ),
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.folderOpen,
+            title: 'Location'.tr(),
+            value: path.isEmpty ? '—' : path,
+            onTap: canOpen ? () => _openBackupDirectory() : () {},
+          ),
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.folderInput,
+            title: 'Change location'.tr(),
+            onTap: () => _pickBackupLocation(),
+          ),
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.cloudUpload,
+            title: 'Backup Now'.tr(),
+            onTap: () => onBackupNow(),
+          ),
+          _encryptedBadge(),
+        ]),
+        shadSectionTitle(context, 'Export'.tr()),
+        shadSettingsCard([
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.download,
+            title: 'Export Backup'.tr(),
+            subtitle:
                 'Choose to export encrypted (.snbak) or plain text (.json). Encrypted export protects notes with a password; plain export is NOT encrypted, keep it safe.'
                     .tr(),
-              ),
-              onPressed: (_) => _onExportNotes(),
-            ),
-          ],
-        ),
+            onTap: () => _onExportNotes(),
+          ),
+        ]),
+        const SizedBox(height: 12),
       ],
     );
   }
 
-  Widget _encrypted() {
-    return Row(
-      children: [
-        const Icon(Icons.lock, size: 15, color: Colors.green),
-        const SizedBox(width: 1),
-        Text('Backup encrypted'.tr(), style: const TextStyle(fontSize: 10)),
-      ],
+  Widget _encryptedBadge() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      child: Row(
+        children: [
+          const Icon(LucideIcons.lock, size: 15, color: Colors.green),
+          const SizedBox(width: 6),
+          Text('Backup encrypted'.tr(),
+              style: const TextStyle(fontSize: 12)),
+        ],
+      ),
     );
   }
 

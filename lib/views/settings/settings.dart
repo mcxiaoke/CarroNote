@@ -2,11 +2,9 @@
 * Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
 *
 * SPDX-License-Identifier: GPL-3.0-or-later
+*
 * You may use, distribute and modify this code under the
 * terms of the GPL-3.0+ license.
-*
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
 *
 * See https://safenotes.dev for support or download.
 */
@@ -21,8 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -30,10 +27,11 @@ import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/utils/build_info.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
-import 'package:safenotes/widgets/footer.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class SettingsScreen extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -47,336 +45,313 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    // 主题切换时重建本页
     Provider.of<ThemeProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Settings'.tr(),
-          style: appBarTitle,
-        ),
+        title: Text('Settings'.tr(), style: appBarTitle),
       ),
-      body: _settings(),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        children: _settingsGroups(context),
+      ),
     );
   }
 
-  Widget _settings() {
-    return Column(
-      children: [
-        Expanded(
-          child: SettingsList(
-            platform: currentDevicePlatform,
-            lightTheme: appSettingsTheme(context),
-            darkTheme: appSettingsTheme(context),
-            sections: [
-        SettingsSection(
-          title: Text('General'.tr()),
-          tiles: <SettingsTile>[
-            SettingsTile.navigation(
-              leading: const Icon(Icons.backup_outlined),
-              title: Text('Backup'.tr()),
-              value: PreferencesStorage.isBackupOn
-                  ? Text('On'.tr())
-                  : Text('Off'.tr()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/backup');
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: Icon(Icons.file_download_outlined),
-              title: Text('Import Backup'.tr()),
-              onPressed: (context) async {
-                await showImportDialog(context);
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.language_outlined),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Language'.tr()),
-                  if (context.locale.toString() != 'en_US')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 5),
-                      child: Text(
-                        'Language',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-              value: Text(
-                  SafeNotesConfig.mapLocaleName[context.locale.toString()]!),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/chooseLanguageSettings');
-                setState(() {});
-              },
-            ),
-          ],
+  /// 各设置分区：分区标题 + 卡片（内含若干 tile，行间用分隔线）。
+  List<Widget> _settingsGroups(BuildContext context) {
+    final groups = <Widget>[
+      shadSectionTitle(context, 'General'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.cloudUpload,
+          title: 'Backup'.tr(),
+          value: PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/backup');
+            setState(() {});
+          },
         ),
-        SettingsSection(
-          title: Text('Style'.tr()),
-          tiles: <SettingsTile>[
-            SettingsTile.switchTile(
-              leading: Icon(Icons.compress),
-              title: Text('Compact Notes'.tr()),
-              initialValue: PreferencesStorage.isCompactPreview,
-              onToggle: (bool value) {
-                PreferencesStorage.setIsCompactPreview(value);
-                setState(() {});
-              },
-            ),
-            SettingsTile.switchTile(
-              leading: Icon(Icons.access_time),
-              title: Text('Relative Time'.tr()),
-              description: Text(
-                'Show note timestamps as relative (e.g. 5 minutes ago). '
-                'Off shows absolute dates.'.tr(),
-              ),
-              initialValue: PreferencesStorage.isRelativeTime,
-              onToggle: (bool value) {
-                PreferencesStorage.setIsRelativeTime(value);
-                setState(() {});
-              },
-            ),
-            SettingsTile.switchTile(
-              leading: Icon(Icons.sort),
-              title: Text('Sort by Modified Date'.tr()),
-              description: Text(
-                'Sort notes by last modified time. '
-                'Off sorts by creation time.'.tr(),
-              ),
-              initialValue: PreferencesStorage.isSortByModified,
-              onToggle: (bool value) {
-                PreferencesStorage.setIsSortByModified(value);
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.dark_mode_outlined),
-              title: Text('Dark Mode'.tr()),
-              value: !PreferencesStorage.isThemeDark
-                  ? Text('Off'.tr())
-                  : Text('On'.tr()),
-              onPressed: (context) {
-                showThemeBottomSheet(context);
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.screen_rotation_outlined),
-              title: Text('Auto Rotate'.tr()),
-              value: !PreferencesStorage.isAutoRotate
-                  ? Text('Off'.tr())
-                  : Text('On'.tr()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/autoRotateSettings');
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.format_paint_outlined),
-              // leading: Icon(Icons.format_paint),
-              title: Text('Notes Color'.tr()),
-              value: !PreferencesStorage.isColorful
-                  ? Text('Off'.tr())
-                  : Text('On'.tr()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/chooseColorSettings');
-                setState(() {});
-              },
-            ),
-            SettingsTile.switchTile(
-              leading: Icon(Icons.text_fields),
-              title: Text('Markdown'.tr()),
-              description: Text(
-                'Format note preview with Markdown. Off shows plain text.'.tr(),
-              ),
-              initialValue: PreferencesStorage.isMarkdownEnabled,
-              onToggle: (bool value) {
-                PreferencesStorage.setIsMarkdownEnabled(value);
-                setState(() {});
-              },
-            ),
-          ],
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.download,
+          title: 'Import Backup'.tr(),
+          onTap: () async {
+            await showImportDialog(context);
+          },
         ),
-        SettingsSection(
-          title: Text('Security'.tr()),
-          tiles: <SettingsTile>[
-            SettingsTile.navigation(
-              leading: Icon(Icons.fingerprint),
-              title: Text('Biometric'.tr()),
-              value: PreferencesStorage.isBiometricAuthEnabled
-                  ? Text('On'.tr())
-                  : Text('Off'.tr()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/biometricSetting');
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: Icon(Icons.phonelink_lock),
-              title: Text('Logout on Inactivity'.tr()),
-              value: Text(inactivityTimeoutValue()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/inactivityTimerSettings');
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.phonelink_lock),
-              title: Text('Secure Display'.tr()),
-              value: PreferencesStorage.isFlagSecure
-                  ? Text('On'.tr())
-                  : Text('Off'.tr()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/secureDisplaySetting');
-                setState(() {});
-              },
-            ),
-            SettingsTile.switchTile(
-              leading: Icon(Icons.visibility_off),
-              title: Text('Incognito Keyboard'.tr()),
-              initialValue: PreferencesStorage.keyboardIncognito,
-              onToggle: (bool value) {
-                // 评审 #18：onToggle 入参即为用户切换后的目标值，直接用入参；
-                // 原实现忽略入参再取反当前值，开关语义相反且违反契约。
-                PreferencesStorage.setKeyboardIncognito(value);
-                setState(() {});
-              },
-            ),
-            SettingsTile.navigation(
-              title: Text('Change Passphrase'.tr()),
-              leading: const Icon(Icons.lock_outline),
-              // leading: Icon(Icons.lock),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/changepassphrase');
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.logout),
-              title: Text('Logout'.tr()),
-              onPressed: (context) async {
-              // 顺序与 main.dart 超时退出 logout() 保持一致：
-              // 1. 先停会话监听；2. 导航离开（不 await——该 Future 要等
-              //    '/login' 被 pop 才完成，await 会把 logout 拖到下次登录后）；
-              // 3. 导航落地、HomePage 卸载后再清敏感状态（clearDataKey 等）。
-              // 若反过来先 logout 再导航，HomePage 仍挂载且 dataKey 已清，
-              // 在途的 notes 读取会抛 DataKeyNotSetException。
-              widget.sessionStateStream.add(SessionState.stopListening);
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.languages,
+          title: 'Language'.tr(),
+          value: SafeNotesConfig.mapLocaleName[context.locale.toString()]!,
+          subtitle:
+              context.locale.toString() != 'en_US' ? 'Language'.tr() : null,
+          onTap: () async {
+            await Navigator.pushNamed(context, '/chooseLanguageSettings');
+            setState(() {});
+          },
+        ),
+      ]),
+      shadSectionTitle(context, 'Style'.tr()),
+      shadSettingsCard([
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.shrink,
+          title: 'Compact Notes'.tr(),
+          value: PreferencesStorage.isCompactPreview,
+          onChanged: (v) {
+            PreferencesStorage.setIsCompactPreview(v);
+            setState(() {});
+          },
+        ),
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.clock,
+          title: 'Relative Time'.tr(),
+          description:
+              'Show note timestamps as relative (e.g. 5 minutes ago). '
+                      'Off shows absolute dates.'
+                  .tr(),
+          value: PreferencesStorage.isRelativeTime,
+          onChanged: (v) {
+            PreferencesStorage.setIsRelativeTime(v);
+            setState(() {});
+          },
+        ),
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.arrowUpDown,
+          title: 'Sort by Modified Date'.tr(),
+          description: 'Sort notes by last modified time. '
+                  'Off sorts by creation time.'
+              .tr(),
+          value: PreferencesStorage.isSortByModified,
+          onChanged: (v) {
+            PreferencesStorage.setIsSortByModified(v);
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.moon,
+          title: 'Dark Mode'.tr(),
+          value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
+          onTap: () {
+            showThemeBottomSheet(context);
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.rotateCw,
+          title: 'Auto Rotate'.tr(),
+          value: !PreferencesStorage.isAutoRotate ? 'Off'.tr() : 'On'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/autoRotateSettings');
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.palette,
+          title: 'Notes Color'.tr(),
+          value: !PreferencesStorage.isColorful ? 'Off'.tr() : 'On'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/chooseColorSettings');
+            setState(() {});
+          },
+        ),
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.type,
+          title: 'Markdown'.tr(),
+          description:
+              'Format note preview with Markdown. Off shows plain text.'.tr(),
+          value: PreferencesStorage.isMarkdownEnabled,
+          onChanged: (v) {
+            PreferencesStorage.setIsMarkdownEnabled(v);
+            setState(() {});
+          },
+        ),
+      ]),
+      shadSectionTitle(context, 'Security'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.fingerprint,
+          title: 'Biometric'.tr(),
+          value: PreferencesStorage.isBiometricAuthEnabled
+              ? 'On'.tr()
+              : 'Off'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/biometricSetting');
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.smartphone,
+          title: 'Logout on Inactivity'.tr(),
+          value: inactivityTimeoutValue(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/inactivityTimerSettings');
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.smartphone,
+          title: 'Secure Display'.tr(),
+          value: PreferencesStorage.isFlagSecure ? 'On'.tr() : 'Off'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/secureDisplaySetting');
+            setState(() {});
+          },
+        ),
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.eyeOff,
+          title: 'Incognito Keyboard'.tr(),
+          value: PreferencesStorage.keyboardIncognito,
+          onChanged: (v) {
+            PreferencesStorage.setKeyboardIncognito(v);
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.lock,
+          title: 'Change Passphrase'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/changepassphrase');
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.logOut,
+          title: 'Logout'.tr(),
+          destructive: true,
+          onTap: () async {
+            // 顺序与 main.dart 超时退出 logout() 保持一致：
+            // 1. 先停会话监听；2. 导航离开（不 await）；
+            // 3. 导航落地、HomePage 卸载后再清敏感状态。
+            widget.sessionStateStream.add(SessionState.stopListening);
 
-              if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (Route<dynamic> route) => false,
-                  arguments: SessionArguments(
-                    sessionStream: widget.sessionStateStream,
-                    isKeyboardFocused: false,
-                  ),
-                );
-              }
+            if (context.mounted) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/login',
+                (Route<dynamic> route) => false,
+                arguments: SessionArguments(
+                  sessionStream: widget.sessionStateStream,
+                  isKeyboardFocused: false,
+                ),
+              );
+            }
 
-              await Session.logout();
-            },
-            ),
-          ],
+            await Session.logout();
+          },
         ),
-        SettingsSection(
-          title: Text('Sync'.tr()),
-          tiles: <SettingsTile>[
-            SettingsTile.navigation(
-              leading: const Icon(Icons.cloud_sync_outlined),
-              title: Text('Sync Settings'.tr()),
-              value: Text(_syncStatusValue()),
-              onPressed: (context) async {
-                await Navigator.pushNamed(context, '/syncSettings');
-                setState(() {});
-              },
-            ),
-          ],
+      ]),
+      shadSectionTitle(context, 'Sync'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.cloud,
+          title: 'Sync Settings'.tr(),
+          value: _syncStatusValue(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/syncSettings');
+            setState(() {});
+          },
         ),
-        SettingsSection(
-          title: Text('Miscellaneous'.tr()),
-          tiles: <SettingsTile>[
-            SettingsTile.navigation(
-              leading: const Icon(Icons.rate_review_outlined),
-              title: Text('Rate Us'.tr()),
-              onPressed: (_) async {
-                String playstoreUrl = SafeNotesConfig.playStoreUrl;
-                try {
-                  await launchUrlExternal(Uri.parse(playstoreUrl));
-                } catch (_) {}
-              },
-            ),
-            SettingsTile.navigation(
-              leading: Icon(Icons.quiz_outlined),
-              title: Text('FAQs'.tr()),
-              onPressed: (_) async {
-                String faqsUrl = SafeNotesConfig.faqsUrl;
-                try {
-                  await launchUrlExternal(Uri.parse(faqsUrl));
-                } catch (_) {}
-              },
-            ),
-            SettingsTile.navigation(
-              leading: Icon(Icons.code),
-              title: Text('Source Code'.tr()),
-              onPressed: (_) async {
-                String sourceCodeUrl = SafeNotesConfig.githubUrl;
-                try {
-                  await launchUrlExternal(Uri.parse(sourceCodeUrl));
-                } catch (_) {}
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.mail_outline),
-              title: Text('Email'.tr()),
-              onPressed: (_) async {
-                String email = SafeNotesConfig.mailToForFeedback;
-                try {
-                  await launchUrlExternal(Uri.parse(email));
-                } catch (_) {}
-              },
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.collections_bookmark_outlined),
-              title: Text('Open Source license'.tr()),
-              onPressed: (_) async {
-                String license = SafeNotesConfig.openSourceLicense;
-                try {
-                  await launchUrlExternal(Uri.parse(license));
-                } catch (_) {}
-              },
-            ),
-          ],
+      ]),
+      shadSectionTitle(context, 'Miscellaneous'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.star,
+          title: 'Rate Us'.tr(),
+          onTap: () => _launch(SafeNotesConfig.playStoreUrl),
         ),
-      ],
-    ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.helpCircle,
+          title: 'FAQs'.tr(),
+          onTap: () => _launch(SafeNotesConfig.faqsUrl),
         ),
-        // 版本号等版权信息：独立于设置项的最底部小字（非可点击 item）
-        footer(context),
-      ],
-    );
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.code,
+          title: 'Source Code'.tr(),
+          onTap: () => _launch(SafeNotesConfig.githubUrl),
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.mail,
+          title: 'Email'.tr(),
+          onTap: () => _launch(SafeNotesConfig.mailToForFeedback),
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.fileText,
+          title: 'Open Source license'.tr(),
+          onTap: () => _launch(SafeNotesConfig.openSourceLicense),
+        ),
+      ]),
+      const SizedBox(height: 12),
+      // 版本号等版权信息：独立于设置项的最底部小字（非可点击 item）
+      footer(context),
+    ];
+
+    return groups;
+  }
+
+  Future<void> _launch(String url) async {
+    try {
+      await launchUrlExternal(Uri.parse(url));
+    } catch (_) {
+      // 忽略无法打开的情况
+    }
   }
 
   String inactivityTimeoutValue() {
-    // 评审 #18：取值走 PreferencesStorage 的统一来源，
-    // 不再在设置页维护一份魔法数组 [30,1,2,3,5,10,15]
-    var index = PreferencesStorage.inactivityTimeoutIndex;
+    // 取值走 PreferencesStorage 的统一来源。
+    final index = PreferencesStorage.inactivityTimeoutIndex;
     final seconds = PreferencesStorage.kInactivityTimeoutChoicesSeconds[index];
     if (seconds < 60) return '$seconds sec';
     return '${seconds ~/ 60} min';
   }
 
-  /// 同步状态显示值
-  ///
-  /// 三态：总开关关掉 → 「已关闭」；开着但后端没配全 → 「未配置」；
-  /// 都就绪 → 显示后端名称。
+  /// 同步状态显示值（三态）。
   String _syncStatusValue() {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();
     return SyncConfig.backendDisplayName;
   }
+}
+
+/// 底部小字：仅版本号 + 构建日期·githash 两行。
+Widget footer(BuildContext context) {
+  final theme = ShadTheme.of(context);
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Version ${SafeNotesConfig.appVersion}',
+          style: theme.textTheme.muted.copyWith(fontSize: 12),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
+          style: theme.textTheme.muted.copyWith(fontSize: 12),
+        ),
+      ],
+    ),
+  );
 }

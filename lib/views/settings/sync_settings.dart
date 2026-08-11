@@ -14,14 +14,15 @@ import 'package:flutter/material.dart';
 
 // Package 导入
 import 'package:easy_localization/easy_localization.dart';
-import 'package:settings_ui/settings_ui.dart';
-import 'package:safenotes/utils/settings_platform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project 导入
 import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/settings/sync_backend_config_page.dart';
+import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class SyncSettingsPage extends StatefulWidget {
   const SyncSettingsPage({super.key});
@@ -46,97 +47,86 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Sync Settings'.tr()),
+        title: Text('Sync Settings'.tr(), style: appBarTitle),
       ),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
-    return SettingsList(
-      platform: currentDevicePlatform,
-      lightTheme: appSettingsTheme(context),
-      darkTheme: appSettingsTheme(context),
-      sections: [
-        // ── 同步总开关 ──
-        SettingsSection(
-          title: Text('Sync Switch'.tr()),
-          tiles: [
-            SettingsTile.switchTile(
-              leading: const Icon(Icons.cloud_sync_outlined),
-              title: Text('Enable Sync'.tr()),
-              description: Text('Disables all communication with remote; backend config is kept.'.tr()),
-              initialValue: SyncConfig.isSyncEnabled,
-              onToggle: _toggleSyncEnabled,
-            ),
-          ],
-        ),
-
-        // ── 同步状态 ──
-        SettingsSection(
-          title: Text('Sync Status'.tr()),
-          tiles: [
-            SettingsTile.navigation(
-              leading: const Icon(Icons.sync),
-              title: Text('Sync Now'.tr()),
-              value: Text(_syncStatusText()),
-              onPressed: (_) => _triggerSync(),
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.build_outlined),
-              title: Text('Repair Sync Data'.tr()),
-              description: Text('Scans and repairs blobs that the remote cannot decrypt.'.tr()),
-              onPressed: (_) => _triggerRepair(),
-            ),
-            SettingsTile.navigation(
-              leading: const Icon(Icons.info_outline),
-              title: Text('Last Sync'.tr()),
-              value: Text(_lastSyncText()),
-            ),
-          ],
-        ),
-
-        // ── 后端配置 ──
-        SettingsSection(
-          title: Text('Backend Config'.tr()),
-          tiles: [
-            SettingsTile.navigation(
-              leading: const Icon(Icons.settings_ethernet),
-              title: Text('Sync Configuration'.tr()),
-              description: Text(_backendSummaryText()),
-              value: Text(SyncConfig.backendDisplayName),
-              onPressed: (_) => _openBackendConfigPanel(),
-            ),
-          ],
-        ),
-
-        // ── 自动同步 ──
-        SettingsSection(
-          title: Text('Auto Sync'.tr()),
-          tiles: [
-            SettingsTile.switchTile(
-              leading: const Icon(Icons.autorenew),
-              title: Text('Auto sync after note changes'.tr()),
-              initialValue: SyncConfig.isAutoSyncEnabled,
-              onToggle: (value) async {
-                await SyncConfig.setAutoSyncEnabled(value);
-                setState(() {});
-              },
-            ),
-          ],
-        ),
-
-        // ── Keyring 管理 ──
-        SettingsSection(
-          title: Text('Encrypted Keyring'.tr()),
-          tiles: [
-            SettingsTile.navigation(
-              leading: const Icon(Icons.vpn_key_outlined),
-              title: Text('Keyring Status'.tr()),
-              value: Text(_vaultStatusText()),
-            ),
-          ],
-        ),
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      children: [
+        shadSettingsCard([
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.cloudSync,
+            title: 'Enable Sync'.tr(),
+            description:
+                'Disables all communication with remote; backend config is kept.'
+                    .tr(),
+            value: SyncConfig.isSyncEnabled,
+            onChanged: _toggleSyncEnabled,
+          ),
+        ]),
+        shadSectionTitle(context, 'Sync Status'.tr()),
+        shadSettingsCard([
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.refreshCw,
+            title: 'Sync Now'.tr(),
+            value: _syncStatusText(),
+            onTap: () => _triggerSync(),
+          ),
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.wrench,
+            title: 'Repair Sync Data'.tr(),
+            subtitle:
+                'Scans and repairs blobs that the remote cannot decrypt.'.tr(),
+            onTap: () => _triggerRepair(),
+          ),
+          shadInfoTile(
+            context,
+            icon: LucideIcons.info,
+            title: 'Last Sync'.tr(),
+            value: _lastSyncText(),
+          ),
+        ]),
+        shadSectionTitle(context, 'Backend Config'.tr()),
+        shadSettingsCard([
+          shadNavigationTile(
+            context,
+            icon: LucideIcons.server,
+            title: 'Sync Configuration'.tr(),
+            subtitle: _backendSummaryText(),
+            value: SyncConfig.backendDisplayName,
+            onTap: () => _openBackendConfigPanel(),
+          ),
+        ]),
+        shadSectionTitle(context, 'Auto Sync'.tr()),
+        shadSettingsCard([
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.rotateCw,
+            title: 'Auto sync after note changes'.tr(),
+            value: SyncConfig.isAutoSyncEnabled,
+            onChanged: (value) async {
+              await SyncConfig.setAutoSyncEnabled(value);
+              setState(() {});
+            },
+          ),
+        ]),
+        shadSectionTitle(context, 'Encrypted Keyring'.tr()),
+        shadSettingsCard([
+          shadInfoTile(
+            context,
+            icon: LucideIcons.key,
+            title: 'Keyring Status'.tr(),
+            value: _vaultStatusText(),
+          ),
+        ]),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -187,7 +177,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       return 'Never synced'.tr();
     }
     final time = state.lastSyncTime!;
-    String result = '${time.month}/${time.day} ${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+    String result =
+        '${time.month}/${time.day} ${time.hour}:${time.minute.toString().padLeft(2, '0')}';
     if (state.lastResult != null) {
       final r = state.lastResult!;
       if (r.success) {
@@ -224,7 +215,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     setState(() {});
 
     if (enabled && !SyncConfig.hasBackendConfig) {
-      _showMessage('Sync enabled, but no backend configured. Please complete the sync configuration.'.tr());
+      _showMessage(
+          'Sync enabled, but no backend configured. Please complete the sync configuration.'
+              .tr());
     } else if (enabled && !result.success) {
       _showMessage('Sync enabled, but initialization failed: {error}'.tr(
           namedArgs: {'error': result.error ?? 'Unknown error'.tr()}));
@@ -254,7 +247,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           namedArgs: {'error': result.error ?? 'Unknown error'.tr()}));
     } else if (!SyncConfig.isSyncEnabled &&
         saved.type != SyncBackendType.none) {
-      _showMessage('Config saved. Sync is currently off; it will take effect when enabled.'.tr());
+      _showMessage(
+          'Config saved. Sync is currently off; it will take effect when enabled.'
+              .tr());
     } else {
       _showMessage('Sync configuration saved'.tr());
     }
@@ -335,7 +330,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     if (mounted) {
       setState(() {});
       if (result == null) {
-        _showMessage('Repair skipped: syncing in progress or no permission'.tr());
+        _showMessage(
+            'Repair skipped: syncing in progress or no permission'.tr());
       } else if (!result.success) {
         _showMessage('Repair failed: {error}'.tr(
             namedArgs: {'error': '${result.errorMessage}'}));
@@ -347,8 +343,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               'failed': '${result.failedNoteUuids.length}',
             }));
       } else {
-        _showMessage('Repair complete: fixed {fixed} entries, no remaining corruption.'
-            .tr(namedArgs: {'fixed': '${result.uploaded}'}));
+        _showMessage(
+            'Repair complete: fixed {fixed} entries, no remaining corruption.'
+                .tr(namedArgs: {'fixed': '${result.uploaded}'}));
       }
     }
   }
@@ -362,7 +359,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       return false;
     }
     if (!SyncConfig.hasBackendConfig) {
-      _showMessage('No sync backend configured. Please complete the sync configuration first.'.tr());
+      _showMessage(
+          'No sync backend configured. Please complete the sync configuration first.'
+              .tr());
       return false;
     }
     return true;
