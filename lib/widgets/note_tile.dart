@@ -26,6 +26,7 @@ import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 import 'package:safenotes/utils/time_utils.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class NoteTileWidget extends StatelessWidget {
   final SafeNote note;
@@ -52,12 +53,11 @@ class NoteTileWidget extends StatelessWidget {
       isRelative: PreferencesStorage.isRelativeTime,
     );
 
-    return Container(
+    return ShadCard(
+      backgroundColor: color,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: color,
-      ),
+      radius: BorderRadius.circular(10),
+      border: ShadBorder.none,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

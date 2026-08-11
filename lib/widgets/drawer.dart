@@ -25,6 +25,8 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_nav_items.dart';
 
 class HomeDrawer extends StatefulWidget {
   final VoidCallback onImportCallback;
@@ -207,35 +209,14 @@ class HomeDrawerState extends State<HomeDrawer> {
     Widget? toggle,
     VoidCallback? onClicked,
   }) {
-    const double leftPaddingMenuItem = 5.0;
-    const double iconTextSpacing = 25.0;
-
     return Padding(
       padding: EdgeInsets.only(top: topPadding),
-      child: ListTile(
-        horizontalTitleGap: iconTextSpacing,
-        contentPadding: const EdgeInsets.only(left: leftPaddingMenuItem),
-        visualDensity: VisualDensity.compact,
-        dense: true,
-        leading: Icon(
-          icon,
-          size: 27,
-        ),
-        title: AutoSizeText(
-          text,
-          minFontSize: 8,
-          maxLines: 1,
-          style: TextStyle(
-            fontFamily: uiFontFamily,
-            fontFamilyFallback: uiFontFamilyFallback,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.4,
-            fontSize: 18,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
+      child: shadNavMenuItem(
+        context,
+        icon: icon,
+        label: text,
         trailing: toggle,
-        onTap: onClicked,
+        onTap: onClicked ?? () {},
       ),
     );
   }
@@ -314,7 +295,7 @@ class HomeDrawerState extends State<HomeDrawer> {
     return Padding(
       padding: EdgeInsets.only(top: topPadding),
       child: Divider(
-        color: Theme.of(context).colorScheme.outlineVariant,
+        color: ShadTheme.of(context).colorScheme.border,
       ),
     );
   }

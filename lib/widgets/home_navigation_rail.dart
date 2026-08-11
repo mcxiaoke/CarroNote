@@ -23,6 +23,8 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/shad_nav_items.dart';
 
 /// 桌面端常驻侧边栏（Sidebar），对应移动端 Drawer 的同一组入口。
 ///
@@ -63,14 +65,13 @@ class HomeSidebar extends StatelessWidget {
     // 订阅 ThemeProvider：主题切换后本侧栏的颜色随之刷新。
     Provider.of<ThemeProvider>(context);
 
-    // 直接复用主题色板，而非写死灰色，保证侧栏与整体主题一致（含暗色/亮色）。
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final Color fg = colorScheme.onSurface;
-    final Color bg = colorScheme.surfaceContainerLow;
-    final Color divider = colorScheme.outlineVariant;
-    final String themeText = colorScheme.brightness == Brightness.dark
-        ? 'Light Mode'.tr()
-        : 'Dark Mode'.tr();
+    // 直接复用 shadcn 主题色板，保证侧栏与设置页/抽屉等整体主题一致（含暗色/亮色）。
+    final theme = ShadTheme.of(context);
+    final Color fg = theme.colorScheme.foreground;
+    final Color bg = theme.colorScheme.background;
+    final Color divider = theme.colorScheme.border;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final String themeText = isDark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
 
     Future<void> launchExternal(String url) async {
       try {
@@ -81,23 +82,7 @@ class HomeSidebar extends StatelessWidget {
     }
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
-      return ListTile(
-        leading: Icon(icon, color: fg, size: 24),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: fg,
-            fontSize: 15,
-            fontFamily: uiFontFamily,
-            fontFamilyFallback: uiFontFamilyFallback,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        horizontalTitleGap: 14,
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        onTap: onTap,
-      );
+      return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);
     }
 
     return SizedBox(
@@ -151,9 +136,7 @@ class HomeSidebar extends StatelessWidget {
                     onChangePassCallback,
                   ),
                   sideItem(
-                    colorScheme.brightness == Brightness.dark
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
+                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
                     themeText,
                     onThemeCallback,
                   ),
