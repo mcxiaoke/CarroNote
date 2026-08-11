@@ -276,11 +276,15 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       controller: passPhraseController,
       autofocus: _isKeyboardFocused!,
       obscureText: _isHidden,
-      leading: const Icon(LucideIcons.lock),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: const Icon(LucideIcons.lock, size: 18),
       trailing: IconButton(
         icon: _isHidden
-            ? const Icon(LucideIcons.eye)
-            : const Icon(LucideIcons.eyeOff),
+            ? const Icon(LucideIcons.eye, size: 18)
+            : const Icon(LucideIcons.eyeOff, size: 18),
+        iconSize: 18,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
         onPressed: _togglePasswordVisibility,
       ),
       label: Text('Passphrase'.tr()),
@@ -316,7 +320,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final String loginText = _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
     return ShadButton(
-      width: isDesktopPlatform ? null : double.infinity,
+      width: double.infinity,
       enabled: !(_isLocked || _isLoggingIn),
       onPressed: (_isLocked || _isLoggingIn) ? null : () => _loginController(),
       child: Text(loginText),
@@ -337,7 +341,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 20),
           child: ShadButton(
-            width: isDesktop ? null : double.infinity,
+            width: double.infinity,
             leading: Icon(LucideIcons.fingerprint, size: isDesktop ? 22 : 28),
             onPressed: enabled ? _authenticate : null,
             child: Text('Biometric'.tr()),

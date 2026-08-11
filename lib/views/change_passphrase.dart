@@ -26,7 +26,6 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -171,13 +170,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       autofocus: true,
       focusNode: _focusOld,
       obscureText: _isHiddenOld,
-      leading: const Icon(LucideIcons.lock),
-      trailing: IconButton(
-        icon: _isHiddenOld
-            ? const Icon(LucideIcons.eye)
-            : const Icon(LucideIcons.eyeOff),
-        onPressed: _toggleOldPasswordVisibility,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: const Icon(LucideIcons.lock, size: 18),
+      trailing: _passToggle(_isHiddenOld, _toggleOldPasswordVisibility),
       label: Text(inputHintOld),
       placeholder: Text(inputHintOld),
       autofillHints: const [AutofillHints.password],
@@ -204,13 +199,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       controller: _newPassphraseController,
       focusNode: _focusNew,
       obscureText: _isHiddenNew,
-      leading: const Icon(LucideIcons.lock),
-      trailing: IconButton(
-        icon: _isHiddenNew
-            ? const Icon(LucideIcons.eye)
-            : const Icon(LucideIcons.eyeOff),
-        onPressed: _toggleNewPasswordVisibility,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: const Icon(LucideIcons.lock, size: 18),
+      trailing: _passToggle(_isHiddenNew, _toggleNewPasswordVisibility),
       label: Text(inputHintNew),
       placeholder: Text(inputHintNew),
       autofillHints: const [AutofillHints.password],
@@ -246,12 +237,11 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       controller: _newConfirmPassphraseController,
       focusNode: _focusNewConfirm,
       obscureText: _isHiddenNewConfirm,
-      leading: const Icon(LucideIcons.lock),
-      trailing: IconButton(
-        icon: _isHiddenNewConfirm
-            ? const Icon(LucideIcons.eye)
-            : const Icon(LucideIcons.eyeOff),
-        onPressed: _toggleNewConfirmPasswordVisibility,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: const Icon(LucideIcons.lock, size: 18),
+      trailing: _passToggle(
+        _isHiddenNewConfirm,
+        _toggleNewConfirmPasswordVisibility,
       ),
       label: Text(inputHintConfirm),
       placeholder: Text(inputHintConfirm),
@@ -272,17 +262,28 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   void _toggleNewConfirmPasswordVisibility() =>
       setState(() => _isHiddenNewConfirm = !_isHiddenNewConfirm);
 
+  /// 紧凑的密码显隐切换按钮：缩小图标(18)与点击区(min 30)，
+  /// 避免默认 48px 的 IconButton 把输入框撑得过高。
+  Widget _passToggle(bool hidden, VoidCallback onToggle) {
+    return IconButton(
+      icon: hidden
+          ? const Icon(LucideIcons.eye, size: 18)
+          : const Icon(LucideIcons.eyeOff, size: 18),
+      iconSize: 18,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      onPressed: onToggle,
+    );
+  }
+
   Widget _buildButtons(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 10, top: 25, bottom: 20),
-        child: ShadButton(
-          width: isDesktopPlatform ? null : double.infinity,
-          leading: const Icon(LucideIcons.key, size: 20),
-          onPressed: _finalSublmitChange,
-          child: Text('Confirm'.tr()),
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 25, bottom: 20),
+      child: ShadButton(
+        width: double.infinity,
+        leading: const Icon(LucideIcons.key, size: 20),
+        onPressed: _finalSublmitChange,
+        child: Text('Confirm'.tr()),
       ),
     );
   }

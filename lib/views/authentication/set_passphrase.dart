@@ -32,7 +32,6 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
@@ -187,12 +186,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       autofocus: widget.isKeyboardFocused ?? true,
       obscureText: _isHiddenFirst,
       focusNode: _focusFirst,
-      leading: const Icon(LucideIcons.lock),
-      trailing: IconButton(
-        icon: _isHiddenFirst
-            ? const Icon(LucideIcons.eye)
-            : const Icon(LucideIcons.eyeOff),
-        onPressed: () => setState(() => _isHiddenFirst = !_isHiddenFirst),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: const Icon(LucideIcons.lock, size: 18),
+      trailing: _passToggle(
+        _isHiddenFirst,
+        () => setState(() => _isHiddenFirst = !_isHiddenFirst),
       ),
       label: Text(firstHintText),
       placeholder: Text(firstHintText),
@@ -217,12 +215,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         controller: _passPhraseControllerConfirm,
         focusNode: _focusSecond,
         obscureText: _isHiddenConfirm,
-        leading: const Icon(LucideIcons.lock),
-        trailing: IconButton(
-          icon: _isHiddenConfirm
-              ? const Icon(LucideIcons.eye)
-              : const Icon(LucideIcons.eyeOff),
-          onPressed: () => setState(() => _isHiddenConfirm = !_isHiddenConfirm),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: const Icon(LucideIcons.lock, size: 18),
+        trailing: _passToggle(
+          _isHiddenConfirm,
+          () => setState(() => _isHiddenConfirm = !_isHiddenConfirm),
         ),
         label: Text(confirmHintText),
         placeholder: Text(confirmHintText),
@@ -252,9 +249,23 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         : null;
   }
 
+  /// 紧凑的密码显隐切换按钮：缩小图标(18)与点击区(min 30)，
+  /// 避免默认 48px 的 IconButton 把输入框撑得过高。
+  Widget _passToggle(bool hidden, VoidCallback onToggle) {
+    return IconButton(
+      icon: hidden
+          ? const Icon(LucideIcons.eye, size: 18)
+          : const Icon(LucideIcons.eyeOff, size: 18),
+      iconSize: 18,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      onPressed: onToggle,
+    );
+  }
+
   Widget _buildLoginButton() {
     return ShadButton(
-      width: isDesktopPlatform ? null : double.infinity,
+      width: double.infinity,
       onPressed: () => _loginController(),
       child: Text('Confirm'.tr()),
     );
