@@ -639,14 +639,14 @@ class HomePageState extends State<HomePage> with RouteAware {
         return GestureDetector(
           onTap: () async {
             // 只记录 uuid 与序号，不记录标题正文（隐私红线）
-            Log.ui.i('界面切换: 主界面(列表) → 查看笔记(/viewnote) '
+            Log.ui.i('界面切换: 主界面(列表) → 编辑笔记(/editnote) '
                 'uuid=${note.uuid} index=$index');
             await Navigator.pushNamed(
               context,
-              '/viewnote',
-              arguments: NoteDetailPageArguments(
-                note: note,
+              '/editnote',
+              arguments: AddEditNoteArguments(
                 sessionStream: widget.sessionStateStream,
+                note: note,
               ),
             );
             refreshNotes();
@@ -690,14 +690,14 @@ class HomePageState extends State<HomePage> with RouteAware {
               final note = notes[index];
               return GestureDetector(
                 onTap: () async {
-                  Log.ui.i('界面切换: 主界面(网格) → 查看笔记(/viewnote) '
+                  Log.ui.i('界面切换: 主界面(网格) → 编辑笔记(/editnote) '
                       'uuid=${note.uuid} index=$index');
                   await Navigator.pushNamed(
                     context,
-                    '/viewnote',
-                    arguments: NoteDetailPageArguments(
-                      note: note,
+                    '/editnote',
+                    arguments: AddEditNoteArguments(
                       sessionStream: widget.sessionStateStream,
+                      note: note,
                     ),
                   );
                   refreshNotes();

@@ -44,7 +44,10 @@ class NoteTileWidgetCompact extends StatelessWidget {
     final fontColor = getFontColorForBackground(color);
     final previewText = note.title == ' ' ? note.abstractText : note.title;
     final time = noteTimeLabel(
-      time: note.createdTime,
+      // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间。
+      time: PreferencesStorage.isSortByModified
+          ? note.modifiedTime
+          : note.createdTime,
       localeString: context.locale.toString(),
       isRelative: PreferencesStorage.isRelativeTime,
     );

@@ -48,6 +48,7 @@ class PreferencesStorage {
   static const _keyBiometricAttemptAllTimeCount =
       'biometricAttemptAllTimeCount';
   static const _keyIsCompactPreview = 'isCompactPreview';
+  static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
   static const _keyIsRelativeTime = 'isRelativeTime';
   static const _keyIsSortByModified = 'isSortByModified';
   static const _keyIsDimTheme = 'isDimTheme';
@@ -332,6 +333,16 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsCompactPreview);
     await _preferences?.setBool(_keyIsCompactPreview, flag);
     _logPrefChange('紧凑预览', old, flag, important: false);
+  }
+
+  /// Markdown 渲染总开关（默认开启）。
+  /// 关闭后，笔记预览以纯文本显示，不做 Markdown 解析。
+  static bool get isMarkdownEnabled =>
+      _preferences?.getBool(_keyIsMarkdownEnabled) ?? true;
+  static Future<void> setIsMarkdownEnabled(bool flag) async {
+    final old = _preferences?.getBool(_keyIsMarkdownEnabled);
+    await _preferences?.setBool(_keyIsMarkdownEnabled, flag);
+    _logPrefChange('Markdown 渲染', old, flag);
   }
 
   static bool get isRelativeTime =>

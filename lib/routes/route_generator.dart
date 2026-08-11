@@ -34,7 +34,6 @@ import 'package:safenotes/views/authentication/set_passphrase.dart';
 import 'package:safenotes/views/change_passphrase.dart';
 import 'package:safenotes/views/deleted_notes.dart';
 import 'package:safenotes/views/home.dart';
-import 'package:safenotes/views/note_view.dart';
 import 'package:safenotes/views/settings/autorotate_settings.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
@@ -103,19 +102,6 @@ class RouteGenerator {
         }
         return _errorRoute(
             route: routeName, argsType: 'StreamController<SessionState>');
-
-      case '/viewnote':
-        if (args is NoteDetailPageArguments) {
-          //SafeNote note = args;
-          return _buildRoute(
-            NoteDetailPage(
-              noteId: args.note.id!,
-              sessionStateStream: args.sessionStream,
-            ),
-            settings,
-          );
-        }
-        return _errorRoute(route: routeName, argsType: 'SafeNotes');
 
       case '/addnote':
         if (args is StreamController<SessionState>) {
@@ -285,12 +271,3 @@ class AddEditNoteArguments {
   });
 }
 
-class NoteDetailPageArguments {
-  final StreamController<SessionState> sessionStream;
-  final SafeNote note;
-
-  NoteDetailPageArguments({
-    required this.sessionStream,
-    required this.note,
-  });
-}

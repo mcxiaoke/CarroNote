@@ -40,7 +40,11 @@ class NoteCardWidget extends StatelessWidget {
     final fontColor = getFontColorForBackground(color);
 
     String time = noteTimeLabel(
-      time: note.createdTime,
+      // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间，
+      // 否则标题下的时间戳与列表顺序对不上（看起来"错乱"）。
+      time: PreferencesStorage.isSortByModified
+          ? note.modifiedTime
+          : note.createdTime,
       localeString: context.locale.toString(),
       isRelative: PreferencesStorage.isRelativeTime,
     );

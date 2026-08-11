@@ -187,6 +187,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 setState(() {});
               },
             ),
+            SettingsTile.switchTile(
+              leading: Icon(Icons.text_fields),
+              title: Text('Markdown'.tr()),
+              description: Text(
+                'Format note preview with Markdown. Off shows plain text.'.tr(),
+              ),
+              initialValue: PreferencesStorage.isMarkdownEnabled,
+              onToggle: (bool value) {
+                PreferencesStorage.setIsMarkdownEnabled(value);
+                setState(() {});
+              },
+            ),
           ],
         ),
         SettingsSection(
