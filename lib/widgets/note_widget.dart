@@ -55,7 +55,9 @@ class NoteFormWidget extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildTitle(),
-            const SizedBox(height: 2),
+            const SizedBox(height: 8),
+            const Divider(height: 1, thickness: 1),
+            const SizedBox(height: 8),
             buildDescription(context),
             const SizedBox(height: 16),
           ],
@@ -66,7 +68,6 @@ class NoteFormWidget extends StatelessWidget {
 
   Widget _buildTitle() {
     const double fontSize = 24.0;
-    const int maxLinesToShowAtTimeTitle = 2;
     final String titleHint = 'Title'.tr();
     //Disable IMEPL if keyboard incognito mode is true
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
@@ -74,7 +75,7 @@ class NoteFormWidget extends StatelessWidget {
     return ShadInputFormField(
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
-      maxLines: maxLinesToShowAtTimeTitle,
+      maxLines: 1,
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
@@ -83,6 +84,7 @@ class NoteFormWidget extends StatelessWidget {
         fontSize: fontSize,
       ),
       placeholder: Text(titleHint),
+      padding: EdgeInsets.zero,
       inputPadding: EdgeInsets.zero,
       // 全 border 显式置 none + 透明背景，维持 borderless 编辑器的紧凑外观，
       // 防御 shadcn 输入框默认描边/填充（与搜索框同源，避免被主题副作用改出黑框）。
@@ -111,11 +113,14 @@ class NoteFormWidget extends StatelessWidget {
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,
+      minLines: 1,
       initialValue: description,
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
+      alignment: Alignment.topLeft,
       style: const TextStyle(fontSize: fontSize),
       placeholder: Text(hintDescription),
+      padding: EdgeInsets.zero,
       inputPadding: EdgeInsets.zero,
       decoration: const ShadDecoration(
         border: ShadBorder.none,

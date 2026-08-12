@@ -13,7 +13,7 @@
 
 // Dart imports:
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
+import 'dart:math' as math;
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -60,11 +60,21 @@ class ExportBackupDialog extends StatefulWidget {
   const ExportBackupDialog({super.key});
 
   /// 打开导出面板；返回值见 [ExportOptions]
+  ///
+  /// 与同步配置一致：桌面端居中弹框，移动端全屏对话框（fullscreenDialog）。
   static Future<ExportOptions?> show(BuildContext context) {
-    return showDialog<ExportOptions>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const ExportBackupDialog(),
+    if (isDesktopPlatform) {
+      return showDialog<ExportOptions>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const ExportBackupDialog(),
+      );
+    }
+    return Navigator.of(context).push<ExportOptions>(
+      MaterialPageRoute<ExportOptions>(
+        fullscreenDialog: true,
+        builder: (_) => const ExportBackupDialog(),
+      ),
     );
   }
 
@@ -172,53 +182,86 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const double radius = 10.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        child: SizedBox(
-          width: 420,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            // 内容加滚动：避免小窗口/低分辨率下 Column 底部溢出
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Export Backup'.tr(), style: dialogHeadTextStyle),
-                  const SizedBox(height: 16),
-                  _buildFormatSelector(),
-                  const SizedBox(height: 12),
-                  if (_encrypted) _buildPasswordFields(),
-                  if (!_encrypted) _buildPlaintextNotice(),
-                  const SizedBox(height: 12),
-                  _buildLocationRow(),
-                  const SizedBox(height: 16),
-                  shadDialogActionBar(
-                    actions: [
-                      ShadDialogAction(
-                        label: 'Cancel'.tr(),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                      ShadDialogAction(
-                        label: 'Export'.tr(),
-                        primary: true,
-                        enabled: !(_encrypted && !_passwordValid),
-                        onPressed: _onSubmit,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+    final Widget content = SizedBox(
+      // 宽度自适应：桌面固定，窄屏手机按屏宽收窄，避免横向溢出
+      width: isDesktopPlatform
+          ? kDialogMaxWidthCompact
+          : math.min(
+              kDialogMaxWidthCompact,
+              MediaQuery.of(context).size.width - 32,
             ),
-          ),
+      // 内容加滚动：避免小窗口/低分辨率下 Column 底部溢出
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFormatSelector(),
+            const SizedBox(height: 12),
+            // 用固定最小高度占位（而非 Visibility），切换明文/加密时对话框
+            // 高度恒定、不上下跳动；同时避免 Visibility(maintainSize) 在
+            // 隐藏测量时把子项以无限宽布局导致的崩溃。
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 122),
+              child: _encrypted
+                  ? _buildPasswordFields()
+                  : _buildPlaintextNotice(),
+            ),
+            const SizedBox(height: 12),
+            _buildLocationRow(),
+          ],
         ),
       ),
+    );
+
+    final Widget actionBar = shadDialogActionBar(
+      actions: [
+        ShadDialogAction(
+          label: 'Cancel'.tr(),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        ShadDialogAction(
+          label: 'Export'.tr(),
+          primary: true,
+          enabled: !(_encrypted && !_passwordValid),
+          onPressed: _onSubmit,
+        ),
+      ],
+    );
+
+    // 移动端：全屏对话框，与同步配置一致
+    if (!isDesktopPlatform) {
+      return Scaffold(
+        backgroundColor: ShadTheme.of(context).colorScheme.background,
+        appBar: AppBar(title: Text('Export Backup'.tr(), style: appBarTitle)),
+        body: SafeArea(
+          bottom: false,
+          child: Padding(
+            // 全屏页无 ShadDialog 自带内边距，需手动留边距，
+            // 避免文字/输入框贴屏幕边缘。
+            padding: const EdgeInsets.all(16),
+            child: content,
+          ),
+        ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: actionBar,
+          ),
+        ),
+      );
+    }
+
+    // 桌面端：居中弹框
+    return ShadDialog(
+      title: Text('Export Backup'.tr()),
+      // 关闭小屏断点下的按钮全宽覆盖（width: double.infinity），避免按钮
+      // minWidth: Infinity 在内在测量时崩溃（BoxConstraints forces an
+      // infinite width）。
+      expandActionsWhenTiny: false,
+      actions: [actionBar],
+      child: content,
     );
   }
 
@@ -228,32 +271,98 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       children: [
         Text('Format'.tr(), style: dialogBodyTextStyle),
         const SizedBox(height: 6),
-        ShadRadioGroup<String>(
-          initialValue: _encrypted ? 'encrypted' : 'plaintext',
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _encrypted = value == 'encrypted');
-          },
-          items: [
-            ShadRadio<String>(
-              value: 'encrypted',
-              label: Text('Encrypted (.snbak) (Recommended)'.tr()),
-              sublabel: Text(
-                'Encrypted with a password, safe to store or share.'.tr(),
-                style: const TextStyle(fontSize: 12),
+        ShadCard(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            children: [
+              _formatTile(
+                value: true,
+                title: 'Encrypted (.snbak) (Recommended)'.tr(),
+                subtitle:
+                    'Encrypted with a password, safe to store or share.'.tr(),
               ),
-            ),
-            ShadRadio<String>(
-              value: 'plaintext',
-              label: Text('Plain text (.json)'.tr()),
-              sublabel: Text(
-                'Not encrypted; anyone with the file can read it.'.tr(),
-                style: const TextStyle(fontSize: 12),
+              _formatTile(
+                value: false,
+                title: 'Plain text (.json)'.tr(),
+                subtitle:
+                    'Not encrypted; anyone with the file can read it.'.tr(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 单个格式选项行：圆点与两行文字整体垂直居中，
+  /// 复刻 shadcn 单选视觉但避免原生 ShadRadio 圆点偏上的对齐问题。
+  Widget _formatTile({
+    required bool value,
+    required String title,
+    required String subtitle,
+  }) {
+    final theme = ShadTheme.of(context);
+    final selected = _encrypted == value;
+    return GestureDetector(
+      onTap: () => setState(() => _encrypted = value),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _formatIndicator(selected),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.p),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.muted.copyWith(fontSize: 12),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-      ],
+        ),
+      ),
+    );
+  }
+
+  /// 复刻 shadcn 单选圆点（选中填充主色、未选中描边），仅作视觉展示，
+  /// 点击由外层 GestureDetector 处理。
+  Widget _formatIndicator(bool selected) {
+    final theme = ShadTheme.of(context);
+    final ShadDecoration decoration =
+        theme.radioTheme.decoration ?? const ShadDecoration();
+    final Color color = theme.colorScheme.primary;
+    return ShadDecorator(
+      decoration: decoration,
+      child: SizedBox.square(
+        dimension: 16,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 100),
+          child: selected
+              ? Align(
+                  child: SizedBox.square(
+                    dimension: 10,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox(),
+        ),
+      ),
     );
   }
 
@@ -269,10 +378,12 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
           enableIMEPersonalizedLearning: false,
           onChanged: (_) => setState(() {}),
           placeholder: Text('Encryption Phrase'.tr()),
-          leading: const Icon(Icons.lock),
-          trailing: IconButton(
+          padding: kInputPadding,
+          leading: const Icon(Icons.lock, size: kInputIconSize),
+          trailing: kInputIconButton(
             icon: Icon(
               _hidden ? Icons.visibility : Icons.visibility_off,
+              size: kInputIconSize,
             ),
             onPressed: () => setState(() => _hidden = !_hidden),
           ),
@@ -284,7 +395,8 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
           enableIMEPersonalizedLearning: false,
           onChanged: (_) => setState(() {}),
           placeholder: Text('Confirm password'.tr()),
-          leading: const Icon(Icons.lock_outline),
+          padding: kInputPadding,
+          leading: const Icon(Icons.lock_outline, size: kInputIconSize),
         ),
         if (_passwordCtrl.text.isNotEmpty &&
             _passwordCtrl.text != _confirmCtrl.text)
@@ -322,25 +434,25 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
         Row(
           children: [
             Flexible(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _locationPath,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
+              // 用 maxWidth 夹住宽度：Row 在做内在宽度测量时会对 Flexible 子项
+              // 传 width=Infinity，而 ShadInput 内部 ConstrainedBox 拿到无限宽会
+              // 崩溃（Android 上尤为明显）。这里限定最大宽度，避免无限宽透传。
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: kInputMaxWidthInRow),
+                child: ShadInputFormField(
+                  key: ValueKey(_locationPath),
+                  initialValue: _locationPath,
+                  readOnly: true,
+                  padding: kInputPadding,
+                  leading: const Icon(LucideIcons.folder, size: kInputIconSize),
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            TextButton.icon(
+            ShadButton.outline(
               onPressed: _pickLocation,
-              icon: const Icon(Icons.folder_open, size: 18),
-              label: Text('Browse'.tr()),
+              leading: const Icon(LucideIcons.folderOpen, size: kInputIconSize),
+              child: Text('Browse'.tr()),
             ),
           ],
         ),

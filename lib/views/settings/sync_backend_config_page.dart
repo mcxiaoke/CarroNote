@@ -28,6 +28,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/styles.dart';
 
 /// 打开同步后端配置面板
 ///
@@ -53,7 +54,10 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
         insetPadding: const EdgeInsets.all(24),
         child: ConstrainedBox(
           // 限宽限高：弹框而非整窗，桌面端居中显示
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 760),
+          constraints: const BoxConstraints(
+            maxWidth: kDialogMaxWidthWide,
+            maxHeight: kDialogMaxHeightWide,
+          ),
           child: Column(
             children: [
               _DialogHeader(
@@ -231,25 +235,78 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     final theme = ShadTheme.of(context);
     return ShadCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: ShadRadioGroup<SyncBackendType>(
-        initialValue: _type,
-        enabled: !_testing,
-        onChanged: (value) {
-          if (value != null) setState(() => _type = value);
-        },
-        items: SyncBackendType.values.map((type) {
-          return ShadRadio<SyncBackendType>(
-            value: type,
-            label: Text(
-              _typeTitle(type),
-              style: theme.textTheme.p,
-            ),
-            sublabel: Text(
-              _typeSubtitle(type),
-              style: theme.textTheme.muted.copyWith(fontSize: 12),
+      child: Column(
+        children: SyncBackendType.values.map((type) {
+          final bool selected = _type == type;
+          return InkWell(
+            onTap: _testing ? null : () => setState(() => _type = type),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+              child: Row(
+                // 图标与（可能两行的）文字整体居中对齐，避免单选圆点偏上。
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _radioIndicator(type, selected),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _typeTitle(type),
+                          style: theme.textTheme.p,
+                        ),
+                        Text(
+                          _typeSubtitle(type),
+                          style: theme.textTheme.muted.copyWith(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  /// 复刻 shadcn 单选圆点的视觉（选中填充主色、未选中描边），
+  /// 但放在居中对齐的 Row 中，解决原生 ShadRadio 内部 crossAxisAlignment
+  /// 固定为 start 导致圆点与两行文字不对齐的问题。
+  Widget _radioIndicator(SyncBackendType type, bool selected) {
+    final theme = ShadTheme.of(context);
+    final ShadDecoration decoration =
+        theme.radioTheme.decoration ?? const ShadDecoration();
+    final Color color = theme.colorScheme.primary;
+    return ShadDecorator(
+      decoration: decoration,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _testing ? null : () => setState(() => _type = type),
+          child: SizedBox.square(
+            dimension: 16,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 100),
+              child: selected
+                  ? Align(
+                      child: SizedBox.square(
+                        dimension: 10,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox(),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -304,11 +361,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             label: 'Sync Directory'.tr(),
             hint: 'e.g. D:\\SafeNotesSync',
             icon: LucideIcons.folderOpen,
-            suffix: IconButton(
-              icon: const Icon(LucideIcons.folderOpen, size: 18),
-              iconSize: 18,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            suffix: kInputIconButton(
+              icon: const Icon(LucideIcons.folderOpen, size: kInputIconSize),
               tooltip: 'Choose Directory'.tr(),
               onPressed: _testing ? null : _pickLocalFsPath,
             ),
@@ -395,11 +449,11 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     required bool obscured,
     required VoidCallback onPressed,
   }) =>
-      IconButton(
-        icon: Icon(obscured ? LucideIcons.eyeOff : LucideIcons.eye, size: 18),
-        iconSize: 18,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      kInputIconButton(
+        icon: Icon(
+          obscured ? LucideIcons.eyeOff : LucideIcons.eye,
+          size: kInputIconSize,
+        ),
         tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
         onPressed: _testing ? null : onPressed,
       );
@@ -430,8 +484,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           ShadInput(
             controller: controller,
             placeholder: Text(hint),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            leading: Icon(icon, size: 18),
+            padding: kInputPadding,
+            leading: Icon(icon, size: kInputIconSize),
             trailing: suffix,
             obscureText: obscure,
             keyboardType: keyboardType,

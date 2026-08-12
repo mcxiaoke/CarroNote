@@ -93,10 +93,12 @@ class BackupPasswordInputDialogState extends State<BackupPasswordInputDialog> {
                 obscureText: _hidden,
                 enableIMEPersonalizedLearning: false,
                 placeholder: Text('Encryption Phrase'.tr()),
-                leading: const Icon(Icons.lock),
-                trailing: IconButton(
+                padding: kInputPadding,
+                leading: const Icon(Icons.lock, size: kInputIconSize),
+                trailing: kInputIconButton(
                   icon: Icon(
                     _hidden ? Icons.visibility : Icons.visibility_off,
+                    size: kInputIconSize,
                   ),
                   onPressed: () =>
                       setState(() => _hidden = !_hidden),

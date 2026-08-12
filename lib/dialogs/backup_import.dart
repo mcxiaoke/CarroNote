@@ -48,13 +48,18 @@ class FileImportDialog extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.all(paddingAllAround),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _title(),
-              _body(),
-              _buildButtons(),
-            ],
+          // 限宽：原生 Dialog 不设 maxWidth 会在宽屏上撑满可用宽度，
+          // 导致导入对话框横向特别宽。这里与其它对话框保持一致的宽度。
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kDialogMaxWidth),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _title(),
+                _body(),
+                _buildButtons(),
+              ],
+            ),
           ),
         ),
       ),

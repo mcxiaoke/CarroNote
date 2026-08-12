@@ -146,7 +146,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       child: Center(
         // 宽屏/桌面限宽 420 居中，避免输入框与按钮撑满整个窗口
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+          constraints: const BoxConstraints(maxWidth: kDialogMaxWidthCompact),
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(padding),
             child: Column(
@@ -186,8 +186,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       autofocus: widget.isKeyboardFocused ?? true,
       obscureText: _isHiddenFirst,
       focusNode: _focusFirst,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: const Icon(LucideIcons.lock, size: 18),
+      padding: kInputPadding,
+      leading: const Icon(LucideIcons.lock, size: kInputIconSize),
       trailing: _passToggle(
         _isHiddenFirst,
         () => setState(() => _isHiddenFirst = !_isHiddenFirst),
@@ -215,8 +215,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         controller: _passPhraseControllerConfirm,
         focusNode: _focusSecond,
         obscureText: _isHiddenConfirm,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        leading: const Icon(LucideIcons.lock, size: 18),
+        padding: kInputPadding,
+        leading: const Icon(LucideIcons.lock, size: kInputIconSize),
         trailing: _passToggle(
           _isHiddenConfirm,
           () => setState(() => _isHiddenConfirm = !_isHiddenConfirm),
@@ -249,16 +249,13 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         : null;
   }
 
-  /// 紧凑的密码显隐切换按钮：缩小图标(18)与点击区(min 30)，
-  /// 避免默认 48px 的 IconButton 把输入框撑得过高。
+  /// 紧凑的密码显隐切换按钮：压制默认 48px 触控区，
+  /// 避免把输入框撑得过高（各平台一致）。
   Widget _passToggle(bool hidden, VoidCallback onToggle) {
-    return IconButton(
+    return kInputIconButton(
       icon: hidden
-          ? const Icon(LucideIcons.eye, size: 18)
-          : const Icon(LucideIcons.eyeOff, size: 18),
-      iconSize: 18,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          ? const Icon(LucideIcons.eye, size: kInputIconSize)
+          : const Icon(LucideIcons.eyeOff, size: kInputIconSize),
       onPressed: onToggle,
     );
   }

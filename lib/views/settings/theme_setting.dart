@@ -23,6 +23,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 void showThemeBottomSheet(BuildContext context) {
@@ -33,7 +34,7 @@ void showThemeBottomSheet(BuildContext context) {
     backgroundColor: Colors.transparent,
     elevation: 0,
     // 桌面端弹窗宽度跟随内容居中，避免在宽窗口上被拉成一条横带。
-    constraints: const BoxConstraints(maxWidth: 560),
+    constraints: const BoxConstraints(maxWidth: kDialogMaxWidthWide),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),

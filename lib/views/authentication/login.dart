@@ -217,7 +217,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       child: Center(
         // 宽屏/桌面限宽 420 居中，避免输入框与按钮撑满整个窗口
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+          constraints: const BoxConstraints(maxWidth: kDialogMaxWidthCompact),
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(padding),
             child: Column(
@@ -276,15 +276,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       controller: passPhraseController,
       autofocus: _isKeyboardFocused!,
       obscureText: _isHidden,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: const Icon(LucideIcons.lock, size: 18),
-      trailing: IconButton(
+      padding: kInputPadding,
+      leading: const Icon(LucideIcons.lock, size: kInputIconSize),
+      trailing: kInputIconButton(
         icon: _isHidden
-            ? const Icon(LucideIcons.eye, size: 18)
-            : const Icon(LucideIcons.eyeOff, size: 18),
-        iconSize: 18,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            ? const Icon(LucideIcons.eye, size: kInputIconSize)
+            : const Icon(LucideIcons.eyeOff, size: kInputIconSize),
         onPressed: _togglePasswordVisibility,
       ),
       label: Text('Passphrase'.tr()),

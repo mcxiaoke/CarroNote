@@ -77,3 +77,6 @@ working.txt
 
 
 .workbuddy/
+
+# fdb session state
+.fdb/

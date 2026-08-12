@@ -24,6 +24,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
+import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
@@ -73,6 +74,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          icon: LucideIcons.fileOutput,
+          title: 'Export Backup'.tr(),
+          onTap: () async {
+            await startExportNotes(context);
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
           icon: LucideIcons.download,
           title: 'Import Backup'.tr(),
           onTap: () async {
@@ -88,6 +98,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context.locale.toString() != 'en_US' ? 'Language'.tr() : null,
           onTap: () async {
             await Navigator.pushNamed(context, '/chooseLanguageSettings');
+            setState(() {});
+          },
+        ),
+      ]),
+      shadSectionTitle(context, 'Sync'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.cloud,
+          title: 'Sync Settings'.tr(),
+          value: _syncStatusValue(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/syncSettings');
             setState(() {});
           },
         ),
@@ -260,19 +283,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         ),
       ]),
-      shadSectionTitle(context, 'Sync'.tr()),
-      shadSettingsCard([
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.cloud,
-          title: 'Sync Settings'.tr(),
-          value: _syncStatusValue(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/syncSettings');
-            setState(() {});
-          },
-        ),
-      ]),
       shadSectionTitle(context, 'Miscellaneous'.tr()),
       shadSettingsCard([
         shadNavigationTile(
@@ -338,24 +348,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// 底部小字：仅版本号 + 构建日期·githash 两行。
+/// 底部小字：版本号与构建日期·githash 合并为一行居中显示。
 Widget footer(BuildContext context) {
   final theme = ShadTheme.of(context);
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Version ${SafeNotesConfig.appVersion}',
-          style: theme.textTheme.muted.copyWith(fontSize: 12),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
-          style: theme.textTheme.muted.copyWith(fontSize: 12),
-        ),
-      ],
+    child: Center(
+      child: Text(
+        'Version ${SafeNotesConfig.appVersion} · '
+        '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
+        style: theme.textTheme.muted.copyWith(fontSize: 12),
+        textAlign: TextAlign.center,
+      ),
     ),
   );
 }

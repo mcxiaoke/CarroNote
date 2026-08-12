@@ -84,7 +84,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         child: Center(
           // 宽屏/桌面限宽 420 居中，与登录/设置密码界面一致
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: kDialogMaxWidthCompact),
             child: Padding(
               padding: EdgeInsets.only(bottom: bottom),
               child: _buildPassphraseChangeWorkflow(context),
@@ -170,8 +170,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       autofocus: true,
       focusNode: _focusOld,
       obscureText: _isHiddenOld,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: const Icon(LucideIcons.lock, size: 18),
+      padding: kInputPadding,
+      leading: const Icon(LucideIcons.lock, size: kInputIconSize),
       trailing: _passToggle(_isHiddenOld, _toggleOldPasswordVisibility),
       label: Text(inputHintOld),
       placeholder: Text(inputHintOld),
@@ -199,8 +199,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       controller: _newPassphraseController,
       focusNode: _focusNew,
       obscureText: _isHiddenNew,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: const Icon(LucideIcons.lock, size: 18),
+      padding: kInputPadding,
+      leading: const Icon(LucideIcons.lock, size: kInputIconSize),
       trailing: _passToggle(_isHiddenNew, _toggleNewPasswordVisibility),
       label: Text(inputHintNew),
       placeholder: Text(inputHintNew),
@@ -237,8 +237,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       controller: _newConfirmPassphraseController,
       focusNode: _focusNewConfirm,
       obscureText: _isHiddenNewConfirm,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: const Icon(LucideIcons.lock, size: 18),
+      padding: kInputPadding,
+      leading: const Icon(LucideIcons.lock, size: kInputIconSize),
       trailing: _passToggle(
         _isHiddenNewConfirm,
         _toggleNewConfirmPasswordVisibility,
@@ -262,16 +262,13 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   void _toggleNewConfirmPasswordVisibility() =>
       setState(() => _isHiddenNewConfirm = !_isHiddenNewConfirm);
 
-  /// 紧凑的密码显隐切换按钮：缩小图标(18)与点击区(min 30)，
-  /// 避免默认 48px 的 IconButton 把输入框撑得过高。
+  /// 紧凑的密码显隐切换按钮：压制默认 48px 触控区，
+  /// 避免把输入框撑得过高（各平台一致）。
   Widget _passToggle(bool hidden, VoidCallback onToggle) {
-    return IconButton(
+    return kInputIconButton(
       icon: hidden
-          ? const Icon(LucideIcons.eye, size: 18)
-          : const Icon(LucideIcons.eyeOff, size: 18),
-      iconSize: 18,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          ? const Icon(LucideIcons.eye, size: kInputIconSize)
+          : const Icon(LucideIcons.eyeOff, size: kInputIconSize),
       onPressed: onToggle,
     );
   }

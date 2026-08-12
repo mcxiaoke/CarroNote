@@ -103,9 +103,9 @@ void main() {
     expect(find.text('Export Backup'), findsOneWidget);
     expect(find.text('Encrypted (.snbak) (Recommended)'), findsOneWidget);
     expect(find.text('Plain text (.json)'), findsOneWidget);
-    // 默认加密：两个密码输入框（密码 + 确认）；shadcn 迁移后输入框是 ShadInput
-    //（内部用 EditableText 而非 TextField），故用 ShadInput 统计。
-    expect(find.byType(ShadInput), findsNWidgets(2));
+    // 默认加密：两个密码输入框（密码 + 确认）+ 一个只读位置展示框，
+    // 共 3 个 ShadInput（位置框是 ShadInputFormField，属 ShadInput 子类）。
+    expect(find.byType(ShadInput), findsNWidgets(3));
     // 此时密码为空，导出按钮应禁用（点按不弹回）
     await tester.tap(find.text('Export'));
     await tester.pumpAndSettle();
@@ -143,8 +143,8 @@ void main() {
 
     await tester.tap(find.text('Plain text (.json)'));
     await tester.pumpAndSettle();
-    // 明文无密码输入框
-    expect(find.byType(ShadInput), findsNothing);
+    // 明文无密码输入框，但仍有 1 个只读位置展示框（ShadInputFormField）。
+    expect(find.byType(ShadInput), findsOneWidget);
     // 明文导出按钮可直接点击
     await tester.tap(find.text('Export'));
     await tester.pumpAndSettle();

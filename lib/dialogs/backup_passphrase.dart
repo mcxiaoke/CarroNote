@@ -110,11 +110,12 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
           autofocus: true,
           enableInteractiveSelection: false,
           obscureText: _isHiddenImport,
-          leading: const Icon(LucideIcons.lock),
-          trailing: IconButton(
+          padding: kInputPadding,
+          leading: const Icon(LucideIcons.lock, size: kInputIconSize),
+          trailing: kInputIconButton(
             icon: _isHiddenImport
-                ? const Icon(LucideIcons.eye)
-                : const Icon(LucideIcons.eyeOff),
+                ? const Icon(LucideIcons.eye, size: kInputIconSize)
+                : const Icon(LucideIcons.eyeOff, size: kInputIconSize),
             onPressed: _togglePasswordVisibility,
           ),
           label: Text(inputBoxHint),

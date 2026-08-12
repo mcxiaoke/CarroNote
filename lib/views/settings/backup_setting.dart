@@ -158,18 +158,6 @@ class BackupSettingState extends State<BackupSetting> {
           ),
           _encryptedBadge(),
         ]),
-        shadSectionTitle(context, 'Export'.tr()),
-        shadSettingsCard([
-          shadNavigationTile(
-            context,
-            icon: LucideIcons.download,
-            title: 'Export Backup'.tr(),
-            subtitle:
-                'Choose to export encrypted (.snbak) or plain text (.json). Encrypted export protects notes with a password; plain export is NOT encrypted, keep it safe.'
-                    .tr(),
-            onTap: () => _onExportNotes(),
-          ),
-        ]),
         const SizedBox(height: 12),
     ]);
   }
@@ -223,45 +211,6 @@ class BackupSettingState extends State<BackupSetting> {
     }
   }
 
-  Future<void> _onExportNotes() async {
-    Log.backup.i('用户触发手动导出（打开导出面板）');
-    final options = await ExportBackupDialog.show(context);
-    if (!mounted) return;
-    if (options == null) {
-      Log.backup.i('导出取消：用户在导出面板放弃');
-      return;
-    }
-    try {
-      final String content;
-      if (options.encrypted) {
-        final password = options.password;
-        if (password == null || password.isEmpty) {
-          showSnackBarMessage(context, 'Export requires a password!'.tr());
-          return;
-        }
-        content = await FileHandler.encryptedOutputBackupContent(
-          password: password,
-        );
-      } else {
-        content = await FileHandler.plainOutputBackupContent();
-      }
-      await FileHandler.writeBackupFile(
-        content: content,
-        filePath: options.filePath,
-      );
-      if (!mounted) return;
-      Log.backup.i('导出完成: ${options.filePath}');
-      showSnackBarMessage(
-        context,
-        'Backup exported to: {path}'.tr(namedArgs: {'path': options.filePath}),
-      );
-    } catch (e, st) {
-      if (!mounted) return;
-      Log.backup.e('导出失败', error: e, stackTrace: st);
-      showSnackBarMessage(context, "Failed to export file!".tr());
-    }
-  }
-
   Future<void> onBackupNow() async {
     // 用户主动点击「立即备份」，是数据安全的关键人工动作，需明确留痕
     Log.backup.i('用户触发手动备份 (isBackupOn=$isBackupOn)');
@@ -294,6 +243,47 @@ class BackupSettingState extends State<BackupSetting> {
       Log.backup.e('手动备份失败: $err');
     }
     await _refresh();
+  }
+}
+
+/// 统一的导出入口：打开导出面板、写文件并提示结果。
+/// 供备份设置页与设置主页「导出备份」共用。
+Future<void> startExportNotes(BuildContext context) async {
+  Log.backup.i('用户触发手动导出（打开导出面板）');
+  final options = await ExportBackupDialog.show(context);
+  if (!context.mounted) return;
+  if (options == null) {
+    Log.backup.i('导出取消：用户在导出面板放弃');
+    return;
+  }
+  try {
+    final String content;
+    if (options.encrypted) {
+      final password = options.password;
+      if (password == null || password.isEmpty) {
+        showSnackBarMessage(context, 'Export requires a password!'.tr());
+        return;
+      }
+      content = await FileHandler.encryptedOutputBackupContent(
+        password: password,
+      );
+    } else {
+      content = await FileHandler.plainOutputBackupContent();
+    }
+    await FileHandler.writeBackupFile(
+      content: content,
+      filePath: options.filePath,
+    );
+    if (!context.mounted) return;
+    Log.backup.i('导出完成: ${options.filePath}');
+    showSnackBarMessage(
+      context,
+      'Backup exported to: {path}'.tr(namedArgs: {'path': options.filePath}),
+    );
+  } catch (e, st) {
+    if (!context.mounted) return;
+    Log.backup.e('导出失败', error: e, stackTrace: st);
+    showSnackBarMessage(context, "Failed to export file!".tr());
   }
 }
 

@@ -55,7 +55,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
 
   late String title;
   late String description;
-  // 默认进入预览模式（而非编辑），符合"默认预览而不是编辑"的需求。
+  // 默认预览模式；仅新建笔记默认进入编辑，已有笔记打开后先看预览。
   bool _previewMode = true;
   // 正在执行删除：避免 PopScope 在删除后自动保存把已删笔记重新写回。
   bool _isDeleting = false;
@@ -69,6 +69,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     description = widget.note?.description ?? '';
     title = title == ' ' ? '' : title;
     description = description == ' ' ? '' : description;
+    // 新建笔记默认进入编辑模式，已有笔记打开后默认预览。
+    _previewMode = widget.note != null;
     NoteEditorState.setSaveAttempted(false);
     // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
     Log.ui.i(
@@ -101,12 +103,13 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           ),
           body: _previewMode
               ? _buildPreview(context)
-              : SingleChildScrollView(
-                  reverse: true,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: bottom),
-                    child: _buildBody(),
-                  ),
+              : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
+              // 这里仅用 Padding 兜住键盘避让（bottom = 键盘高度），
+              // 不再包一层 reverse 滚动——两层嵌套滚动 + reverse 会让长文本
+              // 进入编辑时从底部锚定、上下跳动。
+              Padding(
+                  padding: EdgeInsets.only(bottom: bottom),
+                  child: _buildBody(),
                 ),
         ),
       ),
@@ -244,7 +247,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         children: [
           SelectableText(
             title,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
