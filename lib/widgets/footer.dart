@@ -12,11 +12,37 @@
 */
 
 // Flutter imports:
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/build_info.dart';
+
+/// 调试构建的醒目徽标（release/profile 构建不渲染）。
+///
+/// [kDebugMode] 是编译期常量：debug 构建（Android/iOS/Windows 等全平台）
+/// 显示红色 DEBUG 标签，release 构建零开销直接省略。与 debug 版独立
+/// applicationId（.dev 后缀）配套，避免把调试版误当正式版。
+Widget debugBadge(BuildContext context) {
+  if (!kDebugMode) return const SizedBox.shrink();
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(
+      color: const Color(0xFFD32F2F),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: const Text(
+      'DEBUG',
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1,
+      ),
+    ),
+  );
+}
 
 Widget footer(BuildContext context) {
   const double fontSize = 12;
@@ -34,6 +60,8 @@ Widget footer(BuildContext context) {
     padding: const EdgeInsets.only(bottom: 20),
     child: Column(
       children: [
+        debugBadge(context),
+        if (kDebugMode) const SizedBox(height: 6),
         Text(headerText, style: style),
         Text(buildInfoText, style: style),
       ],

@@ -1,14 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.trisven.safenotes"
-    android:versionCode="10"  
-    android:versionName="2.3.0" > 
+    package="com.mcxiaoke.snotes"
+    android:versionCode="10"
+    android:versionName="3.0.0" >
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <uses-permission android:name="android.permission.INTERNET"/>
    <application
-        android:label="Safe Notes"
+        android:label="@string/appLabel"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

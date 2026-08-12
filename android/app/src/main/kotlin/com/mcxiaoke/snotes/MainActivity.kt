@@ -11,7 +11,7 @@
  * See https://safenotes.dev for support or download.
  */
 
-package com.trisven.safenotes
+package com.mcxiaoke.snotes
 
 import android.content.SharedPreferences
 import android.os.Build

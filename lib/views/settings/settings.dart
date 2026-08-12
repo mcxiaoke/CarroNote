@@ -32,6 +32,7 @@ import 'package:safenotes/utils/build_info.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
+import 'package:safenotes/widgets/footer.dart' show debugBadge;
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -349,16 +350,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 /// 底部小字：版本号与构建日期·githash 合并为一行居中显示。
+/// debug 构建时在版本信息上方额外显示醒目 DEBUG 徽标。
 Widget footer(BuildContext context) {
   final theme = ShadTheme.of(context);
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
     child: Center(
-      child: Text(
-        'Version ${SafeNotesConfig.appVersion} · '
-        '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
-        style: theme.textTheme.muted.copyWith(fontSize: 12),
-        textAlign: TextAlign.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          debugBadge(context),
+          const SizedBox(height: 8),
+          Text(
+            'Version ${SafeNotesConfig.appVersion} · '
+            '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
+            style: theme.textTheme.muted.copyWith(fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     ),
   );

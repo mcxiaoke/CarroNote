@@ -30,7 +30,7 @@ if (keystorePropertiesFile.exists()) {
 
 
 android {
-    namespace "com.trisven.safenotes"
+    namespace "com.mcxiaoke.snotes"
     compileSdkVersion 36
 
     ndkVersion = "28.2.13676358"
@@ -49,8 +49,9 @@ android {
     }
 
     defaultConfig {
-        
-        applicationId "com.trisven.safenotes"
+    // You can update the following values to match your application needs.
+    // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId "com.mcxiaoke.snotes"
         minSdkVersion 25
         targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
@@ -69,7 +70,13 @@ android {
        }
    }
    buildTypes {
+       debug {
+           applicationIdSuffix ".dev"
+           versionNameSuffix ".dev"
+           resValue "string", "appLabel", '"SNotesDev"'
+       }
        release {
+           resValue "string", "appLabel", '"SNotes"'
            signingConfig signingConfigs.release
        }
    }

@@ -521,7 +521,7 @@ class SafeNotesConfig {
   static const String _openSourceLicense =
       'https://github.com/keshav-space/safenotes/blob/main/LICENSE';
   static const String _playStorUrl =
-      'https://play.google.com/store/apps/details?id=com.trisven.safenotes';
+      'https://play.google.com/store/apps/details?id=com.mcxiaoke.snotes';
 
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),
