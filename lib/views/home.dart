@@ -34,6 +34,7 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/route_observer.dart';
 import 'package:safenotes/utils/styles.dart';

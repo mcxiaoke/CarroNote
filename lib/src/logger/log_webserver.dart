@@ -24,6 +24,16 @@
  *   GET /files        → 日志文件列表（JSON）
  *   GET /diagnostics  → 同步诊断快照纯文本
  *   GET /stream       → WebSocket 实时日志流
+ *   GET /panel        → 调试面板 dashboard（HTML，来自 assets/web/dashboard.html）
+ *   GET /api/status   → 同步状态快照 JSON
+ *   GET /api/sync     → 上次同步结果详情 JSON
+ *   GET /api/actions  → 同步动作数组 JSON
+ *   GET /api/memory   → 内存数据快照 JSON
+ *   GET /api/db       → 本地数据库 inspector JSON（表结构/行数/元数据；?table=&limit= 返回数据行）
+ *   GET /api/prefs    → SharedPreferences 快照 JSON
+ *   GET /api/download/db      → 下载本地数据库文件（.db）
+ *   GET /api/download/sp      → 下载 SharedPreferences（JSON）
+ *   GET /api/download/journal → 下载 Journal（JSON）
  *
  * 安全性：
  *   - 仅绑定 0.0.0.0（局域网可访问），不做公网暴露
@@ -35,9 +45,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+// Flutter 导入
+import 'package:flutter/services.dart';
+
 // Project 导入
 import 'package:path/path.dart' as p;
-import 'package:core/src/logger/app_logger.dart';
+import 'package:core/core.dart';
+import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/sync/sync_service.dart';
 
 /// 日志 HTTP 服务器（全局单例，全平台可用）
 class LogWebServer {
@@ -73,10 +88,9 @@ class LogWebServer {
   StreamSubscription<AppLogEntry>? _logSub;
   final List<WebSocket> _websockets = [];
 
-  /// 诊断快照提供者（由 SyncService 侧注入，避免 utils 反向依赖 sync 层）
-  ///
-  /// 未注入时 `/diagnostics` 返回提示文本而非报错。
-  Future<String> Function()? diagnosticsProvider;
+  /// 诊断快照 / 调试快照 / Dashboard HTML 原本通过 provider 注入，
+  /// 现因本文件位于 lib 层（可直接用 flutter/services 与 SyncService），
+  /// 改为直接调用，不再需要注入字段。
 
   /// 当前监听端口（未启动为 0）
   int _port = 0;
@@ -178,10 +192,20 @@ class LogWebServer {
 
   Future<void> _handleRequest(HttpRequest request) async {
     final path = request.uri.path;
+    // CORS 预检：直接返回 204 + CORS 头，使 dashboard 可跨域访问
+    if (request.method == 'OPTIONS') {
+      _setCors(request.response);
+      request.response.statusCode = HttpStatus.noContent;
+      await request.response.close();
+      return;
+    }
     try {
       switch (path) {
         case '/':
           _serveHtml(request);
+          break;
+        case '/panel':
+          await _serveDashboard(request);
           break;
         case '/logs':
           await _serveLogsText(request);
@@ -195,10 +219,28 @@ class LogWebServer {
         case '/diagnostics':
           await _serveDiagnostics(request);
           break;
+        case '/api/status':
+        case '/api/sync':
+        case '/api/actions':
+        case '/api/memory':
+        case '/api/db':
+        case '/api/prefs':
+          await _serveApi(request, path);
+          break;
+        case '/api/download/db':
+          await _serveDownloadDb(request);
+          break;
+        case '/api/download/sp':
+          await _serveDownloadSp(request);
+          break;
+        case '/api/download/journal':
+          await _serveDownloadJournal(request);
+          break;
         case '/stream':
           await _upgradeToWebSocket(request);
           break;
         default:
+          _setCors(request.response);
           request.response
             ..statusCode = HttpStatus.notFound
             ..write('Not Found: $path');
@@ -207,6 +249,7 @@ class LogWebServer {
     } on Object catch (e, st) {
       Log.web.e('处理请求失败 path=$path', error: e, stackTrace: st);
       try {
+        _setCors(request.response);
         request.response
           ..statusCode = HttpStatus.internalServerError
           ..write('Server Error: $e');
@@ -215,6 +258,92 @@ class LogWebServer {
         // 响应已关闭，忽略
       }
     }
+  }
+
+  /// 统一设置 CORS 响应头（允许任意来源，便于 dashboard 独立部署后跨域访问）
+  static void _setCors(HttpResponse res) {
+    res.headers.set('Access-Control-Allow-Origin', '*');
+    res.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+  }
+
+  /// 以 JSON 响应（自动带 CORS 头，支持 Map / List 等任意 JSON 结构）
+  Future<void> _sendJson(HttpRequest request, Object? data) async {
+    _setCors(request.response);
+    request.response.headers.contentType = ContentType.json;
+    request.response.write(jsonEncode(data));
+    await request.response.close();
+  }
+
+  /// 聚合调试 JSON 端点（/api/status|sync|actions|memory|db|prefs）
+  Future<void> _serveApi(HttpRequest request, String path) async {
+    if (path == '/api/db') {
+      await _serveDbInspect(request);
+      return;
+    }
+    if (path == '/api/prefs') {
+      await _sendJson(request, PreferencesStorage.dumpAll());
+      return;
+    }
+    // 直接调用 SyncService（本文件位于 lib 层，无循环依赖），无需 provider 注入
+    final full = SyncService.instance.getDebugJson();
+    switch (path) {
+      case '/api/status':
+        await _sendJson(request, full['status'] as Map<String, dynamic>);
+        break;
+      case '/api/sync':
+        await _sendJson(request, full['sync'] as Map<String, dynamic>);
+        break;
+      case '/api/actions':
+        await _sendJson(request, full['actions'] as List);
+        break;
+      case '/api/memory':
+        await _sendJson(request, full['memory'] as Map<String, dynamic>);
+        break;
+    }
+  }
+
+  /// Database Inspector 端点（/api/db）
+  ///
+  /// 无 query 参数：返回库结构元数据（表清单/行数/列 schema/文件信息）。
+  /// ?table=TABLENAME&limit=N：返回该表前 N 行**数据**（blob 列以占位符表示）。
+  Future<void> _serveDbInspect(HttpRequest request) async {
+    final table = request.uri.queryParameters['table'];
+    try {
+      if (table != null && table.isNotEmpty) {
+        final limit =
+            int.tryParse(request.uri.queryParameters['limit'] ?? '100') ?? 100;
+        final rows =
+            await NotesDatabase.instance.queryTableRows(table, limit: limit);
+        await _sendJson(request, {
+          'table': table,
+          'limit': limit,
+          'rowCount': rows.length,
+          'rows': rows,
+        });
+      } else {
+        final meta = await NotesDatabase.instance.inspectMetadata();
+        await _sendJson(request, meta);
+      }
+    } on Object catch (e) {
+      await _sendJson(request, {'error': '读取数据库失败: $e'});
+    }
+  }
+
+  /// 调试面板 dashboard（/panel）
+  /// HTML 直接来自 assets/web/dashboard.html（通过 rootBundle 读取，本文件位于
+  /// lib 层，可正常使用 flutter/services）。
+  Future<void> _serveDashboard(HttpRequest request) async {
+    request.response.headers.contentType = ContentType.html;
+    try {
+      request.response.write(
+          await rootBundle.loadString('assets/web/dashboard.html'));
+    } on Object catch (e, st) {
+      Log.web.e('读取 dashboard.html 失败', error: e, stackTrace: st);
+      request.response.statusCode = HttpStatus.internalServerError;
+      request.response.write('Failed to load dashboard.html: $e');
+    }
+    await request.response.close();
   }
 
   /// HTML 实时日志查看器
@@ -304,19 +433,14 @@ class LogWebServer {
     await request.response.close();
   }
 
-  /// 同步诊断快照
+  /// 同步诊断快照（直接调用 SyncService，无需 provider 注入）
   Future<void> _serveDiagnostics(HttpRequest request) async {
     request.response.headers.contentType =
         ContentType('text', 'plain', charset: 'utf-8');
-    final provider = diagnosticsProvider;
-    if (provider == null) {
-      request.response.write('诊断快照不可用（同步服务未初始化）');
-    } else {
-      try {
-        request.response.write(await provider());
-      } on Object catch (e) {
-        request.response.write('获取诊断快照失败: $e');
-      }
+    try {
+      request.response.write(await SyncService.instance.exportAllLogsAsText());
+    } on Object catch (e) {
+      request.response.write('获取诊断快照失败: $e');
     }
     await request.response.close();
   }
@@ -351,6 +475,58 @@ class LogWebServer {
     if (closed.isNotEmpty) {
       _websockets.removeWhere(closed.contains);
     }
+  }
+
+  // ──────────────────────────────────────────────
+  // 下载端点
+  // ──────────────────────────────────────────────
+
+  /// 通用附件响应（自动带 CORS 头）
+  Future<void> _sendAttachment(HttpRequest request, String filename,
+      String content, String mime) async {
+    _setCors(request.response);
+    request.response.headers.contentType = ContentType.parse(mime);
+    request.response.headers
+        .add('Content-Disposition', 'attachment; filename="$filename"');
+    request.response.write(content);
+    await request.response.close();
+  }
+
+  /// 下载本地数据库文件（.db 二进制）
+  Future<void> _serveDownloadDb(HttpRequest request) async {
+    try {
+      final path = await NotesDatabase.instance.dbFilePath;
+      if (!await File(path).exists()) {
+        await _sendJson(request, {'error': '数据库文件不存在'});
+        return;
+      }
+      final bytes = await File(path).readAsBytes();
+      _setCors(request.response);
+      request.response.headers.contentType =
+          ContentType('application', 'octet-stream');
+      final name = 'safenotes_db_'
+          '${DateTime.now().toIso8601String().replaceAll(':', '-')}.db';
+      request.response.headers
+          .add('Content-Disposition', 'attachment; filename="$name"');
+      request.response.add(bytes);
+      await request.response.close();
+    } on Object catch (e) {
+      await _sendJson(request, {'error': '下载数据库失败: $e'});
+    }
+  }
+
+  /// 下载 SharedPreferences（JSON）
+  Future<void> _serveDownloadSp(HttpRequest request) async {
+    final data = PreferencesStorage.dumpAll();
+    await _sendAttachment(request, 'shared_preferences.json',
+        jsonEncode(data), 'application/json');
+  }
+
+  /// 下载 Journal（JSON，含全部条目）
+  Future<void> _serveDownloadJournal(HttpRequest request) async {
+    final dump = await SyncService.instance.getJournalDump();
+    await _sendAttachment(request, 'journal.json', jsonEncode(dump),
+        'application/json');
   }
 
   // ──────────────────────────────────────────────
@@ -544,4 +720,5 @@ connect();
 </body>
 </html>''';
   }
+
 }

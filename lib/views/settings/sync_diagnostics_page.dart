@@ -21,12 +21,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // Package 导入
-import 'package:cryptography/cryptography.dart' show Argon2id, Hmac, Pbkdf2, SecretKey;
 import 'package:easy_localization/easy_localization.dart';
 
 // Project 导入
 import 'package:core/core.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/utils/styles.dart';
 
 class SyncDiagnosticsPage extends StatefulWidget {
@@ -43,7 +43,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -68,7 +68,6 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
             Tab(text: 'Actions'.tr()),
             Tab(text: 'Logs'.tr()),
             Tab(text: 'Web Server'.tr()),
-            Tab(text: 'Tests'.tr()),
           ],
         ),
         actions: [
@@ -87,7 +86,6 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
           _ActionsTab(),
           _LogsTab(),
           _WebServerTab(onUpdate: () => setState(() {})),
-          const _TestTab(),
         ],
       ),
     );
@@ -905,224 +903,6 @@ class _WebServerTabState extends State<_WebServerTab> {
   }
 }
 
-// ──────────────────────────────────────────────
-// Tab 6: 测试（KDF 性能对比）
-// ──────────────────────────────────────────────
-
-/// 一组基准测试参数
-class _BenchCase {
-  final String name;
-  final String params;
-  final int type; // 0 = PBKDF2, 1 = Argon2id
-  final int iterations;
-  final int memory;
-  final int parallelism;
-
-  const _BenchCase.pbkdf2(this.name, this.params, this.iterations)
-      : type = 0,
-        memory = 0,
-        parallelism = 0;
-
-  const _BenchCase.argon2id(
-      this.name, this.params, this.iterations, this.memory, this.parallelism)
-      : type = 1;
-}
-
-/// 一组基准测试结果
-class _BenchResult {
-  final String name;
-  final String params;
-  final String algo;
-  final int elapsedMs;
-  final bool failed;
-  final String error;
-
-  const _BenchResult({
-    required this.name,
-    required this.params,
-    required this.algo,
-    required this.elapsedMs,
-    this.failed = false,
-    this.error = '',
-  });
-
-  String get summary => '$name: $algo ${failed ? 'failed: $error' : '${elapsedMs}ms'}';
-}
-
-class _TestTab extends StatefulWidget {
-  const _TestTab();
-
-  @override
-  State<_TestTab> createState() => _TestTabState();
-}
-
-class _TestTabState extends State<_TestTab> {
-  static const List<_BenchCase> _cases = [
-    // PBKDF2-HMAC-SHA256
-    _BenchCase.pbkdf2('PBKDF2 Current', '200,000 iterations (current app)', 200000),
-    _BenchCase.pbkdf2('PBKDF2 OWASP-2023', '600,000 iterations', 600000),
-    _BenchCase.pbkdf2('PBKDF2 OWASP-2024', '1,000,000 iterations', 1000000),
-    _BenchCase.pbkdf2('PBKDF2 Stress', '2,000,000 iterations', 2000000),
-    // Argon2id
-    _BenchCase.argon2id('Argon2id Light', '19MiB, t=2, p=1 (OWASP baseline)', 2, 19456, 1),
-    _BenchCase.argon2id('Argon2id Medium', '32MiB, t=2, p=1', 2, 32768, 1),
-    _BenchCase.argon2id('Argon2id Medium Parallel', '32MiB, t=2, p=4', 2, 32768, 4),
-    _BenchCase.argon2id('Argon2id High', '64MiB, t=3, p=4', 3, 65536, 4),
-  ];
-
-  bool _running = false;
-  final List<_BenchResult> _results = [];
-
-  /// 派生 32 字节密钥所需的固定 salt（基准测试用）
-  static final Uint8List _salt = Uint8List.fromList(
-      List<int>.generate(16, (i) => i + 1));
-
-  Future<String> _runCase(_BenchCase c) async {
-    final sw = Stopwatch()..start();
-    try {
-      if (c.type == 0) {
-        final algo = Pbkdf2(
-          macAlgorithm: Hmac.sha256(),
-          iterations: c.iterations,
-          bits: 256,
-        );
-        final key =
-            await algo.deriveKeyFromPassword(password: 'test-password', nonce: _salt);
-        await key.extractBytes();
-      } else {
-        final algo = Argon2id(
-          parallelism: c.parallelism,
-          memory: c.memory,
-          iterations: c.iterations,
-          hashLength: 32,
-        );
-        final key = await algo.deriveKey(
-          secretKey: SecretKey('test-password'.codeUnits),
-          nonce: _salt,
-        );
-        await key.extractBytes();
-      }
-      sw.stop();
-      return '${sw.elapsedMilliseconds}';
-    } on Object catch (e) {
-      sw.stop();
-      return 'ERR:$e';
-    }
-  }
-
-  Future<void> _runAll() async {
-    setState(() {
-      _running = true;
-      _results.clear();
-    });
-    final results = <_BenchResult>[];
-    for (final c in _cases) {
-      final out = await _runCase(c);
-      final failed = out.startsWith('ERR:');
-      final elapsed = failed ? 0 : int.parse(out);
-      results.add(_BenchResult(
-        name: c.name,
-        params: c.params,
-        algo: c.type == 0 ? 'PBKDF2' : 'Argon2id',
-        elapsedMs: elapsed,
-        failed: failed,
-        error: failed ? out.substring(4) : '',
-      ));
-      setState(() => _results.add(results.last));
-    }
-    setState(() => _running = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('KDF Performance Comparison'.tr(),
-            style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(
-          'Compare PBKDF2-HMAC-SHA256 and Argon2id derivation time on the current device. Reference only: PBKDF2 is serial iterations; Argon2id additionally consumes memory.'
-              .tr(),
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-        ),
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          onPressed: _running ? null : _runAll,
-          icon: _running
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.speed),
-          label: Text(_running ? 'Running...'.tr() : 'Run All Benchmarks'.tr()),
-        ),
-        const SizedBox(height: 16),
-        for (final c in _cases)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  c.type == 0 ? Icons.timelapse : Icons.memory,
-                  size: 18,
-                  color: Colors.grey[600],
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${c.name}\n${c.params}',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        if (_results.isNotEmpty) ...[
-          const Divider(height: 32),
-          Text('Results'.tr(), style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-              )),
-          const SizedBox(height: 8),
-          for (final r in _results)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 140,
-                    child: Text(r.name,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-                  ),
-                  Expanded(
-                    child: r.failed
-                        ? SelectableText(r.error,
-                            style:
-                                const TextStyle(fontSize: 13, color: Colors.red))
-                        : SelectableText('${r.elapsedMs} ms',
-                            style: const TextStyle(fontSize: 13)),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            icon: const Icon(Icons.copy, size: 18),
-            label: Text('Copy Results'.tr()),
-            onPressed: () => _copyToClipboard(
-              context,
-              _results.map((r) => r.summary).join('\n'),
-              'Benchmark results copied'.tr(),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
 
 // ──────────────────────────────────────────────
 // 辅助：复制到剪贴板

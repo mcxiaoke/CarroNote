@@ -171,9 +171,8 @@ class SyncService {
     required NotesDatabase database,
   }) async {
     // 日志文件已在 main() 最早期初始化（全平台统一），此处不再重复。
-    // 向日志 Web 服务器注入"同步诊断快照"提供者，使 /diagnostics 端点可用。
-    // 采用反向注入而非直接依赖，避免 utils 层反向依赖 sync 层。
-    LogWebServer.instance.diagnosticsProvider = exportAllLogsAsText;
+    // 日志 Web 服务器（lib/src/logger/log_webserver.dart）直接调用本类方法，
+    // 不再需要 provider 注入。
 
     // F-H03 修复：initialize 幂等化。重复调用时先关闭旧 journal/旧后端，
     // 避免旧 journal 文件句柄泄漏、seq 水位紊乱、日志链断裂；否则直接覆盖
@@ -334,7 +333,6 @@ class SyncService {
     Log.sync.i('SyncService dispose');
     _autoSyncTimer?.cancel();
     _autoSyncFailureRetried = false; // P3-b：清理重试状态
-    LogWebServer.instance.diagnosticsProvider = null;
     // 先关 journal（内部会 flush 未落盘的缓冲），再关后端
     await _closeJournal();
     await _backend?.close();
@@ -876,6 +874,114 @@ class SyncService {
 
   /// 获取当前日志文件路径（调试面板"导出日志"按钮用）
   Future<String?> getLogFilePath() => AppLogFile.currentPath();
+
+  /// 供 LogWebServer JSON 端点（/api/status /api/sync /api/actions /api/memory）
+  /// 使用的完整调试快照。各端点从返回 Map 的对应子键提取数据。
+  Map<String, dynamic> getDebugJson() {
+    final snap = getDiagnosticsSnapshot();
+    return {
+      'status': {
+        'status': snap.status,
+        'isSyncing': snap.isSyncing,
+        'backendReady': snap.backendReady,
+        'syncEnabled': snap.syncEnabled,
+        'autoSyncEnabled': snap.autoSyncEnabled,
+        'backendType': snap.backendType,
+        'backendDisplayName': snap.backendDisplayName,
+        'backendRuntimeType': snap.backendRuntimeType,
+        'providerKey': snap.providerKey,
+        'localFsPath': snap.localFsPath,
+        'webdavUrl': snap.webdavUrl,
+        'webdavUsername': snap.webdavUsername,
+        'safeServerUrl': snap.safeServerUrl,
+        'deviceId': snap.deviceId,
+        'lastSyncTime': snap.lastSyncTime?.toIso8601String(),
+        'errorMessage': snap.errorMessage,
+        'vaultId': snap.vaultId,
+        'keyVersion': snap.keyVersion,
+        'dataKeyEpoch': snap.dataKeyEpoch,
+        'keyFingerprint': snap.keyFingerprint,
+        'kdfAlgorithm': snap.kdfAlgorithm,
+        'kdfIterations': snap.kdfIterations,
+        'logDirPath': snap.logDirPath,
+        'logBufferCount': snap.logBufferCount,
+      },
+      'sync': {
+        'success': snap.lastResultSuccess,
+        'attempts': snap.lastResultAttempts,
+        'uploaded': snap.lastResultUploaded,
+        'downloaded': snap.lastResultDownloaded,
+        'deleted': snap.lastResultDeleted,
+        'conflicts': snap.lastResultConflicts,
+        'migrated': snap.lastResultMigrated,
+        'skipped': snap.lastResultSkipped,
+        'passwordEpochMismatch': snap.lastResultPasswordEpochMismatch,
+        'requiresRelogin': snap.lastResultRequiresRelogin,
+        'errorMessage': snap.lastResultErrorMessage,
+        'failedNoteUuids': snap.lastResultFailedNoteUuids,
+      },
+      'actions': snap.lastResultActions?.map((a) => a.toJson()).toList() ?? [],
+      'memory': getMemorySnapshot(),
+    };
+  }
+
+  /// 内存数据快照（运行时真实状态，不含敏感内容）。
+  ///
+  /// 与早期仅返回布尔/计数不同，这里展示**实际数据**：
+  /// - 缓存笔记摘要（uuid/标题/删除标记/修改时间/同步标记，不含正文）
+  /// - Keyring 元数据（vaultId/指纹/版本/epoch/kdf，不含密钥本身）
+  /// - Journal 运行态摘要
+  Map<String, dynamic> getMemorySnapshot() {
+    final db = NotesDatabase.instance;
+    final snap = getDiagnosticsSnapshot();
+    return {
+      'status': state.status.name,
+      'isSyncing': _syncInProgress,
+      'backendReady': _backendReady,
+      'lastSyncTime': state.lastSyncTime?.toIso8601String(),
+      'hasKeyring': _keyring != null,
+      'hasBackend': _backend != null,
+      'hasEngine': _engine != null,
+      'hasJournal': _journal != null,
+      'db': db.getCacheInfo(),
+      'cachedNotes': db.cachedNoteSummaries(),
+      'keyring': {
+        'vaultId': snap.vaultId,
+        'keyFingerprint': snap.keyFingerprint,
+        'keyVersion': snap.keyVersion,
+        'dataKeyEpoch': snap.dataKeyEpoch,
+        'kdfAlgorithm': snap.kdfAlgorithm,
+        'kdfIterations': snap.kdfIterations,
+      },
+      'journal': _journalSummary(),
+    };
+  }
+
+  Map<String, dynamic> _journalSummary() {
+    final j = _journal;
+    if (j == null) return {'present': false};
+    return {
+      'present': true,
+      'entryCount': j.entries.length,
+      'pendingCount': j.pendingCount,
+      'nextSeq': j.nextSeq,
+      'uploadedSeq': j.uploadedSeq,
+    };
+  }
+
+  /// Journal 完整导出（供 /api/download/journal 与内存快照使用）。
+  ///
+  /// 读取全部条目（含归档），每条转为 JSON；不含任何密钥明文。
+  Future<Map<String, dynamic>> getJournalDump() async {
+    final j = _journal;
+    if (j == null) return {'present': false};
+    final entries = (await j.readAll()).map((e) => e.toJson()).toList();
+    return {
+      'present': true,
+      'entryCount': entries.length,
+      'entries': entries,
+    };
+  }
 
   /// 导出全部日志为文本（调试面板"复制全部"按钮用）
   ///

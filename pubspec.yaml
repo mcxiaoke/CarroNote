@@ -119,6 +119,7 @@ flutter:
     - assets/
     - assets/images/
     - assets/translations/
+    - assets/web/
 
   fonts:
     - family: NotoSerif

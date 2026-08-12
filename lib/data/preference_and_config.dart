@@ -429,6 +429,20 @@ class PreferencesStorage {
     _logPrefChange('备份目录', old.isEmpty ? '未设置' : old,
         path.isEmpty ? '未设置' : path);
   }
+
+  /// 导出全部偏好设置（调试面板 / dashboard 下载用）。
+  ///
+  /// 仅含 UI/功能开关与数值，不含任何密钥类数据。值保持 SharedPreferences
+  /// 原始类型（bool/int/String/double/`List<String>`）。
+  static Map<String, Object?> dumpAll() {
+    final prefs = _preferences;
+    if (prefs == null) return const {};
+    final out = <String, Object?>{};
+    for (final key in prefs.getKeys()) {
+      out[key] = prefs.get(key);
+    }
+    return out;
+  }
 }
 
 class PhraseHandler {

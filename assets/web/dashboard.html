@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeNotes Debug Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { font-family: Consolas, Monaco, 'Courier New', monospace;
+         background: #1e1e1e; color: #d4d4d4; font-size: 13px;
+         display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+         border-bottom: 1px solid #333; padding: 8px 12px; }
+  .top h1 { font-size: 15px; color: #4fc3f7; margin-right: 6px; }
+  #host { background: #2d2d2d; color: #d4d4d4; border: 1px solid #555;
+          padding: 4px 8px; border-radius: 4px; width: 200px; }
+  button { background: #264f78; color: #fff; border: none; padding: 5px 12px;
+           border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #31708f; }
+  button.ghost { background: #2d2d2d; color: #aaa; border: 1px solid #555; }
+  button.ghost:hover { background: #37474f; color: #4fc3f7; }
+  #conn.on { color: #4caf50; } #conn.off { color: #f44336; }
+  .tabs { display: flex; gap: 4px; padding: 0 12px 8px; flex-wrap: wrap; }
+  .tab { background: #2d2d2d; color: #aaa; border: 1px solid #555;
+         padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+  .tab.active { background: #37474f; color: #4fc3f7; border-color: #4fc3f7; }
+  .pane { display: none; }
+  .pane.active { display: flex; flex-direction: column; flex: 1; min-height: 0;
+                 overflow: auto; padding: 0 12px 12px; }
+  .kv { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid #2a2a2a; }
+  .kv .k { color: #9cdcfe; min-width: 200px; }
+  .kv .v { color: #ce9178; word-break: break-all; }
+  .tbl { border: 1px solid #333; border-radius: 4px; margin: 8px 0; padding: 8px; }
+  .th { color: #4fc3f7; font-weight: bold; margin-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #333; padding: 2px 6px; text-align: left;
+           max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  th { color: #888; }
+  .act { padding: 2px 0; border-bottom: 1px solid #2a2a2a; color: #d4d4d4; }
+  /* Logs */
+  .loghead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+             margin-bottom: 6px; padding-top: 6px; }
+  #logFilter { background: #2d2d2d; color: #d4d4d4; border: 1px solid #555;
+               padding: 4px 8px; border-radius: 4px; width: 200px; }
+  .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tag-btn { background: #2d2d2d; border: 1px solid #555; color: #aaa;
+             padding: 2px 8px; border-radius: 10px; cursor: pointer; font-size: 11px; }
+  .tag-btn.active { background: #37474f; color: #4fc3f7; border-color: #4fc3f7; }
+  #logContainer { flex: 1; min-height: 0; overflow-y: auto; white-space: pre-wrap;
+                  line-height: 1.5; font-size: 12px; }
+  .log-line { padding: 1px 0; border-left: 3px solid transparent; padding-left: 6px; }
+  .log-line.ERROR { color: #f48771; border-left-color: #f48771; }
+  .log-line.WARN  { color: #cca700; border-left-color: #cca700; }
+  .log-line.FATAL { color: #ff5252; font-weight: bold; border-left-color: #ff5252; }
+  .log-line.INFO  { color: #9cdcfe; }
+  .log-line.DEBUG { color: #888; }
+  .log-line.TRACE { color: #666; }
+  details { margin: 4px 0; }
+  summary { cursor: pointer; color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>SafeNotes Dashboard</h1>
+  <input id="host" placeholder="ip:port">
+  <button onclick="loadAll()">Refresh All</button>
+  <button class="ghost" onclick="dlSet(['api/download/db','api/download/sp'])">Download Data</button>
+  <button class="ghost" onclick="dlSet(['logfile','api/download/journal','diagnostics'])">Download Logs</button>
+  <span id="conn" class="off">Disconnected</span>
+</div>
+<div class="tabs">
+  <button class="tab active" onclick="show(this,'status')">Status</button>
+  <button class="tab" onclick="show(this,'sync')">Sync</button>
+  <button class="tab" onclick="show(this,'actions')">Actions</button>
+  <button class="tab" onclick="show(this,'logs')">Logs</button>
+  <button class="tab" onclick="show(this,'db')">DB Inspector</button>
+  <button class="tab" onclick="show(this,'memory')">Memory</button>
+</div>
+<div id="status" class="pane active"></div>
+<div id="sync" class="pane"></div>
+<div id="actions" class="pane"></div>
+<div id="logs" class="pane">
+  <div class="loghead">
+    <input id="logFilter" placeholder="keyword filter" oninput="renderLogs()">
+    <label><input type="checkbox" id="logAuto" checked> Auto-scroll</label>
+    <button onclick="clearLogs()">Clear</button>
+    <button onclick="toggleConn()" id="connBtn">Pause</button>
+  </div>
+  <div class="tags" id="logTags"></div>
+  <div id="logContainer"></div>
+</div>
+<div id="db" class="pane"></div>
+<div id="memory" class="pane"></div>
+<script>
+var hostEl = document.getElementById('host');
+hostEl.value = location.host;
+function api(p){ return fetch('http://'+hostEl.value+p, {mode:'cors'}).then(function(r){ return r.json(); }); }
+
+// 触发一组下载：用隐藏 iframe 拉取（服务端已设 Content-Disposition: attachment），
+// 避免 window.open 多开被浏览器弹窗拦截，也不会离开当前面板。
+function dlSet(paths){
+  paths.forEach(function(p){
+    var f = document.createElement('iframe');
+    f.style.display = 'none';
+    f.src = 'http://'+hostEl.value+'/'+p;
+    document.body.appendChild(f);
+    setTimeout(function(){ if(f.parentNode) f.parentNode.removeChild(f); }, 6000);
+  });
+}
+
+function setConn(t, cls){ var el=document.getElementById('conn'); el.textContent=t; el.className=cls; }
+
+// 连接失败：仅更新状态点，绝不清空已显示的数据（dashboard 只是客户端，忽略即可）
+function onFail(el){
+  return function(){
+    setConn('Disconnected','off');
+    if(el && el.childElementCount===0){
+      var s=document.createElement('div'); s.style.color='#666';
+      s.textContent='(offline)'; el.appendChild(s);
+    }
+  };
+}
+
+function show(btn, name){
+  var panes = document.querySelectorAll('.pane');
+  for(var i=0;i<panes.length;i++){ panes[i].classList.remove('active'); }
+  var tabs = document.querySelectorAll('.tab');
+  for(var i=0;i<tabs.length;i++){ tabs[i].classList.remove('active'); }
+  btn.classList.add('active');
+  document.getElementById(name).classList.add('active');
+  closeLogs();
+  if(name==='status') loadStatus();
+  else if(name==='sync') loadSync();
+  else if(name==='memory') loadMemory();
+  else if(name==='actions') loadActions();
+  else if(name==='db') loadDb();
+  else if(name==='logs'){ connectLogs(); renderLogs(); }
+}
+
+function textRow(k, v){
+  var row = document.createElement('div'); row.className='kv';
+  var a = document.createElement('span'); a.className='k'; a.textContent=k;
+  var b = document.createElement('span'); b.className='v'; b.textContent=String(v);
+  row.appendChild(a); row.appendChild(b); return row;
+}
+
+// 递归渲染任意 JSON 值（对象/数组可折叠）
+function renderValue(v){
+  var frag = document.createDocumentFragment();
+  if(Array.isArray(v)){
+    if(v.length===0){ var e=document.createElement('span'); e.textContent='[ ]'; frag.appendChild(e); return frag; }
+    var det=document.createElement('details'); var s=document.createElement('summary');
+    s.textContent='array ('+v.length+')'; det.appendChild(s);
+    v.forEach(function(item){ var line=document.createElement('div'); line.style.paddingLeft='12px'; line.appendChild(renderValue(item)); det.appendChild(line); });
+    frag.appendChild(det); return frag;
+  }
+  if(v!==null && typeof v==='object'){
+    var det2=document.createElement('details'); var s2=document.createElement('summary'); s2.textContent='{ }'; det2.appendChild(s2);
+    for(var kk in v){ if(v.hasOwnProperty(kk)){ var line2=document.createElement('div'); line2.style.paddingLeft='12px'; line2.appendChild(kvNode(kk, v[kk])); det2.appendChild(line2); } }
+    frag.appendChild(det2); return frag;
+  }
+  var span=document.createElement('span'); span.textContent=String(v); frag.appendChild(span); return frag;
+}
+function kvNode(k, v){
+  var row=document.createElement('div'); row.className='kv';
+  var a=document.createElement('span'); a.className='k'; a.textContent=k;
+  var b=document.createElement('span'); b.className='v'; b.appendChild(renderValue(v));
+  row.appendChild(a); row.appendChild(b); return row;
+}
+function renderKV(el, obj){
+  el.innerHTML='';
+  for(var k in obj){ if(obj.hasOwnProperty(k)){ el.appendChild(kvNode(k, obj[k])); } }
+}
+
+function loadStatus(){ api('/api/status').then(function(d){ renderKV(document.getElementById('status'), d); }).catch(onFail(document.getElementById('status'))); }
+function loadSync(){ api('/api/sync').then(function(d){ renderKV(document.getElementById('sync'), d); }).catch(onFail(document.getElementById('sync'))); }
+function loadMemory(){ api('/api/memory').then(function(d){ renderKV(document.getElementById('memory'), d); }).catch(onFail(document.getElementById('memory'))); }
+function loadActions(){
+  api('/api/actions').then(function(list){
+    var el = document.getElementById('actions'); el.innerHTML='';
+    for(var i=0;i<list.length;i++){
+      var a = list[i];
+      var row = document.createElement('div'); row.className='act';
+      var txt = (a.type||'')+'  '+(a.uuid||'');
+      if(a.errorLabel){ txt += '  [ERR:'+a.errorLabel+']'; }
+      if(a.message){ txt += '  '+a.message; }
+      row.textContent = txt;
+      el.appendChild(row);
+    }
+    if(list.length===0){ el.textContent='(no actions)'; }
+  }).catch(onFail(document.getElementById('actions')));
+}
+
+function loadDb(){
+  var el = document.getElementById('db');
+  api('/api/db').then(function(meta){
+    el.innerHTML='';
+    el.appendChild(textRow('path', meta.path));
+    el.appendChild(textRow('size', meta.sizeBytes!=null ? (meta.sizeBytes/1024).toFixed(1)+' KB' : '-'));
+    if(meta.metaKeys){ el.appendChild(textRow('metaKeys', meta.metaKeys.join(', '))); }
+    (meta.tables||[]).forEach(function(t){
+      var card = document.createElement('div'); card.className='tbl';
+      var h = document.createElement('div'); h.className='th';
+      h.textContent = t.name+'  ('+t.type+', rows='+(t.rowCount!=null?t.rowCount:'?')+')';
+      card.appendChild(h);
+      // schema（折叠，次要）
+      if(t.columns){
+        var schema=document.createElement('details');
+        var sum=document.createElement('summary'); sum.textContent='schema ('+t.columns.length+' cols)';
+        schema.appendChild(sum);
+        var st=document.createElement('table');
+        var hr=document.createElement('tr'); ['cid','name','type','notnull','pk'].forEach(function(c){var x=document.createElement('th');x.textContent=c;hr.appendChild(x);}); st.appendChild(hr);
+        t.columns.forEach(function(c){var tr=document.createElement('tr');['cid','name','type','notnull','pk'].forEach(function(k){var td=document.createElement('td');td.textContent=String(c[k]);tr.appendChild(td);});st.appendChild(tr);});
+        schema.appendChild(st); card.appendChild(schema);
+      }
+      // 数据（主视图）
+      var dataWrap=document.createElement('div'); dataWrap.id='data-'+t.name; card.appendChild(dataWrap);
+      el.appendChild(card);
+      loadTableData(t.name, dataWrap);
+    });
+  }).catch(onFail(el));
+}
+function loadTableData(name, wrap){
+  api('/api/db?table='+encodeURIComponent(name)+'&limit=200').then(function(d){
+    wrap.innerHTML='';
+    var rows=d.rows||[];
+    if(rows.length===0){ wrap.textContent='(empty)'; return; }
+    var tbl=document.createElement('table');
+    var cols=Object.keys(rows[0]);
+    var hr=document.createElement('tr'); cols.forEach(function(c){var th=document.createElement('th');th.textContent=c;hr.appendChild(th);}); tbl.appendChild(hr);
+    rows.forEach(function(r){var tr=document.createElement('tr');cols.forEach(function(c){var td=document.createElement('td');var v=r[c];td.textContent=(typeof v==='object'&&v!==null)?JSON.stringify(v):String(v);td.title=td.textContent;tr.appendChild(td);});tbl.appendChild(tr);});
+    wrap.appendChild(tbl);
+  }).catch(onFail(wrap));
+}
+
+// ── Logs（追平 / 查看器） ──
+var logWs=null, logPaused=false, logLines=[];
+var LOGLEVELS=['TRACE','DEBUG','INFO','WARN','ERROR','FATAL'];
+var hiddenLevels=new Set(['TRACE','DEBUG']);
+var knownTags=new Set(), hiddenTags=new Set();
+
+function connectLogs(){
+  if(logWs) return;
+  var proto = location.protocol==='https:' ? 'wss:' : 'ws:';
+  logWs = new WebSocket(proto+'//'+hostEl.value+'/stream');
+  logWs.onopen = function(){ setConn('Connected','on'); document.getElementById('connBtn').textContent='Pause'; logPaused=false; };
+  logWs.onmessage = function(e){
+    if(logPaused) return;
+    logLines.push(e.data);
+    if(logLines.length>5000) logLines.shift();
+    var tag = parseTag(e.data);
+    if(tag && !knownTags.has(tag)){ knownTags.add(tag); renderLogTags(); }
+    if(logVisible(e.data)) appendLog(e.data);
+  };
+  logWs.onclose = function(){ setConn('Disconnected','off'); document.getElementById('connBtn').textContent='Reconnect'; logWs=null;
+    setTimeout(function(){ if(!logWs || logWs.readyState===3) connectLogs(); }, 5000); };
+  logWs.onerror = function(){ if(logWs) logWs.close(); };
+}
+function closeLogs(){ if(logWs){ logWs.close(); logWs=null; } }
+function parseLevel(t){ for(var i=0;i<LOGLEVELS.length;i++){ if(t.indexOf('['+LOGLEVELS[i].padEnd(5)+']')>=0) return LOGLEVELS[i]; } return ''; }
+function parseTag(t){ var m=t.match(/\]\s\[([A-Z]+)\]/); return m?m[1]:''; }
+function logVisible(t){
+  var lv=parseLevel(t); if(lv && hiddenLevels.has(lv)) return false;
+  var tag=parseTag(t); if(tag && hiddenTags.has(tag)) return false;
+  var f=document.getElementById('logFilter').value.toLowerCase();
+  return f==='' || t.toLowerCase().indexOf(f)>=0;
+}
+function appendLog(t){
+  var c=document.getElementById('logContainer');
+  var d=document.createElement('div'); d.className='log-line '+parseLevel(t); d.textContent=t;
+  c.appendChild(d);
+  while(c.children.length>3000) c.removeChild(c.firstChild);
+  if(document.getElementById('logAuto').checked) c.scrollTop=c.scrollHeight;
+}
+function renderLogs(){
+  var c=document.getElementById('logContainer'); c.innerHTML='';
+  for(var i=0;i<logLines.length;i++){ if(logVisible(logLines[i])) appendLog(logLines[i]); }
+}
+function renderLogTags(){
+  var bar=document.getElementById('logTags'); bar.innerHTML='';
+  var mk=function(label,active,fn){var b=document.createElement('button');b.className='tag-btn'+(active?' active':'');b.textContent=label;b.onclick=fn;bar.appendChild(b);};
+  LOGLEVELS.forEach(function(lv){ mk(lv, !hiddenLevels.has(lv), function(){ if(hiddenLevels.has(lv)) hiddenLevels.delete(lv); else hiddenLevels.add(lv); renderLogTags(); renderLogs(); }); });
+  var sep=document.createElement('span'); sep.textContent='|'; sep.style.color='#555'; bar.appendChild(sep);
+  Array.from(knownTags).sort().forEach(function(tag){ mk(tag, !hiddenTags.has(tag), function(){ if(hiddenTags.has(tag)) hiddenTags.delete(tag); else hiddenTags.add(tag); renderLogTags(); renderLogs(); }); });
+}
+function clearLogs(){ logLines=[]; document.getElementById('logContainer').innerHTML=''; }
+function toggleConn(){
+  if(logPaused || !logWs || logWs.readyState===3){ connectLogs(); }
+  else { logPaused=true; logWs.close(); setConn('Paused','off'); document.getElementById('connBtn').textContent='Reconnect'; }
+}
+
+function loadAll(){ loadStatus(); loadSync(); loadMemory(); loadActions(); loadDb(); }
+loadAll();
+</script>
+</body>
+</html>

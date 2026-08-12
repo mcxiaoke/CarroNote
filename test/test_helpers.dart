@@ -52,6 +52,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 
 /// 测试用「无 isolate」加密实现。
 ///

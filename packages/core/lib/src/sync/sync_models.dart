@@ -1291,4 +1291,14 @@ class SyncActionInfo {
   @override
   String toString() =>
       'SyncActionInfo($type, uuid=$uuid${errorLabel != null ? ', err=$errorLabel' : ''})';
+
+  /// 序列化为 JSON（供 LogWebServer /api/actions 端点使用）
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'uuid': uuid,
+        'hash': hash,
+        'message': message,
+        'errorLabel': errorLabel,
+        'errorDisplay': errorDisplay,
+      };
 }

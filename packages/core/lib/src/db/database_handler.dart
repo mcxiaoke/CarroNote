@@ -20,6 +20,7 @@
 // Dart 导入
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
 
 // Package 导入
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -33,6 +34,12 @@ import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/logger/app_logger.dart';
 
 const String tableMeta = 'sync_meta';
+
+/// DB Inspector 数据视图隐藏的列。
+///
+/// notes 表的 title / description 是字段级加密的密文包络，DB Inspector 仅用于
+/// 排查本地库结构，无需展示这两列（既避免噪声，也遵循隐私红线不暴露笔记字段）。
+const Set<String> _inspectorHiddenColumns = {'title', 'description'};
 
 /// 隐私红线：日志中**绝不允许**出现笔记标题 / 正文明文。
 ///
@@ -126,6 +133,135 @@ class NotesDatabase {
 
   /// 迁移是否进行中（UI 可监听此状态显示遮罩）
   bool get isMigrating => _isMigrating;
+
+  /// 内存态快照（仅元数据，不含敏感内容），供调试面板 / WebServer 使用。
+  Map<String, dynamic> getCacheInfo() => {
+        'isMigrating': _isMigrating,
+        'cacheBuilt': _notesCache != null,
+        'cacheCount': _notesCache?.length ?? 0,
+      };
+
+  /// 缓存笔记摘要（供内存快照 / DB Inspector 展示，不含正文内容）。
+  ///
+  /// 仅暴露 uuid / 标题 / 删除标记 / 修改时间 / 同步标记，绝不返回 [description]
+  /// （笔记明文正文），符合隐私红线。
+  List<Map<String, dynamic>> cachedNoteSummaries() {
+    final cache = _notesCache;
+    if (cache == null) return const [];
+    return cache.map((n) => <String, dynamic>{
+          'uuid': n.uuid,
+          'title': n.title,
+          'deleted': n.deleted,
+          'updatedAt':
+              DateTime.fromMillisecondsSinceEpoch(n.updatedAt).toIso8601String(),
+          'synced': n.synced,
+        }).toList();
+  }
+
+  /// 查询指定表的前 [limit] 行数据（DB Inspector 展示用）。
+  ///
+  /// 隐私约束：blob 列（如 notes 表的加密包络）不展开内容，仅以占位符
+  /// `<blob N B>` 表示——notes 表存储密文包络、无明文，天然不泄露笔记内容。
+  /// [table] 必须是合法 SQL 标识符（白名单校验，防注入）。
+  Future<List<Map<String, dynamic>>> queryTableRows(String table,
+      {int limit = 100}) async {
+    if (!_isSafeIdentifier(table)) {
+      throw ArgumentError('非法表名: $table');
+    }
+    final db = await database;
+    final rows =
+        await db.rawQuery('SELECT * FROM "$table" LIMIT ?', [limit]);
+    return rows.map((row) {
+      final out = <String, dynamic>{};
+      row.forEach((k, v) {
+        // 隐私：DB Inspector 数据视图不展示笔记的 title / description 加密列
+        if (_inspectorHiddenColumns.contains(k)) return;
+        if (v is Uint8List || v is List<int>) {
+          out[k] = '<blob ${(v as List<int>).length} B>';
+        } else {
+          out[k] = v;
+        }
+      });
+      return out;
+    }).toList();
+  }
+
+  /// 当前数据库文件路径（供下载端点使用）。
+  Future<String> get dbFilePath async => (await database).path;
+
+  static bool _isSafeIdentifier(String s) =>
+      s.isNotEmpty &&
+      RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(s);
+
+  /// Database Inspector：返回本地库结构元数据（表清单、行数、列 schema、文件信息）。
+  ///
+  /// 隐私约束：
+  ///   - 不查询 blob / 密文内容，仅暴露结构元数据；
+  ///   - sync_meta 的敏感 value（如 keyring JSON）不展开，仅列出 key 名。
+  Future<Map<String, dynamic>> inspectMetadata() async {
+    final db = await database;
+    final path = db.path;
+    int? sizeBytes;
+    try {
+      sizeBytes = await File(path).length();
+    } on Object {
+      sizeBytes = null;
+    }
+    final objects = await db.rawQuery(
+        "SELECT name, type, sql FROM sqlite_master "
+        "WHERE type IN ('table','view','index','trigger') ORDER BY type, name");
+    final tables = <Map<String, dynamic>>[];
+    for (final o in objects) {
+      final name = o['name'] as String;
+      final type = o['type'] as String;
+      if (name.startsWith('sqlite_')) continue; // 跳过内部对象
+      int? rowCount;
+      List<Map<String, dynamic>>? columns;
+      if (type == 'table') {
+        try {
+          final c = await db.rawQuery('SELECT COUNT(*) AS c FROM "$name"');
+          rowCount = (c.first['c'] as int?) ?? 0;
+        } on Object {
+          rowCount = null;
+        }
+        try {
+          final info = await db.rawQuery('PRAGMA table_info("$name")');
+          columns = info
+              .map((r) => <String, dynamic>{
+                    'cid': r['cid'],
+                    'name': r['name'],
+                    'type': r['type'],
+                    'notnull': r['notnull'],
+                    'pk': r['pk'],
+                  })
+              .toList();
+        } on Object {
+          columns = null;
+        }
+      }
+      tables.add(<String, dynamic>{
+        'name': name,
+        'type': type,
+        'sql': o['sql'],
+        'rowCount': rowCount,
+        'columns': columns,
+      });
+    }
+    // sync_meta：仅列出 key 名，不展开敏感 value
+    List<String>? metaKeys;
+    try {
+      final meta = await db.query(tableMeta, columns: [MetaFields.key]);
+      metaKeys = meta.map((m) => m[MetaFields.key] as String).toList();
+    } on Object {
+      metaKeys = null;
+    }
+    return <String, dynamic>{
+      'path': path,
+      'sizeBytes': sizeBytes,
+      'tables': tables,
+      'metaKeys': metaKeys,
+    };
+  }
 
   /// 解密结果缓存（P1 性能优化，根因 4）。
   ///
