@@ -160,9 +160,13 @@ class RouteGenerator {
   }
 
   /// 统一的页面切换过渡：
-  /// - 桌面端（尤其 Windows）用 Fluent 风格的快速淡入，接近原生窗口切换；
-  /// - 移动端用 Material fade-through（两层交叉淡入淡出），
-  ///   替代原 Web 浏览器式整屏左推（leftToRight）转场。
+  /// - 移动端（Android/iOS）用 Flutter 平台默认转场（MaterialPageRoute 走
+  ///   pageTransitionsTheme）：Android 为 FadeForwards（含预测性返回手势）、
+  ///   iOS 为 Cupertino 滑动 + 边缘返回。官方 M3 明确推荐 forward/backward
+  ///   导航直接用平台默认，随平台更新自动演进；且默认转场为 opaque，底层有
+  ///   旧页面/背景色垫底，不会出现此前 FadeThroughRoute 交叉淡出中间段的
+  ///   双透明黑屏（opaque:false 露出引擎视图黑色背景）。
+  /// - 桌面端（尤其 Windows）保留 Fluent 风格的快速淡入，接近原生窗口切换。
   static Route<dynamic> _buildRoute(Widget child, RouteSettings settings) {
     if (isDesktopPlatform) {
       return PageTransition(
@@ -171,11 +175,7 @@ class RouteGenerator {
         type: PageTransitionType.fade,
       );
     }
-    return FadeThroughRoute(
-      child: child,
-      settings: settings,
-      duration: const Duration(milliseconds: 500),
-    );
+    return MaterialPageRoute(builder: (_) => child, settings: settings);
   }
 
   static Route<dynamic> _errorRoute(
@@ -202,54 +202,6 @@ class RouteGenerator {
         ),
       );
     });
-  }
-}
-
-/// Material fade-through 过渡路由（Material Motion 层级导航推荐）
-///
-/// 进入：旧页前半段淡出、新页后半段淡入；返回反向。
-/// 需要 [opaque] 为 false，两层页面在过渡期间都可见才能交叉。
-class FadeThroughRoute<T> extends PageRouteBuilder<T> {
-  FadeThroughRoute({
-    required this.child,
-    super.settings,
-    this.duration = const Duration(milliseconds: 500),
-  }) : super(
-          transitionDuration: duration,
-          reverseTransitionDuration: duration,
-          opaque: false,
-          pageBuilder: (_, _, _) => child,
-          transitionsBuilder: _fadeThroughTransitions,
-        );
-
-  final Widget child;
-  final Duration duration;
-
-  static Widget _fadeThroughTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    // 新页：animation 0→1 时在后 60%（0.4~1.0）淡入；返回时前 60% 淡出。
-    final CurvedAnimation fadeIn = CurvedAnimation(
-      parent: animation,
-      curve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
-      reverseCurve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
-    );
-    // 旧页：被覆盖（secondaryAnimation 0→1）时在前 60% 淡出。
-    final CurvedAnimation fadeOut = CurvedAnimation(
-      parent: secondaryAnimation,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
-      reverseCurve: const Interval(0.4, 1.0, curve: Curves.easeInOut),
-    );
-    return FadeTransition(
-      opacity: fadeIn,
-      child: FadeTransition(
-        opacity: Tween<double>(begin: 1.0, end: 0.0).animate(fadeOut),
-        child: child,
-      ),
-    );
   }
 }
 
