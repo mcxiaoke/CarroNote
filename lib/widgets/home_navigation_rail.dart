@@ -44,7 +44,6 @@ class HomeSidebar extends StatelessWidget {
   final VoidCallback onThemeCallback;
   final VoidCallback onBiometricsCallback;
   final VoidCallback onSettingsCallback;
-  final VoidCallback onDiagnosticsCallback;
   final VoidCallback onDeletedNotesCallback;
   final VoidCallback onLogoutCallback;
 
@@ -55,7 +54,6 @@ class HomeSidebar extends StatelessWidget {
     required this.onThemeCallback,
     required this.onBiometricsCallback,
     required this.onSettingsCallback,
-    required this.onDiagnosticsCallback,
     required this.onDeletedNotesCallback,
     required this.onLogoutCallback,
   });
@@ -149,11 +147,6 @@ class HomeSidebar extends StatelessWidget {
                     Icons.settings_outlined,
                     'Settings'.tr(),
                     onSettingsCallback,
-                  ),
-                  sideItem(
-                    Icons.bug_report_outlined,
-                    'Debug Panel'.tr(),
-                    onDiagnosticsCallback,
                   ),
                   sideItem(
                     Icons.delete_outline,

@@ -345,7 +345,6 @@ class HomePageState extends State<HomePage> with RouteAware {
                     onThemeCallback: _navTheme,
                     onBiometricsCallback: _navBiometrics,
                     onSettingsCallback: _navSettings,
-                    onDiagnosticsCallback: _navDiagnostics,
                     onDeletedNotesCallback: _navDeletedNotes,
                     onLogoutCallback: _navLogout,
                   ),
@@ -559,10 +558,6 @@ class HomePageState extends State<HomePage> with RouteAware {
         Navigator.of(context).pop();
         _navSettings();
       },
-      onDiagnosticsCallback: () {
-        Navigator.of(context).pop();
-        _navDiagnostics();
-      },
       onDeletedNotesCallback: () {
         Navigator.of(context).pop();
         _navDeletedNotes();
@@ -609,11 +604,6 @@ class HomePageState extends State<HomePage> with RouteAware {
     if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
       refreshNotes();
     }
-  }
-
-  Future<void> _navDiagnostics() async {
-    Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics)');
-    await Navigator.pushNamed(context, '/diagnostics');
   }
 
   Future<void> _navDeletedNotes() async {
