@@ -44,6 +44,15 @@ class LogWebServer {
   /// 全局单例（跨页面持久存在）
   static final LogWebServer instance = LogWebServer._();
 
+  /// 是否启用日志 HTTP 服务器。
+  ///
+  /// 默认开启。UI 集成测试（flutter test）下应设为 false：HttpServer 的
+  /// idle timeout 会创建一个周期性 Timer，在 FakeAsync 测试环境里永远处于
+  /// pending 状态，导致测试结束报 "A Timer is still pending"。UI 集成测试并不
+  /// 验证日志服务器本身（core 包已有独立测试覆盖其正确性），故可安全关闭，
+  /// 既避免测试失败，也免去在测试沙箱里绑定真实 socket。
+  static bool enableWebServer = true;
+
   LogWebServer._();
 
   /// 默认端口
@@ -97,6 +106,11 @@ class LogWebServer {
   /// [port] 监听端口，默认 8888。被占用时自动 +1 重试，最多 10 次。
   /// 返回实际绑定的端口；全部失败抛异常。
   Future<int> start({int port = defaultPort}) async {
+    // UI 集成测试（flutter test）下设为 false：HttpServer 的 idle timeout 会创建
+    // 一个周期性 Timer，在 FakeAsync 测试环境里永远 pending，导致测试结束报
+    // "A Timer is still pending"。日志服务器本身的正确性由 core 包独立测试覆盖，
+    // 集成测试不验证它，故直接跳过绑定，既避免测试失败，也免去绑定真实 socket。
+    if (!enableWebServer) return _port;
     if (_server != null) return _port;
 
     SocketException? lastError;

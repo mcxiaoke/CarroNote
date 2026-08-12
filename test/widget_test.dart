@@ -1,41 +1,35 @@
-// Flutter imports:
+// 基础冒烟测试（替代原先引用已删除 widgets/login_button.dart 的用例）
+//
+// 验证 ShadTheme + ShadButton 在测试环境下可正常构建与交互，
+// 不依赖任何已删除的旧组件，也不触碰数据库。
+
 import 'package:flutter/material.dart';
-
-// Package imports:
 import 'package:flutter_test/flutter_test.dart';
-
-// Project imports:
-import 'package:safenotes/widgets/login_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
-  group('ButtonWidget', () {
-    testWidgets('renders correctly with text', (WidgetTester tester) async {
-      const String buttonText = 'Test Button';
-      bool buttonClicked = false;
-
+  group('ShadButton 冒烟测试', () {
+    testWidgets('渲染并可点击回调', (WidgetTester tester) async {
+      var tapped = false;
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ButtonWidget(
-              text: buttonText,
-              onClicked: () {
-                buttonClicked = true;
-              },
+        ShadApp.custom(
+          appBuilder: (context) => MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ShadButton(
+                  onPressed: () => tapped = true,
+                  child: const Text('Tap me'),
+                ),
+              ),
             ),
           ),
         ),
       );
 
-      final buttonFinder = find.byType(FilledButton);
-      expect(buttonFinder, findsOneWidget);
-
-      final textFinder = find.text(buttonText);
-      expect(textFinder, findsOneWidget);
-
-      await tester.tap(buttonFinder);
+      expect(find.widgetWithText(ShadButton, 'Tap me'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ShadButton, 'Tap me'));
       await tester.pump();
-
-      expect(buttonClicked, true);
+      expect(tapped, isTrue);
     });
   });
 }
