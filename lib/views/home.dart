@@ -35,6 +35,7 @@ import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/route_observer.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -135,7 +136,11 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   /// 启动日志 Web 服务器（幂等，失败不影响主流程）
+  ///
+  /// 仅 dev 模式（含 debug 构建）自动启动；非 dev 模式默认不启动，
+  /// 需要时可在调试面板的 Web Server Tab 手动启停。
   Future<void> _startLogWebServer() async {
+    if (!DevMode.isActive) return;
     if (LogWebServer.instance.isRunning) return;
     try {
       await LogWebServer.instance.start();
@@ -437,9 +442,10 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   /// AppBar 调试面板入口按钮
   ///
-  /// 始终显示（即使未启用同步），便于用户随时查看日志和诊断信息。
+  /// 仅 dev 模式（含 debug 构建）显示；非 dev 模式隐藏入口（release 默认）。
   /// 点击跳转 /diagnostics 调试面板。
   Widget _diagnosticsButton() {
+    if (!DevMode.isActive) return const SizedBox.shrink();
     return IconButton(
       icon: const Icon(Icons.bug_report_outlined),
       tooltip: 'Debug Panel'.tr(),

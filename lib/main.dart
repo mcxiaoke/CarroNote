@@ -69,6 +69,9 @@ Future main() async {
 
 /// 初始化日志系统（全平台一致：移动端 + 桌面端）
 Future<void> _initLogging() async {
+  // 注入 dev 模式判断（读取 SharedPreferences，非 debug 构建生效）。
+  // 必须在 AppLogFile.init() 之前注入，使默认日志级别按 dev 模式正确初始化。
+  devModeProvider = () => PreferencesStorage.isDevMode;
   // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
   logDirResolverOverride = () async =>
       (await getApplicationSupportDirectory()).path;
@@ -152,6 +155,10 @@ Future<void> _bootstrap() async {
   ));
 
   await PreferencesStorage.init();
+
+  // 偏好加载完成后刷新日志级别：若上次会话开启了 dev 模式，立即恢复全量 trace
+  //（启动早期 Preferences 未就绪，devModeProvider 读到的是默认 false）。
+  AppLog.refreshLevel();
 
   // 同步配置必须在任何 UI 读它之前就绪：主界面的同步按钮、设置页的同步状态
   // 都是同步 getter（背后是 SharedPreferences 缓存 + SecureStorage 预载）。

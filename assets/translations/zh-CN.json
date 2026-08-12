@@ -201,6 +201,8 @@
     "Backup failed: {err}": "备份失败：{err}",
     "Storage permission required!": "需要存储权限！",
     "Debug Panel": "调试面板",
+    "Developer mode enabled": "开发者模式已开启",
+    "Already in developer mode": "已处于开发者模式",
     "Recently Deleted": "最近删除",
     "Sync Settings": "同步设置",
     "Disabled": "已关闭",

@@ -201,6 +201,8 @@
     "Backup failed: {err}": "Backup failed: {err}",
     "Storage permission required!": "Storage permission required!",
     "Debug Panel": "Debug Panel",
+    "Developer mode enabled": "Developer mode enabled",
+    "Already in developer mode": "Already in developer mode",
     "Recently Deleted": "Recently Deleted",
     "Sync Settings": "Sync Settings",
     "Disabled": "Disabled",

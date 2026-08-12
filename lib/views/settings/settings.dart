@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
+import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
@@ -29,6 +30,7 @@ import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/build_info.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
@@ -319,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ]),
       const SizedBox(height: 12),
       // 版本号等版权信息：独立于设置项的最底部小字（非可点击 item）
-      footer(context),
+      const _VersionFooter(),
     ];
 
     return groups;
@@ -350,25 +352,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 /// 底部小字：版本号与构建日期·githash 合并为一行居中显示。
-/// debug 构建时在版本信息上方额外显示醒目 DEBUG 徽标。
-Widget footer(BuildContext context) {
-  final theme = ShadTheme.of(context);
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-    child: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          debugBadge(context),
-          const SizedBox(height: 8),
-          Text(
-            'Version ${SafeNotesConfig.appVersion} · '
-            '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
-            style: theme.textTheme.muted.copyWith(fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-        ],
+/// dev 模式（含 debug 构建）时在版本信息上方额外显示醒目 DEBUG 徽标。
+///
+/// 隐藏入口：在版本号区域连续点击 [DevMode.tapThreshold] 次（5 次）即可开启
+/// dev 模式（非 debug 构建专属；debug 构建恒为 dev 模式，点击无附加效果）。
+/// 开启后与 debug build 行为一致：恢复调试面板入口、日志 Web 服务器、全量日志。
+class _VersionFooter extends StatefulWidget {
+  const _VersionFooter();
+
+  @override
+  State<_VersionFooter> createState() => _VersionFooterState();
+}
+
+class _VersionFooterState extends State<_VersionFooter> {
+  int _tapCount = 0;
+  DateTime? _lastTap;
+
+  /// 连点计数：两次点击间隔超过 3 秒则重置，避免误触累计。
+  void _handleTap() {
+    final now = DateTime.now();
+    if (_lastTap != null && now.difference(_lastTap!).inSeconds > 3) {
+      _tapCount = 0;
+    }
+    _lastTap = now;
+    _tapCount++;
+    if (_tapCount >= DevMode.tapThreshold) {
+      _tapCount = 0;
+      _enableDevMode();
+    }
+  }
+
+  Future<void> _enableDevMode() async {
+    final wasActive = DevMode.isActive;
+    final changed = await DevMode.enable();
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          changed
+              ? 'Developer mode enabled'.tr()
+              : 'Already in developer mode'.tr(),
+        ),
+        duration: const Duration(seconds: 2),
       ),
-    ),
-  );
+    );
+    if (!wasActive) {
+      Log.settings.i('设置页连点 ${DevMode.tapThreshold} 次开启 dev 模式');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+      child: Center(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _handleTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              debugBadge(context),
+              const SizedBox(height: 8),
+              Text(
+                'Version ${SafeNotesConfig.appVersion} · '
+                '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
+                style: theme.textTheme.muted.copyWith(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

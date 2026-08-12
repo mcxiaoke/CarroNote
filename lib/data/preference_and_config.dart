@@ -59,6 +59,7 @@ class PreferencesStorage {
   static const _keyIsLocalDarkSwitchEnabled = 'isLocalDarkSwitchEnabled';
   static const _keyIsSystemDarkLightSwitchEnabled =
       'isSystemDarkLightSwitchEnabled';
+  static const _keyDevMode = 'devModeEnabled';
 
   static Future init() async {
     _preferences = await SharedPreferences.getInstance();
@@ -388,6 +389,17 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsSystemDarkLightSwitchEnabled);
     await _preferences?.setBool(_keyIsSystemDarkLightSwitchEnabled, flag);
     _logPrefChange('跟随系统深浅色', old, flag);
+  }
+
+  /// dev 模式开关（非 debug 构建通过「设置页版本号连点 5 次」开启）。
+  ///
+  /// 开启后与 debug build 行为一致：显示调试面板入口、启动日志 Web 服务器、
+  /// 日志级别恢复全量 trace。默认关闭。
+  static bool get isDevMode => _preferences?.getBool(_keyDevMode) ?? false;
+  static Future<void> setDevMode(bool flag) async {
+    final old = _preferences?.getBool(_keyDevMode);
+    await _preferences?.setBool(_keyDevMode, flag);
+    _logPrefChange('开发模式', old, flag);
   }
 
   //Default is Dim. i.e enumIndex = 0

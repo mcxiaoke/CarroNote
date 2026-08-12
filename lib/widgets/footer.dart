@@ -12,20 +12,20 @@
 */
 
 // Flutter imports:
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/build_info.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 
-/// 调试构建的醒目徽标（release/profile 构建不渲染）。
+/// dev 模式的醒目徽标（非 dev 模式不渲染）。
 ///
-/// [kDebugMode] 是编译期常量：debug 构建（Android/iOS/Windows 等全平台）
-/// 显示红色 DEBUG 标签，release 构建零开销直接省略。与 debug 版独立
-/// applicationId（.dev 后缀）配套，避免把调试版误当正式版。
+/// [DevMode.isActive] 在 debug 构建恒为 true（release/profile 下仅当用户通过
+/// 设置页连点版本号开启 dev 模式后才显示）。与 debug 版独立 applicationId
+/// （.dev 后缀）配套，避免把调试版误当正式版。
 Widget debugBadge(BuildContext context) {
-  if (!kDebugMode) return const SizedBox.shrink();
+  if (!DevMode.isActive) return const SizedBox.shrink();
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
     decoration: BoxDecoration(
@@ -61,7 +61,7 @@ Widget footer(BuildContext context) {
     child: Column(
       children: [
         debugBadge(context),
-        if (kDebugMode) const SizedBox(height: 6),
+        if (DevMode.isActive) const SizedBox(height: 6),
         Text(headerText, style: style),
         Text(buildInfoText, style: style),
       ],

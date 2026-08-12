@@ -45,6 +45,20 @@ const bool kDebugMode = !kReleaseMode && !kProfileMode;
 /// 返回 null 表示无法解析，此时日志文件功能降级（仅 console + 内存缓冲）。
 Future<String?> Function()? logDirResolverOverride;
 
+/// dev 模式判断注入点（解耦 SharedPreferences）：
+/// App 层启动时注入读取持久化开关的回调。core 保持纯 Dart 可编译。
+/// debug 构建恒为 true（见 [isDevModeActive]），无需注入。
+bool Function()? devModeProvider;
+
+/// 当前是否处于 dev 模式：
+/// - debug 构建恒为 true（功能与 debug build 完全一致）；
+/// - 非 debug 构建由 App 层注入的判断回调决定（默认 false）。
+bool get isDevModeActive {
+  if (kDebugMode) return true;
+  final provider = devModeProvider;
+  return provider?.call() ?? false;
+}
+
 // ──────────────────────────────────────────────
 // 级别
 // ──────────────────────────────────────────────
@@ -322,6 +336,8 @@ class AppLogFile {
     if (_initialized) return;
     _initialized = true;
     AppLog._enabled = true;
+    // 应用默认日志级别（debug/dev → trace，非 debug → warning）
+    AppLog.refreshLevel();
 
     _dirPath = await _resolveLogDir();
     if (_dirPath == null) {
@@ -523,13 +539,18 @@ class AppLogFile {
 // Logger 实例与对外 API
 // ──────────────────────────────────────────────
 
+/// 运行时过滤级别（dev 模式 / 构建模式切换时动态调整）。
+/// 使用可变 filter，而不是构造时写死 level，便于 dev 模式在运行中开启。
+final LogFilter _appLogFilter = ProductionFilter();
+
 /// 底层 logger 实例（不建议直接使用，请用 [Log] / [AppLog]）
 ///
-/// release 模式下过滤 trace/debug（只留 info 及以上），
-/// debug 模式下全量输出。两种模式都会写文件，方便用户反馈问题时提供日志。
+/// 日志级别的默认策略见 [AppLog.refreshLevel]：
+///   - debug 构建或 dev 模式：trace（全量输出）
+///   - 非 debug 构建（release/profile）：warning（默认只记录 warn 及以上）
+/// 两种模式都会写文件，方便用户反馈问题时提供日志。
 final Logger _rawLogger = Logger(
-  level: kReleaseMode ? Level.info : Level.trace,
-  filter: ProductionFilter(),
+  filter: _appLogFilter,
   printer: _AppLogPrinter(),
   output: _HybridOutput(buffer: AppLogBuffer.instance),
 );
@@ -544,6 +565,16 @@ class AppLog {
 
   /// 是否在启用中（调试面板 / UI 据此判断当前是否处于激活日志模式）
   static bool get enabled => _enabled;
+
+  /// 按构建模式与 dev 模式刷新日志输出级别，可随时调用（即时生效）：
+  ///   - debug 构建或 dev 模式 → trace（全量输出，与 debug build 一致）
+  ///   - 非 debug 构建（release/profile）→ warning（默认只记录 warn 及以上）
+  ///
+  /// 启动早期（SharedPreferences 未就绪）dev 模式回调读到 false，保持默认级别；
+  /// 偏好加载完成或 dev 模式被开启后由 App 层再次调用本方法。
+  static void refreshLevel() {
+    _appLogFilter.level = isDevModeActive ? Level.trace : Level.warning;
+  }
 
   /// 分类标签，会出现在每行日志的 `[TAG]` 位置
   final String tag;
