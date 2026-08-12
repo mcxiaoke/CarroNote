@@ -20,12 +20,10 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
-import 'package:page_transition/page_transition.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/main.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
@@ -159,22 +157,15 @@ class RouteGenerator {
     }
   }
 
-  /// 统一的页面切换过渡：
-  /// - 移动端（Android/iOS）用 Flutter 平台默认转场（MaterialPageRoute 走
-  ///   pageTransitionsTheme）：Android 为 FadeForwards（含预测性返回手势）、
-  ///   iOS 为 Cupertino 滑动 + 边缘返回。官方 M3 明确推荐 forward/backward
-  ///   导航直接用平台默认，随平台更新自动演进；且默认转场为 opaque，底层有
-  ///   旧页面/背景色垫底，不会出现此前 FadeThroughRoute 交叉淡出中间段的
-  ///   双透明黑屏（opaque:false 露出引擎视图黑色背景）。
-  /// - 桌面端（尤其 Windows）保留 Fluent 风格的快速淡入，接近原生窗口切换。
+  /// 统一的页面切换过渡：全平台使用 Flutter 平台默认转场
+  /// （MaterialPageRoute 走 pageTransitionsTheme）：
+  /// - Android = FadeForwards（含预测性返回手势）、iOS/macOS = Cupertino 滑动 +
+  ///   边缘返回、Windows/Linux = Zoom。符合官方 M3 推荐 forward/backward 用
+  ///   平台默认，随平台更新自动演进；默认转场均为 opaque，底层有旧页面/背景色
+  ///   垫底，不会出现此前 FadeThroughRoute 交叉淡出中间段的双透明黑屏。
+  /// - 笔记卡片点击的"卡片放大进入编辑页"由 OpenContainer（animations 包）
+  ///   在 home 卡片处独立实现，不经过本路由。
   static Route<dynamic> _buildRoute(Widget child, RouteSettings settings) {
-    if (isDesktopPlatform) {
-      return PageTransition(
-        child: child,
-        duration: const Duration(milliseconds: 250),
-        type: PageTransitionType.fade,
-      );
-    }
     return MaterialPageRoute(builder: (_) => child, settings: settings);
   }
 

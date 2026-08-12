@@ -21,6 +21,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:animations/animations.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
@@ -48,6 +49,7 @@ import 'package:safenotes/widgets/note_card_compact.dart';
 import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
+import 'package:safenotes/views/add_edit_note.dart';
 
 // 桌面平台判定（Windows/macOS/Linux 且非 Web），用于桌面专属 UI 适配。
 // Web 端 kIsWeb 为 true 会短路，不会真正访问 Platform，故可安全 import dart:io。
@@ -620,6 +622,61 @@ class HomePageState extends State<HomePage> with RouteAware {
     await _logoutToLogin();
   }
 
+  /// 笔记卡片的"容器放大"转场（animations OpenContainer，Material
+  /// container transform 模式）：点击卡片时容器从卡片矩形放大到全屏进入
+  /// 编辑页，返回时缩回原位。替代原 pushNamed('/editnote')（保留日志埋点
+  /// 与返回后刷新；OpenContainer 的 route opaque:true，无黑屏问题）。
+  Widget _openNoteEditorContainer({
+    required SafeNote note,
+    required int index,
+    required bool grid,
+  }) {
+    // 卡片背景色：与 NoteTileWidget/NoteCardWidget 内部取色保持一致
+    final Color cardColor = NotesColor.getNoteColor(notIndex: index);
+    return OpenContainer(
+      tappable: false,
+      transitionDuration: const Duration(milliseconds: 350),
+      transitionType: ContainerTransitionType.fade,
+      closedColor: cardColor,
+      openColor: Theme.of(context).scaffoldBackgroundColor,
+      closedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      openShape: const RoundedRectangleBorder(),
+      closedElevation: 0,
+      openElevation: 0,
+      routeSettings: RouteSettings(
+        name: '/editnote',
+        arguments: AddEditNoteArguments(
+          sessionStream: widget.sessionStateStream,
+          note: note,
+        ),
+      ),
+      onClosed: (_) {
+        if (mounted) refreshNotes();
+      },
+      closedBuilder: (context, action) => GestureDetector(
+        onTap: () {
+          // 只记录 uuid 与序号，不记录标题正文（隐私红线）
+          Log.ui.i('界面切换: 主界面(${grid ? "网格" : "列表"}) → 编辑笔记'
+              '(/editnote) uuid=${note.uuid} index=$index');
+          action();
+        },
+        child: PreferencesStorage.isCompactPreview
+            ? (grid
+                ? NoteCardWidgetCompact(note: note, index: index)
+                : NoteTileWidgetCompact(note: note, index: index))
+            : (grid
+                ? NoteCardWidget(note: note, index: index)
+                : NoteTileWidget(note: note, index: index)),
+      ),
+      openBuilder: (context, closeAction) => AddEditNotePage(
+        sessionStateStream: widget.sessionStateStream,
+        note: note,
+      ),
+    );
+  }
+
   Widget _buildNotesTile() {
     // 桌面/大屏适配（P1-4）：桌面端原生滚动条默认隐藏，长列表难以定位。
     // 外包 Scrollbar，桌面常驻可见（thumbVisibility），移动端保持默认覆盖式。
@@ -632,25 +689,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       itemCount: notes.length,
       itemBuilder: ((context, index) {
         final note = notes[index];
-        return GestureDetector(
-          onTap: () async {
-            // 只记录 uuid 与序号，不记录标题正文（隐私红线）
-            Log.ui.i('界面切换: 主界面(列表) → 编辑笔记(/editnote) '
-                'uuid=${note.uuid} index=$index');
-            await Navigator.pushNamed(
-              context,
-              '/editnote',
-              arguments: AddEditNoteArguments(
-                sessionStream: widget.sessionStateStream,
-                note: note,
-              ),
-            );
-            refreshNotes();
-          },
-          child: PreferencesStorage.isCompactPreview
-              ? NoteTileWidgetCompact(note: note, index: index)
-              : NoteTileWidget(note: note, index: index),
-        );
+        return _openNoteEditorContainer(note: note, index: index, grid: false);
       }),
       separatorBuilder: (BuildContext context, int index) {
         // 与网格视图 12px 间距保持一致（原 7px 偏挤）。
@@ -684,24 +723,7 @@ class HomePageState extends State<HomePage> with RouteAware {
             crossAxisSpacing: 12,
             itemBuilder: (context, index) {
               final note = notes[index];
-              return GestureDetector(
-                onTap: () async {
-                  Log.ui.i('界面切换: 主界面(网格) → 编辑笔记(/editnote) '
-                      'uuid=${note.uuid} index=$index');
-                  await Navigator.pushNamed(
-                    context,
-                    '/editnote',
-                    arguments: AddEditNoteArguments(
-                      sessionStream: widget.sessionStateStream,
-                      note: note,
-                    ),
-                  );
-                  refreshNotes();
-                },
-                child: PreferencesStorage.isCompactPreview
-                    ? NoteCardWidgetCompact(note: note, index: index)
-                    : NoteCardWidget(note: note, index: index),
-              );
+              return _openNoteEditorContainer(note: note, index: index, grid: true);
             },
           ),
         );

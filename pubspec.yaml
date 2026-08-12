@@ -38,7 +38,8 @@ dependencies:
   logger: ^2.1.0
   media_scanner: ^2.1.0
   modal_bottom_sheet: ^3.0.0
-  page_transition: ^2.0.9
+  # Material Motion 官方动画（卡片 → 详情页的 ContainerTransform 放大转场）
+  animations: ^2.2.0
   path: ^1.9.0
   path_provider: ^2.0.2
   permission_handler: ^12.0.3
