@@ -214,10 +214,14 @@ function loadDb(){
         t.columns.forEach(function(c){var tr=document.createElement('tr');['cid','name','type','notnull','pk'].forEach(function(k){var td=document.createElement('td');td.textContent=String(c[k]);tr.appendChild(td);});st.appendChild(tr);});
         schema.appendChild(st); card.appendChild(schema);
       }
-      // 数据（主视图）
-      var dataWrap=document.createElement('div'); dataWrap.id='data-'+t.name; card.appendChild(dataWrap);
+      // 数据（主视图）：仅 表/视图 可查行数据。
+      // index/trigger 不是表，SQLite 无法 SELECT —— 之前对每个对象都请求
+      // /api/db?table=xx，把 idx_notes_uuid 等索引当表查，日志刷屏 no such table。
       el.appendChild(card);
-      loadTableData(t.name, dataWrap);
+      if(t.type==='table'||t.type==='view'){
+        var dataWrap=document.createElement('div'); dataWrap.id='data-'+t.name; card.appendChild(dataWrap);
+        loadTableData(t.name, dataWrap);
+      }
     });
   }).catch(onFail(el));
 }

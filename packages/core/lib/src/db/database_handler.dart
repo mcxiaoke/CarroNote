@@ -169,6 +169,20 @@ class NotesDatabase {
       throw ArgumentError('非法表名: $table');
     }
     final db = await database;
+    // 防御：SQLite 中只有 表/视图 可被 SELECT；索引、触发器被误传时给出
+    // 明确错误，而不是透传 "no such table" 原生报错。此前调试面板曾把
+    // idx_notes_uuid 等索引当表查询，日志刷屏（索引不是表，本就不可查行）。
+    final objs = await db.rawQuery(
+      "SELECT type FROM sqlite_master WHERE name = ? LIMIT 1",
+      [table],
+    );
+    if (objs.isEmpty) {
+      throw ArgumentError('对象不存在: $table');
+    }
+    final objType = objs.first['type'] as String?;
+    if (objType != 'table' && objType != 'view') {
+      throw ArgumentError('$table 是 $objType 类型，不是表/视图，无法查询行数据');
+    }
     final rows =
         await db.rawQuery('SELECT * FROM "$table" LIMIT ?', [limit]);
     return rows.map((row) {
