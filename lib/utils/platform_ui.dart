@@ -14,7 +14,7 @@
 
 // Flutter imports:
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 /// 平台相关的 UI 字体族。
@@ -76,8 +76,12 @@ TextStyle uiTitleStyle({
   );
 }
 
-/// 是否为桌面平台（用于布局与交互范式判断）。
+/// 是否为桌面平台（Windows / macOS / Linux）。
+///
+/// 用于布局与交互范式判断。Web 下恒为 false（Web 是独立于桌面/移动之外的
+/// 第三态，见 [isWeb]），调用方无需再额外写 `!kIsWeb && (…)`。
 bool get isDesktopPlatform {
+  if (kIsWeb) return false;
   switch (defaultTargetPlatform) {
     case TargetPlatform.windows:
     case TargetPlatform.macOS:
@@ -86,4 +90,37 @@ bool get isDesktopPlatform {
     default:
       return false;
   }
+}
+
+/// 是否为 Web 平台（独立于桌面/移动之外的第三态）。
+bool get isWeb => kIsWeb;
+
+/// 是否为移动平台（Android / iOS）。
+///
+/// Web 下恒为 false，因此桌面/移动/Web 三者互斥且覆盖常见运行场景。
+bool get isMobilePlatform {
+  if (kIsWeb) return false;
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// 是否为 Android（仅移动端的 Android，Web 下恒为 false）。
+///
+/// 替代散落的 `Platform.isAndroid`，统一来源、避免 Web 下误入 `dart:io` 分支。
+bool get isAndroid {
+  if (kIsWeb) return false;
+  return defaultTargetPlatform == TargetPlatform.android;
+}
+
+/// 是否为 iOS（仅移动端的 iOS，Web 下恒为 false）。
+///
+/// 替代散落的 `Platform.isIOS`，统一来源、避免 Web 下误入 `dart:io` 分支。
+bool get isIOS {
+  if (kIsWeb) return false;
+  return defaultTargetPlatform == TargetPlatform.iOS;
 }

@@ -13,6 +13,7 @@
 
 // Dart imports:
 import 'dart:io';
+import 'package:safenotes/utils/platform_ui.dart';
 
 // Package imports:
 import 'package:media_scanner/media_scanner.dart';
@@ -88,9 +89,9 @@ class ScheduledTask {
       lastBackupError ??= '会话密码不可用，无法加密备份';
       return false;
     }
-    if (Platform.isAndroid) {
+    if (isAndroid) {
       return androidBackup();
-    } else if (Platform.isIOS) {
+    } else if (isIOS) {
       return iosBackup();
     }
     // 评审 #2 修复 + 本设计补全：桌面端此前直接 return true 造成"假备份"。

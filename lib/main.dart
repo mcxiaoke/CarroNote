@@ -17,8 +17,8 @@ import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
 // Flutter imports:
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:flutter/services.dart';
 
 // Package imports:
@@ -113,7 +113,7 @@ void _installGlobalErrorHandlers() {
 Future<void> _bootstrap() async {
   // 桌面平台（Windows/macOS/Linux）初始化 sqflite_ffi
   // sqflite 原生只支持 Android/iOS，桌面端必须用 sqflite_common_ffi
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+  if (isDesktopPlatform) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
 
@@ -169,7 +169,7 @@ Future<void> _bootstrap() async {
   // 桌面/大屏适配（P1-3）：Windows/macOS/Linux 窗口可自由缩放，
   // 强制取向在桌面是 no-op 且不符合桌面预期，故仅在移动端（非 Web）执行。
   final isDesktopUi =
-      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+      isDesktopPlatform;
   if (!isDesktopUi) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,

@@ -10,6 +10,7 @@
 
 // Dart imports:
 import 'dart:io';
+import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -187,7 +188,7 @@ class BackupSettingState extends State<BackupSetting> {
   /// - 桌面 / Android：FilePicker.getDirectoryPath 原生目录选择
   /// - iOS：系统无目录选择器，备份位置固定在应用 Documents，仅提示
   Future<void> _pickBackupLocation() async {
-    if (Platform.isIOS) {
+    if (isIOS) {
       showSnackBarMessage(context, 'iOS backup location is fixed'.tr());
       return;
     }
@@ -214,7 +215,7 @@ class BackupSettingState extends State<BackupSetting> {
   Future<void> onBackupNow() async {
     // 用户主动点击「立即备份」，是数据安全的关键人工动作，需明确留痕
     Log.backup.i('用户触发手动备份 (isBackupOn=$isBackupOn)');
-    if (Platform.isAndroid) {
+    if (isAndroid) {
       final granted = await handleBackupPermissionAndLocation();
       if (!granted) {
         if (!mounted) return;
@@ -294,7 +295,7 @@ Future<void> startExportNotes(BuildContext context) async {
 /// - Android：尽力而为（file:// 受限于系统安全策略，失败仅提示路径）
 Future<void> openBackupDirectory(String directory, BuildContext context) async {
   try {
-    if (Platform.isIOS) {
+    if (isIOS) {
       await launchUrl(Uri.parse('shareddocuments://$directory'));
       return;
     }

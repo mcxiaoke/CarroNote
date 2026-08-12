@@ -44,6 +44,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter 导入
 import 'package:flutter/services.dart';
@@ -75,8 +76,8 @@ class LogWebServer {
 
   /// 平台标签（用于日志面板标题展示，便于区分日志来源设备）
   String get _platformLabel {
-    if (Platform.isAndroid) return 'Android';
-    if (Platform.isIOS) return 'iOS';
+    if (isAndroid) return 'Android';
+    if (isIOS) return 'iOS';
     if (Platform.isWindows) return 'Windows';
     if (Platform.isLinux) return 'Linux';
     if (Platform.isMacOS) return 'macOS';

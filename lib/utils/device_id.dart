@@ -22,6 +22,7 @@
 
 // Dart 原生导入
 import 'dart:io' show Platform;
+import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入
 import 'package:device_info_plus/device_info_plus.dart';
@@ -91,12 +92,12 @@ class DeviceIdProvider {
   Future<String> _queryDeviceId() async {
     final deviceInfo = DeviceInfoPlugin();
 
-    if (Platform.isAndroid) {
+    if (isAndroid) {
       final info = await deviceInfo.androidInfo;
       return 'android-${info.id}';
     }
 
-    if (Platform.isIOS) {
+    if (isIOS) {
       final info = await deviceInfo.iosInfo;
       return 'ios-${info.identifierForVendor}';
     }

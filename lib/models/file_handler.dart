@@ -14,6 +14,7 @@
 // Dart imports:
 import 'dart:convert';
 import 'dart:io';
+import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -233,7 +234,7 @@ class FileHandler {
   /// 桌面端此前无备份通道（scheduled_task 直接返回 false），补全为写入应用
   /// 文档目录（Windows=Documents、Linux=~/Documents、macOS=Documents）。
   static Future<String> defaultBackupDirectory() async {
-    if (Platform.isAndroid) {
+    if (isAndroid) {
       // 首选 Download/Safe Notes（有权限时）；不可用回退应用私有目录
       if (await Directory(SafeNotesConfig.androidDownloadDirectory).exists()) {
         try {
@@ -281,7 +282,7 @@ class FileHandler {
     Log.backup.i('备份已写入: ${jsonFile.path} (${content.length} 字节)');
 
     // Android 上通知媒体库收录，让用户在系统文件管理器可见
-    if (Platform.isAndroid) {
+    if (isAndroid) {
       MediaScanner.loadMedia(path: jsonFile.path);
     }
     return jsonFile;
@@ -294,7 +295,7 @@ class FileHandler {
       // 同时阻止普通误操作读到数 GB 的任意文件。
       const int maxImportBytes = 256 * 1024 * 1024;
       final String? path;
-      if (Platform.isAndroid) {
+      if (isAndroid) {
         // emptyCache to prevent filepicker from picking old cached version
         // starting Android 11 all files are provided through cache mechanism and not directly
         await CacheManager.emptyCache();
@@ -324,7 +325,7 @@ class FileHandler {
         } else {
           return null;
         }
-      } else if (Platform.isIOS) {
+      } else if (isIOS) {
         FilePickerResult? result = await FilePicker.pickFiles(
           type: FileType.custom,
           allowedExtensions: SafeNotesConfig.importFileExtensions,

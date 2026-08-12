@@ -12,7 +12,6 @@
 */
 
 // Dart imports:
-import 'dart:io';
 import 'dart:math' as math;
 
 // Flutter imports:
@@ -150,7 +149,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       if (path != null && path.isNotEmpty && mounted) {
         setState(() => _desktopPath = path);
       }
-    } else if (Platform.isAndroid) {
+    } else if (isAndroid) {
       // Android：选目录，文件名由应用生成
       final dir = await FilePicker.getDirectoryPath(
         dialogTitle: 'Select backup folder'.tr(),

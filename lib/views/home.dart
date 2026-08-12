@@ -13,11 +13,9 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math' show max;
 
 // Flutter imports:
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 // Package imports:
@@ -28,6 +26,7 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
 
 // Project imports:
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
@@ -50,11 +49,6 @@ import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
 import 'package:safenotes/views/add_edit_note.dart';
-
-// 桌面平台判定（Windows/macOS/Linux 且非 Web），用于桌面专属 UI 适配。
-// Web 端 kIsWeb 为 true 会短路，不会真正访问 Platform，故可安全 import dart:io。
-bool get _isDesktopUi =>
-    !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
 class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -682,7 +676,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     // 外包 Scrollbar，桌面常驻可见（thumbVisibility），移动端保持默认覆盖式。
     return Scrollbar(
       controller: _notesListScroll,
-      thumbVisibility: _isDesktopUi,
+      thumbVisibility: isDesktopPlatform,
       child: ListView.separated(
         controller: _notesListScroll,
         padding: const EdgeInsets.all(14),
@@ -711,7 +705,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         final crossAxisCount = max(2, (constraints.maxWidth / 300).floor());
         return Scrollbar(
           controller: _notesGridScroll,
-          thumbVisibility: _isDesktopUi,
+          thumbVisibility: isDesktopPlatform,
           child: AlignedGridView.count(
             controller: _notesGridScroll,
             itemCount: notes.length,
