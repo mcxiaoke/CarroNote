@@ -79,7 +79,15 @@ class WebDavBackend implements SyncBackend {
   ///
   /// 所有 HTTP 调用统一加 .timeout，超时异常（TimeoutException 继承
   /// Exception）由各调用点既有 catch 映射为 BackendUnavailableException。
+  ///
+  /// 分层设计（P-修复：局域网后端出门失联 + 弱网容忍）：
+  ///   - [_httpTimeout]（数据类，默认）：同步载荷均为笔记小文件，30s 对
+  ///     弱网（手机信号差）下的上传/下载足够宽容，不误杀慢请求；
+  ///   - [_initTimeout]（探测类）：init 阶段 MKCOL/健康检查/ETag 探测只需
+  ///     判定"后端是否可达"，后端不可达（局域网失联）时 8s 内快速失败，
+  ///     避免每次重试都等 30s 的"卡死"观感。
   static const Duration _httpTimeout = Duration(seconds: 30);
+  static const Duration _initTimeout = Duration(seconds: 8);
 
   final http.Client _client;
 
@@ -148,8 +156,9 @@ class WebDavBackend implements SyncBackend {
   @override
   Future<void> init() async {
     // MKCOL 创建根目录和 blobs 子目录（幂等：已存在返回 405）
-    await _mkcol(baseUrl);
-    await _mkcol(_blobsUrl);
+    // 探测类请求用 _initTimeout：后端不可达时 8s 内快速失败，不阻塞重试节奏
+    await _mkcol(baseUrl, timeout: _initTimeout);
+    await _mkcol(_blobsUrl, timeout: _initTimeout);
     // E2 修复：探测服务器是否支持 ETag
     await _probeEtagSupport();
     _initialized = true;
@@ -171,6 +180,7 @@ class WebDavBackend implements SyncBackend {
           'GET',
           Uri.parse(_manifestUrl),
           headers: _authHeaders(),
+          timeout: _initTimeout, // 探测类：8s 内判定后端可达性
         );
       } on Exception catch (e) {
         // 网络错误：保守假设支持，不阻断 init
@@ -219,6 +229,7 @@ class WebDavBackend implements SyncBackend {
           '<?xml version="1.0" encoding="utf-8"?>'
           '<propfind xmlns="DAV:"><prop><getetag/></prop></propfind>',
         ),
+        timeout: _initTimeout, // 探测类：8s 内判定后端可达性
       );
       if (res.statusCode != 207 && res.statusCode != 200) {
         // PROPFIND 失败：保守假设支持
@@ -256,6 +267,7 @@ class WebDavBackend implements SyncBackend {
     Uri url, {
     Map<String, String>? headers,
     List<int>? bodyBytes,
+    Duration timeout = _httpTimeout,
   }) {
     return sendWithRedirectPolicy(
       client: _client,
@@ -263,7 +275,7 @@ class WebDavBackend implements SyncBackend {
       url: url,
       headers: headers,
       bodyBytes: bodyBytes,
-      timeout: _httpTimeout,
+      timeout: timeout,
     );
   }
 
@@ -1001,10 +1013,14 @@ class WebDavBackend implements SyncBackend {
   ///   - 405 Method Not Allowed：目录已存在（正常情况，忽略）
   ///   - 401 Unauthorized：认证失败
   ///   - 其他：抛异常
-  Future<void> _mkcol(String url) async {
+  ///
+  /// [timeout] 为 null 时用数据类默认 [_httpTimeout]；init 阶段调用方传
+  /// [_initTimeout]，让后端不可达时 8s 内快速失败（局域网失联场景）。
+  Future<void> _mkcol(String url, {Duration? timeout}) async {
     http.Response res;
     try {
-      res = await _sendHttp('MKCOL', Uri.parse(url), headers: _authHeaders());
+      res = await _sendHttp('MKCOL', Uri.parse(url),
+          headers: _authHeaders(), timeout: timeout ?? _httpTimeout);
     } on Exception catch (e) {
       throw BackendUnavailableException('MKCOL network error: $e');
     }

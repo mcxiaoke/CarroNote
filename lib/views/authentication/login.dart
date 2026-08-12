@@ -113,6 +113,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
     // BiometricAuth:
     auth.isDeviceSupported().then((bool isSupported) {
+      // P-修复：设备支持检测是异步的，登录页可能在此期间被销毁
+      // （如会话超时锁定触发登出并切换路由），未检查 mounted 直接
+      // setState 会报 "setState() called after dispose()" 未捕获异常。
+      if (!mounted) return;
       setState(
         () => _supportState = isSupported
             ? _BiometricState.supported
@@ -444,19 +448,24 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     // 初始化后端(总开关已开且配置完整时),失败不阻断进入 home
     await SyncConfig.init();
     if (SyncConfig.isSyncReady) {
-      final backendResult = await SyncService.instance.initBackend(
-        database: NotesDatabase.instance,
+      // P-修复：登录路径绝不被网络等待阻塞。initBackend 在 WebDAV 后端不可达
+      // 时会等待 _httpTimeout（见 webdav_backend.dart）才抛 BackendUnavailable，
+      // 此前 await 会让用户卡在登录页"verifying"几十秒（局域网服务器出门不可达场景）。
+      // 改为后台初始化：成功后再触发首次同步；失败仅记日志，由主界面
+      // 同步状态 UI 展示"后端未就绪"，用户可正常使用本地笔记。
+      unawaited(
+        SyncService.instance
+            .initBackend(database: NotesDatabase.instance)
+            .then((backendResult) {
+          if (!backendResult.success) {
+            Log.sync.w('登录后后端初始化失败（后台执行，不阻塞进入主界面）: '
+                '${backendResult.error}');
+          } else {
+            // 登录后执行一次初始同步,拉取远端最新数据
+            SyncService.instance.autoSync();
+          }
+        }),
       );
-      if (!backendResult.success && mounted) {
-        showSnackBarMessage(
-          context,
-          'Sync initialization failed: {error}'.tr(
-            namedArgs: {'error': backendResult.error ?? 'Unknown error'.tr()},
-          ),
-        );
-      }
-      // 登录后执行一次初始同步,拉取远端最新数据
-      SyncService.instance.autoSync();
     }
 
     if (!mounted) return;

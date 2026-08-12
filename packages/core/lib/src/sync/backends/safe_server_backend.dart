@@ -67,7 +67,14 @@ class SafeServerBackend implements SyncBackend {
   ///
   /// 所有 HTTP 调用统一加 .timeout，超时异常（TimeoutException 继承
   /// Exception）由各调用点既有 catch 映射为 BackendUnavailableException。
+  ///
+  /// 分层设计（P-修复：局域网后端出门失联 + 弱网容忍）：
+  ///   - [_httpTimeout]（数据类，默认）：同步载荷均为笔记小文件，30s 对
+  ///     弱网（手机信号差）下的上传/下载足够宽容，不误杀慢请求；
+  ///   - [_initTimeout]（探测类）：init 阶段健康检查只需判定"后端是否可达"，
+  ///     后端不可达（局域网失联）时 8s 内快速失败，避免重试等 30s 的卡感。
   static const Duration _httpTimeout = Duration(seconds: 30);
+  static const Duration _initTimeout = Duration(seconds: 8);
 
   final http.Client _client;
 
@@ -107,9 +114,14 @@ class SafeServerBackend implements SyncBackend {
   Future<void> init() async {
     // 健康检查：确认服务端可达
     // 注意：health 端点不需要认证
+    // 探测类请求用 _initTimeout：后端不可达时 8s 内快速失败
     http.Response res;
     try {
-      res = await _sendHttp('GET', Uri.parse(_healthUrl));
+      res = await _sendHttp(
+        'GET',
+        Uri.parse(_healthUrl),
+        timeout: _initTimeout,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('SafeServer health check failed: $e');
     }
@@ -141,6 +153,7 @@ class SafeServerBackend implements SyncBackend {
     Uri url, {
     Map<String, String>? headers,
     List<int>? bodyBytes,
+    Duration timeout = _httpTimeout,
   }) {
     return sendWithRedirectPolicy(
       client: _client,
@@ -148,7 +161,7 @@ class SafeServerBackend implements SyncBackend {
       url: url,
       headers: headers,
       bodyBytes: bodyBytes,
-      timeout: _httpTimeout,
+      timeout: timeout,
     );
   }
 
