@@ -82,8 +82,6 @@ class AddEditNotePageState extends State<AddEditNotePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-
     return PopScope(
       // 仅当「已确认关闭 / 正在删除 / 无未保存改动」时才允许直接 pop；
       // 否则在 onPopInvoked 中弹框让用户选择保存/放弃/取消。
@@ -104,13 +102,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           body: _previewMode
               ? _buildPreview(context)
               : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
-              // 这里仅用 Padding 兜住键盘避让（bottom = 键盘高度），
-              // 不再包一层 reverse 滚动——两层嵌套滚动 + reverse 会让长文本
-              // 进入编辑时从底部锚定、上下跳动。
-              Padding(
-                  padding: EdgeInsets.only(bottom: bottom),
-                  child: _buildBody(),
-                ),
+              // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
+              // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
+              _KeyboardAwarePadding(child: _buildBody()),
         ),
       ),
     );
@@ -315,5 +309,26 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       }
     }
     return false;
+  }
+}
+
+/// 键盘避让的局部监听：只有本组件依赖 viewInsets，键盘弹出/收起动画期间
+/// 只重建底部 padding，避免整页 Scaffold 每帧 rebuild（原实现直接在 build
+/// 开头读 MediaQuery.viewInsets，键盘动画会被整页重建拖慢）。
+class _KeyboardAwarePadding extends StatelessWidget {
+  const _KeyboardAwarePadding({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // viewInsetsOf 只订阅 viewInsets 细分依赖，比 MediaQuery.of 重建范围更小。
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: bottom),
+      child: child,
+    );
   }
 }

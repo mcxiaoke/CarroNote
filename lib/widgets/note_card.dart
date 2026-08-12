@@ -15,7 +15,6 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
@@ -60,7 +59,7 @@ class NoteCardWidget extends StatelessWidget {
           //crossAxisAlignment: CrossAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AutoSizeText(
+            Text(
               sanitize(note.title),
               textDirection: getTextDirecton(note.title),
               style: TextStyle(
@@ -71,7 +70,6 @@ class NoteCardWidget extends StatelessWidget {
                 fontFamily: uiFontFamily,
                 fontFamilyFallback: uiFontFamilyFallback,
               ),
-              minFontSize: 20,
               maxLines: 2,
               overflow: TextOverflow.clip,
             ),
@@ -86,11 +84,10 @@ class NoteCardWidget extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            AutoSizeText(
+            Text(
               sanitize(note.abstractText),
               textDirection: getTextDirecton(note.abstractText),
               style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
-              minFontSize: 16,
               maxLines: getMaxLine(index), //3,
               overflow: TextOverflow.clip,
             ),

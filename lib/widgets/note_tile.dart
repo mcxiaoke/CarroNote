@@ -15,7 +15,6 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
@@ -64,7 +63,7 @@ class NoteTileWidget extends StatelessWidget {
         //crossAxisAlignment: CrossAxisAlignment.start,
         //mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          AutoSizeText(
+          Text(
             sanitize(note.title),
             textDirection: getTextDirecton(note.title),
             style: TextStyle(
@@ -75,7 +74,6 @@ class NoteTileWidget extends StatelessWidget {
               fontFamily: uiFontFamily,
               fontFamilyFallback: uiFontFamilyFallback,
             ),
-            minFontSize: 20,
             maxLines: 1,
             overflow: TextOverflow.clip,
           ),
@@ -90,7 +88,7 @@ class NoteTileWidget extends StatelessWidget {
             ),
           ),
           const SizedBox.square(dimension: 5),
-          AutoSizeText(
+          Text(
             sanitize(note.abstractText),
             textDirection: getTextDirecton(note.abstractText),
             style: TextStyle(
@@ -98,7 +96,6 @@ class NoteTileWidget extends StatelessWidget {
               fontSize: 16,
               height: 1.2,
             ),
-            minFontSize: 16,
             maxLines: 2,
             overflow: TextOverflow.clip,
           ),

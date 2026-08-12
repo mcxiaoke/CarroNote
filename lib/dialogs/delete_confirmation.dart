@@ -12,9 +12,6 @@
 */
 
 // Dart imports:
-import 'dart:ui';
-
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
@@ -31,76 +28,43 @@ class DeleteConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double dialogBordeRadious = 10.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(dialogBordeRadious),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(15.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _cautionIcon(context),
-              _title(context),
-              _body(context),
-              _buildButtons(context),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _cautionIcon(BuildContext context) {
-    // 固定尺寸，不随窗口缩放（此前为屏宽 17%，桌面大窗口下图标巨大）。
-    return Icon(
-      LucideIcons.triangleAlert,
-      size: 48,
-      color: ShadTheme.of(context).colorScheme.destructive,
-    );
-  }
-
-  Widget _title(BuildContext context) {
-    final String title = 'Caution!'.tr();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Text(title, style: dialogHeadTextStyle),
-    );
-  }
-
-  Widget _body(BuildContext context) {
-    final String cautionMessage =
-        "You're about to delete this note. This action cannot be undone.".tr();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Text(
-        cautionMessage,
-        textAlign: TextAlign.center,
-        style: dialogBodyTextStyle,
-      ),
-    );
-  }
-
-  Widget _buildButtons(BuildContext context) {
-    return shadDialogActionBar(
+    // 容器统一使用 ShadDialog（shadcn 风格：圆角/边框/阴影/缩放动画），
+    // 与回收站、清空全部等对话框保持一致。
+    return ShadDialog(
+      title: Text('Caution!'.tr()),
       actions: [
-        ShadDialogAction(
-          label: 'Cancel'.tr(),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        ShadDialogAction(
-          label: 'Delete'.tr(),
-          destructive: true,
-          onPressed: callback,
+        shadDialogActionBar(
+          actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ShadDialogAction(
+              label: 'Delete'.tr(),
+              destructive: true,
+              onPressed: callback,
+            ),
+          ],
         ),
       ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 固定尺寸，不随窗口缩放（此前为屏宽 17%，桌面大窗口下图标巨大）。
+          Icon(
+            LucideIcons.triangleAlert,
+            size: 48,
+            color: ShadTheme.of(context).colorScheme.destructive,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "You're about to delete this note. This action cannot be undone."
+                .tr(),
+            textAlign: TextAlign.center,
+            style: dialogBodyTextStyle,
+          ),
+        ],
+      ),
     );
   }
 }

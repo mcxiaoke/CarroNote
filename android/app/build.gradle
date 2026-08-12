@@ -33,7 +33,7 @@ android {
     namespace "com.mcxiaoke.snotes"
     compileSdkVersion 36
 
-    ndkVersion = "28.2.13676358"
+    ndkVersion flutter.ndkVersion
 
     // 统一 Java/Kotlin JVM target，避免 Inconsistent JVM Target 错误
     compileOptions {
@@ -54,8 +54,8 @@ android {
         applicationId "com.mcxiaoke.snotes"
         minSdkVersion 25
         targetSdkVersion 36
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        versionCode flutter.versionCode
+        versionName flutter.versionName
     }
 
    signingConfigs {
@@ -77,6 +77,11 @@ android {
        }
        release {
            resValue "string", "appLabel", '"SNotes"'
+           signingConfig signingConfigs.release
+       }
+
+       profile {
+           resValue "string", "appLabel", '"SNotesP"'
            signingConfig signingConfigs.release
        }
    }

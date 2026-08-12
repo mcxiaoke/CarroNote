@@ -291,7 +291,8 @@ class _DeletedNoteTile extends StatelessWidget {
             ),
           ],
         ),
-        onTap: onRestore,
+        // 注意：刻意不绑定 onTap —— 点击整条 item 直接恢复容易误操作，
+        // 恢复动作只保留在右上角更多菜单（Restore）中。
       ),
     );
   }

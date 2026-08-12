@@ -629,7 +629,9 @@ class HomePageState extends State<HomePage> with RouteAware {
     final Color cardColor = NotesColor.getNoteColor(notIndex: index);
     return OpenContainer(
       tappable: false,
-      transitionDuration: const Duration(milliseconds: 350),
+      // 250ms：动画期间编辑页会被 FittedBox 缩放渲染，时长过长易掉帧；
+      // 缩短后配合 Markdown 首帧延迟渲染（add_edit_note），动画更跟手。
+      transitionDuration: const Duration(milliseconds: 250),
       transitionType: ContainerTransitionType.fade,
       closedColor: cardColor,
       openColor: Theme.of(context).scaffoldBackgroundColor,
