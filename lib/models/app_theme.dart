@@ -15,12 +15,6 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
-// 主题引擎接入点（插拔点）：当前使用 flex_color_scheme (FCS)。
-// 业务代码一律通过 Theme.of(context).colorScheme.* 取色，不直接依赖任何主题库；
-// 将来要替换主题引擎，只需重写本文件 AppThemes，业务层零改动。
-import 'package:flex_color_scheme/flex_color_scheme.dart';
-
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
@@ -71,7 +65,7 @@ class ThemeProvider extends ChangeNotifier {
 class AppThemes {
   // 亮/暗共用一套配置，仅 brightness 不同。
   // 用 Flutter 内置 ColorScheme.fromSeed 生成和谐、对比度合规的 M3 调色板，
-  // 再交给 FCS 包装（应用表面色调、组件默认值等增强）。
+  // 再生成原生 ThemeData（不再依赖 flex_color_scheme）。
   static ThemeData build(Color seed, Brightness brightness) {
     final ColorScheme scheme = ColorScheme.fromSeed(
       seedColor: seed,
@@ -84,15 +78,12 @@ class AppThemes {
           .textTheme,
     );
 
-    final ThemeData base = (brightness == Brightness.light
-        ? FlexThemeData.light
-        : FlexThemeData.dark)(
+    final ThemeData base = ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
       // 组件级微调：统一圆角，桌面端更协调（M3 默认按钮/输入/卡片圆角各异）。
-      subThemesData: const FlexSubThemesData(
-        defaultRadius: 8.0,
-      ),
+      // 对应原 flex_color_scheme 的 FlexSubThemesData(defaultRadius: 8)。
+      cardTheme: const CardThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8)))),
       textTheme: uiText,
       primaryTextTheme: uiText,
     );
