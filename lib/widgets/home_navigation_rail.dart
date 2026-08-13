@@ -68,8 +68,8 @@ class HomeSidebar extends StatelessWidget {
     final Color fg = theme.colorScheme.foreground;
     final Color bg = theme.colorScheme.background;
     final Color divider = theme.colorScheme.border;
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final String themeText = isDark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
+    // 明暗 + 主题色统一入口：文案「切换主题」+ 调色板图标（与移动端 Drawer 一致）。
+    final String themeText = 'Switch Theme'.tr();
 
     Future<void> launchExternal(String url) async {
       try {
@@ -134,7 +134,7 @@ class HomeSidebar extends StatelessWidget {
                     onChangePassCallback,
                   ),
                   sideItem(
-                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                    Icons.palette_outlined,
                     themeText,
                     onThemeCallback,
                   ),

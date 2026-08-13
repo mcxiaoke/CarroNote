@@ -1,134 +1,794 @@
 [
-  {
-    "name": "冷调专业",
-    "nameEn": "Cool Professional",
-    "colors": [
-      { "name": "深海蓝", "nameEn": "Deep Sea Blue", "color": "#0F3460" },
-      { "name": "海军蓝", "nameEn": "Navy Blue", "color": "#1A3A5C" },
-      { "name": "钢蓝色", "nameEn": "Steel Blue", "color": "#2C5F8D" },
-      { "name": "天蓝色", "nameEn": "Sky Blue", "color": "#3A86C4" },
-      { "name": "冰蓝色", "nameEn": "Ice Blue", "color": "#5BA3D9" },
-      { "name": "青灰色", "nameEn": "Teal Gray", "color": "#4A7C8C" },
-      { "name": "深青色", "nameEn": "Deep Cyan", "color": "#1B6B6B" },
-      { "name": "孔雀绿", "nameEn": "Peacock Green", "color": "#2A9D8F" },
-      { "name": "深紫色", "nameEn": "Deep Purple", "color": "#4A3B7A" },
-      { "name": "蓝紫色", "nameEn": "Blue Violet", "color": "#5B4B8A" },
-      { "name": "石墨灰", "nameEn": "Graphite Gray", "color": "#3D4552" },
-      { "name": "蓝灰色", "nameEn": "Blue Gray", "color": "#5A6B7D" },
-      { "name": "银灰色", "nameEn": "Silver Gray", "color": "#7A8A9A" },
-      { "name": "深靛蓝", "nameEn": "Deep Indigo", "color": "#1F2D5C" },
-      { "name": "钴蓝色", "nameEn": "Cobalt Blue", "color": "#0047AB" },
-      { "name": "暗青色", "nameEn": "Dark Cyan", "color": "#264653" }
-    ]
-  },
-  {
-    "name": "经典通用",
-    "nameEn": "Classic Universal",
-    "colors": [
-      { "name": "红色", "nameEn": "Red", "color": "#E53935" },
-      { "name": "粉红", "nameEn": "Pink", "color": "#EC407A" },
-      { "name": "紫色", "nameEn": "Purple", "color": "#8E24AA" },
-      { "name": "深紫", "nameEn": "Deep Purple", "color": "#5E35B1" },
-      { "name": "靛蓝", "nameEn": "Indigo", "color": "#3949AB" },
-      { "name": "蓝色", "nameEn": "Blue", "color": "#1E88E5" },
-      { "name": "浅蓝", "nameEn": "Light Blue", "color": "#039BE5" },
-      { "name": "青色", "nameEn": "Cyan", "color": "#00ACC1" },
-      { "name": "水鸭绿", "nameEn": "Teal", "color": "#00897B" },
-      { "name": "绿色", "nameEn": "Green", "color": "#43A047" },
-      { "name": "浅绿", "nameEn": "Light Green", "color": "#7CB342" },
-      { "name": "黄绿", "nameEn": "Lime", "color": "#C0CA33" },
-      { "name": "琥珀", "nameEn": "Amber", "color": "#FFB300" },
-      { "name": "橙色", "nameEn": "Orange", "color": "#FB8C00" },
-      { "name": "深橙", "nameEn": "Deep Orange", "color": "#F4511E" },
-      { "name": "棕色", "nameEn": "Brown", "color": "#6D4C41" }
-    ]
-  },
-  {
-    "name": "柔和马卡龙",
-    "nameEn": "Soft Macaron",
-    "colors": [
-      { "name": "樱花粉", "nameEn": "Sakura Pink", "color": "#F4A6B8" },
-      { "name": "蜜桃橙", "nameEn": "Peach Orange", "color": "#F5B89A" },
-      { "name": "奶油黄", "nameEn": "Cream Yellow", "color": "#F7DC9F" },
-      { "name": "薄荷绿", "nameEn": "Mint Green", "color": "#A8D8B9" },
-      { "name": "青草绿", "nameEn": "Grass Green", "color": "#B5D99C" },
-      { "name": "蒂芙尼蓝", "nameEn": "Tiffany Blue", "color": "#9AD3D3" },
-      { "name": "天空蓝", "nameEn": "Sky Blue", "color": "#A8C8E8" },
-      { "name": "薰衣草紫", "nameEn": "Lavender Purple", "color": "#C4B5E0" },
-      { "name": "藕荷紫", "nameEn": "Lilac", "color": "#D4B5D4" },
-      { "name": "豆沙粉", "nameEn": "Dusky Pink", "color": "#D9A6A6" },
-      { "name": "奶咖棕", "nameEn": "Latte Brown", "color": "#C9A98A" },
-      { "name": "雾霾蓝", "nameEn": "Haze Blue", "color": "#9EB5C9" },
-      { "name": "灰豆绿", "nameEn": "Sage Green", "color": "#A9BFA3" },
-      { "name": "浅杏色", "nameEn": "Light Apricot", "color": "#E8C9A8" },
-      { "name": "香芋紫", "nameEn": "Taro Purple", "color": "#B8A8D4" },
-      { "name": "水绿色", "nameEn": "Aqua Green", "color": "#A3D4C4" }
-    ]
-  },
-  {
-    "name": "复古莫兰迪",
-    "nameEn": "Retro Morandi",
-    "colors": [
-      { "name": "灰玫瑰", "nameEn": "Gray Rose", "color": "#B08989" },
-      { "name": "脏橘色", "nameEn": "Clay Orange", "color": "#C08A6B" },
-      { "name": "芥末黄", "nameEn": "Mustard Yellow", "color": "#C4A968" },
-      { "name": "橄榄绿", "nameEn": "Olive Green", "color": "#8A9A6B" },
-      { "name": "灰湖绿", "nameEn": "Lake Green", "color": "#6B9A8A" },
-      { "name": "雾霾蓝", "nameEn": "Haze Blue", "color": "#6B8A9A" },
-      { "name": "灰靛蓝", "nameEn": "Gray Indigo", "color": "#6B7A9A" },
-      { "name": "灰紫色", "nameEn": "Gray Purple", "color": "#8A7A9A" },
-      { "name": "灰粉色", "nameEn": "Gray Pink", "color": "#A68A8A" },
-      { "name": "陶土棕", "nameEn": "Terracotta Brown", "color": "#9A7A6B" },
-      { "name": "卡其灰", "nameEn": "Khaki Gray", "color": "#9A947A" },
-      { "name": "灰青色", "nameEn": "Gray Teal", "color": "#7A9A94" },
-      { "name": "豆沙紫", "nameEn": "Dusky Purple", "color": "#8A6B7A" },
-      { "name": "米灰棕", "nameEn": "Beige Brown", "color": "#A69A82" },
-      { "name": "灰蓝绿", "nameEn": "Blue Green", "color": "#6B8A82" },
-      { "name": "暗玫瑰", "nameEn": "Dark Rose", "color": "#9A6B6B" }
-    ]
-  },
-  {
-    "name": "高饱和活力",
-    "nameEn": "Vibrant",
-    "colors": [
-      { "name": "烈焰红", "nameEn": "Flame Red", "color": "#E63946" },
-      { "name": "珊瑚橙", "nameEn": "Coral Orange", "color": "#F77F00" },
-      { "name": "明黄色", "nameEn": "Bright Yellow", "color": "#FCBF49" },
-      { "name": "柠檬绿", "nameEn": "Lemon Green", "color": "#90BE6D" },
-      { "name": "翡翠绿", "nameEn": "Emerald Green", "color": "#43AA8B" },
-      { "name": "青碧色", "nameEn": "Turquoise", "color": "#00B4D8" },
-      { "name": "宝蓝色", "nameEn": "Royal Blue", "color": "#0077B6" },
-      { "name": "靛紫色", "nameEn": "Indigo Purple", "color": "#5E60CE" },
-      { "name": "洋红色", "nameEn": "Magenta", "color": "#D62976" },
-      { "name": "玫红色", "nameEn": "Rose Red", "color": "#F72585" },
-      { "name": "橙红色", "nameEn": "Orange Red", "color": "#F95738" },
-      { "name": "黄绿色", "nameEn": "Yellow Green", "color": "#B5E48C" },
-      { "name": "天青色", "nameEn": "Sky Cyan", "color": "#48CAE4" },
-      { "name": "紫罗兰", "nameEn": "Violet", "color": "#7209B7" },
-      { "name": "桃红色", "nameEn": "Peach Pink", "color": "#FF6B9D" },
-      { "name": "青柠绿", "nameEn": "Lime Green", "color": "#80ED99" }
-    ]
-  },
-  {
-    "name": "自然大地",
-    "nameEn": "Natural Earth",
-    "colors": [
-      { "name": "深棕色", "nameEn": "Dark Brown", "color": "#6B4423" },
-      { "name": "焦糖色", "nameEn": "Caramel", "color": "#A0522D" },
-      { "name": "赭石色", "nameEn": "Ochre", "color": "#B87333" },
-      { "name": "沙色", "nameEn": "Sand", "color": "#C2A878" },
-      { "name": "米色", "nameEn": "Beige", "color": "#D4C5A0" },
-      { "name": "苔藓绿", "nameEn": "Moss Green", "color": "#6B7A3A" },
-      { "name": "橄榄绿", "nameEn": "Olive Green", "color": "#556B2F" },
-      { "name": "森林绿", "nameEn": "Forest Green", "color": "#2D5A3D" },
-      { "name": "松针绿", "nameEn": "Pine Green", "color": "#3A5A40" },
-      { "name": "陶土红", "nameEn": "Terracotta Red", "color": "#A65D3F" },
-      { "name": "砖红色", "nameEn": "Brick Red", "color": "#8B4513" },
-      { "name": "灰褐色", "nameEn": "Gray Brown", "color": "#8A7D6B" },
-      { "name": "卡其色", "nameEn": "Khaki", "color": "#9C8B6B" },
-      { "name": "深橄榄", "nameEn": "Dark Olive", "color": "#4A5D23" },
-      { "name": "泥土棕", "nameEn": "Earth Brown", "color": "#7A5C3E" },
-      { "name": "荒原绿", "nameEn": "Prairie Green", "color": "#7A8A5A" }
-    ]
-  }
+    {
+        "name": "通用",
+        "nameEn": "Default",
+        "colors":
+        [
+            {
+                "name": "午夜蓝",
+                "nameEn": "Midnight Blue",
+                "color": "#38598B"
+            },
+            {
+                "name": "蓝色",
+                "nameEn": "Blue",
+                "color": "#2563EB"
+            },
+            {
+                "name": "青绿",
+                "nameEn": "Teal",
+                "color": "#0F9D8A"
+            },
+            {
+                "name": "翡翠绿",
+                "nameEn": "Emerald",
+                "color": "#059669"
+            },
+            {
+                "name": "紫罗兰",
+                "nameEn": "Violet",
+                "color": "#7C3AED"
+            },
+            {
+                "name": "玫瑰红",
+                "nameEn": "Rose",
+                "color": "#E11D48"
+            },
+            {
+                "name": "珊瑚橙",
+                "nameEn": "Coral",
+                "color": "#E76F51"
+            },
+            {
+                "name": "琥珀橙",
+                "nameEn": "Amber",
+                "color": "#D97706"
+            },
+            {
+                "name": "金色",
+                "nameEn": "Gold",
+                "color": "#C58B16"
+            },
+            {
+                "name": "深青色",
+                "nameEn": "Cyan",
+                "color": "#0891B2"
+            },
+            {
+                "name": "湖蓝",
+                "nameEn": "Sky Blue",
+                "color": "#0284C7"
+            },
+            {
+                "name": "靛蓝",
+                "nameEn": "Indigo",
+                "color": "#4F46E5"
+            },
+            {
+                "name": "薰衣草紫",
+                "nameEn": "Lavender",
+                "color": "#8B5CF6"
+            },
+            {
+                "name": "李子紫",
+                "nameEn": "Plum",
+                "color": "#A855B7"
+            },
+            {
+                "name": "莓果色",
+                "nameEn": "Berry",
+                "color": "#BE3F70"
+            },
+            {
+                "name": "砖红",
+                "nameEn": "Brick Red",
+                "color": "#C2413A"
+            },
+            {
+                "name": "蜜桃色",
+                "nameEn": "Peach",
+                "color": "#D97757"
+            },
+            {
+                "name": "橄榄绿",
+                "nameEn": "Olive",
+                "color": "#71864A"
+            },
+            {
+                "name": "苔藓绿",
+                "nameEn": "Moss",
+                "color": "#5E7D4E"
+            },
+            {
+                "name": "森林绿",
+                "nameEn": "Forest Green",
+                "color": "#34785A"
+            },
+            {
+                "name": "薄荷绿",
+                "nameEn": "Mint",
+                "color": "#2A9D8F"
+            },
+            {
+                "name": "海军蓝",
+                "nameEn": "Navy",
+                "color": "#3B5B92"
+            },
+            {
+                "name": "石板蓝",
+                "nameEn": "Slate Blue",
+                "color": "#58728C"
+            },
+            {
+                "name": "石墨灰",
+                "nameEn": "Graphite",
+                "color": "#56616F"
+            },
+            {
+                "name": "可可棕",
+                "nameEn": "Cocoa",
+                "color": "#8A5A44"
+            },
+            {
+                "name": "焦糖棕",
+                "nameEn": "Caramel",
+                "color": "#A66A35"
+            },
+            {
+                "name": "沙漠棕",
+                "nameEn": "Desert",
+                "color": "#9A7451"
+            },
+            {
+                "name": "酒红",
+                "nameEn": "Burgundy",
+                "color": "#9F2D4E"
+            },
+            {
+                "name": "洋红",
+                "nameEn": "Magenta",
+                "color": "#B33B74"
+            },
+            {
+                "name": "海蓝宝",
+                "nameEn": "Aquamarine",
+                "color": "#168B85"
+            }
+        ]
+    },
+    {
+        "name": "马卡龙",
+        "nameEn": "Pastel",
+        "colors":
+        [
+            {
+                "name": "樱花粉",
+                "nameEn": "Sakura Pink",
+                "color": "#F4A6B8"
+            },
+            {
+                "name": "蜜桃粉",
+                "nameEn": "Peach Pink",
+                "color": "#F5A9A9"
+            },
+            {
+                "name": "豆沙粉",
+                "nameEn": "Bean Paste Pink",
+                "color": "#D9A6A6"
+            },
+            {
+                "name": "珊瑚粉",
+                "nameEn": "Coral Pink",
+                "color": "#F5B7B1"
+            },
+            {
+                "name": "蜜桃橙",
+                "nameEn": "Peach Orange",
+                "color": "#F5B89A"
+            },
+            {
+                "name": "浅杏色",
+                "nameEn": "Light Apricot",
+                "color": "#E8C9A8"
+            },
+            {
+                "name": "奶咖棕",
+                "nameEn": "Milk Coffee Brown",
+                "color": "#C9A98A"
+            },
+            {
+                "name": "香槟色",
+                "nameEn": "Champagne",
+                "color": "#F0D9A8"
+            },
+            {
+                "name": "奶油黄",
+                "nameEn": "Cream Yellow",
+                "color": "#F7DC9F"
+            },
+            {
+                "name": "鹅黄色",
+                "nameEn": "Goose Yellow",
+                "color": "#F0E68C"
+            },
+            {
+                "name": "柠檬奶油",
+                "nameEn": "Lemon Cream",
+                "color": "#F5E6A8"
+            },
+            {
+                "name": "青草绿",
+                "nameEn": "Grass Green",
+                "color": "#B5D99C"
+            },
+            {
+                "name": "豆绿色",
+                "nameEn": "Bean Green",
+                "color": "#C8D9A8"
+            },
+            {
+                "name": "嫩绿色",
+                "nameEn": "Tender Green",
+                "color": "#B8E0C4"
+            },
+            {
+                "name": "薄荷绿",
+                "nameEn": "Mint Green",
+                "color": "#A8D8B9"
+            },
+            {
+                "name": "水绿色",
+                "nameEn": "Aqua Green",
+                "color": "#A3D4C4"
+            },
+            {
+                "name": "灰豆绿",
+                "nameEn": "Gray Bean Green",
+                "color": "#A9BFA3"
+            },
+            {
+                "name": "蒂芙尼蓝",
+                "nameEn": "Tiffany Blue",
+                "color": "#9AD3D3"
+            },
+            {
+                "name": "天空蓝",
+                "nameEn": "Sky Blue",
+                "color": "#A8C8E8"
+            },
+            {
+                "name": "雾霾蓝",
+                "nameEn": "Haze Blue",
+                "color": "#9EB5C9"
+            },
+            {
+                "name": "浅靛蓝",
+                "nameEn": "Light Indigo",
+                "color": "#B5C4E0"
+            },
+            {
+                "name": "薰衣草紫",
+                "nameEn": "Lavender Purple",
+                "color": "#C4B5E0"
+            },
+            {
+                "name": "香芋紫",
+                "nameEn": "Taro Purple",
+                "color": "#B8A8D4"
+            },
+            {
+                "name": "藕荷紫",
+                "nameEn": "Lotus Purple",
+                "color": "#D4B5D4"
+            }
+        ]
+    },
+    {
+        "name": "莫兰迪",
+        "nameEn": "Morandi",
+        "colors":
+        [
+            {
+                "name": "灰玫瑰",
+                "nameEn": "Gray Rose",
+                "color": "#B08989"
+            },
+            {
+                "name": "灰粉色",
+                "nameEn": "Gray Pink",
+                "color": "#A68A8A"
+            },
+            {
+                "name": "暗玫瑰",
+                "nameEn": "Dusty Rose",
+                "color": "#9A6B6B"
+            },
+            {
+                "name": "豆沙紫",
+                "nameEn": "Bean Paste Purple",
+                "color": "#8A6B7A"
+            },
+            {
+                "name": "脏橘色",
+                "nameEn": "Dirty Orange",
+                "color": "#C08A6B"
+            },
+            {
+                "name": "陶土棕",
+                "nameEn": "Terracotta Brown",
+                "color": "#9A7A6B"
+            },
+            {
+                "name": "米灰棕",
+                "nameEn": "Beige Gray Brown",
+                "color": "#A69A82"
+            },
+            {
+                "name": "卡其灰",
+                "nameEn": "Khaki Gray",
+                "color": "#9A947A"
+            },
+            {
+                "name": "芥末黄",
+                "nameEn": "Mustard Yellow",
+                "color": "#C4A968"
+            },
+            {
+                "name": "灰黄色",
+                "nameEn": "Gray Yellow",
+                "color": "#B8A878"
+            },
+            {
+                "name": "暗金色",
+                "nameEn": "Dull Gold",
+                "color": "#A89868"
+            },
+            {
+                "name": "灰米色",
+                "nameEn": "Gray Beige",
+                "color": "#B5A98A"
+            },
+            {
+                "name": "橄榄绿",
+                "nameEn": "Olive Green",
+                "color": "#8A9A6B"
+            },
+            {
+                "name": "灰黄绿",
+                "nameEn": "Gray Yellow Green",
+                "color": "#8A9478"
+            },
+            {
+                "name": "枯草色",
+                "nameEn": "Withered Grass",
+                "color": "#9A946B"
+            },
+            {
+                "name": "灰苔色",
+                "nameEn": "Gray Moss",
+                "color": "#8A8A6B"
+            },
+            {
+                "name": "灰湖绿",
+                "nameEn": "Gray Lake Green",
+                "color": "#6B9A8A"
+            },
+            {
+                "name": "灰青色",
+                "nameEn": "Gray Cyan",
+                "color": "#7A9A94"
+            },
+            {
+                "name": "灰蓝绿",
+                "nameEn": "Gray Blue Green",
+                "color": "#6B8A82"
+            },
+            {
+                "name": "雾霾蓝",
+                "nameEn": "Haze Blue",
+                "color": "#6B8A9A"
+            },
+            {
+                "name": "灰靛蓝",
+                "nameEn": "Gray Indigo",
+                "color": "#6B7A9A"
+            },
+            {
+                "name": "灰蓝色",
+                "nameEn": "Gray Blue",
+                "color": "#7A8A9A"
+            },
+            {
+                "name": "灰紫色",
+                "nameEn": "Gray Purple",
+                "color": "#8A7A9A"
+            },
+            {
+                "name": "灰藕色",
+                "nameEn": "Gray Lotus",
+                "color": "#9A8A9A"
+            }
+        ]
+    },
+    {
+        "name": "活力",
+        "nameEn": "Vibrant",
+        "colors":
+        [
+            {
+                "name": "亮红",
+                "nameEn": "Bright Red",
+                "color": "#FF1744"
+            },
+            {
+                "name": "橙红",
+                "nameEn": "Orange Red",
+                "color": "#FF3D00"
+            },
+            {
+                "name": "亮橙",
+                "nameEn": "Bright Orange",
+                "color": "#FF6D00"
+            },
+            {
+                "name": "深橙亮",
+                "nameEn": "Deep Bright Orange",
+                "color": "#FF9100"
+            },
+            {
+                "name": "亮琥珀",
+                "nameEn": "Bright Amber",
+                "color": "#FFC400"
+            },
+            {
+                "name": "亮黄",
+                "nameEn": "Bright Yellow",
+                "color": "#FFEA00"
+            },
+            {
+                "name": "荧光黄绿",
+                "nameEn": "Neon Yellow Green",
+                "color": "#CCFF00"
+            },
+            {
+                "name": "青柠绿",
+                "nameEn": "Lime Green",
+                "color": "#76FF03"
+            },
+            {
+                "name": "亮绿",
+                "nameEn": "Bright Green",
+                "color": "#00E676"
+            },
+            {
+                "name": "深亮绿",
+                "nameEn": "Dark Bright Green",
+                "color": "#00C853"
+            },
+            {
+                "name": "青绿",
+                "nameEn": "Cyan Green",
+                "color": "#1DE9B6"
+            },
+            {
+                "name": "深青绿",
+                "nameEn": "Dark Cyan Green",
+                "color": "#00BFA5"
+            },
+            {
+                "name": "亮青",
+                "nameEn": "Bright Cyan",
+                "color": "#00E5FF"
+            },
+            {
+                "name": "深亮蓝",
+                "nameEn": "Dark Bright Blue",
+                "color": "#0091EA"
+            },
+            {
+                "name": "亮蓝",
+                "nameEn": "Bright Blue",
+                "color": "#2979FF"
+            },
+            {
+                "name": "深蓝亮",
+                "nameEn": "Dark Blue Bright",
+                "color": "#2962FF"
+            },
+            {
+                "name": "亮靛蓝",
+                "nameEn": "Bright Indigo",
+                "color": "#3D5AFE"
+            },
+            {
+                "name": "深亮靛蓝",
+                "nameEn": "Dark Bright Indigo",
+                "color": "#304FFE"
+            },
+            {
+                "name": "亮紫",
+                "nameEn": "Bright Purple",
+                "color": "#651FFF"
+            },
+            {
+                "name": "深亮紫",
+                "nameEn": "Dark Bright Purple",
+                "color": "#AA00FF"
+            },
+            {
+                "name": "荧光紫",
+                "nameEn": "Neon Purple",
+                "color": "#E040FB"
+            },
+            {
+                "name": "亮粉红",
+                "nameEn": "Bright Pink",
+                "color": "#F50057"
+            },
+            {
+                "name": "浅亮粉红",
+                "nameEn": "Light Bright Pink",
+                "color": "#FF4081"
+            },
+            {
+                "name": "深红",
+                "nameEn": "Deep Red",
+                "color": "#D50000"
+            }
+        ]
+    },
+    {
+        "name": "自然",
+        "nameEn": "Earthy",
+        "colors":
+        [
+            {
+                "name": "砖红色",
+                "nameEn": "Brick Red",
+                "color": "#8B4513"
+            },
+            {
+                "name": "陶土红",
+                "nameEn": "Terracotta",
+                "color": "#A65D3F"
+            },
+            {
+                "name": "铁锈色",
+                "nameEn": "Rust",
+                "color": "#B7410E"
+            },
+            {
+                "name": "赭红色",
+                "nameEn": "Ochre Red",
+                "color": "#A0522D"
+            },
+            {
+                "name": "焦糖色",
+                "nameEn": "Caramel",
+                "color": "#B5651D"
+            },
+            {
+                "name": "赭石色",
+                "nameEn": "Ochre",
+                "color": "#B87333"
+            },
+            {
+                "name": "南瓜色",
+                "nameEn": "Pumpkin",
+                "color": "#D2691E"
+            },
+            {
+                "name": "沙色",
+                "nameEn": "Sand",
+                "color": "#C2A878"
+            },
+            {
+                "name": "卡其色",
+                "nameEn": "Khaki",
+                "color": "#9C8B6B"
+            },
+            {
+                "name": "驼色",
+                "nameEn": "Camel",
+                "color": "#C19A6B"
+            },
+            {
+                "name": "米色",
+                "nameEn": "Beige",
+                "color": "#D4C5A0"
+            },
+            {
+                "name": "燕麦色",
+                "nameEn": "Oat",
+                "color": "#E0D0A8"
+            },
+            {
+                "name": "奶油棕",
+                "nameEn": "Cream Brown",
+                "color": "#DCC8A0"
+            },
+            {
+                "name": "苔藓绿",
+                "nameEn": "Moss Green",
+                "color": "#6B7A3A"
+            },
+            {
+                "name": "橄榄绿",
+                "nameEn": "Olive Green",
+                "color": "#556B2F"
+            },
+            {
+                "name": "深橄榄",
+                "nameEn": "Deep Olive",
+                "color": "#4A5D23"
+            },
+            {
+                "name": "荒原绿",
+                "nameEn": "Wasteland Green",
+                "color": "#7A8A5A"
+            },
+            {
+                "name": "森林绿",
+                "nameEn": "Forest Green",
+                "color": "#2D5A3D"
+            },
+            {
+                "name": "松针绿",
+                "nameEn": "Pine Green",
+                "color": "#3A5A40"
+            },
+            {
+                "name": "深绿色",
+                "nameEn": "Dark Green",
+                "color": "#1B4332"
+            },
+            {
+                "name": "灰褐色",
+                "nameEn": "Gray Brown",
+                "color": "#8A7D6B"
+            },
+            {
+                "name": "泥土棕",
+                "nameEn": "Earth Brown",
+                "color": "#7A5C3E"
+            },
+            {
+                "name": "深棕",
+                "nameEn": "Dark Brown",
+                "color": "#4E342E"
+            },
+            {
+                "name": "暗棕",
+                "nameEn": "Dusk Brown",
+                "color": "#3E2723"
+            }
+        ]
+    },
+    {
+        "name": "深邃",
+        "nameEn": "Gemstone",
+        "colors":
+        [
+            {
+                "name": "红宝石",
+                "nameEn": "Ruby",
+                "color": "#9B1B30"
+            },
+            {
+                "name": "石榴红",
+                "nameEn": "Garnet",
+                "color": "#8B0000"
+            },
+            {
+                "name": "酒红色",
+                "nameEn": "Burgundy",
+                "color": "#880E4F"
+            },
+            {
+                "name": "勃艮第",
+                "nameEn": "Claret",
+                "color": "#6B1F3A"
+            },
+            {
+                "name": "粉宝石",
+                "nameEn": "Pink Gem",
+                "color": "#C71585"
+            },
+            {
+                "name": "紫水晶",
+                "nameEn": "Amethyst",
+                "color": "#800080"
+            },
+            {
+                "name": "紫晶浅",
+                "nameEn": "Light Amethyst",
+                "color": "#9932CC"
+            },
+            {
+                "name": "深紫色",
+                "nameEn": "Deep Purple",
+                "color": "#4B0082"
+            },
+            {
+                "name": "蓝宝石",
+                "nameEn": "Sapphire",
+                "color": "#0F2B5B"
+            },
+            {
+                "name": "皇家蓝",
+                "nameEn": "Royal Blue",
+                "color": "#1E3A8A"
+            },
+            {
+                "name": "钴蓝色",
+                "nameEn": "Cobalt Blue",
+                "color": "#003399"
+            },
+            {
+                "name": "海军蓝",
+                "nameEn": "Navy Blue",
+                "color": "#0A2540"
+            },
+            {
+                "name": "海蓝宝",
+                "nameEn": "Aquamarine",
+                "color": "#0E5E6F"
+            },
+            {
+                "name": "托帕石",
+                "nameEn": "Topaz",
+                "color": "#0C5E8C"
+            },
+            {
+                "name": "青金石",
+                "nameEn": "Lapis Lazuli",
+                "color": "#1A4D7A"
+            },
+            {
+                "name": "深青色",
+                "nameEn": "Deep Cyan",
+                "color": "#004D4D"
+            },
+            {
+                "name": "祖母绿",
+                "nameEn": "Emerald",
+                "color": "#046307"
+            },
+            {
+                "name": "翡翠绿",
+                "nameEn": "Jadeite",
+                "color": "#0B6E4F"
+            },
+            {
+                "name": "孔雀石",
+                "nameEn": "Malachite",
+                "color": "#0B6B58"
+            },
+            {
+                "name": "深绿",
+                "nameEn": "Dark Green",
+                "color": "#1B5E20"
+            },
+            {
+                "name": "琥珀色",
+                "nameEn": "Amber",
+                "color": "#B8860B"
+            },
+            {
+                "name": "黄水晶",
+                "nameEn": "Citrine",
+                "color": "#CC7722"
+            },
+            {
+                "name": "玛瑙红",
+                "nameEn": "Agate Red",
+                "color": "#B1252C"
+            },
+            {
+                "name": "黑曜石",
+                "nameEn": "Obsidian",
+                "color": "#3D3D3D"
+            }
+        ]
+    }
 ]

@@ -31,7 +31,8 @@ class ThemeProvider extends ChangeNotifier {
       ? ThemeMode.dark
       : ThemeMode.light;
 
-  // 主题色（seed 色库）二维索引：组 + 组内颜色。默认 group 0 / color 0（冷调专业·深海蓝）。
+  // 主题色（seed 色库）二维索引：组 + 组内颜色。
+  // 默认 0 / 0 = 第一组（「通用」稳定默认组）第一个颜色。
   int _groupIndex = PreferencesStorage.themeGroupIndex;
   int _colorIndex = PreferencesStorage.themeColorIndex;
 

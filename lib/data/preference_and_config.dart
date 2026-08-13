@@ -164,6 +164,7 @@ class PreferencesStorage {
 
   // 主题色（seed 色库索引）：存 index 不存色值 —— 日后调整 hex 老用户自动生效；
   // 读取方用 clamp 防越界，版本升级改分组结构也不会崩。
+  // 默认 0 / 0 = 第一组第一个颜色（「通用」组首色），该组为稳定默认组。
   static int get themeGroupIndex =>
       _preferences?.getInt(_keyThemeGroupIndex) ?? 0;
 

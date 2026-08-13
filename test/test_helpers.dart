@@ -480,7 +480,8 @@ Future<void> settle(WidgetTester tester, {int steps = 14}) async {
 // 单屏封装（直接验证 SettingsScreen / ColorPallet / ThemeBottomSheet 等）
 // ──────────────────────────────────────────────
 
-/// 单屏测试使用的固定主题 seed（与 App 默认一致：冷调专业·深海蓝）。
+/// 单屏测试使用的固定主题 seed（与 App 默认一致：独立默认色·深海蓝，
+/// 即 ThemeProvider.defaultSeedColor，不依赖 seed 色库数据）。
 const Color kTestThemeSeed = Color(0xFF0F3460);
 
 /// 单屏测试共用的 Provider 实例（测试可读取以断言状态变化）。

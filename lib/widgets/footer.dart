@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/utils/build_info.dart';
+import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 
 /// dev 模式的醒目徽标（非 dev 模式不渲染）。

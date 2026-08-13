@@ -65,8 +65,8 @@ class HomeDrawerState extends State<HomeDrawer> {
 
     final String importDataText = 'Import Backup'.tr();
     final String changePassText = 'Change Passphrase'.tr();
-    final String darkModeText = 'Dark Mode'.tr();
-    final String lightModeText = 'Light Mode'.tr();
+    // 明暗 + 主题色统一入口：文案改为「切换主题」（不再只是 Dark/Light 模式）。
+    final String switchThemeText = 'Switch Theme'.tr();
     final String settings = 'Settings'.tr();
     final String helpText = 'GitHub'.tr();
     final String faqsText = 'FAQs'.tr();
@@ -106,12 +106,8 @@ class HomeDrawerState extends State<HomeDrawer> {
                   ),
                   _buildMenuItem(
                     topPadding: itemSpacing,
-                    text: PreferencesStorage.isThemeDark
-                        ? lightModeText
-                        : darkModeText,
-                    icon: PreferencesStorage.isThemeDark
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
+                    text: switchThemeText,
+                    icon: Icons.palette_outlined,
                     onClicked: () {
                       Navigator.of(context).pop();
                       showThemeBottomSheet(context);

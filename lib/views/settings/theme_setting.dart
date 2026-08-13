@@ -72,7 +72,7 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
       PreferencesStorage.themeGroupIndex,
       PreferencesStorage.themeColorIndex,
     );
-    final currentSeedName =
+    final String currentSeedName =
         isZh ? currentSeed.name : currentSeed.nameEn;
 
     return Material(

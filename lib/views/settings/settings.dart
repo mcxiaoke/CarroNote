@@ -29,7 +29,7 @@ import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/utils/build_info.dart';
+import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
