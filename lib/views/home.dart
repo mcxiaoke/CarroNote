@@ -29,7 +29,6 @@ import 'package:provider/provider.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_config.dart';
@@ -342,13 +341,12 @@ class HomePageState extends State<HomePage> with RouteAware {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   HomeSidebar(
-                    onImportCallback: _navImport,
-                    onChangePassCallback: _navChangePass,
                     onThemeCallback: _navTheme,
-                    onBiometricsCallback: _navBiometrics,
                     onSettingsCallback: _navSettings,
                     onDeletedNotesCallback: _navDeletedNotes,
-                    onLogoutCallback: _navLogout,
+                    onSyncSettingsCallback: _navSyncSettings,
+                    onAboutCallback: _navAbout,
+                    onLockCallback: _navLock,
                   ),
                   Expanded(child: _homeBody()),
                 ],
@@ -545,18 +543,6 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 先 pop 抽屉（与改动前行为一致）。桌面 Rail 模式不需要 pop，直接调 _nav*。
   Widget _buildDrawer(BuildContext context) {
     return HomeDrawer(
-      onImportCallback: () {
-        Navigator.of(context).pop();
-        _navImport();
-      },
-      onChangePassCallback: () {
-        Navigator.of(context).pop();
-        _navChangePass();
-      },
-      onBiometricsCallback: () {
-        Navigator.of(context).pop();
-        _navBiometrics();
-      },
       onSettingsCallback: () {
         Navigator.of(context).pop();
         _navSettings();
@@ -565,34 +551,24 @@ class HomePageState extends State<HomePage> with RouteAware {
         Navigator.of(context).pop();
         _navDeletedNotes();
       },
-      onLogoutCallback: () {
-        _navLogout();
+      onSyncSettingsCallback: () {
+        Navigator.of(context).pop();
+        _navSyncSettings();
+      },
+      onAboutCallback: () {
+        Navigator.of(context).pop();
+        _navAbout();
+      },
+      onLockCallback: () {
+        _navLock();
       },
     );
   }
 
   // ---- 桌面 Rail 与移动 Drawer 共用的导航动作（不带 pop，pop 由 Drawer 负责） ----
 
-  Future<void> _navImport() async {
-    Log.ui.i('用户发起导入笔记流程');
-    widget.sessionStateStream.add(SessionState.stopListening);
-    await showImportDialog(context, homeRefresh: refreshNotes);
-    widget.sessionStateStream.add(SessionState.startListening);
-    Log.ui.d('导入流程结束, 已恢复会话超时监听');
-  }
-
-  Future<void> _navChangePass() async {
-    Log.ui.i('界面切换: 主界面 → 修改密码(/changepassphrase)');
-    await Navigator.pushNamed(context, '/changepassphrase');
-  }
-
   void _navTheme() {
     showThemeBottomSheet(context);
-  }
-
-  Future<void> _navBiometrics() async {
-    Log.ui.i('界面切换: 主界面 → 生物识别设置(/biometricSetting)');
-    await Navigator.pushNamed(context, '/biometricSetting');
   }
 
   Future<void> _navSettings() async {
@@ -617,8 +593,20 @@ class HomePageState extends State<HomePage> with RouteAware {
     }
   }
 
-  Future<void> _navLogout() async {
-    Log.auth.i('用户主动登出');
+  Future<void> _navSyncSettings() async {
+    Log.ui.i('界面切换: 主界面 → 同步设置(/syncSettings)');
+    await Navigator.pushNamed(context, '/syncSettings');
+  }
+
+  Future<void> _navAbout() async {
+    Log.ui.i('界面切换: 主界面 → 关于(/about)');
+    await Navigator.pushNamed(context, '/about');
+  }
+
+  /// 锁定：清空内存中的密钥与会话、跳回登录页（本地数据原样保留）。
+  /// 与抽屉/侧栏的"锁定"入口一致；行为即原「退出登录」（本应用登出不清本地库）。
+  Future<void> _navLock() async {
+    Log.auth.i('用户主动锁定');
     await _logoutToLogin();
   }
 

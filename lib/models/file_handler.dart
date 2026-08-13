@@ -151,7 +151,15 @@ class FileHandler {
         );
       }
       if (importConfirmed) {
-        await insertNotes(parsedImportData.getAllNotes());
+        final skipped = await insertNotes(parsedImportData.getAllNotes());
+        if (skipped > 0) {
+          // 幂等去重提示：库中已存在同 uuid 的笔记被跳过，不重复导入
+          final imported = parsedImportData.totalNotes - skipped;
+          Log.backup.i('导入去重提示: 导入 $imported 条, 跳过已存在 '
+              '$skipped 条');
+          return '{imported} notes imported, {skipped} skipped (already exist).'
+              .tr(namedArgs: {'imported': '$imported', 'skipped': '$skipped'});
+        }
       } else {
         Log.backup.i('导入取消：用户在确认对话框中放弃 '
             '(${parsedImportData.totalNotes} 条笔记未导入)');
@@ -371,13 +379,21 @@ class FileHandler {
     }
   }
 
-  Future<void> insertNotes(List<SafeNote> imported) async {
+  /// 写入导入的笔记（返回被跳过的条数，即库中已存在同 uuid 的笔记数）
+  ///
+  /// 底层 `storeNotesInTransaction` 做 uuid 幂等去重：同 uuid 已存在的
+  /// 笔记（含墓碑）跳过，仅新增本地没有的，避免撞 UNIQUE 约束整体回滚。
+  Future<int> insertNotes(List<SafeNote> imported) async {
     Log.backup.i('开始写入导入的笔记: 共 ${imported.length} 条');
     final startedAt = DateTime.now();
     // 评审 #10：整个导入放入单个事务，任一条失败整体回滚，
     // 不再出现「中途崩/错一条 → 半库数据」的脏状态。
-    final ok = await NotesDatabase.instance.storeNotesInTransaction(imported);
+    final inserted =
+        await NotesDatabase.instance.storeNotesInTransaction(imported);
+    final skipped = imported.length - inserted;
     final ms = DateTime.now().difference(startedAt).inMilliseconds;
-    Log.backup.i('导入完成: 成功写入 $ok/${imported.length} 条笔记, 耗时 ${ms}ms');
+    Log.backup.i('导入完成: 成功写入 $inserted/${imported.length} 条笔记'
+        '（跳过已存在 $skipped 条）, 耗时 ${ms}ms');
+    return skipped;
   }
 }

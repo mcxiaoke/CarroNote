@@ -18,6 +18,8 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:core/core.dart';
+import 'package:local_auth/local_auth.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
@@ -32,6 +34,66 @@ class BiometricSetting extends StatefulWidget {
 }
 
 class _BiometricSettingState extends State<BiometricSetting> {
+  final LocalAuthentication _auth = LocalAuthentication();
+
+  /// 验证进行中标记：验证期间禁用开关，防止并发触发多次验证弹窗。
+  bool _isVerifying = false;
+
+  /// 启用/关闭生物识别登录。
+  ///
+  /// 需求：启用前必须**先完成一次真实的生物识别验证**，验证通过才真正写入
+  /// 凭据并打开开关；验证失败则保持关闭并提示用户（避免设备上生物识别本就
+  /// 不可用/未录入时打开一个必然登录失败的开关）。
+  Future<void> _onEnableToggle(bool value) async {
+    if (value) {
+      final ok = await _verifyBiometric();
+      if (!ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Biometric verification failed. Biometric login was not enabled.'
+                    .tr(),
+              ),
+            ),
+          );
+        }
+        setState(() {});
+        return;
+      }
+      await BiometricAuth.enable();
+    } else {
+      await BiometricAuth.disable();
+    }
+    setState(() {});
+  }
+
+  /// 执行一次生物识别验证，返回是否通过。
+  ///
+  /// 复用与登录页一致的 LocalAuthentication 调用方式（含设备支持检测），
+  /// 保证"启用时验证通过"与"登录时生物识别可用"行为一致。
+  Future<bool> _verifyBiometric() async {
+    setState(() => _isVerifying = true);
+    try {
+      final supported = await _auth.isDeviceSupported();
+      final available = await _auth.canCheckBiometrics;
+      if (!supported || !available) {
+        Log.auth.w('启用生物识别验证失败: 设备不支持或无已录入生物识别');
+        return false;
+      }
+      return await _auth.authenticate(
+        localizedReason:
+            'Verify your biometric to enable biometric login'.tr(),
+        persistAcrossBackgrounding: true,
+      );
+    } on Object catch (e, st) {
+      Log.auth.w('启用生物识别前的验证失败', error: e, stackTrace: st);
+      return false;
+    } finally {
+      if (mounted) setState(() => _isVerifying = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,12 +109,8 @@ class _BiometricSettingState extends State<BiometricSetting> {
                     .tr(),
             value: PreferencesStorage.isBiometricAuthEnabled,
             onChanged: (value) {
-              if (value) {
-                BiometricAuth.enable();
-              } else {
-                BiometricAuth.disable();
-              }
-              setState(() {});
+              if (_isVerifying) return;
+              _onEnableToggle(value);
             },
           ),
         ]),

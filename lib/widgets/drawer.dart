@@ -23,26 +23,23 @@ import 'package:provider/provider.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
 class HomeDrawer extends StatefulWidget {
-  final VoidCallback onImportCallback;
-  final VoidCallback onChangePassCallback;
-  final VoidCallback onLogoutCallback;
   final VoidCallback onSettingsCallback;
-  final VoidCallback onBiometricsCallback;
+  final VoidCallback onSyncSettingsCallback;
+  final VoidCallback onAboutCallback;
+  final VoidCallback onLockCallback;
   final VoidCallback? onDeletedNotesCallback;
 
   const HomeDrawer({
     super.key,
-    required this.onImportCallback,
-    required this.onChangePassCallback,
-    required this.onLogoutCallback,
     required this.onSettingsCallback,
-    required this.onBiometricsCallback,
+    required this.onSyncSettingsCallback,
+    required this.onAboutCallback,
+    required this.onLockCallback,
     this.onDeletedNotesCallback,
   });
 
@@ -63,17 +60,12 @@ class HomeDrawerState extends State<HomeDrawer> {
     final double dividerSpacing = height * 0.01;
     const double itemSpacing = 1;
 
-    final String importDataText = 'Import Backup'.tr();
-    final String changePassText = 'Change Passphrase'.tr();
-    // 明暗 + 主题色统一入口：文案改为「切换主题」（不再只是 Dark/Light 模式）。
     final String switchThemeText = 'Switch Theme'.tr();
     final String settings = 'Settings'.tr();
-    final String helpText = 'GitHub'.tr();
-    final String faqsText = 'FAQs'.tr();
-    final String rateText = 'Rate Us'.tr();
-    final String logoutText = 'Logout'.tr();
-    final String biometrics = 'Biometric'.tr();
     final String deletedNotesText = 'Recently Deleted'.tr();
+    final String syncSettingsText = 'Sync Settings'.tr();
+    final String aboutText = 'About'.tr();
+    final String lockText = 'Lock'.tr();
 
     return OrientationBuilder(
       builder: (context, orientation) {
@@ -94,30 +86,12 @@ class HomeDrawerState extends State<HomeDrawer> {
                   _divide(topPadding: bottomHeadPadding),
                   _buildMenuItem(
                     topPadding: height * 0.005,
-                    text: importDataText,
-                    icon: Icons.file_download_outlined,
-                    onClicked: widget.onImportCallback,
-                  ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: changePassText,
-                    icon: Icons.key_outlined,
-                    onClicked: widget.onChangePassCallback,
-                  ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
                     text: switchThemeText,
                     icon: Icons.palette_outlined,
                     onClicked: () {
                       Navigator.of(context).pop();
                       showThemeBottomSheet(context);
                     },
-                  ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: biometrics,
-                    icon: Icons.fingerprint,
-                    onClicked: widget.onBiometricsCallback,
                   ),
                   _buildMenuItem(
                     topPadding: itemSpacing,
@@ -132,52 +106,24 @@ class HomeDrawerState extends State<HomeDrawer> {
                       icon: Icons.delete_outline,
                       onClicked: widget.onDeletedNotesCallback!,
                     ),
-                  _divide(topPadding: dividerSpacing),
                   _buildMenuItem(
-                    topPadding: dividerSpacing,
-                    text: rateText,
-                    icon: Icons.rate_review_outlined,
-                    onClicked: () async {
-                      Navigator.of(context).pop();
-                      try {
-                        // 评审 #5 修复：Rate Us 应指向应用商店，而非 GitHub
-                        await launchUrlExternal(
-                            Uri.parse(SafeNotesConfig.playStoreUrl));
-                      } catch (_) {}
-                    },
+                    topPadding: itemSpacing,
+                    text: syncSettingsText,
+                    icon: Icons.cloud_sync_outlined,
+                    onClicked: widget.onSyncSettingsCallback,
                   ),
                   _buildMenuItem(
                     topPadding: itemSpacing,
-                    text: faqsText,
-                    icon: Icons.quiz_outlined,
-                    onClicked: () async {
-                      Navigator.of(context).pop();
-                      try {
-                        // 评审 #5 修复：FAQs 指向官方 FAQ 页面
-                        await launchUrlExternal(
-                            Uri.parse(SafeNotesConfig.faqsUrl));
-                      } catch (_) {}
-                    },
-                  ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: helpText,
-                    icon: Icons.help_outline,
-                    onClicked: () async {
-                      Navigator.of(context).pop();
-                      try {
-                        // 评审 #5 修复：Help 保留指向 GitHub 仓库源码
-                        await launchUrlExternal(
-                            Uri.parse(SafeNotesConfig.githubUrl));
-                      } catch (_) {}
-                    },
+                    text: aboutText,
+                    icon: Icons.info_outline,
+                    onClicked: widget.onAboutCallback,
                   ),
                   _divide(topPadding: dividerSpacing),
                   _buildMenuItem(
                     topPadding: dividerSpacing,
-                    text: logoutText,
-                    icon: Icons.logout,
-                    onClicked: widget.onLogoutCallback,
+                    text: lockText,
+                    icon: Icons.lock_outline,
+                    onClicked: widget.onLockCallback,
                   ),
                 ],
               ),

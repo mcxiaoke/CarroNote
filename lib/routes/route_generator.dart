@@ -41,6 +41,7 @@ import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
 import 'package:safenotes/views/settings/theme_color_setting.dart';
+import 'package:safenotes/views/settings/about_page.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -134,6 +135,9 @@ class RouteGenerator {
       case '/deletedNotes':
         return _buildRoute(const DeletedNotesPage(), settings);
 
+      case '/about':
+        return _buildRoute(const AboutPage(), settings);
+
       case '/settings':
         if (args is StreamController<SessionState>) {
           return _buildRoute(SettingsScreen(sessionStateStream: args), settings);
@@ -209,4 +213,3 @@ class AddEditNoteArguments {
     this.note,
   });
 }
-

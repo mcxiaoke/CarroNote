@@ -157,7 +157,7 @@ static Future<Uint8List> openBackup(
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `uuid` | string | 笔记唯一标识（UUIDv4）；导入时用于去重，已存在同 uuid 需决定跳过或覆盖 |
+| `uuid` | string | 笔记唯一标识（UUIDv4）；导入时用于去重，已存在同 uuid 的笔记（含墓碑）**跳过**（2026-08-13 已定夺：幂等去重，与 CLI `import` 语义一致，见 CHANGES-20260813） |
 | `title` | string | 标题明文（备份内不加密，整包靠 payload 外层加密保护） |
 | `description` | string | 正文明文 |
 | `content_hash` | string | `SHA-256(title\\ndescription)` 十六进制定长 64，同步内容寻址用 |

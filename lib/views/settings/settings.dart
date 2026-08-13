@@ -290,27 +290,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
-          icon: LucideIcons.star,
-          title: 'Rate Us'.tr(),
-          onTap: () => _launch(SafeNotesConfig.playStoreUrl),
-        ),
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.helpCircle,
-          title: 'FAQs'.tr(),
-          onTap: () => _launch(SafeNotesConfig.faqsUrl),
-        ),
-        shadNavigationTile(
-          context,
           icon: LucideIcons.code,
           title: 'Source Code'.tr(),
           onTap: () => _launch(SafeNotesConfig.githubUrl),
-        ),
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.mail,
-          title: 'Email'.tr(),
-          onTap: () => _launch(SafeNotesConfig.mailToForFeedback),
         ),
         shadNavigationTile(
           context,

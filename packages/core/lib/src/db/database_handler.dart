@@ -636,15 +636,34 @@ class NotesDatabase {
   /// 回滚，留下半库数据。这里把整个导入放入单事务，**全部成功才落库**；
   /// 任一条失败即回滚并原样抛出，由调用方提示用户「导入失败，原数据未改动」。
   ///
-  /// 成功返回实际插入数量。
+  /// **uuid 幂等去重**（与 CLI `import` 语义一致，见 `bin/cli_commands.dart`）：
+  /// 库中已存在同 uuid 的笔记（含墓碑）直接跳过，仅新增本地没有的。
+  /// 否则「导出备份 → 重新导入同一份备份」会撞 `safe_notes.uuid` 唯一约束
+  /// 而整体回滚，详见 docs/backup-encryption-design-20260810.md §4.1。
+  ///
+  /// 成功返回**实际插入**数量（被跳过的已存在笔记不计入）。
   Future<int> storeNotesInTransaction(List<SafeNote> notes) async {
     if (notes.isEmpty) return 0;
     _checkNotMigrating();
     final db = await instance.database;
+
+    // 幂等去重：先查候选 uuid 是否已存在于库（含墓碑，墓碑同样占用唯一键），
+    // 已存在的跳过，避免裸 INSERT 触发 UNIQUE 约束整体回滚。
+    final existingUuids = await _existingUuids(
+        db, notes.map((n) => n.uuid));
+    final toInsert = existingUuids.isEmpty
+        ? notes
+        : notes.where((n) => !existingUuids.contains(n.uuid)).toList();
+    final skipped = notes.length - toInsert.length;
+    if (skipped > 0) {
+      Log.note.i('事务批量新增: 跳过 $skipped/${notes.length} 条已存在 uuid'
+          '（幂等去重）');
+    }
+
     try {
       // 先加密（异步、耗时），再在事务内批量写入，避免事务长时间占用连接
       final rows = await Future.wait(
-        notes.map((n) async => (note: n, row: await _toEncryptedRow(n))),
+        toInsert.map((n) async => (note: n, row: await _toEncryptedRow(n))),
       );
       await db.transaction((txn) async {
         for (final entry in rows) {
@@ -655,13 +674,45 @@ class NotesDatabase {
       for (final entry in rows) {
         _upsertCacheEntry(entry.note);
       }
-      Log.note.i('事务批量新增完成: ${notes.length} 条笔记（导入）');
-      return notes.length;
+      Log.note.i('事务批量新增完成: 实际插入 ${rows.length}/${notes.length} 条'
+          '笔记（导入，跳过 $skipped 条）');
+      return rows.length;
     } on Object catch (e, st) {
-      Log.note.e('事务批量新增失败，已整体回滚: ${notes.length} 条笔记（导入）',
+      Log.note.e('事务批量新增失败，已整体回滚: ${toInsert.length} 条笔记（导入）',
           error: e, stackTrace: st);
       rethrow;
     }
+  }
+
+  /// 查询给定 uuid 集合中已存在于库里的子集（导入幂等去重用）
+  ///
+  /// 按 chunk 折叠成 SQL `IN` 子句，避免超大导入（数千 uuid）触碰 SQLite
+  /// 变量占位符上限（SQLITE_MAX_VARIABLE_NUMBER）。含墓碑——墓碑同样占用
+  /// `safe_notes.uuid` 唯一键。
+  Future<Set<String>> _existingUuids(
+      Database db, Iterable<String> uuids) async {
+    final unique = uuids.toSet();
+    if (unique.isEmpty) return const {};
+    final existing = <String>{};
+    const int chunkSize = 400;
+    final list = unique.toList();
+    for (var i = 0; i < list.length; i += chunkSize) {
+      var end = i + chunkSize;
+      if (end > list.length) end = list.length;
+      final chunk = list.sublist(i, end);
+      final marks = List.filled(chunk.length, '?').join(',');
+      final maps = await db.query(
+        tableNotes,
+        columns: [NoteFields.uuid],
+        where: '${NoteFields.uuid} IN ($marks)',
+        whereArgs: chunk,
+      );
+      for (final row in maps) {
+        final uuid = row[NoteFields.uuid];
+        if (uuid is String) existing.add(uuid);
+      }
+    }
+    return existing;
   }
 
   /// 按 id 读取单条笔记（自动解密）

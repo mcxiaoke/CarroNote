@@ -22,7 +22,6 @@ import 'package:provider/provider.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/utils/url_launcher.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
@@ -39,23 +38,21 @@ import 'package:safenotes/widgets/shad_nav_items.dart';
 /// - Compact (< 600px)：用 Drawer（见 lib/widgets/drawer.dart）
 /// - Medium (600–1023px) / Expanded (≥ 1024px)：用本 Sidebar 常驻左侧
 class HomeSidebar extends StatelessWidget {
-  final VoidCallback onImportCallback;
-  final VoidCallback onChangePassCallback;
   final VoidCallback onThemeCallback;
-  final VoidCallback onBiometricsCallback;
   final VoidCallback onSettingsCallback;
   final VoidCallback onDeletedNotesCallback;
-  final VoidCallback onLogoutCallback;
+  final VoidCallback onSyncSettingsCallback;
+  final VoidCallback onAboutCallback;
+  final VoidCallback onLockCallback;
 
   const HomeSidebar({
     super.key,
-    required this.onImportCallback,
-    required this.onChangePassCallback,
     required this.onThemeCallback,
-    required this.onBiometricsCallback,
     required this.onSettingsCallback,
     required this.onDeletedNotesCallback,
-    required this.onLogoutCallback,
+    required this.onSyncSettingsCallback,
+    required this.onAboutCallback,
+    required this.onLockCallback,
   });
 
   @override
@@ -70,14 +67,6 @@ class HomeSidebar extends StatelessWidget {
     final Color divider = theme.colorScheme.border;
     // 明暗 + 主题色统一入口：文案「切换主题」+ 调色板图标（与移动端 Drawer 一致）。
     final String themeText = 'Switch Theme'.tr();
-
-    Future<void> launchExternal(String url) async {
-      try {
-        await launchUrlExternal(Uri.parse(url));
-      } catch (_) {
-        // 忽略：链接打不开时静默失败（与 Drawer 行为一致）。
-      }
-    }
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
       return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);
@@ -124,24 +113,9 @@ class HomeSidebar extends StatelessWidget {
                 shrinkWrap: true,
                 children: [
                   sideItem(
-                    Icons.file_download_outlined,
-                    'Import Backup'.tr(),
-                    onImportCallback,
-                  ),
-                  sideItem(
-                    Icons.key_outlined,
-                    'Change Passphrase'.tr(),
-                    onChangePassCallback,
-                  ),
-                  sideItem(
                     Icons.palette_outlined,
                     themeText,
                     onThemeCallback,
-                  ),
-                  sideItem(
-                    Icons.fingerprint,
-                    'Biometric'.tr(),
-                    onBiometricsCallback,
                   ),
                   sideItem(
                     Icons.settings_outlined,
@@ -153,34 +127,28 @@ class HomeSidebar extends StatelessWidget {
                     'Recently Deleted'.tr(),
                     onDeletedNotesCallback,
                   ),
-                  sideItem(Icons.logout, 'Logout'.tr(), onLogoutCallback),
+                  sideItem(
+                    Icons.cloud_sync_outlined,
+                    'Sync Settings'.tr(),
+                    onSyncSettingsCallback,
+                  ),
+                  sideItem(
+                    Icons.info_outline,
+                    'About'.tr(),
+                    onAboutCallback,
+                  ),
                 ],
               ),
             ),
             Divider(color: divider, height: 1),
-            // 底部外链（评审 #5 修复：分别接应用商店 / FAQ / GitHub，避免全指向 GitHub）
+            // 底部：锁定（清内嵌密钥跳回登录页，与移动端 Drawer 行为一致）
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.rate_review_outlined, color: fg),
-                    tooltip: 'Rate Us'.tr(),
-                    onPressed: () =>
-                        launchExternal(SafeNotesConfig.playStoreUrl),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.quiz_outlined, color: fg),
-                    tooltip: 'FAQs'.tr(),
-                    onPressed: () => launchExternal(SafeNotesConfig.faqsUrl),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.help_outline, color: fg),
-                    tooltip: 'GitHub'.tr(),
-                    onPressed: () => launchExternal(SafeNotesConfig.githubUrl),
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              child: shadNavMenuItem(
+                context,
+                icon: Icons.lock_outline,
+                label: 'Lock'.tr(),
+                onTap: onLockCallback,
               ),
             ),
           ],
