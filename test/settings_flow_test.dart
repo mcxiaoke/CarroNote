@@ -179,7 +179,9 @@ void main() {
       // 默认明亮
       await _openSheet(tester);
       expect(_rootMaterial(tester).color,
-          equals(ShadThemes.light.colorScheme.background));
+          equals(ShadThemes.build(kTestThemeSeed, Brightness.light)
+              .colorScheme
+              .background));
 
       // 关闭弹层 → 切到暗黑 → 重新打开，背景应变成暗色
       Navigator.of(tester.element(find.byType(ColorPallet))).pop();
@@ -188,7 +190,9 @@ void main() {
       await tester.pumpAndSettle();
       await _openSheet(tester);
       expect(_rootMaterial(tester).color,
-          equals(ShadThemes.dark.colorScheme.background));
+          equals(ShadThemes.build(kTestThemeSeed, Brightness.dark)
+              .colorScheme
+              .background));
     });
 
     testWidgets('明暗开关能更新 ThemeProvider（isDarkMode 翻转）',

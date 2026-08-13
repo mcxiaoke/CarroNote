@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/shad_theme.dart';
 
+import 'test_helpers.dart';
+
 /// widget 测试的 asset bundle 并不提供项目翻译文件，这里改用 rootBundle.loadString
 /// 读取（走 Flutter asset bundle，而非 dart:io 文件 I/O）。本机 flutter test 沙箱里
 /// dart:io 的 File.readAsString 会永久挂起（事件循环被冻结），导致
@@ -66,8 +68,8 @@ void main() {
       // 必须包 ShadApp.custom 提供 ShadTheme，否则 ShadTheme.of() 抛异常导致
       // 对话框内容无法渲染（原测试只包了 MaterialApp，对应旧 MD3 版本）。
       child: ShadApp.custom(
-        theme: ShadThemes.light,
-        darkTheme: ShadThemes.dark,
+        theme: ShadThemes.build(kTestThemeSeed, Brightness.light),
+        darkTheme: ShadThemes.build(kTestThemeSeed, Brightness.dark),
         themeMode: ThemeMode.light,
         appBuilder: (c) => MaterialApp(home: home),
       ),

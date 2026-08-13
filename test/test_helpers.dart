@@ -480,6 +480,9 @@ Future<void> settle(WidgetTester tester, {int steps = 14}) async {
 // 单屏封装（直接验证 SettingsScreen / ColorPallet / ThemeBottomSheet 等）
 // ──────────────────────────────────────────────
 
+/// 单屏测试使用的固定主题 seed（与 App 默认一致：冷调专业·深海蓝）。
+const Color kTestThemeSeed = Color(0xFF0F3460);
+
 /// 单屏测试共用的 Provider 实例（测试可读取以断言状态变化）。
 late ThemeProvider testThemeProvider;
 late NotesColor testNotesColor;
@@ -510,8 +513,8 @@ Widget wrapScreen(Widget screen) {
           final tp = Provider.of<ThemeProvider>(ctx);
           return ShadApp.custom(
             themeMode: tp.themeMode,
-            theme: ShadThemes.light,
-            darkTheme: ShadThemes.dark,
+            theme: ShadThemes.build(kTestThemeSeed, Brightness.light),
+            darkTheme: ShadThemes.build(kTestThemeSeed, Brightness.dark),
             appBuilder: (c) => MaterialApp(home: screen),
           );
         },

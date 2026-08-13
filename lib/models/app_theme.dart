@@ -23,6 +23,7 @@ import 'package:flex_color_scheme/flex_color_scheme.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/window_title_bar.dart';
 
@@ -36,6 +37,17 @@ class ThemeProvider extends ChangeNotifier {
       ? ThemeMode.dark
       : ThemeMode.light;
 
+  // 主题色（seed 色库）二维索引：组 + 组内颜色。默认 group 0 / color 0（冷调专业·深海蓝）。
+  int _groupIndex = PreferencesStorage.themeGroupIndex;
+  int _colorIndex = PreferencesStorage.themeColorIndex;
+
+  int get groupIndex => _groupIndex;
+
+  int get colorIndex => _colorIndex;
+
+  /// 当前主题 seed 色（按明暗自适应：seed 相同，ColorScheme.fromSeed 自动适配暗色）。
+  Color get seedColor => AppThemeSeeds.colorByIndex(_groupIndex, _colorIndex);
+
   bool get isDarkMode => themeMode == ThemeMode.dark;
 
   void setIsDarkMode(bool isDark) {
@@ -44,18 +56,25 @@ class ThemeProvider extends ChangeNotifier {
     syncWindowsTitleBar(isDark);
     notifyListeners();
   }
+
+  /// 实时切换主题色：更新索引 → 持久化 → 全局重建主题树。
+  void setThemeColor(int groupIndex, int colorIndex) {
+    if (groupIndex == _groupIndex && colorIndex == _colorIndex) return;
+    _groupIndex = groupIndex;
+    _colorIndex = colorIndex;
+    PreferencesStorage.setThemeGroupIndex(groupIndex);
+    PreferencesStorage.setThemeColorIndex(colorIndex);
+    notifyListeners();
+  }
 }
 
 class AppThemes {
-  // 插拔点：品牌种子色（Nord frost 蓝调）。换主题库时通常只需改这一处。
-  static const Color _brandSeed = Color(0xFF5E81AC);
-
   // 亮/暗共用一套配置，仅 brightness 不同。
   // 用 Flutter 内置 ColorScheme.fromSeed 生成和谐、对比度合规的 M3 调色板，
   // 再交给 FCS 包装（应用表面色调、组件默认值等增强）。
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData build(Color seed, Brightness brightness) {
     final ColorScheme scheme = ColorScheme.fromSeed(
-      seedColor: _brandSeed,
+      seedColor: seed,
       brightness: brightness,
     );
     // 用平台原生字体（Windows=Segoe UI 等）替代原先全局强制的 NotoSerif 衬线体，
@@ -109,6 +128,10 @@ class AppThemes {
         OutlineInputBorder(borderRadius: BorderRadius.circular(radius));
 
     return base.copyWith(
+      // 页面背景用 M3 的 surfaceContainerLow（亮色 #f3f3fa / 暗色 #191c20）：
+      // 相比默认 surface（近白/近黑）更柔和，带轻微品牌色相，缓解
+      // 「亮色死白、暗色死黑」的观感；仍属中性表面，不破坏整体风格。
+      scaffoldBackgroundColor: scheme.surfaceContainerLow,
       // AppBar 滚动时不再叠加 surfaceTint 染色（之前主界面"安全笔记"标题
       // 滚动会变色；FCS 默认开了 surfaceTint，需要显式关闭）。
       appBarTheme: base.appBarTheme.copyWith(
@@ -131,7 +154,7 @@ class AppThemes {
     );
   }
 
-  static ThemeData get lightTheme => _build(Brightness.light);
+  static ThemeData light(Color seed) => build(seed, Brightness.light);
 
-  static ThemeData get darkTheme => _build(Brightness.dark);
+  static ThemeData dark(Color seed) => build(seed, Brightness.dark);
 }

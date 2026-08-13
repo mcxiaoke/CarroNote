@@ -59,6 +59,8 @@ class PreferencesStorage {
   static const _keyIsLocalDarkSwitchEnabled = 'isLocalDarkSwitchEnabled';
   static const _keyIsSystemDarkLightSwitchEnabled =
       'isSystemDarkLightSwitchEnabled';
+  static const _keyThemeGroupIndex = 'themeGroupIndex';
+  static const _keyThemeColorIndex = 'themeColorIndex';
   static const _keyDevMode = 'devModeEnabled';
 
   static Future init() async {
@@ -69,6 +71,7 @@ class PreferencesStorage {
     // 启动时打印一份配置快照，便于对照用户反馈复现问题
     Log.settings.i('偏好设置已加载, 共 ${_preferences?.getKeys().length ?? 0} 个键');
     Log.settings.d('配置快照: 主题深色=$isThemeDark 系统跟随=$isSystemDarkLightSwitchEnabled '
+        '主题色组=$themeGroupIndex 主题色=$themeColorIndex '
         '网格视图=$isGridView 新笔记优先=$isNewFirst 紧凑预览=$isCompactPreview '
         '彩色笔记=$isColorful 自动旋转=$isAutoRotate 防截屏=$isFlagSecure');
     Log.settings.d('安全配置: 生物识别=$isBiometricAuthEnabled '
@@ -157,6 +160,26 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsThemeDark);
     await _preferences?.setBool(_keyIsThemeDark, flag);
     _logPrefChange('深色主题', old, flag);
+  }
+
+  // 主题色（seed 色库索引）：存 index 不存色值 —— 日后调整 hex 老用户自动生效；
+  // 读取方用 clamp 防越界，版本升级改分组结构也不会崩。
+  static int get themeGroupIndex =>
+      _preferences?.getInt(_keyThemeGroupIndex) ?? 0;
+
+  static int get themeColorIndex =>
+      _preferences?.getInt(_keyThemeColorIndex) ?? 0;
+
+  static Future<void> setThemeGroupIndex(int index) async {
+    final old = _preferences?.getInt(_keyThemeGroupIndex);
+    await _preferences?.setInt(_keyThemeGroupIndex, index);
+    _logPrefChange('主题色组索引', old, index);
+  }
+
+  static Future<void> setThemeColorIndex(int index) async {
+    final old = _preferences?.getInt(_keyThemeColorIndex);
+    await _preferences?.setInt(_keyThemeColorIndex, index);
+    _logPrefChange('主题色索引', old, index);
   }
 
   static int get backupRedundancyCounter =>

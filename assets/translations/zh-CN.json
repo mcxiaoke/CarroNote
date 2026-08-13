@@ -136,6 +136,8 @@
     "Dark mode": "暗黑模式",
     "Light out": "暗黑",
     "Dark theme": "深色主题",
+    "Theme color": "主题颜色",
+    "Selected": "已选择",
     "Discard": "放弃",
     "Format note preview with Markdown. Off shows plain text.": "使用 Markdown 渲染笔记预览；关闭时预览显示为纯文本。",
     "Markdown": "Markdown",

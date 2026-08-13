@@ -52,14 +52,16 @@ class App extends StatelessWidget {
       ],
       builder: (context, _) {
         final themeProvider = Provider.of<ThemeProvider>(context);
+        // 动态品牌色：seed 来自 ThemeProvider，换色时 notifyListeners 触发全局重建。
+        final seed = themeProvider.seedColor;
 
         // ShadApp.custom 同时提供 ShadTheme(给 ShadXxx 组件) 与内部 MaterialApp
         // (给现有 Material 页面，沿用 FlexColorScheme 主题)。两套设计系统并存，
         // 旧页面零改动即可继续工作，新页面逐步采用 Shad 组件。
         return ShadApp.custom(
           themeMode: themeProvider.themeMode,
-          theme: ShadThemes.light,
-          darkTheme: ShadThemes.dark,
+          theme: ShadThemes.build(seed, Brightness.light),
+          darkTheme: ShadThemes.build(seed, Brightness.dark),
           appBuilder: (context) {
             return MaterialApp(
               debugShowCheckedModeBanner: false,
@@ -69,8 +71,8 @@ class App extends StatelessWidget {
               onGenerateRoute: RouteGenerator.generateRoute,
               title: SafeNotesConfig.appName,
               themeMode: themeProvider.themeMode,
-              theme: AppThemes.lightTheme,
-              darkTheme: AppThemes.darkTheme,
+              theme: AppThemes.light(seed),
+              darkTheme: AppThemes.dark(seed),
               scrollBehavior: const AppScrollBehavior(),
               localizationsDelegates: context.localizationDelegates,
               supportedLocales: context.supportedLocales,

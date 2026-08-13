@@ -23,6 +23,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -64,6 +65,15 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
         PreferencesStorage.isSystemDarkLightSwitchEnabled
             ? isPlatformDark
             : PreferencesStorage.isLocalDarkSwitchEnabled;
+
+    // 当前主题色的语言化显示名（中文用中文名，其他语言用英文名）。
+    final isZh = context.locale.languageCode == 'zh';
+    final currentSeed = AppThemeSeeds.itemByIndex(
+      PreferencesStorage.themeGroupIndex,
+      PreferencesStorage.themeColorIndex,
+    );
+    final currentSeedName =
+        isZh ? currentSeed.name : currentSeed.nameEn;
 
     return Material(
       color: theme.colorScheme.background,
@@ -126,6 +136,20 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                   await PreferencesStorage.setSystemDarkLightSwitchEnabled(
                       value);
 
+                  if (mounted) setState(() {});
+                },
+              ),
+            ]),
+            const SizedBox(height: 12),
+            // 主题颜色入口：跳转分组色库选择页，右侧显示当前色名。
+            shadSettingsCard([
+              shadNavigationTile(
+                context,
+                icon: LucideIcons.palette,
+                title: 'Theme color'.tr(),
+                value: currentSeedName,
+                onTap: () async {
+                  await Navigator.pushNamed(context, '/themeColorSettings');
                   if (mounted) setState(() {});
                 },
               ),

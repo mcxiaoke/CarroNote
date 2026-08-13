@@ -40,6 +40,7 @@ import 'package:safenotes/views/settings/notes_color_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
+import 'package:safenotes/views/settings/theme_color_setting.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -142,6 +143,9 @@ class RouteGenerator {
 
       case '/chooseColorSettings':
         return _buildRoute(const ColorPallet(), settings);
+
+      case '/themeColorSettings':
+        return _buildRoute(const ThemeColorPicker(), settings);
 
       case '/inactivityTimerSettings':
         return _buildRoute(const InactivityTimerSetting(), settings);
