@@ -13,7 +13,7 @@ default:
     just --list
 
 # ── Dependencies & maintenance ──────────────────────────────
-get: gen
+get: 
     flutter pub get
 
 clean:
@@ -22,7 +22,7 @@ clean:
 # ── Code generation ────────────────────────────────────────
 # 所有构建/测试前置的代码生成任务（生成的文件已提交，内容未变化时不重写）。
 # 统一用 dart run：CI 有 Flutter 环境就必有 dart，不再依赖 python。
-gen: gen-build-info gen-theme-seeds
+gen: gen-build-info
 
 gen-build-info:
     dart run scripts/generate_build_info.dart
