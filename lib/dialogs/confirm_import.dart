@@ -26,6 +26,7 @@ import 'package:safenotes/widgets/shad_dialog.dart';
 
 class ImportConfirm extends StatefulWidget {
   final int importCount;
+
   /// 附加提示（如明文备份「未加密，已按明文导入」），展示在确认文案下方
   final String? notice;
 

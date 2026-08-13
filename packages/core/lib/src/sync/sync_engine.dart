@@ -1065,11 +1065,7 @@ class SyncEngine {
       // 3a. 用当前 dataKey 解密（blob 纯化 v4：AAD=hash，无纪元探测）
       Uint8List? workingKey;
       try {
-        await _openBlobEnvelope(
-          item.hash,
-          blob,
-          dataKeyOverride: _dataKey,
-        );
+        await _openBlobEnvelope(item.hash, blob, dataKeyOverride: _dataKey);
         workingKey = _dataKey;
       } on SyncDecryptionException {
         // 解密失败：当前 key 解不开（非当前 key 或损坏），进入下方修复分支
@@ -1759,10 +1755,7 @@ class SyncEngine {
           return;
         }
         // Layer 1 容错：败方 blob 解密失败（错误 dataKey）时无法保留副本，跳过
-        final plaintext = await _openBlobEnvelope(
-          loserItem.hash,
-          envelope,
-        );
+        final plaintext = await _openBlobEnvelope(loserItem.hash, envelope);
         final content = SafeNote.fromContentBytes(plaintext);
 
         // 生成新笔记（新 UUID + 新 hash），保留原始创建时间。

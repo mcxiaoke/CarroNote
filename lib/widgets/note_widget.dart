@@ -20,11 +20,11 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -79,10 +79,7 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      style: const TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: fontSize,
-      ),
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
       placeholder: Text(titleHint),
       // 防御主题层 minHeight:48 抬高：编辑器标题/正文保持按内容（行高）紧凑布局
       constraints: const BoxConstraints(minHeight: 0),

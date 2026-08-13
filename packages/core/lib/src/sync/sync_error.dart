@@ -55,12 +55,12 @@ sealed class SyncError {
 
   /// 机器可读的 JSON 表示（用于结构化日志/导出）
   Map<String, Object?> toJson() => {
-        'type': runtimeType.toString(),
-        'label': label,
-        'operation': operation,
-        if (noteUuid != null) 'noteUuid': noteUuid,
-        if (cause != null) 'cause': cause.toString(),
-      };
+    'type': runtimeType.toString(),
+    'label': label,
+    'operation': operation,
+    if (noteUuid != null) 'noteUuid': noteUuid,
+    if (cause != null) 'cause': cause.toString(),
+  };
 
   @override
   String toString() =>
@@ -102,10 +102,10 @@ class DecryptionError extends SyncError {
 
   @override
   Map<String, Object?> toJson() => {
-        ...super.toJson(),
-        if (blobHash != null) 'blobHash': blobHash,
-        if (attemptedEpoch != null) 'attemptedEpoch': attemptedEpoch,
-      };
+    ...super.toJson(),
+    if (blobHash != null) 'blobHash': blobHash,
+    if (attemptedEpoch != null) 'attemptedEpoch': attemptedEpoch,
+  };
 }
 
 /// manifest 解析/损坏错误
@@ -134,10 +134,7 @@ class ManifestCorruptError extends SyncError {
   }
 
   @override
-  Map<String, Object?> toJson() => {
-        ...super.toJson(),
-        'subtype': subtype,
-      };
+  Map<String, Object?> toJson() => {...super.toJson(), 'subtype': subtype};
 }
 
 /// blob 缺失（远端 404）
@@ -164,10 +161,7 @@ class BlobMissingError extends SyncError {
       '${noteUuid != null ? ', uuid=$noteUuid' : ''}）';
 
   @override
-  Map<String, Object?> toJson() => {
-        ...super.toJson(),
-        'blobHash': blobHash,
-      };
+  Map<String, Object?> toJson() => {...super.toJson(), 'blobHash': blobHash};
 }
 
 /// 网络错误（超时、连接失败、5xx）
@@ -207,10 +201,10 @@ class NetworkError extends SyncError {
 
   @override
   Map<String, Object?> toJson() => {
-        ...super.toJson(),
-        if (statusCode != null) 'statusCode': statusCode,
-        'retryable': retryable,
-      };
+    ...super.toJson(),
+    if (statusCode != null) 'statusCode': statusCode,
+    'retryable': retryable,
+  };
 }
 
 /// 密钥不匹配（密码错误 / 旧密钥纪元 / MK 解不开远端包裹）
@@ -259,12 +253,12 @@ class KeyMismatchError extends SyncError {
 
   @override
   Map<String, Object?> toJson() => {
-        ...super.toJson(),
-        if (localKeyVersion != null) 'localKeyVersion': localKeyVersion,
-        if (remoteKeyVersion != null) 'remoteKeyVersion': remoteKeyVersion,
-        if (localEpoch != null) 'localEpoch': localEpoch,
-        if (remoteEpoch != null) 'remoteEpoch': remoteEpoch,
-      };
+    ...super.toJson(),
+    if (localKeyVersion != null) 'localKeyVersion': localKeyVersion,
+    if (remoteKeyVersion != null) 'remoteKeyVersion': remoteKeyVersion,
+    if (localEpoch != null) 'localEpoch': localEpoch,
+    if (remoteEpoch != null) 'remoteEpoch': remoteEpoch,
+  };
 }
 
 /// 兜底错误类型（编程 bug、未预期的异常）
@@ -334,22 +328,13 @@ class SyncDecryptionException implements Exception {
 /// 注意：pointycastle 的 InvalidTag 继承自 Error，所以必须用 `on Object`
 /// 在最底层捕获一次，包装为 Exception 后向上抛出，让上层能用 `on Exception`
 /// 系列精确捕获。这是消除引擎层 `on Object` 兜底的关键。
-SyncDecryptionException wrapDecryptionError(
-  Object error, {
-  String? aadId,
-}) {
+SyncDecryptionException wrapDecryptionError(Object error, {String? aadId}) {
   // pointycastle 的 InvalidTag
   final typeName = error.runtimeType.toString();
   if (typeName == 'InvalidTag' || error.toString().contains('InvalidTag')) {
-    return SyncDecryptionException(
-      'GCM 认证标签验证失败（密钥错误或数据被篡改）',
-      aadId: aadId,
-    );
+    return SyncDecryptionException('GCM 认证标签验证失败（密钥错误或数据被篡改）', aadId: aadId);
   }
-  return SyncDecryptionException(
-    'AES-GCM 解密失败: $error',
-    aadId: aadId,
-  );
+  return SyncDecryptionException('AES-GCM 解密失败: $error', aadId: aadId);
 }
 
 // ──────────────────────────────────────────────

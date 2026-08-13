@@ -18,15 +18,21 @@
 //   - 输出默认文本，叶子命令可加 --json 输出机器可读 JSON。
 
 // Dart 原生导入
+
+// Dart imports:
 import 'dart:io';
 
-// Package 导入
+// Package imports:
 import 'package:args/command_runner.dart';
 import 'package:core/core.dart';
 
-// 项目导入
+// Project imports:
 import 'cli_commands.dart';
 import 'cli_context.dart';
+
+// Package 导入
+
+// 项目导入
 
 Future<void> main(List<String> args) async {
   final runner = buildCliRunner();

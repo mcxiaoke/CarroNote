@@ -90,7 +90,10 @@ class BackupFileCodec {
             memoryKiB: kdf.memoryKiB,
             parallelism: kdf.parallelism,
           );
-    final backupKey = await SyncCrypto.deriveBackupKey(password, kdf: effectiveKdf);
+    final backupKey = await SyncCrypto.deriveBackupKey(
+      password,
+      kdf: effectiveKdf,
+    );
     final plaintext = Uint8List.fromList(utf8.encode(jsonEncode(records)));
     final payload = await SyncCrypto.sealBackup(backupKey, plaintext);
 
@@ -102,8 +105,10 @@ class BackupFileCodec {
         'kdf': {
           'algorithm': effectiveKdf.algorithm,
           'iterations': effectiveKdf.iterations,
-          if (effectiveKdf.memoryKiB != null) 'memoryKiB': effectiveKdf.memoryKiB,
-          if (effectiveKdf.parallelism != null) 'parallelism': effectiveKdf.parallelism,
+          if (effectiveKdf.memoryKiB != null)
+            'memoryKiB': effectiveKdf.memoryKiB,
+          if (effectiveKdf.parallelism != null)
+            'parallelism': effectiveKdf.parallelism,
         },
       },
       'salt': base64Encode(salt),

@@ -14,43 +14,44 @@ import 'package:core/core.dart';
 /// 但用极小内存保证 t=1000 也在 30s 测试超时内完成。salt 由 encodeEncrypted
 /// 内部随机生成，这里给占位值即可。
 KdfParams _lightBackupKdf(int iterations) => KdfParams(
-      algorithm: kBackupKdfAlgorithm,
-      salt: base64Encode(List.filled(16, 0)),
-      iterations: iterations,
-      memoryKiB: 128,
-      parallelism: 1,
-    );
+  algorithm: kBackupKdfAlgorithm,
+  salt: base64Encode(List.filled(16, 0)),
+  iterations: iterations,
+  memoryKiB: 128,
+  parallelism: 1,
+);
 
 void main() {
   // 测试用的笔记 JSON 数组（与 SafeNote.toJson 字段一致）
   List<Map<String, dynamic>> sampleRecords() => [
-        {
-          'uuid': '11111111-1111-4111-8111-111111111111',
-          'title': '标题一',
-          'description': '正文一',
-          'content_hash':
-              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          'deleted': 0,
-          'created_at': '2026-08-10T09:00:00.000',
-          'updated_at': 1723000000000,
-          'synced': 0,
-          'synced_hash': null,
-          'synced_deleted': 0,
-        },
-        {
-          'uuid': '22222222-2222-4222-8222-222222222222',
-          'title': '标题二',
-          'description': '正文二',
-          'content_hash':
-              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          'deleted': 1,
-          'created_at': '2026-08-10T10:00:00.000',
-          'updated_at': 1723001000000,
-          'synced': 1,
-          'synced_hash': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-          'synced_deleted': 0,
-        },
-      ];
+    {
+      'uuid': '11111111-1111-4111-8111-111111111111',
+      'title': '标题一',
+      'description': '正文一',
+      'content_hash':
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'deleted': 0,
+      'created_at': '2026-08-10T09:00:00.000',
+      'updated_at': 1723000000000,
+      'synced': 0,
+      'synced_hash': null,
+      'synced_deleted': 0,
+    },
+    {
+      'uuid': '22222222-2222-4222-8222-222222222222',
+      'title': '标题二',
+      'description': '正文二',
+      'content_hash':
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      'deleted': 1,
+      'created_at': '2026-08-10T10:00:00.000',
+      'updated_at': 1723001000000,
+      'synced': 1,
+      'synced_hash':
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      'synced_deleted': 0,
+    },
+  ];
 
   const testPassword = 'test-pass-口令-123';
   const lowIterations = 1000;
@@ -120,7 +121,9 @@ void main() {
       expect(encrypted.header.total, records.length);
 
       final decrypted = await BackupFileCodec.decryptEncrypted(
-          encrypted, testPassword);
+        encrypted,
+        testPassword,
+      );
       expect(decrypted, records);
 
       // 解密结果可直接经 ImportParser 消费
@@ -159,7 +162,9 @@ void main() {
       final tampered = BackupFileCodec.parse(jsonEncode(decoded));
       await expectLater(
         BackupFileCodec.decryptEncrypted(
-            tampered as BackupFileEncrypted, testPassword),
+          tampered as BackupFileEncrypted,
+          testPassword,
+        ),
         throwsA(isA<SyncDecryptionException>()),
       );
     });
@@ -172,11 +177,14 @@ void main() {
       );
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       ((decoded['enc'] as Map<String, dynamic>)['kdf']
-          as Map<String, dynamic>)['iterations'] = lowIterations + 1;
+              as Map<String, dynamic>)['iterations'] =
+          lowIterations + 1;
       final tampered = BackupFileCodec.parse(jsonEncode(decoded));
       await expectLater(
         BackupFileCodec.decryptEncrypted(
-            tampered as BackupFileEncrypted, testPassword),
+          tampered as BackupFileEncrypted,
+          testPassword,
+        ),
         throwsA(isA<SyncDecryptionException>()),
       );
     });
@@ -251,8 +259,9 @@ void main() {
       final key2 = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
       expect(key1, equals(key2)); // 相同密码+salt → 相同 B-KEY（多端一致）
 
-      final plaintext =
-          Uint8List.fromList(utf8.encode(jsonEncode(sampleRecords())));
+      final plaintext = Uint8List.fromList(
+        utf8.encode(jsonEncode(sampleRecords())),
+      );
       final envelope = await SyncCrypto.sealBackup(key1, plaintext);
       expect(envelope.length, 12 + plaintext.length + 16); // nonce‖ct‖tag
 
@@ -260,8 +269,7 @@ void main() {
       expect(utf8.decode(opened), utf8.decode(plaintext));
     });
 
-    test('错误密码派生不同 B-KEY → openBackup 抛 SyncDecryptionException',
-        () async {
+    test('错误密码派生不同 B-KEY → openBackup 抛 SyncDecryptionException', () async {
       final salt = SyncCrypto.generateSalt();
       final kdf = KdfParams(
         algorithm: kPbkdf2Algorithm,
@@ -269,8 +277,10 @@ void main() {
         iterations: lowIterations,
       );
       final correct = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
-      final wrong =
-          await SyncCrypto.deriveBackupKey('wrong-password', kdf: kdf);
+      final wrong = await SyncCrypto.deriveBackupKey(
+        'wrong-password',
+        kdf: kdf,
+      );
       final envelope = await SyncCrypto.sealBackup(
         correct,
         Uint8List.fromList(utf8.encode('secret')),

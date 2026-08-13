@@ -22,13 +22,28 @@ import 'dart:math';
 // Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+// Package imports:
+import 'package:core/core.dart';
+import 'package:crypto/crypto.dart' show Hmac, sha256;
+import 'package:cryptography/src/dart/cryptography.dart' show DartCryptography;
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-// Package imports:
-import 'package:crypto/crypto.dart' show Hmac, sha256;
+// Project imports:
+import 'package:safenotes/app.dart';
+import 'package:safenotes/authwall.dart';
+import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/models/shad_theme.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/utils/notes_color.dart';
+
 import 'package:cryptography/cryptography.dart'
     show
         AesGcm,
@@ -39,20 +54,6 @@ import 'package:cryptography/cryptography.dart'
         SecretBoxAuthenticationError,
         SecretKey;
 // DartCryptography 未从公开 API 导出，测试代码可直接引用 src/ 实现。
-import 'package:cryptography/src/dart/cryptography.dart' show DartCryptography;
-import 'package:core/core.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-// Project imports:
-import 'package:safenotes/app.dart';
-import 'package:safenotes/authwall.dart';
-import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/app_theme.dart';
-import 'package:safenotes/models/shad_theme.dart';
-import 'package:safenotes/utils/notes_color.dart';
-import 'package:safenotes/src/logger/log_webserver.dart';
 
 /// 测试用「无 isolate」加密实现。
 ///
@@ -136,7 +137,7 @@ class _TestCryptography extends DartCryptography {
 /// 认证主流程是否走得通，不验证密码学强度。
 class _TestAesGcm extends AesGcm {
   _TestAesGcm({this.secretKeyLength = 32, this.nonceLength = 12})
-      : super.constructor();
+    : super.constructor();
 
   @override
   final int secretKeyLength;
@@ -155,7 +156,11 @@ class _TestAesGcm extends AesGcm {
     print('DBG aes encrypt start');
     final key = await secretKey.extractBytes();
     final usedNonce = nonce ?? _randomBytes(nonceLength);
-    final cipherText = _xorKeystream(key: key, nonce: usedNonce, data: clearText);
+    final cipherText = _xorKeystream(
+      key: key,
+      nonce: usedNonce,
+      data: clearText,
+    );
     // mac 长度需与 macAlgorithm.macLength 一致（GCM 为 16），这里填 16 字节。
     final mac = _hmac(key, cipherText).sublist(0, 16);
     return SecretBox(cipherText, nonce: usedNonce, mac: Mac(mac));
@@ -197,7 +202,7 @@ Uint8List _pbkdf2HmacSha256({
   required List<int> password,
   required List<int> salt,
   required int iterations,
-  required int   length,
+  required int length,
 }) {
   const hlen = 32; // SHA-256 输出长度
   final hmac = Hmac(sha256, password);
@@ -311,35 +316,37 @@ class _TestAssetLoader extends AssetLoader {
 }
 
 /// flutter_secure_storage 的内存实现，避免 MissingPluginException。
-const _secureChannel =
-    MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+const _secureChannel = MethodChannel(
+  'plugins.it_nomads.com/flutter_secure_storage',
+);
 final Map<String, String> _secureStore = {};
 
 void _setupSecureStorageMock() {
   _secureStore.clear();
   TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_secureChannel, (call) async {
-    final args = call.arguments as Map<Object?, Object?>;
-    switch (call.method) {
-      case 'read':
-        return _secureStore[args['key'] as String];
-      case 'write':
-        _secureStore[args['key'] as String] = (args['value'] as String?) ?? '';
-        return true;
-      case 'delete':
-        _secureStore.remove(args['key'] as String);
-        return true;
-      case 'containsKey':
-        return _secureStore.containsKey(args['key'] as String);
-      case 'readAll':
-        return Map<String, String>.from(_secureStore);
-      case 'deleteAll':
-        _secureStore.clear();
-        return true;
-      default:
-        return null;
-    }
-  });
+        final args = call.arguments as Map<Object?, Object?>;
+        switch (call.method) {
+          case 'read':
+            return _secureStore[args['key'] as String];
+          case 'write':
+            _secureStore[args['key'] as String] =
+                (args['value'] as String?) ?? '';
+            return true;
+          case 'delete':
+            _secureStore.remove(args['key'] as String);
+            return true;
+          case 'containsKey':
+            return _secureStore.containsKey(args['key'] as String);
+          case 'readAll':
+            return Map<String, String>.from(_secureStore);
+          case 'deleteAll':
+            _secureStore.clear();
+            return true;
+          default:
+            return null;
+        }
+      });
 }
 
 /// 标题栏主题通道（Windows 专用）；测试里直接返回 null，避免未注册通道报错。

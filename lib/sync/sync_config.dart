@@ -23,12 +23,12 @@
  */
 
 // Package 导入
+
+// Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-// Project imports:
-import 'package:core/core.dart';
 
 /// 同步后端类型
 enum SyncBackendType {
@@ -147,8 +147,7 @@ class SyncConfig {
   // ──────────────────────────────────────────────
 
   /// LocalFs 根目录路径
-  static String get localFsPath =>
-      _prefs?.getString(_keyLocalFsPath) ?? '';
+  static String get localFsPath => _prefs?.getString(_keyLocalFsPath) ?? '';
 
   static Future<void> setLocalFsPath(String path) async {
     await _prefs?.setString(_keyLocalFsPath, path);
@@ -162,8 +161,7 @@ class SyncConfig {
   /// WebDAV 服务端 URL（如 https://dav.jianguoyun.com/dav/）
   ///
   /// 客户端会自动附加 /safenotes-vault 子目录作为 keyring 根路径。
-  static String get webdavUrl =>
-      _prefs?.getString(_keyWebdavUrl) ?? '';
+  static String get webdavUrl => _prefs?.getString(_keyWebdavUrl) ?? '';
 
   static Future<void> setWebdavUrl(String url) async {
     await _prefs?.setString(_keyWebdavUrl, url);
@@ -216,8 +214,7 @@ class SyncConfig {
   // ──────────────────────────────────────────────
 
   /// SafeServer 服务端 URL（如 http://192.168.1.118:2025）
-  static String get safeServerUrl =>
-      _prefs?.getString(_keySafeServerUrl) ?? '';
+  static String get safeServerUrl => _prefs?.getString(_keySafeServerUrl) ?? '';
 
   static Future<void> setSafeServerUrl(String url) async {
     await _prefs?.setString(_keySafeServerUrl, url);
@@ -243,8 +240,7 @@ class SyncConfig {
   // ──────────────────────────────────────────────
 
   /// 是否启用自动同步（笔记变更后自动触发）
-  static bool get isAutoSyncEnabled =>
-      _prefs?.getBool(_keyAutoSync) ?? true;
+  static bool get isAutoSyncEnabled => _prefs?.getBool(_keyAutoSync) ?? true;
 
   static Future<void> setAutoSyncEnabled(bool enabled) async {
     await _prefs?.setBool(_keyAutoSync, enabled);
@@ -303,14 +299,14 @@ class SyncBackendDraft {
 
   /// 从当前持久化配置读取草稿
   factory SyncBackendDraft.fromConfig() => SyncBackendDraft(
-        type: SyncConfig.backendType,
-        localFsPath: SyncConfig.localFsPath,
-        webdavUrl: SyncConfig.webdavUrl,
-        webdavUsername: SyncConfig.webdavUsername,
-        webdavPassword: SyncConfig.webdavPassword,
-        safeServerUrl: SyncConfig.safeServerUrl,
-        safeServerToken: SyncConfig.safeServerToken,
-      );
+    type: SyncConfig.backendType,
+    localFsPath: SyncConfig.localFsPath,
+    webdavUrl: SyncConfig.webdavUrl,
+    webdavUsername: SyncConfig.webdavUsername,
+    webdavPassword: SyncConfig.webdavPassword,
+    safeServerUrl: SyncConfig.safeServerUrl,
+    safeServerToken: SyncConfig.safeServerToken,
+  );
 
   SyncBackendDraft copyWith({
     SyncBackendType? type,
@@ -320,30 +316,29 @@ class SyncBackendDraft {
     String? webdavPassword,
     String? safeServerUrl,
     String? safeServerToken,
-  }) =>
-      SyncBackendDraft(
-        type: type ?? this.type,
-        localFsPath: localFsPath ?? this.localFsPath,
-        webdavUrl: webdavUrl ?? this.webdavUrl,
-        webdavUsername: webdavUsername ?? this.webdavUsername,
-        webdavPassword: webdavPassword ?? this.webdavPassword,
-        safeServerUrl: safeServerUrl ?? this.safeServerUrl,
-        safeServerToken: safeServerToken ?? this.safeServerToken,
-      );
+  }) => SyncBackendDraft(
+    type: type ?? this.type,
+    localFsPath: localFsPath ?? this.localFsPath,
+    webdavUrl: webdavUrl ?? this.webdavUrl,
+    webdavUsername: webdavUsername ?? this.webdavUsername,
+    webdavPassword: webdavPassword ?? this.webdavPassword,
+    safeServerUrl: safeServerUrl ?? this.safeServerUrl,
+    safeServerToken: safeServerToken ?? this.safeServerToken,
+  );
 
   /// 归一化：URL / 用户名 / 路径去首尾空白（粘贴时极易带上换行或空格）。
   ///
   /// 密码与 Token **不去空白**——它们可能合法地包含首尾空格，
   /// 擅自裁剪会造成"看起来对但认证失败"的诡异问题。
   SyncBackendDraft normalized() => SyncBackendDraft(
-        type: type,
-        localFsPath: localFsPath.trim(),
-        webdavUrl: webdavUrl.trim(),
-        webdavUsername: webdavUsername.trim(),
-        webdavPassword: webdavPassword,
-        safeServerUrl: safeServerUrl.trim(),
-        safeServerToken: safeServerToken,
-      );
+    type: type,
+    localFsPath: localFsPath.trim(),
+    webdavUrl: webdavUrl.trim(),
+    webdavUsername: webdavUsername.trim(),
+    webdavPassword: webdavPassword,
+    safeServerUrl: safeServerUrl.trim(),
+    safeServerToken: safeServerToken,
+  );
 
   /// 当前类型的必填字段是否齐全（能否构造出后端实例）
   ///

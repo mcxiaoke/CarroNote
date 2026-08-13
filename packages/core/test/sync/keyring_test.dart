@@ -131,19 +131,13 @@ void main() {
       );
 
       expect(vault1.vaultId, isNot(equals(vault2.vaultId)));
-      expect(
-        vault1.dataKey,
-        isNot(equals(vault2.dataKey)),
-      );
+      expect(vault1.dataKey, isNot(equals(vault2.dataKey)));
     });
 
     test('isInitialized 在创建前返回 false，创建后返回 true', () async {
       expect(await Keyring.isInitialized(database), isFalse);
 
-      await Keyring.createNew(
-        password: 'test-password',
-        database: database,
-      );
+      await Keyring.createNew(password: 'test-password', database: database);
 
       expect(await Keyring.isInitialized(database), isTrue);
     });
@@ -171,16 +165,11 @@ void main() {
     });
 
     test('错误密码抛 WrongPasswordException', () async {
-      await Keyring.createNew(
-        password: 'correct-password',
-        database: database,
-      );
+      await Keyring.createNew(password: 'correct-password', database: database);
 
       expect(
-        () => Keyring.unlockLocal(
-          password: 'wrong-password',
-          database: database,
-        ),
+        () =>
+            Keyring.unlockLocal(password: 'wrong-password', database: database),
         throwsA(isA<WrongPasswordException>()),
       );
     });
@@ -188,10 +177,7 @@ void main() {
     test('未初始化时抛 KeyringNotInitializedException', () async {
       // 不创建 keyring，直接尝试解锁
       expect(
-        () => Keyring.unlockLocal(
-          password: 'any-password',
-          database: database,
-        ),
+        () => Keyring.unlockLocal(password: 'any-password', database: database),
         throwsA(isA<KeyringNotInitializedException>()),
       );
     });
@@ -377,10 +363,7 @@ void main() {
 
       // 旧密码不可解锁
       expect(
-        () => Keyring.unlockLocal(
-          password: 'old-password',
-          database: database,
-        ),
+        () => Keyring.unlockLocal(password: 'old-password', database: database),
         throwsA(isA<WrongPasswordException>()),
       );
     });
@@ -413,12 +396,20 @@ void main() {
         database: database,
       );
 
-      expect(await persistedEncryptedDataKey(database),
-          newKeyring.encryptedDataKey);
-      expect(await persistedKeyVersion(database), 2,
-          reason: '改密码 keyVersion +1');
-      expect(await persistedDataKeyEpoch(database), 1,
-          reason: '改密码不动 dataKey，纪元必须原地不动');
+      expect(
+        await persistedEncryptedDataKey(database),
+        newKeyring.encryptedDataKey,
+      );
+      expect(
+        await persistedKeyVersion(database),
+        2,
+        reason: '改密码 keyVersion +1',
+      );
+      expect(
+        await persistedDataKeyEpoch(database),
+        1,
+        reason: '改密码不动 dataKey，纪元必须原地不动',
+      );
     });
   });
 
@@ -490,8 +481,9 @@ void main() {
       );
 
       // 用 dataKey 加密一条笔记
-      final plaintext =
-          Uint8List.fromList(utf8.encode('{"title":"Test","description":"Hello"}'));
+      final plaintext = Uint8List.fromList(
+        utf8.encode('{"title":"Test","description":"Hello"}'),
+      );
       final envelope = await SyncCrypto.seal(
         keyring.dataKey,
         'note-uuid-1',
@@ -536,29 +528,36 @@ void main() {
         createdAt: keyring.createdAt,
       );
 
-      final result = await vaultNoMk.checkMigrationNeeded(keyring.encryptedDataKey);
+      final result = await vaultNoMk.checkMigrationNeeded(
+        keyring.encryptedDataKey,
+      );
       expect(result.needsMigration, isFalse);
       expect(result.success, isTrue);
     });
 
-    test('checkMigrationNeeded：远端 encryptedDataKey 不同且 MK 已缓存 → 迁移成功', () async {
-      final keyring = await Keyring.createNew(
-        password: 'test-password',
-        database: database,
-      );
+    test(
+      'checkMigrationNeeded：远端 encryptedDataKey 不同且 MK 已缓存 → 迁移成功',
+      () async {
+        final keyring = await Keyring.createNew(
+          password: 'test-password',
+          database: database,
+        );
 
-      // 用相同 MK 包装一个不同的 dataKey（模拟远端换了 dataKey）
-      final remoteDataKey = SyncCrypto.generateDataKey();
-      final remoteEncryptedDataKey = base64.encode(
-        await SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
-      );
+        // 用相同 MK 包装一个不同的 dataKey（模拟远端换了 dataKey）
+        final remoteDataKey = SyncCrypto.generateDataKey();
+        final remoteEncryptedDataKey = base64.encode(
+          await SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
+        );
 
-      final result = await keyring.checkMigrationNeeded(remoteEncryptedDataKey);
-      expect(result.needsMigration, isTrue);
-      expect(result.success, isTrue);
-      expect(result.remoteDataKey, remoteDataKey);
-      expect(result.remoteEncryptedDataKey, remoteEncryptedDataKey);
-    });
+        final result = await keyring.checkMigrationNeeded(
+          remoteEncryptedDataKey,
+        );
+        expect(result.needsMigration, isTrue);
+        expect(result.success, isTrue);
+        expect(result.remoteDataKey, remoteDataKey);
+        expect(result.remoteEncryptedDataKey, remoteEncryptedDataKey);
+      },
+    );
 
     test('checkMigrationNeeded：MK 未缓存且 encryptedDataKey 不同 → 失败', () async {
       final keyring = await Keyring.createNew(
@@ -578,7 +577,9 @@ void main() {
       );
 
       // 远端 encryptedDataKey 不同，但本地无 MK → 失败
-      final result = await vaultNoMk.checkMigrationNeeded('different-encrypted-key');
+      final result = await vaultNoMk.checkMigrationNeeded(
+        'different-encrypted-key',
+      );
       expect(result.needsMigration, isTrue);
       expect(result.success, isFalse);
       expect(result.error, contains('MK 未缓存'));
@@ -605,7 +606,9 @@ void main() {
         await SyncCrypto.wrapDataKey(keyring.mk!, remoteDataKey),
       );
 
-      final migrationResult = await keyring.checkMigrationNeeded(remoteEncryptedDataKey);
+      final migrationResult = await keyring.checkMigrationNeeded(
+        remoteEncryptedDataKey,
+      );
       expect(migrationResult.needsMigration, isTrue);
 
       // 执行迁移
@@ -684,8 +687,10 @@ void main() {
       expect(header.schemaVersion, kManifestSchemaVersion);
       expect(header.dataKeyWrap, kDataKeyWrapAlgorithm);
       // v4 自描述元数据：dataKeyFingerprint = H(dataKey)，恒等
-      expect(header.dataKeyFingerprint,
-          SyncCrypto.computeDataKeyFingerprint(keyring.dataKey));
+      expect(
+        header.dataKeyFingerprint,
+        SyncCrypto.computeDataKeyFingerprint(keyring.dataKey),
+      );
       expect(header.dataKeyCreatedAt, keyring.createdAt);
       expect(header.dataKeyCreatedBy, 'device-X');
     });
@@ -701,12 +706,17 @@ void main() {
         lastModifiedBy: 'device-Z',
         dataKeyCreatedBy: 'device-Z',
       );
-      final restored =
-          ManifestHeader.fromJson(jsonDecode(jsonEncode(header.toJson())));
+      final restored = ManifestHeader.fromJson(
+        jsonDecode(jsonEncode(header.toJson())),
+      );
 
-      expect(restored.toJson(), header.toJson(),
-          reason: 'toManifestHeader 是 SyncEngine 唯一的 header 构造点，'
-              '任何字段漏填都会在这里暴露');
+      expect(
+        restored.toJson(),
+        header.toJson(),
+        reason:
+            'toManifestHeader 是 SyncEngine 唯一的 header 构造点，'
+            '任何字段漏填都会在这里暴露',
+      );
     });
   });
 
@@ -726,7 +736,8 @@ void main() {
       );
 
       final restored = KeyringLedger.fromJson(
-          jsonDecode(jsonEncode(ledger.toJson())) as Map<String, dynamic>);
+        jsonDecode(jsonEncode(ledger.toJson())) as Map<String, dynamic>,
+      );
 
       expect(restored.toJson(), ledger.toJson());
     });
@@ -754,14 +765,20 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.vaultId, 'v-load');
       expect(loaded.current.encryptedDataKey, 'edk-load');
-      expect(await database.getMeta(MetaKeys.keyring), isNotNull,
-          reason: '账本只写 MetaKeys.keyring 单键');
+      expect(
+        await database.getMeta(MetaKeys.keyring),
+        isNotNull,
+        reason: '账本只写 MetaKeys.keyring 单键',
+      );
     });
 
     test('load：JSON 损坏返回 null 而不是抛异常', () async {
       await database.setMeta(MetaKeys.keyring, '{not valid json');
-      expect(await KeyringLedger.load(database), isNull,
-          reason: '账本损坏要能降级到"未初始化"，而不是让 App 崩在启动路径上');
+      expect(
+        await KeyringLedger.load(database),
+        isNull,
+        reason: '账本损坏要能降级到"未初始化"，而不是让 App 崩在启动路径上',
+      );
     });
   });
 
@@ -780,14 +797,21 @@ void main() {
         lastModifiedBy: 'device-reject',
       );
       // 低版本协议（< kManifestSchemaVersion）必须被拒绝解读
-      expect(SyncEngine.rejectOldSchemaVersion(oldHeader), isNotNull,
-          reason: '远端使用旧协议时必须拒绝，不兼容/不迁移/不覆盖');
+      expect(
+        SyncEngine.rejectOldSchemaVersion(oldHeader),
+        isNotNull,
+        reason: '远端使用旧协议时必须拒绝，不兼容/不迁移/不覆盖',
+      );
 
       // 当前协议版本应被接受（不返回拒绝原因）
-      final curHeader =
-          oldHeader.copyWith(schemaVersion: kManifestSchemaVersion);
-      expect(SyncEngine.rejectOldSchemaVersion(curHeader), isNull,
-          reason: '当前协议版本应被接受');
+      final curHeader = oldHeader.copyWith(
+        schemaVersion: kManifestSchemaVersion,
+      );
+      expect(
+        SyncEngine.rejectOldSchemaVersion(curHeader),
+        isNull,
+        reason: '当前协议版本应被接受',
+      );
     });
   });
 }

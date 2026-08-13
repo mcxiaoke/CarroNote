@@ -15,11 +15,11 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:core/core.dart';
-import 'package:local_auth/local_auth.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
@@ -82,8 +82,7 @@ class _BiometricSettingState extends State<BiometricSetting> {
         return false;
       }
       return await _auth.authenticate(
-        localizedReason:
-            'Verify your biometric to enable biometric login'.tr(),
+        localizedReason: 'Verify your biometric to enable biometric login'.tr(),
         persistAcrossBackgrounding: true,
       );
     } on Object catch (e, st) {

@@ -1019,8 +1019,12 @@ class WebDavBackend implements SyncBackend {
   Future<void> _mkcol(String url, {Duration? timeout}) async {
     http.Response res;
     try {
-      res = await _sendHttp('MKCOL', Uri.parse(url),
-          headers: _authHeaders(), timeout: timeout ?? _httpTimeout);
+      res = await _sendHttp(
+        'MKCOL',
+        Uri.parse(url),
+        headers: _authHeaders(),
+        timeout: timeout ?? _httpTimeout,
+      );
     } on Exception catch (e) {
       throw BackendUnavailableException('MKCOL network error: $e');
     }

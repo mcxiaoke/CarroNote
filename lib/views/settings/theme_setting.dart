@@ -63,8 +63,8 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
     // 跟随系统时展示系统当前明暗，否则展示本地开关值。
     final darkModeSwitchValue =
         PreferencesStorage.isSystemDarkLightSwitchEnabled
-            ? isPlatformDark
-            : PreferencesStorage.isLocalDarkSwitchEnabled;
+        ? isPlatformDark
+        : PreferencesStorage.isLocalDarkSwitchEnabled;
 
     // 当前主题色的语言化显示名（中文用中文名，其他语言用英文名）。
     final isZh = context.locale.languageCode == 'zh';
@@ -72,91 +72,98 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
       PreferencesStorage.themeGroupIndex,
       PreferencesStorage.themeColorIndex,
     );
-    final String currentSeedName =
-        isZh ? currentSeed.name : currentSeed.nameEn;
+    final String currentSeedName = isZh ? currentSeed.name : currentSeed.nameEn;
 
     return Material(
       color: theme.colorScheme.background,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       child: SafeArea(
         child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 顶部抓手
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: theme.colorScheme.border,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 顶部抓手
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: theme.colorScheme.border,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Dark mode'.tr(),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.h4,
-            ),
-            const SizedBox(height: 14),
-            shadSettingsCard([
-              shadSwitchTile(
-                context,
-                icon: LucideIcons.moon,
-                title: 'Dark mode'.tr(),
-                value: darkModeSwitchValue,
-                onChanged: (value) async {
-                  Provider.of<ThemeProvider>(context, listen: false)
-                      .setIsDarkMode(value);
-
-                  await PreferencesStorage.setLocalDarkSwitchEnabled(value);
-                  await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                      false);
-
-                  if (mounted) setState(() {});
-                },
+              const SizedBox(height: 14),
+              Text(
+                'Dark mode'.tr(),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.h4,
               ),
-              shadSwitchTile(
-                context,
-                icon: LucideIcons.monitorSmartphone,
-                title: 'Use device settings'.tr(),
-                description:
-                    "Use device's light or dark mode setting for the app.".tr(),
-                value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
-                onChanged: (value) async {
-                  Provider.of<ThemeProvider>(context, listen: false)
-                      .setIsDarkMode(isPlatformDark);
+              const SizedBox(height: 14),
+              shadSettingsCard([
+                shadSwitchTile(
+                  context,
+                  icon: LucideIcons.moon,
+                  title: 'Dark mode'.tr(),
+                  value: darkModeSwitchValue,
+                  onChanged: (value) async {
+                    Provider.of<ThemeProvider>(
+                      context,
+                      listen: false,
+                    ).setIsDarkMode(value);
 
-                  await PreferencesStorage.setLocalDarkSwitchEnabled(
-                      isPlatformDark);
-                  await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                      value);
+                    await PreferencesStorage.setLocalDarkSwitchEnabled(value);
+                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                      false,
+                    );
 
-                  if (mounted) setState(() {});
-                },
-              ),
-            ]),
-            const SizedBox(height: 12),
-            // 主题颜色入口：跳转分组色库选择页，右侧显示当前色名。
-            shadSettingsCard([
-              shadNavigationTile(
-                context,
-                icon: LucideIcons.palette,
-                title: 'Theme color'.tr(),
-                value: currentSeedName,
-                onTap: () async {
-                  await Navigator.pushNamed(context, '/themeColorSettings');
-                  if (mounted) setState(() {});
-                },
-              ),
-            ]),
-          ],
+                    if (mounted) setState(() {});
+                  },
+                ),
+                shadSwitchTile(
+                  context,
+                  icon: LucideIcons.monitorSmartphone,
+                  title: 'Use device settings'.tr(),
+                  description:
+                      "Use device's light or dark mode setting for the app."
+                          .tr(),
+                  value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
+                  onChanged: (value) async {
+                    Provider.of<ThemeProvider>(
+                      context,
+                      listen: false,
+                    ).setIsDarkMode(isPlatformDark);
+
+                    await PreferencesStorage.setLocalDarkSwitchEnabled(
+                      isPlatformDark,
+                    );
+                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                      value,
+                    );
+
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ]),
+              const SizedBox(height: 12),
+              // 主题颜色入口：跳转分组色库选择页，右侧显示当前色名。
+              shadSettingsCard([
+                shadNavigationTile(
+                  context,
+                  icon: LucideIcons.palette,
+                  title: 'Theme color'.tr(),
+                  value: currentSeedName,
+                  onTap: () async {
+                    await Navigator.pushNamed(context, '/themeColorSettings');
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ]),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

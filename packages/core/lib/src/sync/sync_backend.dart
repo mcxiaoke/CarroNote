@@ -229,7 +229,9 @@ abstract class SyncBackend {
 /// SyncEngine 收到此异常后应回到 Step 1（getManifest）重新比对并重试。
 class ConflictException implements Exception {
   final String message;
-  ConflictException([this.message = 'Manifest version conflict (ETag mismatch)']);
+  ConflictException([
+    this.message = 'Manifest version conflict (ETag mismatch)',
+  ]);
 
   @override
   String toString() => 'ConflictException: $message';

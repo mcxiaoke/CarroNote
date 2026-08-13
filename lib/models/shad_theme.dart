@@ -10,7 +10,11 @@
 // seed 塞给 Shad。fromSeed 会自动为任意 seed 推导对比度合规的 onXxx 前景色
 // （暗色模式下 primary 自动提亮、文字自动变深），保证任何主题色下按钮/开关/
 // 选中项都清晰可读，无需手调 —— 这正是「主题色自适应」的意义。
+
+// Flutter imports:
 import 'package:flutter/material.dart';
+
+// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ShadThemes {
@@ -21,21 +25,22 @@ class ShadThemes {
 
     // 中性基底沿用 Slate（背景/卡片/边框等不随品牌色走，保持页面观感稳定），
     // 品牌相关色全部映射到 M3 色板。
-    final scheme = (brightness == Brightness.light
-            ? const ShadSlateColorScheme.light()
-            : const ShadSlateColorScheme.dark())
-        .copyWith(
-      primary: m3.primary,
-      primaryForeground: m3.onPrimary,
-      secondary: m3.secondary,
-      secondaryForeground: m3.onSecondary,
-      accent: m3.primaryContainer,
-      accentForeground: m3.onPrimaryContainer,
-      destructive: m3.error,
-      destructiveForeground: m3.onError,
-      ring: m3.primary,
-      selection: m3.primary.withValues(alpha: 0.2),
-    );
+    final scheme =
+        (brightness == Brightness.light
+                ? const ShadSlateColorScheme.light()
+                : const ShadSlateColorScheme.dark())
+            .copyWith(
+              primary: m3.primary,
+              primaryForeground: m3.onPrimary,
+              secondary: m3.secondary,
+              secondaryForeground: m3.onSecondary,
+              accent: m3.primaryContainer,
+              accentForeground: m3.onPrimaryContainer,
+              destructive: m3.error,
+              destructiveForeground: m3.onError,
+              ring: m3.primary,
+              selection: m3.primary.withValues(alpha: 0.2),
+            );
 
     return ShadThemeData(
       brightness: brightness,

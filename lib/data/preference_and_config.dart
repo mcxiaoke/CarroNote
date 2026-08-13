@@ -15,11 +15,9 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
-
-// Project imports:
-import 'package:core/core.dart';
 
 class PreferencesStorage {
   static SharedPreferences? _preferences;
@@ -70,16 +68,22 @@ class PreferencesStorage {
     await _preferences?.remove(_keyPassPhraseHash);
     // 启动时打印一份配置快照，便于对照用户反馈复现问题
     Log.settings.i('偏好设置已加载, 共 ${_preferences?.getKeys().length ?? 0} 个键');
-    Log.settings.d('配置快照: 主题深色=$isThemeDark 系统跟随=$isSystemDarkLightSwitchEnabled '
-        '主题色组=$themeGroupIndex 主题色=$themeColorIndex '
-        '网格视图=$isGridView 新笔记优先=$isNewFirst 紧凑预览=$isCompactPreview '
-        '彩色笔记=$isColorful 自动旋转=$isAutoRotate 防截屏=$isFlagSecure');
-    Log.settings.d('安全配置: 生物识别=$isBiometricAuthEnabled '
-        '无操作锁定=$isInactivityTimeoutOn 锁定时长=${inactivityTimeout}s '
-        '允许登录尝试=$noOfLogginAttemptAllowed 锁定时长=${bruteforceLockOutTime}s');
-    Log.settings.d('备份配置: 自动备份=$isBackupOn 待备份=$isBackupNeeded '
-        '上次备份=${lastBackupTime.isEmpty ? "从未" : lastBackupTime} '
-        '最大重试=$maxBackupRetryAttempts');
+    Log.settings.d(
+      '配置快照: 主题深色=$isThemeDark 系统跟随=$isSystemDarkLightSwitchEnabled '
+      '主题色组=$themeGroupIndex 主题色=$themeColorIndex '
+      '网格视图=$isGridView 新笔记优先=$isNewFirst 紧凑预览=$isCompactPreview '
+      '彩色笔记=$isColorful 自动旋转=$isAutoRotate 防截屏=$isFlagSecure',
+    );
+    Log.settings.d(
+      '安全配置: 生物识别=$isBiometricAuthEnabled '
+      '无操作锁定=$isInactivityTimeoutOn 锁定时长=${inactivityTimeout}s '
+      '允许登录尝试=$noOfLogginAttemptAllowed 锁定时长=${bruteforceLockOutTime}s',
+    );
+    Log.settings.d(
+      '备份配置: 自动备份=$isBackupOn 待备份=$isBackupNeeded '
+      '上次备份=${lastBackupTime.isEmpty ? "从未" : lastBackupTime} '
+      '最大重试=$maxBackupRetryAttempts',
+    );
   }
 
   static Future<void> reload() async {
@@ -122,14 +126,16 @@ class PreferencesStorage {
     // 其他 UI 偏好(gridView/sortOrder 等)也保留
   }
 
-// appVersionCode controls the one time code execution on version change
+  // appVersionCode controls the one time code execution on version change
   static int get appVersionCode =>
       _preferences?.getInt(_keyAppVersionCode) ?? 1;
 
   static Future<void> setAppVersionCodeToCurrent() async {
     final old = _preferences?.getInt(_keyAppVersionCode);
-    await _preferences
-        ?.setInt(_keyAppVersionCode, SafeNotesConfig.appVersionCode);
+    await _preferences?.setInt(
+      _keyAppVersionCode,
+      SafeNotesConfig.appVersionCode,
+    );
     _logPrefChange('已记录版本号', old, SafeNotesConfig.appVersionCode);
   }
 
@@ -146,7 +152,7 @@ class PreferencesStorage {
     bool? isDark = _preferences?.getBool(_keyIsThemeDark);
     bool isSystemDark =
         WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-            Brightness.dark;
+        Brightness.dark;
 
     if (isSystemDarkLightSwitchEnabled) {
       return isSystemDark;
@@ -207,9 +213,12 @@ class PreferencesStorage {
   static Future<void> setIsGridView(bool flag) async {
     final old = _preferences?.getBool(_keyIsGridView);
     await _preferences?.setBool(_keyIsGridView, flag);
-    _logPrefChange('列表视图模式', old == null ? null : (old ? '网格' : '列表'),
-        flag ? '网格' : '列表',
-        important: false);
+    _logPrefChange(
+      '列表视图模式',
+      old == null ? null : (old ? '网格' : '列表'),
+      flag ? '网格' : '列表',
+      important: false,
+    );
   }
 
   static bool get isNewFirst => _preferences?.getBool(_keyIsNewFirst) ?? true;
@@ -217,9 +226,12 @@ class PreferencesStorage {
   static Future<void> setIsNewFirst(bool flag) async {
     final old = _preferences?.getBool(_keyIsNewFirst);
     await _preferences?.setBool(_keyIsNewFirst, flag);
-    _logPrefChange('笔记排序', old == null ? null : (old ? '新→旧' : '旧→新'),
-        flag ? '新→旧' : '旧→新',
-        important: false);
+    _logPrefChange(
+      '笔记排序',
+      old == null ? null : (old ? '新→旧' : '旧→新'),
+      flag ? '新→旧' : '旧→新',
+      important: false,
+    );
   }
 
   static String get lastBackupTime =>
@@ -279,14 +291,18 @@ class PreferencesStorage {
 
   static int get inactivityTimeout {
     // 评审 #18：缺失/越界时回退缺省索引，与 inactivityTimeoutIndex 一致（3 分钟）
-    final index = _inactivityTimeoutIndexOr(defaultIndex: kDefaultInactivityTimeoutIndex);
+    final index = _inactivityTimeoutIndexOr(
+      defaultIndex: kDefaultInactivityTimeoutIndex,
+    );
     return kInactivityTimeoutChoicesSeconds[index];
   }
 
   static int get inactivityTimeoutIndex {
     // 评审 #18：缺省统一为 kDefaultInactivityTimeoutIndex（3 分钟 = 180s），
     // 不再与 inactivityTimeout 的越界回退值（原 300s）双默认值打架
-    return _inactivityTimeoutIndexOr(defaultIndex: kDefaultInactivityTimeoutIndex);
+    return _inactivityTimeoutIndexOr(
+      defaultIndex: kDefaultInactivityTimeoutIndex,
+    );
   }
 
   static Future<void> setInactivityTimeoutIndex({required int index}) async {
@@ -322,7 +338,7 @@ class PreferencesStorage {
     return defaultIndex;
   }
 
-//default: Same as inactivityTimeout
+  //default: Same as inactivityTimeout
   static int get focusTimeout => PreferencesStorage.inactivityTimeout;
   // static int get focusTimeout => _preferences?.getInt(_keyFocusTimeout) ?? 60;
 
@@ -385,9 +401,12 @@ class PreferencesStorage {
   static Future<void> setIsSortByModified(bool flag) async {
     final old = _preferences?.getBool(_keyIsSortByModified);
     await _preferences?.setBool(_keyIsSortByModified, flag);
-    _logPrefChange('排序依据', old == null ? null : (old ? '修改时间' : '创建时间'),
-        flag ? '修改时间' : '创建时间',
-        important: false);
+    _logPrefChange(
+      '排序依据',
+      old == null ? null : (old ? '修改时间' : '创建时间'),
+      flag ? '修改时间' : '创建时间',
+      important: false,
+    );
   }
 
   static bool get isDimTheme => _preferences?.getBool(_keyIsDimTheme) ?? true;
@@ -462,8 +481,11 @@ class PreferencesStorage {
   static Future<void> setBackupDirectory(String path) async {
     final old = backupDirectory;
     await _preferences?.setString(_keyBackupDirectory, path);
-    _logPrefChange('备份目录', old.isEmpty ? '未设置' : old,
-        path.isEmpty ? '未设置' : path);
+    _logPrefChange(
+      '备份目录',
+      old.isEmpty ? '未设置' : old,
+      path.isEmpty ? '未设置' : path,
+    );
   }
 
   /// 导出全部偏好设置（调试面板 / dashboard 下载用）。
@@ -490,8 +512,10 @@ class PhraseHandler {
   static void initPass(String pass) {
     final wasSet = _passphrase.isNotEmpty;
     _passphrase = pass;
-    Log.auth.i('会话密码已注入内存 (len=${pass.length}, '
-        '此前${wasSet ? "已有" : "为空"})');
+    Log.auth.i(
+      '会话密码已注入内存 (len=${pass.length}, '
+      '此前${wasSet ? "已有" : "为空"})',
+    );
   }
 
   static void destroy() {
@@ -518,7 +542,8 @@ class ImportPassPhraseHandler {
   static String? importPassPhrase;
   static String? importPassPhraseHash;
   static String? getImportPassPhrase() => importPassPhrase;
-  static void setImportPassPhrase(String imPhrase) => importPassPhrase = imPhrase;
+  static void setImportPassPhrase(String imPhrase) =>
+      importPassPhrase = imPhrase;
 
   static String? getImportPassPhraseHash() => importPassPhraseHash;
   static void setImportPassPhraseHash(String? imPhraseHash) =>
@@ -637,8 +662,8 @@ class SafeNotesConfig {
   }
 
   static String get backupFileName {
-    String redundancyCounter =
-        PreferencesStorage.backupRedundancyCounter.toString();
+    String redundancyCounter = PreferencesStorage.backupRedundancyCounter
+        .toString();
     if (redundancyCounter == '0') {
       return '$_backupFileNamePrefix$_backupExtension';
     }

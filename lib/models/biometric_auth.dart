@@ -16,11 +16,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:core/core.dart';
 
 // Project imports:
 
@@ -116,9 +116,7 @@ class BiometricAuth {
   static Future<String> _unwrap(String wrapped) async {
     try {
       final key = await _biometricWrapKey();
-      final envelope = base64Decode(
-        wrapped.substring(_wrappedPrefix.length),
-      );
+      final envelope = base64Decode(wrapped.substring(_wrappedPrefix.length));
       final bytes = await SyncCrypto.open(key, 'biometric-auth', envelope);
       return utf8.decode(bytes);
     } on Object catch (e, st) {

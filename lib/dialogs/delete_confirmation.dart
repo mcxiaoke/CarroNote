@@ -11,15 +11,15 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
+// Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 class DeleteConfirmationDialog extends StatelessWidget {

@@ -20,17 +20,23 @@
  */
 
 // Dart 导入
+
+// Dart imports:
 import 'dart:async';
 
-// 第三方导入
+// Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:path_provider/path_provider.dart';
 
-// 项目导入
-import 'package:core/core.dart';
+// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/device_id.dart';
+
+// 第三方导入
+
+// 项目导入
 
 /// 同步状态枚举（供 UI 显示）
 enum SyncStatus {
@@ -75,13 +81,12 @@ class SyncServiceState {
     DateTime? lastSyncTime,
     SyncResult? lastResult,
     String? errorMessage,
-  }) =>
-      SyncServiceState(
-        status: status ?? this.status,
-        lastSyncTime: lastSyncTime ?? this.lastSyncTime,
-        lastResult: lastResult ?? this.lastResult,
-        errorMessage: errorMessage,
-      );
+  }) => SyncServiceState(
+    status: status ?? this.status,
+    lastSyncTime: lastSyncTime ?? this.lastSyncTime,
+    lastResult: lastResult ?? this.lastResult,
+    errorMessage: errorMessage,
+  );
 }
 
 /// 同步服务
@@ -207,9 +212,11 @@ class SyncService {
     // 只报告不重放——恢复必须以 DB 实际状态为准（设计 §3.6b）。
     await _reportIncompleteOperations();
 
-    Log.sync.i('SyncService 初始化 (backend=${backend.runtimeType}, '
-        'deviceId=$_deviceId, vaultId=${keyring.vaultId}, '
-        'keyVersion=${keyring.keyVersion}, dataKeyEpoch=${keyring.dataKeyEpoch})');
+    Log.sync.i(
+      'SyncService 初始化 (backend=${backend.runtimeType}, '
+      'deviceId=$_deviceId, vaultId=${keyring.vaultId}, '
+      'keyVersion=${keyring.keyVersion}, dataKeyEpoch=${keyring.dataKeyEpoch})',
+    );
 
     await backend.init();
     _backendReady = true;
@@ -250,9 +257,11 @@ class SyncService {
     try {
       final incomplete = await journal.findIncompleteOperations();
       if (incomplete.isEmpty) return;
-      Log.sync.w('[Journal] 检测到 ${incomplete.length} 个未完成操作'
-          '（仅报告，不自动重放）：'
-          '${incomplete.map((e) => e.toString()).join(', ')}');
+      Log.sync.w(
+        '[Journal] 检测到 ${incomplete.length} 个未完成操作'
+        '（仅报告，不自动重放）：'
+        '${incomplete.map((e) => e.toString()).join(', ')}',
+      );
     } on Exception catch (e) {
       Log.sync.w('[Journal] 启动自检失败（忽略）', error: e);
     }
@@ -320,9 +329,11 @@ class SyncService {
 
     // P3-log：updateKeyring 完成（改密码 / 迁移后的关键节点，便于追踪密钥状态切换）
     final prevVersion = previous?.keyVersion;
-    Log.sync.i('updateKeyring: keyring 已更新 '
-        '(keyVersion: ${prevVersion ?? "null"} → ${keyring.keyVersion}, '
-        'dataKeyEpoch: ${keyring.dataKeyEpoch}), SyncEngine ${backend != null ? "已重建" : "未重建（backend=null）"}');
+    Log.sync.i(
+      'updateKeyring: keyring 已更新 '
+      '(keyVersion: ${prevVersion ?? "null"} → ${keyring.keyVersion}, '
+      'dataKeyEpoch: ${keyring.dataKeyEpoch}), SyncEngine ${backend != null ? "已重建" : "未重建（backend=null）"}',
+    );
   }
 
   /// 销毁同步服务（应用退出时调用）
@@ -401,10 +412,12 @@ class SyncService {
     // 没有用户偏好可依据，按历史行为放行（纯逻辑测试、启动早期窗口等）。
     if (SyncConfig.isInitialized && !SyncConfig.isSyncEnabled) {
       Log.sync.d('sync 被跳过：同步总开关已关闭');
-      _updateState(state.copyWith(
-        status: SyncStatus.error,
-        errorMessage: 'Sync is disabled in settings'.tr(),
-      ));
+      _updateState(
+        state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: 'Sync is disabled in settings'.tr(),
+        ),
+      );
       return null;
     }
 
@@ -416,18 +429,19 @@ class SyncService {
       return null;
     }
     _syncInProgress = true;
-    _updateState(state.copyWith(
-      status: SyncStatus.syncing,
-      errorMessage: null,
-    ));
+    _updateState(
+      state.copyWith(status: SyncStatus.syncing, errorMessage: null),
+    );
 
     try {
       final engine = _engine;
       if (engine == null) {
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: 'Sync service not initialized'.tr(),
-        ));
+        _updateState(
+          state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: 'Sync service not initialized'.tr(),
+          ),
+        );
         return null;
       }
 
@@ -440,10 +454,12 @@ class SyncService {
       if (!_backendReady) {
         final backend = _backend;
         if (backend == null) {
-          _updateState(state.copyWith(
-            status: SyncStatus.error,
-            errorMessage: 'Sync service not initialized'.tr(),
-          ));
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              errorMessage: 'Sync service not initialized'.tr(),
+            ),
+          );
           return null;
         }
         try {
@@ -452,51 +468,75 @@ class SyncService {
           _backendReady = true;
         } on BackendUnavailableException catch (e, st) {
           Log.sync.w('后端初始化失败（网络不可用）', error: e, stackTrace: st);
-          _updateState(state.copyWith(
-            status: SyncStatus.error,
-            lastSyncTime: DateTime.now(),
-            errorMessage: 'Network unavailable; check your connection and retry: {error}'
-                .tr(namedArgs: {'error': '$e'}),
-          ));
-          return SyncResult.failure('Network unavailable; check your connection and retry: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              lastSyncTime: DateTime.now(),
+              errorMessage:
+                  'Network unavailable; check your connection and retry: {error}'
+                      .tr(namedArgs: {'error': '$e'}),
+            ),
+          );
+          return SyncResult.failure(
+            'Network unavailable; check your connection and retry: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         } on Exception catch (e, st) {
           Log.sync.e('后端初始化失败（未预期异常）', error: e, stackTrace: st);
-          _updateState(state.copyWith(
-            status: SyncStatus.error,
-            lastSyncTime: DateTime.now(),
-            errorMessage: 'Backend initialization failed: {error}'
-                .tr(namedArgs: {'error': '$e'}),
-          ));
-          return SyncResult.failure('Backend initialization failed: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              lastSyncTime: DateTime.now(),
+              errorMessage: 'Backend initialization failed: {error}'.tr(
+                namedArgs: {'error': '$e'},
+              ),
+            ),
+          );
+          return SyncResult.failure(
+            'Backend initialization failed: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         }
       }
 
       final result = await engine.sync();
-      _updateState(state.copyWith(
-        status: result.success ? SyncStatus.success : SyncStatus.error,
-        lastSyncTime: DateTime.now(),
-        lastResult: result,
-        errorMessage: result.success ? null : result.errorMessage,
-      ));
+      _updateState(
+        state.copyWith(
+          status: result.success ? SyncStatus.success : SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          lastResult: result,
+          errorMessage: result.success ? null : result.errorMessage,
+        ),
+      );
       return result;
     } on BackendUnavailableException catch (e, st) {
       Log.sync.e('同步失败（后端不可用）', error: e, stackTrace: st);
-      _updateState(state.copyWith(
-        status: SyncStatus.error,
-        lastSyncTime: DateTime.now(),
-        errorMessage: 'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
-      ));
-      return SyncResult.failure('Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
+      _updateState(
+        state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          errorMessage: 'Backend unavailable: {error}'.tr(
+            namedArgs: {'error': '$e'},
+          ),
+        ),
+      );
+      return SyncResult.failure(
+        'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } on Exception catch (e, st) {
       Log.sync.e('同步失败（未预期异常）', error: e, stackTrace: st);
-      _updateState(state.copyWith(
-        status: SyncStatus.error,
-        lastSyncTime: DateTime.now(),
-        errorMessage: 'Sync error: {error}'.tr(namedArgs: {'error': '$e'}),
-      ));
-      return SyncResult.failure('Sync error: {error}'.tr(namedArgs: {'error': '$e'}));
+      _updateState(
+        state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          errorMessage: 'Sync error: {error}'.tr(namedArgs: {'error': '$e'}),
+        ),
+      );
+      return SyncResult.failure(
+        'Sync error: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } finally {
       _syncInProgress = false;
     }
@@ -511,18 +551,19 @@ class SyncService {
     // 修复与修复并发（原实现把 _syncInProgress 检查放在网络 await 之后）。
     if (_syncInProgress) return null;
     _syncInProgress = true;
-    _updateState(state.copyWith(
-      status: SyncStatus.syncing,
-      errorMessage: null,
-    ));
+    _updateState(
+      state.copyWith(status: SyncStatus.syncing, errorMessage: null),
+    );
 
     try {
       final engine = _engine;
       if (engine == null) {
-        _updateState(state.copyWith(
-          status: SyncStatus.error,
-          errorMessage: 'Sync service not initialized'.tr(),
-        ));
+        _updateState(
+          state.copyWith(
+            status: SyncStatus.error,
+            errorMessage: 'Sync service not initialized'.tr(),
+          ),
+        );
         return null;
       }
 
@@ -530,10 +571,12 @@ class SyncService {
       if (!_backendReady) {
         final backend = _backend;
         if (backend == null) {
-          _updateState(state.copyWith(
-            status: SyncStatus.error,
-            errorMessage: 'Sync service not initialized'.tr(),
-          ));
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              errorMessage: 'Sync service not initialized'.tr(),
+            ),
+          );
           return null;
         }
         try {
@@ -542,33 +585,46 @@ class SyncService {
           _backendReady = true;
         } on BackendUnavailableException catch (e, st) {
           Log.sync.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
-          return SyncResult.failure('Network unavailable; check your connection and retry: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          return SyncResult.failure(
+            'Network unavailable; check your connection and retry: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         } on Exception catch (e, st) {
-          Log.sync.e('repairRemote: 后端初始化失败（未预期异常）',
-              error: e, stackTrace: st);
-          return SyncResult.failure('Backend initialization failed: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          Log.sync.e('repairRemote: 后端初始化失败（未预期异常）', error: e, stackTrace: st);
+          return SyncResult.failure(
+            'Backend initialization failed: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         }
       }
 
       Log.sync.i('repairRemote: 开始修复');
       final result = await engine.repairRemote();
-      Log.sync.i('repairRemote: 修复完成 (success=${result.success}, '
-          'uploaded=${result.uploaded}, failed=${result.failedNoteUuids.length})');
-      _updateState(state.copyWith(
-        status: result.success ? SyncStatus.success : SyncStatus.error,
-        lastSyncTime: DateTime.now(),
-        lastResult: result,
-        errorMessage: result.success ? null : result.errorMessage,
-      ));
+      Log.sync.i(
+        'repairRemote: 修复完成 (success=${result.success}, '
+        'uploaded=${result.uploaded}, failed=${result.failedNoteUuids.length})',
+      );
+      _updateState(
+        state.copyWith(
+          status: result.success ? SyncStatus.success : SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          lastResult: result,
+          errorMessage: result.success ? null : result.errorMessage,
+        ),
+      );
       return result;
     } on BackendUnavailableException catch (e, st) {
       Log.sync.e('repairRemote: 后端不可用', error: e, stackTrace: st);
-      return SyncResult.failure('Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
+      return SyncResult.failure(
+        'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } on Exception catch (e, st) {
       Log.sync.e('repairRemote: 修复异常', error: e, stackTrace: st);
-      return SyncResult.failure('Repair error: {error}'.tr(namedArgs: {'error': '$e'}));
+      return SyncResult.failure(
+        'Repair error: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } finally {
       _syncInProgress = false;
     }
@@ -646,9 +702,12 @@ class SyncService {
           }
         },
         onError: (Object e, StackTrace st) {
-          Log.sync.e('autoSync: sync() 抛出未预期错误，放弃本次自动同步'
-              '（错误已记录，用户下次编辑或手动同步可重试）',
-              error: e, stackTrace: st);
+          Log.sync.e(
+            'autoSync: sync() 抛出未预期错误，放弃本次自动同步'
+            '（错误已记录，用户下次编辑或手动同步可重试）',
+            error: e,
+            stackTrace: st,
+          );
         },
       );
     });
@@ -680,7 +739,9 @@ class SyncService {
     if (_syncInProgress) {
       // P3-log：拒绝切换（避免 StateError 抛出后从日志看不出原因）
       Log.sync.w('switchBackend 被拒绝（同步进行中），抛 StateError');
-      throw StateError('Sync in progress; cannot switch backend. Please retry later.'.tr());
+      throw StateError(
+        'Sync in progress; cannot switch backend. Please retry later.'.tr(),
+      );
     }
     final oldType = _backend?.runtimeType.toString() ?? 'null';
     Log.sync.i('切换同步后端: $oldType → ${backend.runtimeType}');
@@ -707,8 +768,10 @@ class SyncService {
     }
 
     // P3-log：切换完成（含 SyncEngine 重建状态，便于排查切换后状态不一致）
-    Log.sync.i('switchBackend 完成 (providerKey=${backend.providerKey}, '
-        'engine=${keyring != null && deviceId != null ? "已重建" : "未重建（keyring/deviceId=null）"})');
+    Log.sync.i(
+      'switchBackend 完成 (providerKey=${backend.providerKey}, '
+      'engine=${keyring != null && deviceId != null ? "已重建" : "未重建（keyring/deviceId=null）"})',
+    );
   }
 
   /// F-H06 修复：设置页修改配置（后端类型/URL/凭据）后应用生效。
@@ -760,20 +823,28 @@ class SyncService {
     try {
       // 引擎已就绪：切换后端（内含互斥与重建）
       await switchBackend(backend: backend, database: database);
-      Log.sync.i('applyConfigToService: 配置变更已应用到 SyncService '
-          '(providerKey=${backend.providerKey})');
+      Log.sync.i(
+        'applyConfigToService: 配置变更已应用到 SyncService '
+        '(providerKey=${backend.providerKey})',
+      );
       return (success: true, error: null);
     } on StateError catch (e) {
       Log.sync.w('applyConfigToService: 切换后端被拒绝', error: e);
       return (success: false, error: '$e');
     } on BackendUnavailableException catch (e) {
       Log.sync.w('applyConfigToService: 新后端不可用', error: e);
-      return (success: false,
-          error: 'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}));
+      return (
+        success: false,
+        error: 'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } on Exception catch (e, st) {
       Log.sync.e('applyConfigToService: 切换后端失败', error: e, stackTrace: st);
-      return (success: false,
-          error: 'Failed to switch backend: {error}'.tr(namedArgs: {'error': '$e'}));
+      return (
+        success: false,
+        error: 'Failed to switch backend: {error}'.tr(
+          namedArgs: {'error': '$e'},
+        ),
+      );
     }
   }
 
@@ -976,11 +1047,7 @@ class SyncService {
     final j = _journal;
     if (j == null) return {'present': false};
     final entries = (await j.readAll()).map((e) => e.toJson()).toList();
-    return {
-      'present': true,
-      'entryCount': entries.length,
-      'entries': entries,
-    };
+    return {'present': true, 'entryCount': entries.length, 'entries': entries};
   }
 
   /// 导出全部日志为文本（调试面板"复制全部"按钮用）
@@ -993,13 +1060,19 @@ class SyncService {
     buffer.writeln('=== SafeNotes 同步诊断快照 ===');
     buffer.writeln('导出时间: ${snapshot.captureTime}');
     buffer.writeln('设备 ID: ${snapshot.deviceId ?? "N/A"}');
-    buffer.writeln('后端: ${snapshot.backendDisplayName} '
-        '(${snapshot.backendRuntimeType ?? "N/A"})');
+    buffer.writeln(
+      '后端: ${snapshot.backendDisplayName} '
+      '(${snapshot.backendRuntimeType ?? "N/A"})',
+    );
     buffer.writeln('Keyring ID: ${snapshot.vaultId ?? "N/A"}');
-    buffer.writeln('keyVersion: ${snapshot.keyVersion ?? "N/A"}, '
-        'dataKeyEpoch: ${snapshot.dataKeyEpoch ?? "N/A"}');
-    buffer.writeln('同步状态: ${snapshot.status}, '
-        'isSyncing=${snapshot.isSyncing}');
+    buffer.writeln(
+      'keyVersion: ${snapshot.keyVersion ?? "N/A"}, '
+      'dataKeyEpoch: ${snapshot.dataKeyEpoch ?? "N/A"}',
+    );
+    buffer.writeln(
+      '同步状态: ${snapshot.status}, '
+      'isSyncing=${snapshot.isSyncing}',
+    );
     if (snapshot.errorMessage != null) {
       buffer.writeln('错误信息: ${snapshot.errorMessage}');
     }
@@ -1007,8 +1080,10 @@ class SyncService {
       buffer.writeln('上次同步错误: ${snapshot.lastResultErrorMessage}');
     }
     if (snapshot.lastResultFailedNoteUuids?.isNotEmpty ?? false) {
-      buffer.writeln('失败笔记 UUID: '
-          '${snapshot.lastResultFailedNoteUuids!.join(", ")}');
+      buffer.writeln(
+        '失败笔记 UUID: '
+        '${snapshot.lastResultFailedNoteUuids!.join(", ")}',
+      );
     }
     buffer.writeln('日志目录: ${snapshot.logDirPath ?? "N/A"}');
     buffer.writeln('');
@@ -1083,8 +1158,10 @@ class SyncService {
   }) async {
     try {
       final isInitialized = await Keyring.isInitialized(database);
-      Log.sync.i('登录密钥环准备: 本地是否已初始化=$isInitialized, '
-          '${isInitialized ? "将解锁(密码解密 dataKey)" : "将新建(生成 dataKey)"}');
+      Log.sync.i(
+        '登录密钥环准备: 本地是否已初始化=$isInitialized, '
+        '${isInitialized ? "将解锁(密码解密 dataKey)" : "将新建(生成 dataKey)"}',
+      );
 
       final Keyring keyring;
       if (isInitialized) {
@@ -1106,11 +1183,17 @@ class SyncService {
 
       return (success: true, error: null);
     } on WrongPasswordException catch (e) {
-      return (success: false,
-          error: 'Wrong passphrase: {error}'.tr(namedArgs: {'error': '$e'}));
+      return (
+        success: false,
+        error: 'Wrong passphrase: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
     } on Exception catch (e) {
-      return (success: false,
-          error: 'Keyring initialization failed: {error}'.tr(namedArgs: {'error': '$e'}));
+      return (
+        success: false,
+        error: 'Keyring initialization failed: {error}'.tr(
+          namedArgs: {'error': '$e'},
+        ),
+      );
     }
   }
 
@@ -1128,26 +1211,34 @@ class SyncService {
   }) async {
     final keyring = _keyring;
     if (keyring == null) {
-      return (success: false, error: 'Keyring not initialized. Please log in again.'.tr());
+      return (
+        success: false,
+        error: 'Keyring not initialized. Please log in again.'.tr(),
+      );
     }
 
     final backend = _createBackendFromConfig();
     if (backend == null) {
-      return (success: false, error: 'Backend configuration is incomplete'.tr());
+      return (
+        success: false,
+        error: 'Backend configuration is incomplete'.tr(),
+      );
     }
 
-    Log.sync.i('启用同步: 后端类型=${SyncConfig.backendType.name}'
-        ' (${SyncConfig.backendDisplayName}), 开始初始化');
+    Log.sync.i(
+      '启用同步: 后端类型=${SyncConfig.backendType.name}'
+      ' (${SyncConfig.backendDisplayName}), 开始初始化',
+    );
     try {
-      await initialize(
-        keyring: keyring,
-        backend: backend,
-        database: database,
-      );
+      await initialize(keyring: keyring, backend: backend, database: database);
       return (success: true, error: null);
     } on Exception catch (e) {
-      return (success: false,
-          error: 'Backend initialization failed: {error}'.tr(namedArgs: {'error': '$e'}));
+      return (
+        success: false,
+        error: 'Backend initialization failed: {error}'.tr(
+          namedArgs: {'error': '$e'},
+        ),
+      );
     }
   }
 
@@ -1184,8 +1275,10 @@ class SyncService {
     }
     final backend = draft.buildBackend();
     if (backend == null) {
-      return (success: false,
-          error: 'Configuration incomplete; please fill in required fields'.tr());
+      return (
+        success: false,
+        error: 'Configuration incomplete; please fill in required fields'.tr(),
+      );
     }
 
     Log.sync.i('测试同步后端连接: type=${draft.type.name}');
@@ -1214,8 +1307,7 @@ class SyncService {
   /// 与 [_createBackendFromConfig] 相同，但公开给 login.dart 使用。
   /// 返回的后端实例独立于 _backend，调用方负责 init/close。
   /// 返回 null 表示配置不完整或未启用同步。
-  SyncBackend? createBackendForVerification() =>
-      _createBackendFromConfig();
+  SyncBackend? createBackendForVerification() => _createBackendFromConfig();
 
   /// B2 修复：登录页通过 keyring 验证密码后缓存 keyring 引用
   ///

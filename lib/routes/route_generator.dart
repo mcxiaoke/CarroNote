@@ -18,13 +18,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/main.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/authentication/login.dart';
@@ -32,6 +32,7 @@ import 'package:safenotes/views/authentication/set_passphrase.dart';
 import 'package:safenotes/views/change_passphrase.dart';
 import 'package:safenotes/views/deleted_notes.dart';
 import 'package:safenotes/views/home.dart';
+import 'package:safenotes/views/settings/about_page.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
@@ -41,7 +42,6 @@ import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
 import 'package:safenotes/views/settings/theme_color_setting.dart';
-import 'package:safenotes/views/settings/about_page.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -66,7 +66,9 @@ class RouteGenerator {
           );
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/signup':
         if (args is SessionArguments) {
@@ -79,7 +81,9 @@ class RouteGenerator {
           );
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/authwall':
         if (args is SessionArguments) {
@@ -92,21 +96,30 @@ class RouteGenerator {
           );
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/home':
         if (args is StreamController<SessionState>) {
           return _buildRoute(HomePage(sessionStateStream: args), settings);
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/addnote':
         if (args is StreamController<SessionState>) {
-          return _buildRoute(AddEditNotePage(sessionStateStream: args), settings);
+          return _buildRoute(
+            AddEditNotePage(sessionStateStream: args),
+            settings,
+          );
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/editnote':
         if (args is AddEditNoteArguments) {
@@ -140,10 +153,15 @@ class RouteGenerator {
 
       case '/settings':
         if (args is StreamController<SessionState>) {
-          return _buildRoute(SettingsScreen(sessionStateStream: args), settings);
+          return _buildRoute(
+            SettingsScreen(sessionStateStream: args),
+            settings,
+          );
         }
         return _errorRoute(
-            route: routeName, argsType: 'StreamController<SessionState>');
+          route: routeName,
+          argsType: 'StreamController<SessionState>',
+        );
 
       case '/chooseColorSettings':
         return _buildRoute(const ColorPallet(), settings);
@@ -177,30 +195,41 @@ class RouteGenerator {
     return MaterialPageRoute(builder: (_) => child, settings: settings);
   }
 
-  static Route<dynamic> _errorRoute(
-      {required String? route, String? argsType}) {
+  static Route<dynamic> _errorRoute({
+    required String? route,
+    String? argsType,
+  }) {
     // 路由解析失败是异常情况,需以 warning 级别暴露(参数缺失或路由不存在)
-    Log.ui.w('路由解析失败: route=$route'
-        '${argsType != null ? ", 期望参数类型=$argsType" : ""}');
-    return MaterialPageRoute(builder: (_) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Route Error'.tr())),
-        body: Padding(
-          padding: const EdgeInsets.only(left: 5, right: 5),
-          child: Center(
-            child: argsType == null
-                ? Text('No route: {route}'
-                    .tr(namedArgs: {'route': route.toString()}))
-                : Text(
-                    '{argsType}, Needed for route: {route}'.tr(namedArgs: {
-                      'argsType': argsType,
-                      'route': route.toString()
-                    }),
-                  ),
+    Log.ui.w(
+      '路由解析失败: route=$route'
+      '${argsType != null ? ", 期望参数类型=$argsType" : ""}',
+    );
+    return MaterialPageRoute(
+      builder: (_) {
+        return Scaffold(
+          appBar: AppBar(title: Text('Route Error'.tr())),
+          body: Padding(
+            padding: const EdgeInsets.only(left: 5, right: 5),
+            child: Center(
+              child: argsType == null
+                  ? Text(
+                      'No route: {route}'.tr(
+                        namedArgs: {'route': route.toString()},
+                      ),
+                    )
+                  : Text(
+                      '{argsType}, Needed for route: {route}'.tr(
+                        namedArgs: {
+                          'argsType': argsType,
+                          'route': route.toString(),
+                        },
+                      ),
+                    ),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
@@ -208,8 +237,5 @@ class AddEditNoteArguments {
   final StreamController<SessionState> sessionStream;
   final SafeNote? note;
 
-  AddEditNoteArguments({
-    required this.sessionStream,
-    this.note,
-  });
+  AddEditNoteArguments({required this.sessionStream, this.note});
 }

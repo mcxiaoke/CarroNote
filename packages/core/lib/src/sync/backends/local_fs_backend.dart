@@ -86,10 +86,7 @@ class LocalFsBackend implements SyncBackend {
   }
 
   @override
-  Future<String> putManifest(
-    Uint8List ciphertext,
-    String expectedEtag,
-  ) async {
+  Future<String> putManifest(Uint8List ciphertext, String expectedEtag) async {
     _ensureInitialized();
     final file = File(_manifestPath);
 
@@ -97,19 +94,22 @@ class LocalFsBackend implements SyncBackend {
       // 首次上传：远端必须不存在 manifest
       if (await file.exists()) {
         throw ConflictException(
-            'LocalFs: manifest already exists (first upload expected empty remote)');
+          'LocalFs: manifest already exists (first upload expected empty remote)',
+        );
       }
     } else {
       // 乐观锁：远端 ETag 必须匹配
       if (!await file.exists()) {
         throw ConflictException(
-            'LocalFs: manifest missing on remote (expected etag=$expectedEtag)');
+          'LocalFs: manifest missing on remote (expected etag=$expectedEtag)',
+        );
       }
       final currentBytes = await file.readAsBytes();
       final currentEtag = _computeEtag(currentBytes);
       if (currentEtag != expectedEtag) {
         throw ConflictException(
-            'LocalFs: etag mismatch (expected=$expectedEtag, actual=$currentEtag)');
+          'LocalFs: etag mismatch (expected=$expectedEtag, actual=$currentEtag)',
+        );
       }
     }
 
@@ -159,7 +159,8 @@ class LocalFsBackend implements SyncBackend {
     // 先写同目录临时文件再 rename（同文件系统内原子），保证目标文件
     // 要么是旧完整内容、要么是新完整内容，绝不出现半写。
     final tmp = File(
-        '${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}');
+      '${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
     await tmp.writeAsBytes(data, flush: true);
     await tmp.rename(file.path);
   }
@@ -215,13 +216,19 @@ class LocalFsBackend implements SyncBackend {
       await src.rename(dst.path);
     } on Exception catch (e) {
       // 重命名失败（跨文件系统）：退化为硬删除
-      Log.sync.w('LocalFs deleteBlobSoft: 重命名失败，退化为硬删除 '
-          'hash=${hash.substring(0, 8)}…', error: e);
+      Log.sync.w(
+        'LocalFs deleteBlobSoft: 重命名失败，退化为硬删除 '
+        'hash=${hash.substring(0, 8)}…',
+        error: e,
+      );
       try {
         await src.delete();
       } on Exception catch (e2) {
-        Log.sync.w('LocalFs deleteBlobSoft: 硬删除也失败 '
-            'hash=${hash.substring(0, 8)}…', error: e2);
+        Log.sync.w(
+          'LocalFs deleteBlobSoft: 硬删除也失败 '
+          'hash=${hash.substring(0, 8)}…',
+          error: e2,
+        );
       }
     }
   }
@@ -309,7 +316,8 @@ class LocalFsBackend implements SyncBackend {
     final result = <String>[];
     // 环形 N 份：从 newestSlot 开始按 -1 步长回退，形成从新到旧顺序
     for (var i = 0; i < kManifestBackupRingCount; i++) {
-      final slot = (newestSlot - i + kManifestBackupRingCount) %
+      final slot =
+          (newestSlot - i + kManifestBackupRingCount) %
           kManifestBackupRingCount;
       final file = File(p.join(dir.path, 'manifest.bak-$slot'));
       if (await file.exists()) result.add('manifest.bak-$slot');

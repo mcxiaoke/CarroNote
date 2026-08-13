@@ -16,23 +16,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
-import 'package:safenotes/views/settings/backup_setting.dart';
+import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
+import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/footer.dart' show debugBadge;
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -53,9 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Provider.of<ThemeProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'.tr(), style: appBarTitle),
-      ),
+      appBar: AppBar(title: Text('Settings'.tr(), style: appBarTitle)),
       body: shadSettingsList(_settingsGroups(context)),
     );
   }
@@ -97,8 +95,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: LucideIcons.languages,
           title: 'Language'.tr(),
           value: SafeNotesConfig.mapLocaleName[context.locale.toString()]!,
-          subtitle:
-              context.locale.toString() != 'en_US' ? 'Language'.tr() : null,
+          subtitle: context.locale.toString() != 'en_US'
+              ? 'Language'.tr()
+              : null,
           onTap: () async {
             await Navigator.pushNamed(context, '/chooseLanguageSettings');
             setState(() {});
@@ -148,9 +147,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.arrowUpDown,
           title: 'Sort by Modified Date'.tr(),
-          description: 'Sort notes by last modified time. '
-                  'Off sorts by creation time.'
-              .tr(),
+          description:
+              'Sort notes by last modified time. '
+                      'Off sorts by creation time.'
+                  .tr(),
           value: PreferencesStorage.isSortByModified,
           onChanged: (v) {
             PreferencesStorage.setIsSortByModified(v);

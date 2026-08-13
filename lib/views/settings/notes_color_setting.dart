@@ -97,9 +97,7 @@ class ColorPalletState extends State<ColorPallet> {
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
       childAspectRatio: 2.0,
-      children: [
-        for (var i = 0; i < items.length; i++) _themeCard(context, i),
-      ],
+      children: [for (var i = 0; i < items.length; i++) _themeCard(context, i)],
     );
   }
 
@@ -147,8 +145,11 @@ class ColorPalletState extends State<ColorPallet> {
                     ),
                   ),
                   if (selected)
-                    Icon(LucideIcons.check,
-                        size: 16, color: theme.colorScheme.primary),
+                    Icon(
+                      LucideIcons.check,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
                 ],
               ),
             ],
@@ -179,10 +180,7 @@ class ColorPalletState extends State<ColorPallet> {
           children: [
             for (final color in colors)
               Expanded(
-                child: Container(
-                  height: height,
-                  color: color as Color,
-                ),
+                child: Container(height: height, color: color as Color),
               ),
           ],
         ),

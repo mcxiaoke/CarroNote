@@ -64,10 +64,7 @@ void main() {
     });
 
     test('重复导入同一份备份：全部跳过，不抛 UNIQUE 冲突', () async {
-      final notes = [
-        _makeNote(uuid: 'u-1'),
-        _makeNote(uuid: 'u-2'),
-      ];
+      final notes = [_makeNote(uuid: 'u-1'), _makeNote(uuid: 'u-2')];
       expect(await database.storeNotesInTransaction(notes), 2);
       // 再次导入同一份 → 应全部跳过返回 0，而不是抛 DatabaseException
       expect(await database.storeNotesInTransaction(notes), 0);

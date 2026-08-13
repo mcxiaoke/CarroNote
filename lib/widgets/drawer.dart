@@ -18,13 +18,13 @@ import 'package:flutter/material.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
 class HomeDrawer extends StatefulWidget {
@@ -82,7 +82,9 @@ class HomeDrawerState extends State<HomeDrawer> {
               child: Column(
                 children: <Widget>[
                   _drawerHeader(
-                      topPadding: topHeadPadding, orientation: orientation),
+                    topPadding: topHeadPadding,
+                    orientation: orientation,
+                  ),
                   _divide(topPadding: bottomHeadPadding),
                   _buildMenuItem(
                     topPadding: height * 0.005,
@@ -215,7 +217,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                     ],
                   ),
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -226,9 +228,7 @@ class HomeDrawerState extends State<HomeDrawer> {
   Widget _divide({required double topPadding}) {
     return Padding(
       padding: EdgeInsets.only(top: topPadding),
-      child: Divider(
-        color: ShadTheme.of(context).colorScheme.border,
-      ),
+      child: Divider(color: ShadTheme.of(context).colorScheme.border),
     );
   }
 }

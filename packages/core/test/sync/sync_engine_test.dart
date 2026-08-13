@@ -85,7 +85,8 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
     } else {
       if (_etag != expectedEtag) {
         throw ConflictException(
-            'FakeBackend: etag mismatch (expected=$expectedEtag, actual=$_etag)');
+          'FakeBackend: etag mismatch (expected=$expectedEtag, actual=$_etag)',
+        );
       }
     }
 
@@ -174,12 +175,13 @@ SyncEngine _makeEngine({
   String? encryptedDataKey,
   String? vaultId,
 }) {
-  final dk = dataKey ??
+  final dk =
+      dataKey ??
       (database.isEncryptionEnabled
           ? database.dataKeyForTesting
           : SyncCrypto.generateDataKey());
-  final edk = encryptedDataKey ??
-      base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
+  final edk =
+      encryptedDataKey ?? base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
   final vid = vaultId ?? 'test-keyring-id';
   final keyring = makeTestKeyring(
     vaultId: vid,
@@ -438,13 +440,14 @@ void main() {
       // （== base，未变），因此这是「单边编辑」而非双方分叉 —— base hash 判据
       // 下不应另存副本，纯 LWW 上传覆盖即可。
       // 若不设 base（syncedHash=null），会退化为「保守保留副本」，多出一次上传。
-      final noteB = _makeNote(
-        uuid: 'uuid-conflict',
-        title: 'Version B (newer)',
-        updatedAt: 2000, // 比 A 更新
-      ).copyWith(
-        syncedHash: SafeNote.computeHash('Version A', 'Test Description'),
-      );
+      final noteB =
+          _makeNote(
+            uuid: 'uuid-conflict',
+            title: 'Version B (newer)',
+            updatedAt: 2000, // 比 A 更新
+          ).copyWith(
+            syncedHash: SafeNote.computeHash('Version A', 'Test Description'),
+          );
       await database.storeNote(noteB);
 
       final engineB = _makeEngine(
@@ -666,7 +669,11 @@ void main() {
 
     test('单边变更后再次同步：base 已更新，无变化全部跳过', () async {
       // 验证 fast-forward 后 base 正确更新，避免「重复上传」或「误判冲突」
-      final noteV1 = _makeNote(uuid: 'uuid-ff-stable', title: 'V1', updatedAt: 1000);
+      final noteV1 = _makeNote(
+        uuid: 'uuid-ff-stable',
+        title: 'V1',
+        updatedAt: 1000,
+      );
       await database.storeNote(noteV1);
       final engine = _makeEngine(backend: backend, database: database);
       await engine.sync();
@@ -734,14 +741,22 @@ void main() {
       final after = await database.readNoteByUuid('uuid-p1a-2');
       expect(after!.title, 'V2');
       expect(after.synced, isFalse, reason: '同步期间编辑的笔记不应被误标 synced=1');
-      expect(after.syncedHash, v1Hash, reason: 'base 必须保持旧 V1hash，不能被污染为新 hash');
+      expect(
+        after.syncedHash,
+        v1Hash,
+        reason: 'base 必须保持旧 V1hash，不能被污染为新 hash',
+      );
     });
 
     test('同步期间编辑的笔记下次 fast-forward 上传新内容，不丢数据', () async {
       // note1 + note2 同步建立 base
       final note1 = _makeNote(uuid: 'uuid-p1a-nd-1', title: 'Note 1');
       await database.storeNote(note1);
-      final note2 = _makeNote(uuid: 'uuid-p1a-nd-2', title: 'V1', updatedAt: 1000);
+      final note2 = _makeNote(
+        uuid: 'uuid-p1a-nd-2',
+        title: 'V1',
+        updatedAt: 1000,
+      );
       await database.storeNote(note2);
       final engine = _makeEngine(backend: backend, database: database);
       await engine.sync();
@@ -795,7 +810,10 @@ void main() {
       await database.storeNote(note2);
       backend.onBeforePutManifestWrite = () async {
         // note3 在同步开始前不存在，merged 快照不含 note3
-        final note3 = _makeNote(uuid: 'uuid-p1a-new-3', title: 'Note 3 (new during sync)');
+        final note3 = _makeNote(
+          uuid: 'uuid-p1a-new-3',
+          title: 'Note 3 (new during sync)',
+        );
         await database.storeNote(note3);
       };
       final result = await engine.sync();
@@ -923,8 +941,16 @@ void main() {
   group('SyncEngine - 内容寻址去重', () {
     test('相同内容的多条笔记共享同一个 blob', () async {
       // 准备：2 条笔记内容完全相同（不同 uuid）
-      final note1 = _makeNote(uuid: 'uuid-dup-1', title: 'Same', description: 'Content');
-      final note2 = _makeNote(uuid: 'uuid-dup-2', title: 'Same', description: 'Content');
+      final note1 = _makeNote(
+        uuid: 'uuid-dup-1',
+        title: 'Same',
+        description: 'Content',
+      );
+      final note2 = _makeNote(
+        uuid: 'uuid-dup-2',
+        title: 'Same',
+        description: 'Content',
+      );
       await database.storeNote(note1);
       await database.storeNote(note2);
 
@@ -948,8 +974,9 @@ void main() {
   group('SyncEngine - 端到端：LocalFsBackend 集成', () {
     test('LocalFsBackend 真实文件系统同步', () async {
       // 这个测试用真实的 LocalFsBackend 验证 SyncEngine 与文件系统后端的集成
-      final tempDir = await Directory.systemTemp
-          .createTemp('safenotes_engine_e2e_');
+      final tempDir = await Directory.systemTemp.createTemp(
+        'safenotes_engine_e2e_',
+      );
       final localBackend = LocalFsBackend(rootPath: tempDir.path);
       await localBackend.init();
 
@@ -1022,8 +1049,11 @@ void main() {
       // 保护「他端刚 putBlob、尚未 putManifest」的并发窗口）
       final r1 = await engine.sync();
       expect(r1.success, isTrue);
-      expect(backend._blobs.containsKey(orphanHash), isTrue,
-          reason: '两阶段 GC：首次观察仅登记候选，不应立即隔离');
+      expect(
+        backend._blobs.containsKey(orphanHash),
+        isTrue,
+        reason: '两阶段 GC：首次观察仅登记候选，不应立即隔离',
+      );
 
       // 再同步（连续第二次观察仍为孤儿 → 才隔离）
       final r2 = await engine.sync();
@@ -1050,8 +1080,11 @@ void main() {
       // 第 1 次同步：GC 观察到孤儿候选，但不应隔离（保护上传窗口）
       final r1 = await engine.sync();
       expect(r1.success, isTrue);
-      expect(backend._blobs.containsKey(inFlight), isTrue,
-          reason: '首次观察不得隔离正在上传的 blob');
+      expect(
+        backend._blobs.containsKey(inFlight),
+        isTrue,
+        reason: '首次观察不得隔离正在上传的 blob',
+      );
 
       // 他端随后提交 manifest（引用该 blob）
       backend._blobs[inFlight] = Uint8List.fromList([9, 9]);
@@ -1069,15 +1102,21 @@ void main() {
           createdAt: DateTime.now().millisecondsSinceEpoch,
         );
       await backend.putManifest(
-        await ManifestCrypto.serialize(testDataKey, remote.copyWith(items: items)),
+        await ManifestCrypto.serialize(
+          testDataKey,
+          remote.copyWith(items: items),
+        ),
         remoteManifest.etag,
       );
 
       // 第 2 次同步：该 blob 已被 manifest 引用 → 不再是孤儿，不得隔离
       final r2 = await engine.sync();
       expect(r2.success, isTrue);
-      expect(backend._blobs.containsKey(inFlight), isTrue,
-          reason: '他端已提交 manifest 引用的 blob 不得被 GC 隔离');
+      expect(
+        backend._blobs.containsKey(inFlight),
+        isTrue,
+        reason: '他端已提交 manifest 引用的 blob 不得被 GC 隔离',
+      );
       expect(backend._blobs.containsKey(note.contentHash), isTrue);
     });
 
@@ -1111,10 +1150,16 @@ void main() {
       // 验证：旧墓碑已从数据库硬删除
       final notes = await database.readAllNotesIncludingDeleted();
       final uuids = notes.map((n) => n.uuid).toSet();
-      expect(uuids.contains('gc-tombstone-old'), isFalse,
-          reason: '超 30 天的墓碑应被硬删除');
-      expect(uuids.contains('gc-tombstone-recent'), isTrue,
-          reason: '未过期的墓碑应保留');
+      expect(
+        uuids.contains('gc-tombstone-old'),
+        isFalse,
+        reason: '超 30 天的墓碑应被硬删除',
+      );
+      expect(
+        uuids.contains('gc-tombstone-recent'),
+        isTrue,
+        reason: '未过期的墓碑应保留',
+      );
 
       // 验证：远端 manifest 不含旧墓碑
       final remoteManifest = await backend.getManifest();

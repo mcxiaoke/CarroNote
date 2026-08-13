@@ -96,10 +96,11 @@ const Map<int, String> _inactivityTimeoutKeyBySeconds = {
   900: '15 minutes',
 };
 
-List<Item> get _inactivityItems =>
-    PreferencesStorage.kInactivityTimeoutChoicesSeconds.asMap().entries.map((
-      entry,
-    ) {
+List<Item> get _inactivityItems => PreferencesStorage
+    .kInactivityTimeoutChoicesSeconds
+    .asMap()
+    .entries
+    .map((entry) {
       final seconds = entry.value;
       final index = entry.key;
       final prefix = (_inactivityTimeoutKeyBySeconds[seconds] ?? '').tr();
@@ -110,4 +111,5 @@ List<Item> get _inactivityItems =>
             ? 'Default'.tr()
             : null,
       );
-    }).toList();
+    })
+    .toList();

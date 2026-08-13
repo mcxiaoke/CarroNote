@@ -43,7 +43,11 @@ void main() {
 
     test('自定义迭代次数生效（低迭代用于加速测试）', () async {
       final salt = Uint8List.fromList(List.filled(16, 0));
-      final mk = await SyncCrypto.deriveMasterKey('test', salt: salt, iterations: 1000);
+      final mk = await SyncCrypto.deriveMasterKey(
+        'test',
+        salt: salt,
+        iterations: 1000,
+      );
       expect(mk.length, 32);
       // 1000 迭代的结果应与 200000 默认值不同
       final mkDefault = await SyncCrypto.deriveMasterKey('test', salt: salt);
@@ -63,8 +67,7 @@ void main() {
     test('seal/open 往返：加密后解密还原明文', () async {
       final dataKey = SyncCrypto.generateDataKey();
       const id = 'note-uuid-123';
-      final plaintext =
-          Uint8List.fromList(utf8.encode('这是一条测试笔记 hello world'));
+      final plaintext = Uint8List.fromList(utf8.encode('这是一条测试笔记 hello world'));
       final envelope = await SyncCrypto.seal(dataKey, id, plaintext);
       final decrypted = await SyncCrypto.open(dataKey, id, envelope);
       expect(decrypted, equals(plaintext));
@@ -108,8 +111,7 @@ void main() {
     test('错误 AAD（笔记 id 不匹配）解密失败抛异常', () async {
       final dataKey = SyncCrypto.generateDataKey();
       final plaintext = Uint8List.fromList(utf8.encode('note content'));
-      final envelope =
-          await SyncCrypto.seal(dataKey, 'note-id-A', plaintext);
+      final envelope = await SyncCrypto.seal(dataKey, 'note-id-A', plaintext);
       // 用错误的 id 解密应失败（AAD 绑定）
       await expectLater(
         SyncCrypto.open(dataKey, 'note-id-B', envelope),
@@ -163,29 +165,47 @@ void main() {
 
     test('错误 MK 解 unwrap 失败（模拟密码错误）', () async {
       final salt = SyncCrypto.generateSalt();
-      final mk1 = await SyncCrypto.deriveMasterKey('correct', salt: salt, iterations: 1000);
-      final mk2 = await SyncCrypto.deriveMasterKey('wrong', salt: salt, iterations: 1000);
+      final mk1 = await SyncCrypto.deriveMasterKey(
+        'correct',
+        salt: salt,
+        iterations: 1000,
+      );
+      final mk2 = await SyncCrypto.deriveMasterKey(
+        'wrong',
+        salt: salt,
+        iterations: 1000,
+      );
       final dataKey = SyncCrypto.generateDataKey();
       final wrapped = await SyncCrypto.wrapDataKey(mk1, dataKey);
       await expectLater(
         SyncCrypto.unwrapDataKey(mk2, wrapped),
         throwsA(anything),
-      );    });
+      );
+    });
 
     test('改密码场景：旧 MK 解 dataKey → 新 MK 重新 wrap → 仍能解出同一 dataKey', () async {
       // 这是改密码的核心流程测试
       final salt = SyncCrypto.generateSalt();
-      final oldMk =
-          await SyncCrypto.deriveMasterKey('oldpassword', salt: salt, iterations: 1000);
-      final newMk =
-          await SyncCrypto.deriveMasterKey('newpassword', salt: salt, iterations: 1000);
+      final oldMk = await SyncCrypto.deriveMasterKey(
+        'oldpassword',
+        salt: salt,
+        iterations: 1000,
+      );
+      final newMk = await SyncCrypto.deriveMasterKey(
+        'newpassword',
+        salt: salt,
+        iterations: 1000,
+      );
 
       // 1. 生成 dataKey 并用旧 MK wrap
       final dataKey = SyncCrypto.generateDataKey();
       final oldWrapped = await SyncCrypto.wrapDataKey(oldMk, dataKey);
 
       // 2. 改密码：旧 MK 解开 dataKey，新 MK 重新 wrap
-      final recoveredDataKey = await SyncCrypto.unwrapDataKey(oldMk, oldWrapped);
+      final recoveredDataKey = await SyncCrypto.unwrapDataKey(
+        oldMk,
+        oldWrapped,
+      );
       final newWrapped = await SyncCrypto.wrapDataKey(newMk, recoveredDataKey);
 
       // 3. 新 MK 能解出新 wrapped 里的同一个 dataKey
@@ -216,7 +236,10 @@ void main() {
       final hash = SyncCrypto.hashString('');
       expect(hash.length, 64);
       // SHA-256('') 的已知值
-      expect(hash, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+      expect(
+        hash,
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      );
     });
 
     test('sha256Hex 与 hashString 一致（相同输入）', () async {
@@ -253,46 +276,70 @@ void main() {
   group('SyncCrypto - Argon2id 密钥派生（新默认 KDF）', () {
     // 测试用轻量参数（128KiB, t=1, p=1），仅验证确定性与正确性，不追求强度
     KdfParams argon2idKdf(Uint8List salt) => KdfParams(
-          algorithm: kArgon2idAlgorithm,
-          salt: base64.encode(salt),
-          iterations: 1,
-          memoryKiB: 128,
-          parallelism: 1,
-        );
+      algorithm: kArgon2idAlgorithm,
+      salt: base64.encode(salt),
+      iterations: 1,
+      memoryKiB: 128,
+      parallelism: 1,
+    );
 
     test('相同密码+salt 派生出相同 MK（确定性 / 多端一致）', () async {
       final salt = Uint8List.fromList(List.filled(16, 7));
-      final mk1 = await SyncCrypto.deriveKeyFromKdf('mypassword', kdf: argon2idKdf(salt));
-      final mk2 = await SyncCrypto.deriveKeyFromKdf('mypassword', kdf: argon2idKdf(salt));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf(
+        'mypassword',
+        kdf: argon2idKdf(salt),
+      );
+      final mk2 = await SyncCrypto.deriveKeyFromKdf(
+        'mypassword',
+        kdf: argon2idKdf(salt),
+      );
       expect(mk1.length, 32);
       expect(mk1, equals(mk2));
     });
 
     test('不同密码派生出不同 MK', () async {
       final salt = Uint8List.fromList(List.filled(16, 7));
-      final mk1 = await SyncCrypto.deriveKeyFromKdf('password1', kdf: argon2idKdf(salt));
-      final mk2 = await SyncCrypto.deriveKeyFromKdf('password2', kdf: argon2idKdf(salt));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf(
+        'password1',
+        kdf: argon2idKdf(salt),
+      );
+      final mk2 = await SyncCrypto.deriveKeyFromKdf(
+        'password2',
+        kdf: argon2idKdf(salt),
+      );
       expect(mk1, isNot(equals(mk2)));
     });
 
     test('不同 salt 派生出不同 MK', () async {
       final salt1 = Uint8List.fromList(List.filled(16, 1));
       final salt2 = Uint8List.fromList(List.filled(16, 2));
-      final mk1 = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt1));
-      final mk2 = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt2));
+      final mk1 = await SyncCrypto.deriveKeyFromKdf(
+        'same',
+        kdf: argon2idKdf(salt1),
+      );
+      final mk2 = await SyncCrypto.deriveKeyFromKdf(
+        'same',
+        kdf: argon2idKdf(salt2),
+      );
       expect(mk1, isNot(equals(mk2)));
     });
 
     test('Argon2id 与 PBKDF2 对相同输入产出不同 MK', () async {
       final salt = Uint8List.fromList(List.filled(16, 9));
-      final argon = await SyncCrypto.deriveKeyFromKdf('same', kdf: argon2idKdf(salt));
+      final argon = await SyncCrypto.deriveKeyFromKdf(
+        'same',
+        kdf: argon2idKdf(salt),
+      );
       final pbkdf2 = await SyncCrypto.deriveMasterKey('same', salt: salt);
       expect(argon, isNot(equals(pbkdf2)));
     });
 
     test('Argon2id 派生的 MK 能正确 wrap/unwrap dataKey', () async {
       final salt = SyncCrypto.generateSalt();
-      final mk = await SyncCrypto.deriveKeyFromKdf('pw', kdf: argon2idKdf(salt));
+      final mk = await SyncCrypto.deriveKeyFromKdf(
+        'pw',
+        kdf: argon2idKdf(salt),
+      );
       final dataKey = SyncCrypto.generateDataKey();
       final wrapped = await SyncCrypto.wrapDataKey(mk, dataKey);
       final unwrapped = await SyncCrypto.unwrapDataKey(mk, wrapped);
@@ -301,7 +348,10 @@ void main() {
 
     test('deriveMasterKeyAsync 按 KdfParams 派发 Argon2id', () async {
       final salt = SyncCrypto.generateSalt();
-      final mk = await SyncCrypto.deriveMasterKeyAsync('pw', kdf: argon2idKdf(salt));
+      final mk = await SyncCrypto.deriveMasterKeyAsync(
+        'pw',
+        kdf: argon2idKdf(salt),
+      );
       expect(mk.length, 32);
     });
   });

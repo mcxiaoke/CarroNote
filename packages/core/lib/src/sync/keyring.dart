@@ -58,9 +58,7 @@ class WrongPasswordException implements Exception {
 /// Keyring 未初始化异常（本地既无 keyring 键也无旧 keyring 元数据时抛出）
 class KeyringNotInitializedException implements Exception {
   final String message;
-  KeyringNotInitializedException([
-    this.message = 'Keyring 未初始化：请先启用同步或从远端拉取',
-  ]);
+  KeyringNotInitializedException([this.message = 'Keyring 未初始化：请先启用同步或从远端拉取']);
 
   @override
   String toString() => 'KeyringNotInitializedException: $message';
@@ -120,36 +118,36 @@ class KeyringEntry {
     int? dataKeyEpoch,
     int? archivedAt,
     String? reason,
-  }) =>
-      KeyringEntry(
-        keyFingerprint: keyFingerprint ?? this.keyFingerprint,
-        encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
-        keyVersion: keyVersion ?? this.keyVersion,
-        dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
-        archivedAt: archivedAt ?? this.archivedAt,
-        reason: reason ?? this.reason,
-      );
+  }) => KeyringEntry(
+    keyFingerprint: keyFingerprint ?? this.keyFingerprint,
+    encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
+    keyVersion: keyVersion ?? this.keyVersion,
+    dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
+    archivedAt: archivedAt ?? this.archivedAt,
+    reason: reason ?? this.reason,
+  );
 
   Map<String, dynamic> toJson() => {
-        'keyFingerprint': keyFingerprint,
-        'encryptedDataKey': encryptedDataKey,
-        'keyVersion': keyVersion,
-        'dataKeyEpoch': dataKeyEpoch,
-        'archivedAt': archivedAt,
-        'reason': reason,
-      };
+    'keyFingerprint': keyFingerprint,
+    'encryptedDataKey': encryptedDataKey,
+    'keyVersion': keyVersion,
+    'dataKeyEpoch': dataKeyEpoch,
+    'archivedAt': archivedAt,
+    'reason': reason,
+  };
 
   factory KeyringEntry.fromJson(Map<String, dynamic> json) => KeyringEntry(
-        keyFingerprint: (json['keyFingerprint'] as String?) ?? '',
-        encryptedDataKey: (json['encryptedDataKey'] as String?) ?? '',
-        keyVersion: (json['keyVersion'] as num?)?.toInt() ?? 1,
-        dataKeyEpoch: (json['dataKeyEpoch'] as num?)?.toInt() ?? 1,
-        archivedAt: (json['archivedAt'] as num?)?.toInt() ?? 0,
-        reason: (json['reason'] as String?) ?? KeyringReason.create,
-      );
+    keyFingerprint: (json['keyFingerprint'] as String?) ?? '',
+    encryptedDataKey: (json['encryptedDataKey'] as String?) ?? '',
+    keyVersion: (json['keyVersion'] as num?)?.toInt() ?? 1,
+    dataKeyEpoch: (json['dataKeyEpoch'] as num?)?.toInt() ?? 1,
+    archivedAt: (json['archivedAt'] as num?)?.toInt() ?? 0,
+    reason: (json['reason'] as String?) ?? KeyringReason.create,
+  );
 
   @override
-  String toString() => 'KeyringEntry(v=$keyVersion, epoch=$dataKeyEpoch, '
+  String toString() =>
+      'KeyringEntry(v=$keyVersion, epoch=$dataKeyEpoch, '
       'fp=${keyFingerprint.length > 8 ? keyFingerprint.substring(0, 8) : keyFingerprint}, '
       'reason=$reason)';
 }
@@ -172,30 +170,30 @@ class KeyringLedger {
   });
 
   Map<String, dynamic> toJson() => {
-        'schemaVersion': kKeyringSchemaVersion,
-        'vaultId': vaultId,
-        'kdf': kdf.toJson(),
-        'createdAt': createdAt,
-        'current': current.toJson(),
-      };
+    'schemaVersion': kKeyringSchemaVersion,
+    'vaultId': vaultId,
+    'kdf': kdf.toJson(),
+    'createdAt': createdAt,
+    'current': current.toJson(),
+  };
 
   factory KeyringLedger.fromJson(Map<String, dynamic> json) => KeyringLedger(
-        vaultId: json['vaultId'] as String,
-        kdf: KdfParams.fromJson(
-          Map<String, dynamic>.from(json['kdf'] as Map),
-        ),
-        createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
-        current: KeyringEntry.fromJson(
-          Map<String, dynamic>.from(json['current'] as Map),
-        ),
-      );
+    vaultId: json['vaultId'] as String,
+    kdf: KdfParams.fromJson(Map<String, dynamic>.from(json['kdf'] as Map)),
+    createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+    current: KeyringEntry.fromJson(
+      Map<String, dynamic>.from(json['current'] as Map),
+    ),
+  );
 
   /// 写入 sync_meta 的单键 `keyring`（单键 setMeta 原子，无双写不一致）
   Future<void> persist(NotesDatabase database) {
     // 密钥账本落盘是关键状态变化，记录版本/纪元/指纹前缀（不含任何密钥明文）
-    Log.crypto.i('持久化 keyring 账本: vaultId=$vaultId '
-        'keyVersion=${current.keyVersion} epoch=${current.dataKeyEpoch} '
-        'fp=${_fpBrief(current.keyFingerprint)} reason=${current.reason}');
+    Log.crypto.i(
+      '持久化 keyring 账本: vaultId=$vaultId '
+      'keyVersion=${current.keyVersion} epoch=${current.dataKeyEpoch} '
+      'fp=${_fpBrief(current.keyFingerprint)} reason=${current.reason}',
+    );
     return database.setMeta(MetaKeys.keyring, jsonEncode(toJson()));
   }
 
@@ -213,10 +211,12 @@ class KeyringLedger {
         return null;
       }
       final ledger = KeyringLedger.fromJson(Map<String, dynamic>.from(decoded));
-      Log.crypto.d('已加载 keyring 账本: vaultId=${ledger.vaultId} '
-          'keyVersion=${ledger.current.keyVersion} '
-          'epoch=${ledger.current.dataKeyEpoch} '
-          'fp=${_fpBrief(ledger.current.keyFingerprint)}');
+      Log.crypto.d(
+        '已加载 keyring 账本: vaultId=${ledger.vaultId} '
+        'keyVersion=${ledger.current.keyVersion} '
+        'epoch=${ledger.current.dataKeyEpoch} '
+        'fp=${_fpBrief(ledger.current.keyFingerprint)}',
+      );
       return ledger;
     } on Object catch (e) {
       // JSON 损坏（混沌测试会主动制造）：视为无账本，报未初始化
@@ -266,14 +266,13 @@ class MigrationResult {
     required Uint8List remoteDataKey,
     required String remoteEncryptedDataKey,
     required String remoteVaultId,
-  }) =>
-      MigrationResult(
-        needsMigration: true,
-        success: true,
-        remoteDataKey: remoteDataKey,
-        remoteEncryptedDataKey: remoteEncryptedDataKey,
-        remoteVaultId: remoteVaultId,
-      );
+  }) => MigrationResult(
+    needsMigration: true,
+    success: true,
+    remoteDataKey: remoteDataKey,
+    remoteEncryptedDataKey: remoteEncryptedDataKey,
+    remoteVaultId: remoteVaultId,
+  );
 
   /// 迁移失败
   factory MigrationResult.failed(String error) =>
@@ -333,11 +332,11 @@ class Keyring {
 
   /// 当前账本快照（用于持久化 / 诊断 / 测试断言）
   KeyringLedger get ledger => KeyringLedger(
-        vaultId: vaultId,
-        kdf: kdf,
-        createdAt: createdAt,
-        current: current,
-      );
+    vaultId: vaultId,
+    kdf: kdf,
+    createdAt: createdAt,
+    current: current,
+  );
 
   /// 本地持久化：只写包裹态账本到 sync_meta 的 `keyring` 单键
   ///
@@ -354,22 +353,21 @@ class Keyring {
     int? keyVersion,
     int? dataKeyEpoch,
     String? reason,
-  }) =>
-      Keyring(
-        vaultId: vaultId,
-        kdf: kdf,
-        createdAt: createdAt,
-        current: current.copyWith(
-          encryptedDataKey: encryptedDataKey,
-          keyFingerprint: keyFingerprint,
-          keyVersion: keyVersion,
-          dataKeyEpoch: dataKeyEpoch,
-          reason: reason,
-        ),
-        // 关键：raw dataKey / mk 原样保留，绝不被包裹态更新抹掉（C2）
-        dataKey: dataKey,
-        mk: mk,
-      );
+  }) => Keyring(
+    vaultId: vaultId,
+    kdf: kdf,
+    createdAt: createdAt,
+    current: current.copyWith(
+      encryptedDataKey: encryptedDataKey,
+      keyFingerprint: keyFingerprint,
+      keyVersion: keyVersion,
+      dataKeyEpoch: dataKeyEpoch,
+      reason: reason,
+    ),
+    // 关键：raw dataKey / mk 原样保留，绝不被包裹态更新抹掉（C2）
+    dataKey: dataKey,
+    mk: mk,
+  );
 
   /// 投影为远端 manifest 明文头部（唯一出口，消除内联构造漏字段）
   ///
@@ -387,24 +385,23 @@ class Keyring {
     required String lastModifiedBy,
     String dataKeyWrap = kDataKeyWrapAlgorithm,
     String? dataKeyCreatedBy,
-  }) =>
-      ManifestHeader(
-        schemaVersion: schemaVersion,
-        version: version,
-        vaultId: vaultId,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        keyFingerprint: keyFingerprint,
-        keyVersion: keyVersion,
-        encryptedDataKey: encryptedDataKey,
-        kdf: kdf,
-        dataKeyWrap: dataKeyWrap,
-        dataKeyEpoch: dataKeyEpoch,
-        dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(dataKey),
-        dataKeyCreatedAt: createdAt,
-        dataKeyCreatedBy: dataKeyCreatedBy,
-        lastModifiedBy: lastModifiedBy,
-      );
+  }) => ManifestHeader(
+    schemaVersion: schemaVersion,
+    version: version,
+    vaultId: vaultId,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    keyFingerprint: keyFingerprint,
+    keyVersion: keyVersion,
+    encryptedDataKey: encryptedDataKey,
+    kdf: kdf,
+    dataKeyWrap: dataKeyWrap,
+    dataKeyEpoch: dataKeyEpoch,
+    dataKeyFingerprint: SyncCrypto.computeDataKeyFingerprint(dataKey),
+    dataKeyCreatedAt: createdAt,
+    dataKeyCreatedBy: dataKeyCreatedBy,
+    lastModifiedBy: lastModifiedBy,
+  );
 
   /// 从远端 manifest header 构建 Keyring
   ///
@@ -414,22 +411,21 @@ class Keyring {
     ManifestHeader header, {
     required Uint8List dataKey,
     Uint8List? mk,
-  }) =>
-      Keyring(
-        vaultId: header.vaultId,
-        kdf: header.kdf,
-        createdAt: header.createdAt,
-        current: KeyringEntry(
-          keyFingerprint: header.keyFingerprint,
-          encryptedDataKey: header.encryptedDataKey,
-          keyVersion: header.keyVersion,
-          dataKeyEpoch: header.dataKeyEpoch,
-          archivedAt: 0,
-          reason: KeyringReason.adoptRemoteEpoch,
-        ),
-        dataKey: dataKey,
-        mk: mk,
-      );
+  }) => Keyring(
+    vaultId: header.vaultId,
+    kdf: header.kdf,
+    createdAt: header.createdAt,
+    current: KeyringEntry(
+      keyFingerprint: header.keyFingerprint,
+      encryptedDataKey: header.encryptedDataKey,
+      keyVersion: header.keyVersion,
+      dataKeyEpoch: header.dataKeyEpoch,
+      archivedAt: 0,
+      reason: KeyringReason.adoptRemoteEpoch,
+    ),
+    dataKey: dataKey,
+    mk: mk,
+  );
 
   // ──────────────────────────────────────────────
   // 创建 / 解锁
@@ -451,7 +447,9 @@ class Keyring {
     final kdf = KdfParams.create(salt: salt);
     final mk = await _deriveMk(password, kdf: kdf);
     final keyFingerprint = SyncCrypto.computeKeyFingerprint(mk);
-    final encryptedDataKey = base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+    final encryptedDataKey = base64.encode(
+      await SyncCrypto.wrapDataKey(mk, dataKey),
+    );
     final createdAt = DateTime.now().millisecondsSinceEpoch;
 
     final keyring = Keyring(
@@ -470,9 +468,11 @@ class Keyring {
       mk: mk,
     );
     await keyring.persist(database);
-    Log.crypto.i('新 Keyring 创建完成: vaultId=$vaultId '
-        'fp=${_fpBrief(keyFingerprint)} keyVersion=1 epoch=1 '
-        '(耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      '新 Keyring 创建完成: vaultId=$vaultId '
+      'fp=${_fpBrief(keyFingerprint)} keyVersion=1 epoch=1 '
+      '(耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return keyring;
   }
 
@@ -494,11 +494,13 @@ class Keyring {
     final mk = await _deriveMk(password, kdf: ledger.kdf);
     final dataKey = await _unwrapOrThrow(mk, ledger.current.encryptedDataKey);
 
-    Log.crypto.i('本地 Keyring 解锁成功: vaultId=${ledger.vaultId} '
-        'keyVersion=${ledger.current.keyVersion} '
-        'epoch=${ledger.current.dataKeyEpoch} '
-        'fp=${_fpBrief(ledger.current.keyFingerprint)} '
-        '(耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      '本地 Keyring 解锁成功: vaultId=${ledger.vaultId} '
+      'keyVersion=${ledger.current.keyVersion} '
+      'epoch=${ledger.current.dataKeyEpoch} '
+      'fp=${_fpBrief(ledger.current.keyFingerprint)} '
+      '(耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return Keyring(
       vaultId: ledger.vaultId,
       kdf: ledger.kdf,
@@ -525,9 +527,11 @@ class Keyring {
     required NotesDatabase database,
   }) async {
     final sw = Stopwatch()..start();
-    Log.crypto.i('从远端 manifest 解锁 Keyring: vaultId=$remoteVaultId '
-        'keyVersion=$remoteKeyVersion epoch=$remoteDataKeyEpoch '
-        'fp=${_fpBrief(remoteKeyFingerprint)}');
+    Log.crypto.i(
+      '从远端 manifest 解锁 Keyring: vaultId=$remoteVaultId '
+      'keyVersion=$remoteKeyVersion epoch=$remoteDataKeyEpoch '
+      'fp=${_fpBrief(remoteKeyFingerprint)}',
+    );
     final mk = await _deriveMk(password, kdf: remoteKdf);
     final dataKey = await _unwrapOrThrow(mk, remoteEncryptedDataKey);
 
@@ -547,8 +551,10 @@ class Keyring {
       mk: mk,
     );
     await keyring.persist(database);
-    Log.crypto.i('远端 Keyring 解锁并落盘完成: vaultId=$remoteVaultId '
-        '(耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      '远端 Keyring 解锁并落盘完成: vaultId=$remoteVaultId '
+      '(耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return keyring;
   }
 
@@ -558,7 +564,10 @@ class Keyring {
     String encryptedDataKey,
   ) async {
     try {
-      return await SyncCrypto.unwrapDataKey(mk, base64.decode(encryptedDataKey));
+      return await SyncCrypto.unwrapDataKey(
+        mk,
+        base64.decode(encryptedDataKey),
+      );
     } on Exception catch (e) {
       // GCM tag 验证失败 = 密码错误
       Log.crypto.w('解包 dataKey 失败(通常为密码错误): $e');
@@ -594,8 +603,10 @@ class Keyring {
         mk,
         base64.decode(remoteEncryptedDataKey),
       );
-      Log.crypto.i('dataKey 迁移检查: 远端包裹可解开, 需要迁移到远端 dataKey '
-          '(远端 vaultId=${remoteVaultId ?? vaultId})');
+      Log.crypto.i(
+        'dataKey 迁移检查: 远端包裹可解开, 需要迁移到远端 dataKey '
+        '(远端 vaultId=${remoteVaultId ?? vaultId})',
+      );
       return MigrationResult.migrated(
         remoteDataKey: remoteDataKey,
         remoteEncryptedDataKey: remoteEncryptedDataKey,
@@ -603,9 +614,7 @@ class Keyring {
       );
     } on Exception catch (e) {
       Log.crypto.e('dataKey 迁移检查失败: 无法解密远端 encryptedDataKey: $e');
-      return MigrationResult.failed(
-        '无法解密远端 encryptedDataKey（密码不匹配或数据损坏）：$e',
-      );
+      return MigrationResult.failed('无法解密远端 encryptedDataKey（密码不匹配或数据损坏）：$e');
     }
   }
 
@@ -637,10 +646,12 @@ class Keyring {
     if (keyChanged) {
       nextEpoch = dataKeyEpoch + 1;
     }
-    Log.crypto.i('执行 dataKey 迁移(同 vault): vaultId=$vaultId → $remoteVaultId, '
-        'dataKey ${keyChanged ? "已变化" : "未变化"}, '
-        'epoch $dataKeyEpoch → $nextEpoch, '
-        'blob 重传标记=${keyChanged ? "是" : "否"}');
+    Log.crypto.i(
+      '执行 dataKey 迁移(同 vault): vaultId=$vaultId → $remoteVaultId, '
+      'dataKey ${keyChanged ? "已变化" : "未变化"}, '
+      'epoch $dataKeyEpoch → $nextEpoch, '
+      'blob 重传标记=${keyChanged ? "是" : "否"}',
+    );
 
     final migrated = Keyring(
       vaultId: remoteVaultId,
@@ -669,8 +680,10 @@ class Keyring {
 
     // 事务成功后更新 database 的 dataKey（后续读写用新 key）
     database.setDataKey(remoteDataKey);
-    Log.crypto.i('dataKey 迁移完成(同 vault): 全库已重加密并切换 dataKey, '
-        'epoch=$nextEpoch (耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      'dataKey 迁移完成(同 vault): 全库已重加密并切换 dataKey, '
+      'epoch=$nextEpoch (耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return migrated;
   }
 
@@ -686,8 +699,10 @@ class Keyring {
   }) async {
     final mk = await _deriveMk(password, kdf: remoteKdf);
     if (SyncCrypto.computeKeyFingerprint(mk) != remoteKeyFingerprint) {
-      Log.crypto.i('远端密码判别: 指纹不匹配(场景 c, 远端与本地密码不同) '
-          'remoteFp=${_fpBrief(remoteKeyFingerprint)}');
+      Log.crypto.i(
+        '远端密码判别: 指纹不匹配(场景 c, 远端与本地密码不同) '
+        'remoteFp=${_fpBrief(remoteKeyFingerprint)}',
+      );
       return null; // 密码不匹配 → 场景 c
     }
     try {
@@ -727,10 +742,12 @@ class Keyring {
       nextEpoch = dataKeyEpoch + 1;
     }
 
-    Log.crypto.i('执行 vault 整体迁移(场景 d): vaultId=$vaultId → $remoteVaultId, '
-        'kdf/salt 切换为远端, keyVersion=$remoteKeyVersion, '
-        'dataKey ${keyChanged ? "已变化" : "未变化"}, epoch $dataKeyEpoch → $nextEpoch, '
-        'fp=${_fpBrief(remoteKeyFingerprint)}');
+    Log.crypto.i(
+      '执行 vault 整体迁移(场景 d): vaultId=$vaultId → $remoteVaultId, '
+      'kdf/salt 切换为远端, keyVersion=$remoteKeyVersion, '
+      'dataKey ${keyChanged ? "已变化" : "未变化"}, epoch $dataKeyEpoch → $nextEpoch, '
+      'fp=${_fpBrief(remoteKeyFingerprint)}',
+    );
 
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -760,9 +777,11 @@ class Keyring {
     );
 
     database.setDataKey(remoteDataKey);
-    Log.crypto.i('vault 整体迁移完成(场景 d): 全库已重加密, '
-        'vaultId=$remoteVaultId epoch=$nextEpoch '
-        '(耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      'vault 整体迁移完成(场景 d): 全库已重加密, '
+      'vaultId=$remoteVaultId epoch=$nextEpoch '
+      '(耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return migrated;
   }
 
@@ -793,9 +812,11 @@ class Keyring {
     required NotesDatabase database,
   }) async {
     final sw = Stopwatch()..start();
-    Log.crypto.i('Keyring 改密码开始: vaultId=$vaultId '
-        '当前 keyVersion=$keyVersion epoch=$dataKeyEpoch '
-        '当前算法=${kdf.algorithm}');
+    Log.crypto.i(
+      'Keyring 改密码开始: vaultId=$vaultId '
+      '当前 keyVersion=$keyVersion epoch=$dataKeyEpoch '
+      '当前算法=${kdf.algorithm}',
+    );
 
     // 1. 验证旧密码（按当前 kdf 派生旧 MK）
     final oldMk = await _deriveMk(oldPassword, kdf: kdf);
@@ -822,8 +843,9 @@ class Keyring {
 
     // 3. 新 MK 重新 wrap（dataKey 本身不变）
     final newMk = await _deriveMk(newPassword, kdf: newKdf);
-    final newEncryptedDataKey =
-        base64.encode(await SyncCrypto.wrapDataKey(newMk, dataKey));
+    final newEncryptedDataKey = base64.encode(
+      await SyncCrypto.wrapDataKey(newMk, dataKey),
+    );
     final newKeyFingerprint = SyncCrypto.computeKeyFingerprint(newMk);
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -844,11 +866,13 @@ class Keyring {
       mk: newMk,
     );
     await changed.persist(database);
-    Log.crypto.i('Keyring 改密码完成: keyVersion $keyVersion → ${keyVersion + 1}, '
-        'fp ${_fpBrief(keyFingerprint)} → ${_fpBrief(newKeyFingerprint)}, '
-        '${upgraded ? "KDF 升级 ${kdf.algorithm} → $kArgon2idAlgorithm" : "KDF 不变($kArgon2idAlgorithm)"}, '
-        'dataKey 未变(epoch=$dataKeyEpoch, 无需重加密笔记) '
-        '(耗时 ${sw.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      'Keyring 改密码完成: keyVersion $keyVersion → ${keyVersion + 1}, '
+      'fp ${_fpBrief(keyFingerprint)} → ${_fpBrief(newKeyFingerprint)}, '
+      '${upgraded ? "KDF 升级 ${kdf.algorithm} → $kArgon2idAlgorithm" : "KDF 不变($kArgon2idAlgorithm)"}, '
+      'dataKey 未变(epoch=$dataKeyEpoch, 无需重加密笔记) '
+      '(耗时 ${sw.elapsedMilliseconds}ms)',
+    );
     return changed;
   }
 
@@ -899,8 +923,7 @@ class Keyring {
   static Future<Uint8List> _deriveMk(
     String password, {
     required KdfParams kdf,
-  }) =>
-      SyncCrypto.deriveMasterKeyAsync(password, kdf: kdf);
+  }) => SyncCrypto.deriveMasterKeyAsync(password, kdf: kdf);
 
   /// 生成 vaultId（UUIDv4，RFC 4122，Random.secure）
   static String _generateVaultId() {

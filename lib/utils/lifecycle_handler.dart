@@ -15,7 +15,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-// Project imports:
+// Package imports:
 import 'package:core/core.dart';
 
 class AppLifecycleEventHandler extends WidgetsBindingObserver {

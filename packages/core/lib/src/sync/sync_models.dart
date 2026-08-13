@@ -191,38 +191,36 @@ class ManifestItem {
     String? createdBy,
     int? dataKeyCreatedAt,
     String? dataKeyCreatedBy,
-  }) =>
-      ManifestItem(
-        hash: hash ?? this.hash,
-        deleted: deleted ?? this.deleted,
-        updatedAt: updatedAt ?? this.updatedAt,
-        updatedBy: updatedBy ?? this.updatedBy,
-        createdAt: createdAt ?? this.createdAt,
-        deletedAt: deletedAt ?? this.deletedAt,
-        contentSize: contentSize ?? this.contentSize,
-        blobKeyEpoch: blobKeyEpoch ?? this.blobKeyEpoch,
-        dataKeyFingerprint:
-            dataKeyFingerprint ?? this.dataKeyFingerprint,
-        createdBy: createdBy ?? this.createdBy,
-        dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
-        dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
-      );
+  }) => ManifestItem(
+    hash: hash ?? this.hash,
+    deleted: deleted ?? this.deleted,
+    updatedAt: updatedAt ?? this.updatedAt,
+    updatedBy: updatedBy ?? this.updatedBy,
+    createdAt: createdAt ?? this.createdAt,
+    deletedAt: deletedAt ?? this.deletedAt,
+    contentSize: contentSize ?? this.contentSize,
+    blobKeyEpoch: blobKeyEpoch ?? this.blobKeyEpoch,
+    dataKeyFingerprint: dataKeyFingerprint ?? this.dataKeyFingerprint,
+    createdBy: createdBy ?? this.createdBy,
+    dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
+    dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
+  );
 
   /// 序列化为 JSON（用于 manifest 加密体存储）
   Map<String, dynamic> toJson() => {
-        'hash': hash,
-        'deleted': deleted,
-        'updatedAt': updatedAt,
-        'updatedBy': updatedBy,
-        'createdAt': createdAt,
-        if (deletedAt != null) 'deletedAt': deletedAt,
-        'contentSize': contentSize,
-        'blobKeyEpoch': blobKeyEpoch,
-        if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
-        if (createdBy.isNotEmpty) 'createdBy': createdBy,
-        if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
-        if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
-      };
+    'hash': hash,
+    'deleted': deleted,
+    'updatedAt': updatedAt,
+    'updatedBy': updatedBy,
+    'createdAt': createdAt,
+    if (deletedAt != null) 'deletedAt': deletedAt,
+    'contentSize': contentSize,
+    'blobKeyEpoch': blobKeyEpoch,
+    if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
+    if (createdBy.isNotEmpty) 'createdBy': createdBy,
+    if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
+    if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
+  };
 
   /// 从 JSON 反序列化
   factory ManifestItem.fromJson(Map<String, dynamic> json) {
@@ -267,19 +265,19 @@ class ManifestItem {
 
   @override
   int get hashCode => Object.hash(
-        hash,
-        deleted,
-        updatedAt,
-        updatedBy,
-        createdAt,
-        deletedAt,
-        contentSize,
-        blobKeyEpoch,
-        dataKeyFingerprint,
-        createdBy,
-        dataKeyCreatedAt,
-        dataKeyCreatedBy,
-      );
+    hash,
+    deleted,
+    updatedAt,
+    updatedBy,
+    createdAt,
+    deletedAt,
+    contentSize,
+    blobKeyEpoch,
+    dataKeyFingerprint,
+    createdBy,
+    dataKeyCreatedAt,
+    dataKeyCreatedBy,
+  );
 }
 
 /// MK 派生参数（KDF parameters）
@@ -318,20 +316,20 @@ class KdfParams {
   ///
   /// [salt] 随机生成的 16 字节 salt
   factory KdfParams.create({required Uint8List salt}) => KdfParams(
-        algorithm: kMkKdfAlgorithm,
-        salt: base64.encode(salt),
-        iterations: kArgon2idIterations,
-        memoryKiB: kArgon2idMemoryKib,
-        parallelism: kArgon2idParallelism,
-      );
+    algorithm: kMkKdfAlgorithm,
+    salt: base64.encode(salt),
+    iterations: kArgon2idIterations,
+    memoryKiB: kArgon2idMemoryKib,
+    parallelism: kArgon2idParallelism,
+  );
 
   Map<String, dynamic> toJson() => {
-        'algorithm': algorithm,
-        'salt': salt,
-        'iterations': iterations,
-        if (memoryKiB != null) 'memoryKiB': memoryKiB,
-        if (parallelism != null) 'parallelism': parallelism,
-      };
+    'algorithm': algorithm,
+    'salt': salt,
+    'iterations': iterations,
+    if (memoryKiB != null) 'memoryKiB': memoryKiB,
+    if (parallelism != null) 'parallelism': parallelism,
+  };
 
   factory KdfParams.fromJson(Map<String, dynamic> json) {
     return KdfParams(
@@ -475,42 +473,41 @@ class ManifestHeader {
     int? dataKeyCreatedAt,
     String? dataKeyCreatedBy,
     String? lastModifiedBy,
-  }) =>
-      ManifestHeader(
-        schemaVersion: schemaVersion ?? this.schemaVersion,
-        version: version ?? this.version,
-        vaultId: vaultId ?? this.vaultId,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-        keyFingerprint: keyFingerprint ?? this.keyFingerprint,
-        keyVersion: keyVersion ?? this.keyVersion,
-        encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
-        kdf: kdf ?? this.kdf,
-        dataKeyWrap: dataKeyWrap ?? this.dataKeyWrap,
-        dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
-        dataKeyFingerprint: dataKeyFingerprint ?? this.dataKeyFingerprint,
-        dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
-        dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
-        lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
-      );
+  }) => ManifestHeader(
+    schemaVersion: schemaVersion ?? this.schemaVersion,
+    version: version ?? this.version,
+    vaultId: vaultId ?? this.vaultId,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    keyFingerprint: keyFingerprint ?? this.keyFingerprint,
+    keyVersion: keyVersion ?? this.keyVersion,
+    encryptedDataKey: encryptedDataKey ?? this.encryptedDataKey,
+    kdf: kdf ?? this.kdf,
+    dataKeyWrap: dataKeyWrap ?? this.dataKeyWrap,
+    dataKeyEpoch: dataKeyEpoch ?? this.dataKeyEpoch,
+    dataKeyFingerprint: dataKeyFingerprint ?? this.dataKeyFingerprint,
+    dataKeyCreatedAt: dataKeyCreatedAt ?? this.dataKeyCreatedAt,
+    dataKeyCreatedBy: dataKeyCreatedBy ?? this.dataKeyCreatedBy,
+    lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
+  );
 
   Map<String, dynamic> toJson() => {
-        'schemaVersion': schemaVersion,
-        'version': version,
-        'vaultId': vaultId,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-        'keyFingerprint': keyFingerprint,
-        'keyVersion': keyVersion,
-        'encryptedDataKey': encryptedDataKey,
-        'kdf': kdf.toJson(),
-        'dataKeyWrap': dataKeyWrap,
-        'dataKeyEpoch': dataKeyEpoch,
-        if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
-        if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
-        if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
-        'lastModifiedBy': lastModifiedBy,
-      };
+    'schemaVersion': schemaVersion,
+    'version': version,
+    'vaultId': vaultId,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'keyFingerprint': keyFingerprint,
+    'keyVersion': keyVersion,
+    'encryptedDataKey': encryptedDataKey,
+    'kdf': kdf.toJson(),
+    'dataKeyWrap': dataKeyWrap,
+    'dataKeyEpoch': dataKeyEpoch,
+    if (dataKeyFingerprint.isNotEmpty) 'dataKeyFingerprint': dataKeyFingerprint,
+    if (dataKeyCreatedAt != null) 'dataKeyCreatedAt': dataKeyCreatedAt,
+    if (dataKeyCreatedBy != null) 'dataKeyCreatedBy': dataKeyCreatedBy,
+    'lastModifiedBy': lastModifiedBy,
+  };
 
   factory ManifestHeader.fromJson(Map<String, dynamic> json) {
     return ManifestHeader(
@@ -551,10 +548,7 @@ class Manifest {
   /// 包含已删除的墓碑。客户端可主动清理过期墓碑（30 天前）。
   final Map<String, ManifestItem> items;
 
-  const Manifest({
-    required this.header,
-    required this.items,
-  });
+  const Manifest({required this.header, required this.items});
 
   // ── 便捷访问器（委托给 header） ─────────────────────────
 
@@ -568,11 +562,7 @@ class Manifest {
   Manifest copyWith({
     ManifestHeader? header,
     Map<String, ManifestItem>? items,
-  }) =>
-      Manifest(
-        header: header ?? this.header,
-        items: items ?? this.items,
-      );
+  }) => Manifest(header: header ?? this.header, items: items ?? this.items);
 
   /// 仅更新 header 的部分字段（便捷方法）
   Manifest copyWithHeader({
@@ -583,18 +573,17 @@ class Manifest {
     int? keyVersion,
     String? lastModifiedBy,
     Map<String, ManifestItem>? items,
-  }) =>
-      Manifest(
-        header: header.copyWith(
-          version: version,
-          updatedAt: updatedAt,
-          encryptedDataKey: encryptedDataKey,
-          keyFingerprint: keyFingerprint,
-          keyVersion: keyVersion,
-          lastModifiedBy: lastModifiedBy,
-        ),
-        items: items ?? this.items,
-      );
+  }) => Manifest(
+    header: header.copyWith(
+      version: version,
+      updatedAt: updatedAt,
+      encryptedDataKey: encryptedDataKey,
+      keyFingerprint: keyFingerprint,
+      keyVersion: keyVersion,
+      lastModifiedBy: lastModifiedBy,
+    ),
+    items: items ?? this.items,
+  );
 
   /// 创建空 manifest（首次启用同步时用）
   factory Manifest.empty({
@@ -632,22 +621,22 @@ class Manifest {
 
 /// 同步操作类型（用于 UI 进度反馈和日志）
 enum SyncActionType {
-  upload,    // 上传笔记到远端
-  download,  // 从远端下载笔记
-  delete,    // 标记为删除（墓碑同步）
-  skip,      // 跳过（已同步）
-  conflict,  // 冲突（LWW 落败）
-  migrate,   // dataKey 迁移（本地数据重新加密）
+  upload, // 上传笔记到远端
+  download, // 从远端下载笔记
+  delete, // 标记为删除（墓碑同步）
+  skip, // 跳过（已同步）
+  conflict, // 冲突（LWW 落败）
+  migrate, // dataKey 迁移（本地数据重新加密）
   uploadFailed, // 单个 blob 上传失败（容错，不中断同步）
-  corrupt,   // blob 下载解密失败且无本地明文可自愈（记录为失败，重试）
-  heal,      // blob 下载失败时用本地明文自愈重传（覆盖服务器坏 blob）
+  corrupt, // blob 下载解密失败且无本地明文可自愈（记录为失败，重试）
+  heal, // blob 下载失败时用本地明文自愈重传（覆盖服务器坏 blob）
 }
 
 /// 单条同步操作记录
 class SyncAction {
   final SyncActionType type;
-  final String uuid;      // 笔记 UUID
-  final String? hash;     // 涉及的 blob hash（可能为空）
+  final String uuid; // 笔记 UUID
+  final String? hash; // 涉及的 blob hash（可能为空）
 
   /// 附加信息（如冲突原因、修复说明等）
   ///
@@ -672,8 +661,7 @@ class SyncAction {
   });
 
   /// 调试面板展示用：优先返回 error 的描述，其次返回 message
-  String get displayMessage =>
-      error?.toDisplayString() ?? message ?? type.name;
+  String get displayMessage => error?.toDisplayString() ?? message ?? type.name;
 
   @override
   String toString() =>
@@ -690,7 +678,7 @@ class SyncResult {
   final int deleted;
   final int skipped;
   final int conflicts;
-  final int migrated;      // 迁移的笔记数（dataKey 变更时）
+  final int migrated; // 迁移的笔记数（dataKey 变更时）
   final String? errorMessage;
   final List<SyncAction> actions; // 详细操作记录（用于 UI 和日志）
   final int attempts; // 实际重试次数（用于诊断乐观锁冲突频率）
@@ -743,33 +731,31 @@ class SyncResult {
     int attempts = 1,
     bool passwordEpochMismatch = false,
     List<String> failedNoteUuids = const [],
-  }) =>
-      SyncResult(
-        success: true,
-        uploaded: uploaded,
-        downloaded: downloaded,
-        deleted: deleted,
-        skipped: skipped,
-        conflicts: conflicts,
-        migrated: migrated,
-        actions: actions,
-        attempts: attempts,
-        passwordEpochMismatch: passwordEpochMismatch,
-        failedNoteUuids: failedNoteUuids,
-      );
+  }) => SyncResult(
+    success: true,
+    uploaded: uploaded,
+    downloaded: downloaded,
+    deleted: deleted,
+    skipped: skipped,
+    conflicts: conflicts,
+    migrated: migrated,
+    actions: actions,
+    attempts: attempts,
+    passwordEpochMismatch: passwordEpochMismatch,
+    failedNoteUuids: failedNoteUuids,
+  );
 
   /// 同步失败
   factory SyncResult.failure(
     String message, {
     int attempts = 1,
     bool requiresRelogin = false,
-  }) =>
-      SyncResult(
-        success: false,
-        errorMessage: message,
-        attempts: attempts,
-        requiresRelogin: requiresRelogin,
-      );
+  }) => SyncResult(
+    success: false,
+    errorMessage: message,
+    attempts: attempts,
+    requiresRelogin: requiresRelogin,
+  );
 
   /// 是否有实际数据变更（用于判断是否需要触发 UI 刷新）
   bool get hasChanges => uploaded + downloaded + deleted + migrated > 0;
@@ -814,30 +800,29 @@ class SyncResult {
     bool? passwordEpochMismatch,
     bool? requiresRelogin,
     List<String>? failedNoteUuids,
-  }) =>
-      SyncResult(
-        success: success ?? this.success,
-        uploaded: uploaded ?? this.uploaded,
-        downloaded: downloaded ?? this.downloaded,
-        deleted: deleted ?? this.deleted,
-        skipped: skipped ?? this.skipped,
-        conflicts: conflicts ?? this.conflicts,
-        migrated: migrated ?? this.migrated,
-        errorMessage: errorMessage ?? this.errorMessage,
-        actions: actions ?? this.actions,
-        attempts: attempts ?? this.attempts,
-        passwordEpochMismatch: passwordEpochMismatch ?? this.passwordEpochMismatch,
-        requiresRelogin: requiresRelogin ?? this.requiresRelogin,
-        failedNoteUuids: failedNoteUuids ?? this.failedNoteUuids,
-      );
+  }) => SyncResult(
+    success: success ?? this.success,
+    uploaded: uploaded ?? this.uploaded,
+    downloaded: downloaded ?? this.downloaded,
+    deleted: deleted ?? this.deleted,
+    skipped: skipped ?? this.skipped,
+    conflicts: conflicts ?? this.conflicts,
+    migrated: migrated ?? this.migrated,
+    errorMessage: errorMessage ?? this.errorMessage,
+    actions: actions ?? this.actions,
+    attempts: attempts ?? this.attempts,
+    passwordEpochMismatch: passwordEpochMismatch ?? this.passwordEpochMismatch,
+    requiresRelogin: requiresRelogin ?? this.requiresRelogin,
+    failedNoteUuids: failedNoteUuids ?? this.failedNoteUuids,
+  );
 
   @override
   String toString() => success
       ? 'SyncResult(success, ↑$uploaded ↓$downloaded ✗$deleted skip$skipped '
-          'conflict$conflicts migrate$migrated, attempts=$attempts, '
-          'epochMismatch=$passwordEpochMismatch)'
+            'conflict$conflicts migrate$migrated, attempts=$attempts, '
+            'epochMismatch=$passwordEpochMismatch)'
       : 'SyncResult(failed: $errorMessage, attempts=$attempts, '
-          'requiresRelogin=$requiresRelogin)';
+            'requiresRelogin=$requiresRelogin)';
 }
 
 /// manifest 序列化/反序列化辅助方法（v5 容器格式）
@@ -934,18 +919,24 @@ class ManifestCrypto {
   ///   3. 拼接固定头 + header + items
   ///   4. 计算 pubHash = SHA-256(除 pubHash 外的整个容器)
   ///   5. 返回 [固定头][header][items][pubHash]
-  static Future<Uint8List> serialize(Uint8List dataKey, Manifest manifest) async {
+  static Future<Uint8List> serialize(
+    Uint8List dataKey,
+    Manifest manifest,
+  ) async {
     // 1. header JSON
     final headerJson = jsonEncode(manifest.header.toJson());
     final headerBytes = Uint8List.fromList(utf8.encode(headerJson));
 
     // 2. items JSON + 加密
     final itemsJson = jsonEncode({
-      'items': manifest.items
-          .map((k, v) => MapEntry(k, v.toJson())),
+      'items': manifest.items.map((k, v) => MapEntry(k, v.toJson())),
     });
     final itemsBytes = Uint8List.fromList(utf8.encode(itemsJson));
-    final encryptedItems = await SyncCrypto.seal(dataKey, _itemsAad, itemsBytes);
+    final encryptedItems = await SyncCrypto.seal(
+      dataKey,
+      _itemsAad,
+      itemsBytes,
+    );
 
     // 3. 拼接固定头 + header + items（pubHash 覆盖此前所有字节）
     final fixedHeader = Uint8List.fromList([
@@ -954,9 +945,11 @@ class ManifestCrypto {
       ..._encodeUint16(manifest.header.schemaVersion),
       ..._encodeUint32(headerBytes.length),
     ]);
-    final prefix = Uint8List.fromList(
-      [...fixedHeader, ...headerBytes, ...encryptedItems],
-    );
+    final prefix = Uint8List.fromList([
+      ...fixedHeader,
+      ...headerBytes,
+      ...encryptedItems,
+    ]);
 
     // 4. 计算 pubHash 并拼接
     final pubHash = _sha256(prefix);
@@ -974,7 +967,10 @@ class ManifestCrypto {
   ///   - [FormatException]：数据过短（结构性问题）
   ///   - [ManifestAuthException]：magic/fileVer/headerLen 非法 或 pubHash 失败 → 数据损坏
   ///   - [ManifestKeyMismatchException]：pubHash 通过但 GCM 失败 → 密钥不匹配
-  static Future<Manifest> deserialize(Uint8List dataKey, Uint8List bytes) async {
+  static Future<Manifest> deserialize(
+    Uint8List dataKey,
+    Uint8List bytes,
+  ) async {
     final info = _parseAndVerifyContainer(bytes);
 
     // 解密 items
@@ -984,13 +980,17 @@ class ManifestCrypto {
     }
 
     try {
-      final itemsBytes =
-          await SyncCrypto.open(dataKey, _itemsAad, info.encryptedItems);
+      final itemsBytes = await SyncCrypto.open(
+        dataKey,
+        _itemsAad,
+        info.encryptedItems,
+      );
       final itemsJson =
           jsonDecode(utf8.decode(itemsBytes)) as Map<String, dynamic>;
       final itemsRaw = itemsJson['items'] as Map<String, dynamic>;
-      final items = itemsRaw.map((k, v) =>
-          MapEntry(k, ManifestItem.fromJson(v as Map<String, dynamic>)));
+      final items = itemsRaw.map(
+        (k, v) => MapEntry(k, ManifestItem.fromJson(v as Map<String, dynamic>)),
+      );
       return Manifest(header: info.header, items: items);
     } on SyncDecryptionException catch (e) {
       // pubHash 已通过（数据未损坏），GCM 失败 = 密钥不匹配
@@ -1022,8 +1022,7 @@ class ManifestCrypto {
     // 1. 长度检查：固定头(12) + pubHash(32) = 44 最小
     final minLen = _kFixedHeaderLen + _kPubHashLen;
     if (bytes.length < minLen) {
-      throw FormatException(
-          'manifest 数据过短：${bytes.length} 字节（最小 $minLen）');
+      throw FormatException('manifest 数据过短：${bytes.length} 字节（最小 $minLen）');
     }
 
     // 2. magic 检查
@@ -1033,8 +1032,7 @@ class ManifestCrypto {
             .sublist(0, 4)
             .map((b) => b.toRadixString(16).padLeft(2, '0'))
             .join();
-        throw ManifestAuthException(
-            'magic 不匹配：期望 SMNT(534d4e54)，实际 0x$actual');
+        throw ManifestAuthException('magic 不匹配：期望 SMNT(534d4e54)，实际 0x$actual');
       }
     }
 
@@ -1042,7 +1040,8 @@ class ManifestCrypto {
     final fileVer = _decodeUint16(bytes, 4);
     if (fileVer != _kFileVer) {
       throw ManifestAuthException(
-          '不支持的容器布局版本：fileVer=$fileVer（当前支持 $_kFileVer）');
+        '不支持的容器布局版本：fileVer=$fileVer（当前支持 $_kFileVer）',
+      );
     }
 
     // 4. schemaVersion 读取（不从固定头判定降级，header.schemaVersion 才是协议判定依据）
@@ -1054,16 +1053,16 @@ class ManifestCrypto {
     final pubHashStart = bytes.length - _kPubHashLen;
     if (headerLen < 0 || itemsStart > pubHashStart) {
       throw ManifestAuthException(
-          'headerLen 越界：headerLen=$headerLen，文件长度=${bytes.length}，'
-          'itemsStart=$itemsStart，pubHashStart=$pubHashStart');
+        'headerLen 越界：headerLen=$headerLen，文件长度=${bytes.length}，'
+        'itemsStart=$itemsStart，pubHashStart=$pubHashStart',
+      );
     }
 
     // 6. 验 pubHash（覆盖 [0, pubHashStart) 全部字节）
     final expectedPubHash = bytes.sublist(pubHashStart);
     final actualPubHash = _sha256(bytes.sublist(0, pubHashStart));
     if (!_constTimeEquals(expectedPubHash, actualPubHash)) {
-      throw ManifestAuthException(
-          'pubHash 校验失败（数据损坏：位翻转 / 截断 / 半写）');
+      throw ManifestAuthException('pubHash 校验失败（数据损坏：位翻转 / 截断 / 半写）');
     }
 
     // 7. 解析 header（明文 JSON）
@@ -1075,12 +1074,14 @@ class ManifestCrypto {
     // 8. 一致性检查：固定头 schemaV 与 header.schemaVersion 应一致
     if (schemaV != header.schemaVersion) {
       throw ManifestAuthException(
-          'schemaVersion 不一致：固定头=$schemaV，header=${header.schemaVersion}');
+        'schemaVersion 不一致：固定头=$schemaV，header=${header.schemaVersion}',
+      );
     }
 
     // 9. 提取 encryptedItems
-    final encryptedItems =
-        Uint8List.fromList(bytes.sublist(itemsStart, pubHashStart));
+    final encryptedItems = Uint8List.fromList(
+      bytes.sublist(itemsStart, pubHashStart),
+    );
 
     return _ContainerInfo(header: header, encryptedItems: encryptedItems);
   }
@@ -1236,9 +1237,11 @@ class SyncDiagnosticsSnapshot {
     b.writeln('-- 最近同步结果 --');
     b.writeln('成功: $lastResultSuccess');
     b.writeln('重试次数: $lastResultAttempts');
-    b.writeln('上传: $lastResultUploaded, 下载: $lastResultDownloaded, '
-        '删除: $lastResultDeleted, 冲突: $lastResultConflicts, '
-        '迁移: $lastResultMigrated, 跳过: $lastResultSkipped');
+    b.writeln(
+      '上传: $lastResultUploaded, 下载: $lastResultDownloaded, '
+      '删除: $lastResultDeleted, 冲突: $lastResultConflicts, '
+      '迁移: $lastResultMigrated, 跳过: $lastResultSkipped',
+    );
     b.writeln('密钥纪元不匹配: $lastResultPasswordEpochMismatch');
     b.writeln('需要重新登录: $lastResultRequiresRelogin');
     if (lastResultErrorMessage != null) {
@@ -1246,8 +1249,10 @@ class SyncDiagnosticsSnapshot {
     }
     if (lastResultFailedNoteUuids != null &&
         lastResultFailedNoteUuids!.isNotEmpty) {
-      b.writeln('失败笔记 (${lastResultFailedNoteUuids!.length}): '
-          '${lastResultFailedNoteUuids!.join(", ")}');
+      b.writeln(
+        '失败笔记 (${lastResultFailedNoteUuids!.length}): '
+        '${lastResultFailedNoteUuids!.join(", ")}',
+      );
     }
     b.writeln('');
     b.writeln('-- 日志 --');
@@ -1280,13 +1285,13 @@ class SyncActionInfo {
 
   /// 从 [SyncAction] 转换
   factory SyncActionInfo.fromAction(SyncAction action) => SyncActionInfo(
-        type: action.type.name,
-        uuid: action.uuid,
-        hash: action.hash,
-        message: action.message,
-        errorLabel: action.error?.label,
-        errorDisplay: action.error?.toDisplayString(),
-      );
+    type: action.type.name,
+    uuid: action.uuid,
+    hash: action.hash,
+    message: action.message,
+    errorLabel: action.error?.label,
+    errorDisplay: action.error?.toDisplayString(),
+  );
 
   @override
   String toString() =>
@@ -1294,11 +1299,11 @@ class SyncActionInfo {
 
   /// 序列化为 JSON（供 LogWebServer /api/actions 端点使用）
   Map<String, dynamic> toJson() => {
-        'type': type,
-        'uuid': uuid,
-        'hash': hash,
-        'message': message,
-        'errorLabel': errorLabel,
-        'errorDisplay': errorDisplay,
-      };
+    'type': type,
+    'uuid': uuid,
+    'hash': hash,
+    'message': message,
+    'errorLabel': errorLabel,
+    'errorDisplay': errorDisplay,
+  };
 }

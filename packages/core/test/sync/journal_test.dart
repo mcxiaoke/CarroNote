@@ -116,8 +116,7 @@ void main() {
   Future<Journal> openJournal({
     String vaultId = 'vault-1',
     String deviceId = 'dev-a',
-  }) =>
-      Journal.open(baseDir: tmp.path, vaultId: vaultId, deviceId: deviceId);
+  }) => Journal.open(baseDir: tmp.path, vaultId: vaultId, deviceId: deviceId);
 
   // ════════════════════════════════════════════
   group('Journal - 追加与 seq 水位', () {
@@ -133,8 +132,11 @@ void main() {
       expect(j.pendingCount, 0);
       expect(j.entries.length, 2);
 
-      final raw = jsonDecode(
-          await File(p.join(journalDir(), 'log.json')).readAsString()) as Map;
+      final raw =
+          jsonDecode(
+                await File(p.join(journalDir(), 'log.json')).readAsString(),
+              )
+              as Map;
       expect(raw['schemaVersion'], kJournalSchemaVersion);
       expect(raw['vaultId'], 'vault-1');
       expect(raw['deviceId'], 'dev-a');
@@ -220,8 +222,11 @@ void main() {
       expect(archives.length, 1, reason: '应产生 1 个归档');
       expect(archives.single, 'log-$kJournalMaxEntries.json');
       expect(j.entries, isEmpty, reason: '归档后当前日志清空');
-      expect(await File(p.join(journalDir(), 'log.json')).exists(), isTrue,
-          reason: '空的新日志必须立即建立，保证文件恒存在');
+      expect(
+        await File(p.join(journalDir(), 'log.json')).exists(),
+        isTrue,
+        reason: '空的新日志必须立即建立，保证文件恒存在',
+      );
 
       final all = await j.readAll();
       expect(all.length, kJournalMaxEntries);
@@ -243,8 +248,7 @@ void main() {
         await j.flush();
       }
       final archives = await listFiles(prefix: 'log-');
-      expect(archives.length, 1,
-          reason: '条数远未到 1000，应由字节阈值触发归档');
+      expect(archives.length, 1, reason: '条数远未到 1000，应由字节阈值触发归档');
       expect((await j.readAll()).length, 4);
       await j.close();
     });
@@ -258,16 +262,19 @@ void main() {
         await j.flush();
       }
       final archives = await listFiles(prefix: 'log-');
-      expect(archives.length, kJournalArchiveKeep,
-          reason: '保留份数应恒为 $kJournalArchiveKeep');
+      expect(
+        archives.length,
+        kJournalArchiveKeep,
+        reason: '保留份数应恒为 $kJournalArchiveKeep',
+      );
 
       // 被淘汰的是 seq 最小的那些
-      final seqs = archives
-          .map((n) => int.parse(n.replaceAll(RegExp(r'\D'), '')))
-          .toList()
-        ..sort();
-      expect(seqs.first, greaterThan(4),
-          reason: '最早的归档（seq=4）应已被淘汰');
+      final seqs =
+          archives
+              .map((n) => int.parse(n.replaceAll(RegExp(r'\D'), '')))
+              .toList()
+            ..sort();
+      expect(seqs.first, greaterThan(4), reason: '最早的归档（seq=4）应已被淘汰');
       await j.close();
     });
   });
@@ -287,14 +294,16 @@ void main() {
     });
 
     test('vaultId 不匹配（串库）→ 隔离并重新开始', () async {
-      await writeRawLog(jsonEncode({
-        'schemaVersion': 1,
-        'vaultId': 'OTHER-VAULT',
-        'deviceId': 'dev-a',
-        'entries': [
-          {'seq': 7, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
-        ],
-      }));
+      await writeRawLog(
+        jsonEncode({
+          'schemaVersion': 1,
+          'vaultId': 'OTHER-VAULT',
+          'deviceId': 'dev-a',
+          'entries': [
+            {'seq': 7, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
+          ],
+        }),
+      );
       final j = await openJournal(vaultId: 'vault-1');
       expect(j.entries, isEmpty, reason: '别的库的 journal 不得混入');
       expect((await listFiles(prefix: 'log.json.vault-mismatch-')).length, 1);
@@ -302,18 +311,20 @@ void main() {
     });
 
     test('坏条目被跳过，好条目保留（不整体失败）', () async {
-      await writeRawLog(jsonEncode({
-        'schemaVersion': 1,
-        'vaultId': 'vault-1',
-        'deviceId': 'dev-a',
-        'entries': [
-          {'seq': 1, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
-          {'seq': 'not-an-int', 'ts': 2, 'type': 'note.upsert', 'by': 'x'},
-          'garbage',
-          {'ts': 3, 'type': 'note.upsert', 'by': 'x'}, // 缺 seq
-          {'seq': 4, 'ts': 4, 'type': 'note.delete', 'by': 'dev-a'},
-        ],
-      }));
+      await writeRawLog(
+        jsonEncode({
+          'schemaVersion': 1,
+          'vaultId': 'vault-1',
+          'deviceId': 'dev-a',
+          'entries': [
+            {'seq': 1, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
+            {'seq': 'not-an-int', 'ts': 2, 'type': 'note.upsert', 'by': 'x'},
+            'garbage',
+            {'ts': 3, 'type': 'note.upsert', 'by': 'x'}, // 缺 seq
+            {'seq': 4, 'ts': 4, 'type': 'note.delete', 'by': 'dev-a'},
+          ],
+        }),
+      );
       final j = await openJournal();
       expect(j.entries.map((e) => e.seq).toList(), [1, 4]);
       expect(j.nextSeq, 5);
@@ -321,15 +332,17 @@ void main() {
     });
 
     test('未知事件类型被跳过（前向兼容：新版写的新类型不让旧版崩）', () async {
-      await writeRawLog(jsonEncode({
-        'schemaVersion': 99,
-        'vaultId': 'vault-1',
-        'deviceId': 'dev-a',
-        'entries': [
-          {'seq': 1, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
-          {'seq': 2, 'ts': 2, 'type': 'future.newEvent', 'by': 'dev-a'},
-        ],
-      }));
+      await writeRawLog(
+        jsonEncode({
+          'schemaVersion': 99,
+          'vaultId': 'vault-1',
+          'deviceId': 'dev-a',
+          'entries': [
+            {'seq': 1, 'ts': 1, 'type': 'note.upsert', 'by': 'dev-a'},
+            {'seq': 2, 'ts': 2, 'type': 'future.newEvent', 'by': 'dev-a'},
+          ],
+        }),
+      );
       final j = await openJournal();
       expect(j.entries.length, 1);
       expect(j.entries.single.type, JournalEventType.noteUpsert);
@@ -337,20 +350,22 @@ void main() {
     });
 
     test('未知 phase 退化为 none 而非崩溃', () async {
-      await writeRawLog(jsonEncode({
-        'schemaVersion': 1,
-        'vaultId': 'vault-1',
-        'deviceId': 'dev-a',
-        'entries': [
-          {
-            'seq': 1,
-            'ts': 1,
-            'type': 'note.upsert',
-            'phase': 'weird-phase',
-            'by': 'dev-a',
-          },
-        ],
-      }));
+      await writeRawLog(
+        jsonEncode({
+          'schemaVersion': 1,
+          'vaultId': 'vault-1',
+          'deviceId': 'dev-a',
+          'entries': [
+            {
+              'seq': 1,
+              'ts': 1,
+              'type': 'note.upsert',
+              'phase': 'weird-phase',
+              'by': 'dev-a',
+            },
+          ],
+        }),
+      );
       final j = await openJournal();
       expect(j.entries.single.phase, JournalPhase.none);
       await j.close();
@@ -371,8 +386,11 @@ void main() {
       await File(p.join(journalDir(), archive)).writeAsString('%%%broken%%%');
 
       final all = await j.readAll();
-      expect(all.map((e) => e.uuid).whereType<String>().toList(), ['alive'],
-          reason: '坏归档整份跳过，但不能影响当前日志');
+      expect(
+        all.map((e) => e.uuid).whereType<String>().toList(),
+        ['alive'],
+        reason: '坏归档整份跳过，但不能影响当前日志',
+      );
       await j.close();
     });
 
@@ -415,21 +433,25 @@ void main() {
       final opDone = j.newOpId();
       final opFailed = j.newOpId();
       j.append(
-          type: JournalEventType.keyMigrate,
-          phase: JournalPhase.start,
-          opId: opDone);
+        type: JournalEventType.keyMigrate,
+        phase: JournalPhase.start,
+        opId: opDone,
+      );
       j.append(
-          type: JournalEventType.keyMigrate,
-          phase: JournalPhase.done,
-          opId: opDone);
+        type: JournalEventType.keyMigrate,
+        phase: JournalPhase.done,
+        opId: opDone,
+      );
       j.append(
-          type: JournalEventType.blobReupload,
-          phase: JournalPhase.start,
-          opId: opFailed);
+        type: JournalEventType.blobReupload,
+        phase: JournalPhase.start,
+        opId: opFailed,
+      );
       j.append(
-          type: JournalEventType.blobReupload,
-          phase: JournalPhase.failed,
-          opId: opFailed);
+        type: JournalEventType.blobReupload,
+        phase: JournalPhase.failed,
+        opId: opFailed,
+      );
 
       expect(await j.findIncompleteOperations(minAge: Duration.zero), isEmpty);
       await j.close();
@@ -442,8 +464,11 @@ void main() {
         phase: JournalPhase.start,
         opId: j.newOpId(),
       );
-      expect(await j.findIncompleteOperations(), isEmpty,
-          reason: '刚发生的 start 是"正在进行"，不应被当成中断');
+      expect(
+        await j.findIncompleteOperations(),
+        isEmpty,
+        reason: '刚发生的 start 是"正在进行"，不应被当成中断',
+      );
       await j.close();
     });
 
@@ -451,21 +476,23 @@ void main() {
       final old = DateTime.now()
           .subtract(const Duration(hours: 2))
           .millisecondsSinceEpoch;
-      await writeRawLog(jsonEncode({
-        'schemaVersion': 1,
-        'vaultId': 'vault-1',
-        'deviceId': 'dev-a',
-        'entries': [
-          {
-            'seq': 1,
-            'ts': old,
-            'type': 'blob.reupload',
-            'phase': 'start',
-            'opId': 'op-old',
-            'by': 'dev-a',
-          },
-        ],
-      }));
+      await writeRawLog(
+        jsonEncode({
+          'schemaVersion': 1,
+          'vaultId': 'vault-1',
+          'deviceId': 'dev-a',
+          'entries': [
+            {
+              'seq': 1,
+              'ts': old,
+              'type': 'blob.reupload',
+              'phase': 'start',
+              'opId': 'op-old',
+              'by': 'dev-a',
+            },
+          ],
+        }),
+      );
       final j = await openJournal();
       final found = await j.findIncompleteOperations();
       expect(found.length, 1);
@@ -481,7 +508,9 @@ void main() {
         opId: j.newOpId(),
       );
       await j.flush();
-      final before = await File(p.join(journalDir(), 'log.json')).readAsString();
+      final before = await File(
+        p.join(journalDir(), 'log.json'),
+      ).readAsString();
       await j.findIncompleteOperations(minAge: Duration.zero);
       final after = await File(p.join(journalDir(), 'log.json')).readAsString();
       expect(after, before, reason: '恢复以 DB 为准，journal 永不自动重放');
@@ -492,11 +521,11 @@ void main() {
   // ════════════════════════════════════════════
   group('Journal - replayKeyState', () {
     JournalKeyState ks(int v, int epoch) => JournalKeyState(
-          keyVersion: v,
-          dataKeyEpoch: epoch,
-          keyFingerprint: 'fp-$v',
-          encryptedDataKey: 'edk-$v',
-        );
+      keyVersion: v,
+      dataKeyEpoch: epoch,
+      keyFingerprint: 'fp-$v',
+      encryptedDataKey: 'edk-$v',
+    );
 
     test('无 key.* 事件时返回 null', () async {
       final j = await openJournal();
@@ -542,8 +571,7 @@ void main() {
         keyState: ks(8, 8),
       );
       final replayed = await j.replayKeyState();
-      expect(replayed?.keyVersion, 2,
-          reason: '只有已完成的密钥变更才是可信的取真来源');
+      expect(replayed?.keyVersion, 2, reason: '只有已完成的密钥变更才是可信的取真来源');
       await j.close();
     });
 
@@ -554,10 +582,7 @@ void main() {
         phase: JournalPhase.done,
         keyState: ks(2, 1),
       );
-      j.append(
-        type: JournalEventType.noteUpsert,
-        keyState: ks(7, 7),
-      );
+      j.append(type: JournalEventType.noteUpsert, keyState: ks(7, 7));
       expect((await j.replayKeyState())?.keyVersion, 2);
       await j.close();
     });
@@ -595,8 +620,7 @@ void main() {
       final ct = backend.journalObjects['dev-a-current.json']!;
       final asText = String.fromCharCodes(ct);
       expect(asText.contains('note.upsert'), isFalse);
-      expect(asText.contains('secret-uuid'), isFalse,
-          reason: '远端永不落明文');
+      expect(asText.contains('secret-uuid'), isFalse, reason: '远端永不落明文');
       await j.close();
     });
 
@@ -643,9 +667,15 @@ void main() {
       final dirA = await Directory(p.join(tmp.path, 'a')).create();
       final dirB = await Directory(p.join(tmp.path, 'b')).create();
       final ja = await Journal.open(
-          baseDir: dirA.path, vaultId: 'vault-1', deviceId: 'dev-a');
+        baseDir: dirA.path,
+        vaultId: 'vault-1',
+        deviceId: 'dev-a',
+      );
       final jb = await Journal.open(
-          baseDir: dirB.path, vaultId: 'vault-1', deviceId: 'dev-b');
+        baseDir: dirB.path,
+        vaultId: 'vault-1',
+        deviceId: 'dev-b',
+      );
 
       ja.append(type: JournalEventType.noteUpsert, uuid: 'from-a');
       jb.append(type: JournalEventType.noteUpsert, uuid: 'from-b');
@@ -654,8 +684,7 @@ void main() {
       // 重复上传不应产生重复条目
       await ja.syncToRemote(backend, dk);
 
-      expect(backend.journalObjects.length, 2,
-          reason: '按设备隔离对象名，互不覆盖');
+      expect(backend.journalObjects.length, 2, reason: '按设备隔离对象名，互不覆盖');
       final merged = await Journal.fetchRemoteEntries(backend, dk);
       expect(merged.map((e) => e.uuid).toSet(), {'from-a', 'from-b'});
       await ja.close();
@@ -681,9 +710,13 @@ void main() {
       expect(uploadedAfterFirst, greaterThan(0));
 
       // 水位落盘
-      final state = jsonDecode(
-          await File(p.join(journalDir(), '.journal-state.json'))
-              .readAsString()) as Map;
+      final state =
+          jsonDecode(
+                await File(
+                  p.join(journalDir(), '.journal-state.json'),
+                ).readAsString(),
+              )
+              as Map;
       expect(state['uploadedSeq'], uploadedAfterFirst);
 
       // 无新增时再次同步：对象集合不变
@@ -737,8 +770,11 @@ void main() {
       }
       await j.flush();
       expect(j.entries.length, kJournalMaxEntries);
-      expect(j.entries.last.seq, kJournalMaxEntries + 120,
-          reason: '裁剪应保留最近的条目');
+      expect(
+        j.entries.last.seq,
+        kJournalMaxEntries + 120,
+        reason: '裁剪应保留最近的条目',
+      );
       await j.close();
     });
 

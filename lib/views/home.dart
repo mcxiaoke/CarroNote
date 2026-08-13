@@ -20,26 +20,26 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:animations/animations.dart';
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/utils/platform_ui.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/route_observer.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
+import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/drawer.dart';
 import 'package:safenotes/widgets/home_navigation_rail.dart';
@@ -48,15 +48,12 @@ import 'package:safenotes/widgets/note_card_compact.dart';
 import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
-import 'package:safenotes/views/add_edit_note.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
-  const HomePage({
-    super.key,
-    required this.sessionStateStream,
-  });
+  const HomePage({super.key, required this.sessionStateStream});
 
   @override
   HomePageState createState() => HomePageState();
@@ -92,8 +89,9 @@ class HomePageState extends State<HomePage> with RouteAware {
     super.initState();
     Log.ui.i('进入主界面');
     refreshNotes();
-    _syncStateSub =
-        SyncService.instance.stateStream.listen(_onSyncStateChanged);
+    _syncStateSub = SyncService.instance.stateStream.listen(
+      _onSyncStateChanged,
+    );
     // 需求：日志 Web 服务器随主界面启动（全平台：移动端 + 桌面端），
     // 应用退出（detached）时由 main.dart 的 _shutdown 统一停止。
     // 放在主界面而非 SyncService，是为了让未配置同步的用户也能远程看日志。
@@ -144,8 +142,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     try {
       await LogWebServer.instance.start();
     } on Object catch (e, st) {
-      Log.web.w('日志 Web 服务器启动失败（不影响应用使用）',
-          error: e, stackTrace: st);
+      Log.web.w('日志 Web 服务器启动失败（不影响应用使用）', error: e, stackTrace: st);
     }
   }
 
@@ -206,16 +203,18 @@ class HomePageState extends State<HomePage> with RouteAware {
         child: ShadDialog(
           title: Text('Password Changed on Another Device'.tr()),
           actions: [
-            shadDialogActionBar(actions: [
-              ShadDialogAction(
-                label: 'Logout and Login Again'.tr(),
-                primary: true,
-                onPressed: () async {
-                  Navigator.of(dialogContext).pop();
-                  await _logoutToLogin();
-                },
-              ),
-            ]),
+            shadDialogActionBar(
+              actions: [
+                ShadDialogAction(
+                  label: 'Logout and Login Again'.tr(),
+                  primary: true,
+                  onPressed: () async {
+                    Navigator.of(dialogContext).pop();
+                    await _logoutToLogin();
+                  },
+                ),
+              ],
+            ),
           ],
           child: Text(
             'The sync passphrase was changed on another device; the current passphrase is no longer valid.\n\nLocal notes are not lost; unsynced changes are kept locally. Please log in again with the new passphrase.'
@@ -264,8 +263,11 @@ class HomePageState extends State<HomePage> with RouteAware {
           allnotes = notes = <SafeNote>[];
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load notes: {error}'
-              .tr(namedArgs: {'error': '$e'}))),
+          SnackBar(
+            content: Text(
+              'Failed to load notes: {error}'.tr(namedArgs: {'error': '$e'}),
+            ),
+          ),
         );
       }
     } finally {
@@ -293,9 +295,11 @@ class HomePageState extends State<HomePage> with RouteAware {
       allnotes = notes = tmpNotes;
     });
     // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
-    Log.ui.i('主界面笔记列表已装载: ${tmpNotes.length} 条, '
-        '${sortByModified ? "修改时间" : "创建时间"}/'
-        '${isNewFirst ? "新→旧" : "旧→新"}');
+    Log.ui.i(
+      '主界面笔记列表已装载: ${tmpNotes.length} 条, '
+      '${sortByModified ? "修改时间" : "创建时间"}/'
+      '${isNewFirst ? "新→旧" : "旧→新"}',
+    );
   }
 
   @override
@@ -317,10 +321,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       child: Scaffold(
         drawer: isCompact ? _buildDrawer(context) : null,
         appBar: AppBar(
-          title: Text(
-            'Safe Notes'.tr(),
-            style: appBarTitle,
-          ),
+          title: Text('Safe Notes'.tr(), style: appBarTitle),
           actions: isLoading
               ? null
               : [
@@ -337,7 +338,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         // 行为与改动前一致。crossAxisAlignment.stretch 让内容填满受限宽度。
         body: isCompact
             ? _homeBody()
-              : Row(
+            : Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   HomeSidebar(
@@ -363,10 +364,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         constraints: const BoxConstraints(maxWidth: 1300),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildSearch(),
-            _handleAndBuildNotes(),
-          ],
+          children: [_buildSearch(), _handleAndBuildNotes()],
         ),
       ),
     );
@@ -392,14 +390,16 @@ class HomePageState extends State<HomePage> with RouteAware {
         return IconButton(
           icon: isSyncing
               ? const _RotatingSyncIcon()
-              : Icon(_syncIconData(state.status),
-                  color: state.status == SyncStatus.error
-                      ? Colors.red
-                      : null),
+              : Icon(
+                  _syncIconData(state.status),
+                  color: state.status == SyncStatus.error ? Colors.red : null,
+                ),
           tooltip: _syncTooltip(state.status),
           onPressed: () async {
-            Log.ui.i('界面切换: 主界面 → 同步设置(/syncSettings), '
-                '当前同步状态=${state.status.name}');
+            Log.ui.i(
+              '界面切换: 主界面 → 同步设置(/syncSettings), '
+              '当前同步状态=${state.status.name}',
+            );
             await Navigator.pushNamed(context, '/syncSettings');
             if (mounted) refreshNotes();
           },
@@ -487,9 +487,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _shortNotes() {
     return IconButton(
-      icon: !isNewFirst
-          ? Icon(Icons.arrow_upward)
-          : Icon(Icons.arrow_downward),
+      icon: !isNewFirst ? Icon(Icons.arrow_upward) : Icon(Icons.arrow_downward),
       onPressed: () {
         setState(() {
           isNewFirst = !isNewFirst;
@@ -506,9 +504,13 @@ class HomePageState extends State<HomePage> with RouteAware {
     return Expanded(
       child: !isLoading
           ? notes.isEmpty
-              ? Center(
-                  child: Text(noNotes, style: const TextStyle(fontSize: fontSize)))
-              : (isGridView ? _buildNotes() : _buildNotesTile())
+                ? Center(
+                    child: Text(
+                      noNotes,
+                      style: const TextStyle(fontSize: fontSize),
+                    ),
+                  )
+                : (isGridView ? _buildNotes() : _buildNotesTile())
           : const Center(child: CircularProgressIndicator()),
     );
   }
@@ -648,17 +650,19 @@ class HomePageState extends State<HomePage> with RouteAware {
       closedBuilder: (context, action) => GestureDetector(
         onTap: () {
           // 只记录 uuid 与序号，不记录标题正文（隐私红线）
-          Log.ui.i('界面切换: 主界面(${grid ? "网格" : "列表"}) → 编辑笔记'
-              '(/editnote) uuid=${note.uuid} index=$index');
+          Log.ui.i(
+            '界面切换: 主界面(${grid ? "网格" : "列表"}) → 编辑笔记'
+            '(/editnote) uuid=${note.uuid} index=$index',
+          );
           action();
         },
         child: PreferencesStorage.isCompactPreview
             ? (grid
-                ? NoteCardWidgetCompact(note: note, index: index)
-                : NoteTileWidgetCompact(note: note, index: index))
+                  ? NoteCardWidgetCompact(note: note, index: index)
+                  : NoteTileWidgetCompact(note: note, index: index))
             : (grid
-                ? NoteCardWidget(note: note, index: index)
-                : NoteTileWidget(note: note, index: index)),
+                  ? NoteCardWidget(note: note, index: index)
+                  : NoteTileWidget(note: note, index: index)),
       ),
       openBuilder: (context, closeAction) => AddEditNotePage(
         sessionStateStream: widget.sessionStateStream,
@@ -676,15 +680,19 @@ class HomePageState extends State<HomePage> with RouteAware {
       child: ListView.separated(
         controller: _notesListScroll,
         padding: const EdgeInsets.all(14),
-      itemCount: notes.length,
-      itemBuilder: ((context, index) {
-        final note = notes[index];
-        return _openNoteEditorContainer(note: note, index: index, grid: false);
-      }),
-      separatorBuilder: (BuildContext context, int index) {
-        // 与网格视图 12px 间距保持一致（原 7px 偏挤）。
-        return const SizedBox(height: 12);
-      },
+        itemCount: notes.length,
+        itemBuilder: ((context, index) {
+          final note = notes[index];
+          return _openNoteEditorContainer(
+            note: note,
+            index: index,
+            grid: false,
+          );
+        }),
+        separatorBuilder: (BuildContext context, int index) {
+          // 与网格视图 12px 间距保持一致（原 7px 偏挤）。
+          return const SizedBox(height: 12);
+        },
       ),
     );
   }
@@ -713,7 +721,11 @@ class HomePageState extends State<HomePage> with RouteAware {
             crossAxisSpacing: 12,
             itemBuilder: (context, index) {
               final note = notes[index];
-              return _openNoteEditorContainer(note: note, index: index, grid: true);
+              return _openNoteEditorContainer(
+                note: note,
+                index: index,
+                grid: true,
+              );
             },
           ),
         );
@@ -731,15 +743,15 @@ class HomePageState extends State<HomePage> with RouteAware {
           descriptionLower.contains(queryLower);
     }).toList();
 
-    setState(
-      () {
-        this.query = query;
-        this.notes = notes;
-      },
-    );
+    setState(() {
+      this.query = query;
+      this.notes = notes;
+    });
     // 只记录关键词长度与命中数，绝不记录关键词内容（可能含敏感信息）
-    Log.ui.d('笔记搜索: 关键词长度=${query.trim().length}, '
-        '命中 ${notes.length}/${allnotes.length} 条');
+    Log.ui.d(
+      '笔记搜索: 关键词长度=${query.trim().length}, '
+      '命中 ${notes.length}/${allnotes.length} 条',
+    );
   }
 
   void dismissKeyboard([Object? _]) {

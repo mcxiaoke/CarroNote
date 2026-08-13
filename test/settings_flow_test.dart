@@ -7,20 +7,24 @@
 //   3. 明暗弹层根 Material 背景应跟随主题变化（修复前固定为打开时的旧主题色）
 //   附：笔记配色开关、明暗开关能正确驱动对应 Provider。
 
+// Dart imports:
 import 'dart:async';
 
+// Flutter imports:
 import 'package:flutter/material.dart';
+
+// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
-
 import 'test_helpers.dart';
 
 /// 打开主题弹层（以 ColorPallet 为宿主屏幕）。
@@ -45,10 +49,12 @@ Material _rootMaterial(WidgetTester tester) {
 }
 
 /// 弹层内「Dark mode」开关（ThemeBottomSheet 的第一个 ShadSwitch）。
-Finder get _sheetDarkModeSwitch => find.descendant(
+Finder get _sheetDarkModeSwitch => find
+    .descendant(
       of: find.byType(ThemeBottomSheet),
       matching: find.byType(ShadSwitch),
-    ).first;
+    )
+    .first;
 
 void main() {
   setUpAll(() async {
@@ -69,12 +75,13 @@ void main() {
   });
 
   group('设置页', () {
-    testWidgets('主分区关键 tile 均渲染，且 value 文本靠右（TextAlign.end）',
-        (WidgetTester tester) async {
+    testWidgets('主分区关键 tile 均渲染，且 value 文本靠右（TextAlign.end）', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
-        wrapScreen(SettingsScreen(
-          sessionStateStream: StreamController<SessionState>(),
-        )),
+        wrapScreen(
+          SettingsScreen(sessionStateStream: StreamController<SessionState>()),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -84,9 +91,9 @@ void main() {
       tester.view.devicePixelRatio = 1;
 
       await tester.pumpWidget(
-        wrapScreen(SettingsScreen(
-          sessionStateStream: StreamController<SessionState>(),
-        )),
+        wrapScreen(
+          SettingsScreen(sessionStateStream: StreamController<SessionState>()),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -115,9 +122,9 @@ void main() {
 
     testWidgets('Dark Mode tile 默认显示 Off', (WidgetTester tester) async {
       await tester.pumpWidget(
-        wrapScreen(SettingsScreen(
-          sessionStateStream: StreamController<SessionState>(),
-        )),
+        wrapScreen(
+          SettingsScreen(sessionStateStream: StreamController<SessionState>()),
+        ),
       );
       await tester.pumpAndSettle();
       expect(testThemeProvider.isDarkMode, isFalse);
@@ -126,8 +133,7 @@ void main() {
   });
 
   group('笔记配色页', () {
-    testWidgets('色条有真实颜色且高度 > 0（修复前为空白）',
-        (WidgetTester tester) async {
+    testWidgets('色条有真实颜色且高度 > 0（修复前为空白）', (WidgetTester tester) async {
       await tester.pumpWidget(wrapScreen(const ColorPallet()));
       await tester.pumpAndSettle();
 
@@ -139,8 +145,7 @@ void main() {
       final coloredContainers = find.byWidgetPredicate(
         (w) => w is Container && w.color != null,
       );
-      expect(coloredContainers, findsWidgets,
-          reason: '未找到任何带颜色的色块');
+      expect(coloredContainers, findsWidgets, reason: '未找到任何带颜色的色块');
 
       // 至少一个色块在屏幕上实际有高度（修复前高度为 0 → 空白）
       var anyWithHeight = false;
@@ -152,12 +157,12 @@ void main() {
           break;
         }
       }
-      expect(anyWithHeight, isTrue,
-          reason: '所有色块高度为 0，色条空白（迁移回归未修复）');
+      expect(anyWithHeight, isTrue, reason: '所有色块高度为 0，色条空白（迁移回归未修复）');
     });
 
-    testWidgets('Colorful Notes 开关能驱动 PreferencesStorage.isColorful',
-        (WidgetTester tester) async {
+    testWidgets('Colorful Notes 开关能驱动 PreferencesStorage.isColorful', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(wrapScreen(const ColorPallet()));
       await tester.pumpAndSettle();
 
@@ -174,14 +179,18 @@ void main() {
   });
 
   group('明暗主题弹层', () {
-    testWidgets('弹层背景跟随主题：明亮=亮色背景，暗黑=暗色背景',
-        (WidgetTester tester) async {
+    testWidgets('弹层背景跟随主题：明亮=亮色背景，暗黑=暗色背景', (WidgetTester tester) async {
       // 默认明亮
       await _openSheet(tester);
-      expect(_rootMaterial(tester).color,
-          equals(ShadThemes.build(kTestThemeSeed, Brightness.light)
-              .colorScheme
-              .background));
+      expect(
+        _rootMaterial(tester).color,
+        equals(
+          ShadThemes.build(
+            kTestThemeSeed,
+            Brightness.light,
+          ).colorScheme.background,
+        ),
+      );
 
       // 关闭弹层 → 切到暗黑 → 重新打开，背景应变成暗色
       Navigator.of(tester.element(find.byType(ColorPallet))).pop();
@@ -189,14 +198,20 @@ void main() {
       testThemeProvider.setIsDarkMode(true);
       await tester.pumpAndSettle();
       await _openSheet(tester);
-      expect(_rootMaterial(tester).color,
-          equals(ShadThemes.build(kTestThemeSeed, Brightness.dark)
-              .colorScheme
-              .background));
+      expect(
+        _rootMaterial(tester).color,
+        equals(
+          ShadThemes.build(
+            kTestThemeSeed,
+            Brightness.dark,
+          ).colorScheme.background,
+        ),
+      );
     });
 
-    testWidgets('明暗开关能更新 ThemeProvider（isDarkMode 翻转）',
-        (WidgetTester tester) async {
+    testWidgets('明暗开关能更新 ThemeProvider（isDarkMode 翻转）', (
+      WidgetTester tester,
+    ) async {
       await _openSheet(tester);
       expect(testThemeProvider.isDarkMode, isFalse);
       // 第一个开关即弹层内的 “Dark mode”（已限定到 ThemeBottomSheet 子树，

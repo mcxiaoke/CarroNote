@@ -15,27 +15,23 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 import 'package:safenotes/utils/time_utils.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class NoteTileWidget extends StatelessWidget {
   final SafeNote note;
   final int index;
 
-  const NoteTileWidget({
-    super.key,
-    required this.note,
-    required this.index,
-  });
+  const NoteTileWidget({super.key, required this.note, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -91,11 +87,7 @@ class NoteTileWidget extends StatelessWidget {
           Text(
             sanitize(note.abstractText),
             textDirection: getTextDirecton(note.abstractText),
-            style: TextStyle(
-              color: fontColor,
-              fontSize: 16,
-              height: 1.2,
-            ),
+            style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
             maxLines: 2,
             overflow: TextOverflow.clip,
           ),

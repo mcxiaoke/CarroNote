@@ -17,12 +17,12 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
 /// 桌面端常驻侧边栏（Sidebar），对应移动端 Drawer 的同一组入口。
@@ -112,11 +112,7 @@ class HomeSidebar extends StatelessWidget {
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  sideItem(
-                    Icons.palette_outlined,
-                    themeText,
-                    onThemeCallback,
-                  ),
+                  sideItem(Icons.palette_outlined, themeText, onThemeCallback),
                   sideItem(
                     Icons.settings_outlined,
                     'Settings'.tr(),
@@ -132,11 +128,7 @@ class HomeSidebar extends StatelessWidget {
                     'Sync Settings'.tr(),
                     onSyncSettingsCallback,
                   ),
-                  sideItem(
-                    Icons.info_outline,
-                    'About'.tr(),
-                    onAboutCallback,
-                  ),
+                  sideItem(Icons.info_outline, 'About'.tr(), onAboutCallback),
                 ],
               ),
             ),

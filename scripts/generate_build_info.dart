@@ -30,10 +30,14 @@ final Directory root = File(Platform.script.toFilePath()).parent.parent;
 final File pubspec = File('${root.path}/pubspec.yaml');
 final File out = File('${root.path}/lib/generated/build_info.g.dart');
 
-final RegExp versionRe = RegExp(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+(\d+)',
-    multiLine: true);
-final RegExp versionNoBuildRe =
-    RegExp(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)', multiLine: true);
+final RegExp versionRe = RegExp(
+  r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+(\d+)',
+  multiLine: true,
+);
+final RegExp versionNoBuildRe = RegExp(
+  r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)',
+  multiLine: true,
+);
 
 /// 执行 git 子命令，成功返回 strip 后的 stdout，失败返回 null（不抛异常）。
 String? runGit(List<String> args) {
@@ -169,18 +173,23 @@ Future<int> main() async {
   final git = collectGitInfo();
 
   final nowUtc = DateTime.now().toUtc();
-  final buildDateUtc =
-      '${nowUtc.toIso8601String().split('.').first}Z';
+  final buildDateUtc = '${nowUtc.toIso8601String().split('.').first}Z';
   final nowLocal = DateTime.now();
-  final buildDateReadable = '${nowLocal.year.toString().padLeft(4, '0')}-'
+  final buildDateReadable =
+      '${nowLocal.year.toString().padLeft(4, '0')}-'
       '${nowLocal.month.toString().padLeft(2, '0')}-'
       '${nowLocal.day.toString().padLeft(2, '0')} '
       '${nowLocal.hour.toString().padLeft(2, '0')}:'
       '${nowLocal.minute.toString().padLeft(2, '0')}:'
       '${nowLocal.second.toString().padLeft(2, '0')}';
 
-  final source =
-      buildDartSource(version, buildNumber, git, buildDateUtc, buildDateReadable);
+  final source = buildDartSource(
+    version,
+    buildNumber,
+    git,
+    buildDateUtc,
+    buildDateReadable,
+  );
 
   if (await out.exists()) {
     final existing = await out.readAsString();
@@ -195,8 +204,10 @@ Future<int> main() async {
     stdout.writeln('[build_info] 已生成 ${out.path}');
   }
 
-  stdout.writeln('[build_info] version=$version build=$buildNumber '
-      'git=${git['git_short']} dirty=${git['dirty']} '
-      'branch=${git['branch']}');
+  stdout.writeln(
+    '[build_info] version=$version build=$buildNumber '
+    'git=${git['git_short']} dirty=${git['dirty']} '
+    'branch=${git['branch']}',
+  );
   return 0;
 }

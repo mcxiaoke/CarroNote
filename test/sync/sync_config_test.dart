@@ -13,16 +13,23 @@
 //   - flutter_secure_storage 的 MethodChannel 用内存 Map 模拟，
 //     避免 MissingPluginException（注意它是 Error 而非 Exception，测不到会被抛出）。
 
+// Dart imports:
 import 'dart:io';
 
+// Flutter imports:
 import 'package:flutter/services.dart';
+
+// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Project imports:
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 
-const _secureChannel =
-    MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+const _secureChannel = MethodChannel(
+  'plugins.it_nomads.com/flutter_secure_storage',
+);
 final Map<String, String> _secureStore = {};
 
 void _setupTestBindings() {
@@ -30,27 +37,28 @@ void _setupTestBindings() {
   _secureStore.clear();
   TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_secureChannel, (call) async {
-    final args = call.arguments as Map<Object?, Object?>;
-    switch (call.method) {
-      case 'read':
-        return _secureStore[args['key'] as String];
-      case 'write':
-        _secureStore[args['key'] as String] = (args['value'] as String?) ?? '';
-        return true;
-      case 'delete':
-        _secureStore.remove(args['key'] as String);
-        return true;
-      case 'containsKey':
-        return _secureStore.containsKey(args['key'] as String);
-      case 'readAll':
-        return Map<String, String>.from(_secureStore);
-      case 'deleteAll':
-        _secureStore.clear();
-        return true;
-      default:
-        return null;
-    }
-  });
+        final args = call.arguments as Map<Object?, Object?>;
+        switch (call.method) {
+          case 'read':
+            return _secureStore[args['key'] as String];
+          case 'write':
+            _secureStore[args['key'] as String] =
+                (args['value'] as String?) ?? '';
+            return true;
+          case 'delete':
+            _secureStore.remove(args['key'] as String);
+            return true;
+          case 'containsKey':
+            return _secureStore.containsKey(args['key'] as String);
+          case 'readAll':
+            return Map<String, String>.from(_secureStore);
+          case 'deleteAll':
+            _secureStore.clear();
+            return true;
+          default:
+            return null;
+        }
+      });
 }
 
 /// 把 SharedPreferences 复位到空状态，保证用例间隔离。
@@ -165,13 +173,17 @@ void main() {
         safeServerUrl: 'http://1.2.3.4:2025',
         safeServerToken: 'other',
       );
-      expect(webdav.connectionSignature,
-          equals('webdav|https://dav.example.com/|alice|${pwd.hashCode}'));
+      expect(
+        webdav.connectionSignature,
+        equals('webdav|https://dav.example.com/|alice|${pwd.hashCode}'),
+      );
 
       // 改 URL → 指纹变化
-      final changed = webdav.copyWith(
-          webdavUrl: 'https://dav2.example.com/');
-      expect(changed.connectionSignature, isNot(equals(webdav.connectionSignature)));
+      final changed = webdav.copyWith(webdavUrl: 'https://dav2.example.com/');
+      expect(
+        changed.connectionSignature,
+        isNot(equals(webdav.connectionSignature)),
+      );
 
       // 改 safeServer 字段不应影响 webdav 指纹
       final sameSig = webdav.copyWith(safeServerToken: 'changed');
@@ -207,8 +219,10 @@ void main() {
       expect(restored.webdavUsername, equals('alice'));
       expect(restored.webdavPassword, equals('secret'));
       // 再切回 webdav 时，原配置仍在
-      expect(restored.copyWith(type: SyncBackendType.webdav).isComplete,
-          isTrue);
+      expect(
+        restored.copyWith(type: SyncBackendType.webdav).isComplete,
+        isTrue,
+      );
     });
   });
 
@@ -229,8 +243,7 @@ void main() {
       await SyncConfig.setWebdavUrl('https://dav.example.com/dav/');
       await SyncConfig.setWebdavUsername('alice');
       // 注意：未写入 sync_enabled 键
-      expect(SyncConfig.isSyncEnabled, isTrue,
-          reason: '旧版本升级：后端已配置应推断为同步开启');
+      expect(SyncConfig.isSyncEnabled, isTrue, reason: '旧版本升级：后端已配置应推断为同步开启');
       expect(SyncConfig.hasBackendConfig, isTrue);
       expect(SyncConfig.isSyncReady, isTrue);
     });
@@ -244,18 +257,26 @@ void main() {
       await SyncConfig.setSyncEnabled(false);
       expect(SyncConfig.isSyncEnabled, isFalse);
       expect(SyncConfig.hasBackendConfig, isTrue);
-      expect(SyncConfig.isSyncReady, isFalse,
-          reason: '总开关关闭后无论后端多完整都不应就绪');
+      expect(SyncConfig.isSyncReady, isFalse, reason: '总开关关闭后无论后端多完整都不应就绪');
     });
 
     test('displayNameOf 覆盖全部类型', () {
-      expect(SyncConfig.displayNameOf(SyncBackendType.none),
-          equals('Not configured'));
-      expect(SyncConfig.displayNameOf(SyncBackendType.localFs),
-          equals('Local folder'));
-      expect(SyncConfig.displayNameOf(SyncBackendType.webdav), equals('WebDAV'));
-      expect(SyncConfig.displayNameOf(SyncBackendType.safeServer),
-          equals('SafeServer'));
+      expect(
+        SyncConfig.displayNameOf(SyncBackendType.none),
+        equals('Not configured'),
+      );
+      expect(
+        SyncConfig.displayNameOf(SyncBackendType.localFs),
+        equals('Local folder'),
+      );
+      expect(
+        SyncConfig.displayNameOf(SyncBackendType.webdav),
+        equals('WebDAV'),
+      );
+      expect(
+        SyncConfig.displayNameOf(SyncBackendType.safeServer),
+        equals('SafeServer'),
+      );
     });
   });
 
@@ -267,8 +288,7 @@ void main() {
           type: SyncBackendType.localFs,
           localFsPath: dir.path,
         );
-        final result =
-            await SyncService.instance.testBackendConfig(draft);
+        final result = await SyncService.instance.testBackendConfig(draft);
         expect(result.success, isTrue, reason: result.error ?? '未知错误');
         // 临时目录应已被 init 创建
         expect(await dir.exists(), isTrue);

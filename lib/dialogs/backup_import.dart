@@ -18,11 +18,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/models/file_handler.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -30,10 +30,7 @@ import 'package:safenotes/widgets/shad_dialog.dart';
 class FileImportDialog extends StatelessWidget {
   final VoidCallback callback;
 
-  const FileImportDialog({
-    super.key,
-    required this.callback,
-  });
+  const FileImportDialog({super.key, required this.callback});
 
   @override
   Widget build(BuildContext context) {
@@ -54,11 +51,7 @@ class FileImportDialog extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: kDialogMaxWidth),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                _title(),
-                _body(),
-                _buildButtons(),
-              ],
+              children: [_title(), _body(), _buildButtons()],
             ),
           ),
         ),
@@ -71,10 +64,7 @@ class FileImportDialog extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerLeft,
-      child: Text(
-        title,
-        style: dialogHeadTextStyle,
-      ),
+      child: Text(title, style: dialogHeadTextStyle),
     );
   }
 
@@ -88,10 +78,7 @@ class FileImportDialog extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(top: topSpacing),
-        child: Text(
-          cautionMessage,
-          style: dialogBodyTextStyle,
-        ),
+        child: Text(cautionMessage, style: dialogBodyTextStyle),
       ),
     );
   }
@@ -109,8 +96,10 @@ class FileImportDialog extends StatelessWidget {
   }
 }
 
-Future<void> showImportDialog(BuildContext context,
-    {VoidCallback? homeRefresh}) async {
+Future<void> showImportDialog(
+  BuildContext context, {
+  VoidCallback? homeRefresh,
+}) async {
   return showDialog(
     context: context,
     barrierDismissible: true,
@@ -120,8 +109,9 @@ Future<void> showImportDialog(BuildContext context,
           Navigator.of(contextChild).pop();
           // 用户从导入对话框确认，开始选择备份文件
           Log.backup.i('用户触发导入备份：开始选择备份文件');
-          String? snackMessage =
-              await FileHandler().selectFileAndImport(context);
+          String? snackMessage = await FileHandler().selectFileAndImport(
+            context,
+          );
           if (homeRefresh != null) homeRefresh();
 
           // TODO: refactor without using BuildContexts across async gap

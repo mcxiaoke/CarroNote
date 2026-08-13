@@ -65,7 +65,8 @@ void validate(List<dynamic> data) {
       final m = fullHexRe.firstMatch(raw);
       if (m == null) {
         throw FormatException(
-            "${group['name']}/${color['name']} 色值格式非法: $raw（须为 #RRGGBB）");
+          "${group['name']}/${color['name']} 色值格式非法: $raw（须为 #RRGGBB）",
+        );
       }
       final hex6 = m.group(1)!.toUpperCase();
       if (!seenColors.add(hex6)) {
@@ -206,12 +207,14 @@ Future<int> main() async {
 
   var total = 0;
   for (final g in data) {
-    total += ((g as Map<String, dynamic>)['colors'] as List<dynamic>? ??
-            <dynamic>[])
-        .length;
+    total +=
+        ((g as Map<String, dynamic>)['colors'] as List<dynamic>? ?? <dynamic>[])
+            .length;
   }
-  stdout.writeln('[theme_seeds] 分组=${data.length} 颜色=$total '
-      '首组=${(data[0] as Map<String, dynamic>)['name']} '
-      '默认色=${((data[0] as Map<String, dynamic>)['colors'] as List)[0]}');
+  stdout.writeln(
+    '[theme_seeds] 分组=${data.length} 颜色=$total '
+    '首组=${(data[0] as Map<String, dynamic>)['name']} '
+    '默认色=${((data[0] as Map<String, dynamic>)['colors'] as List)[0]}',
+  );
   return 0;
 }

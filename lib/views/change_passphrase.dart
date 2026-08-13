@@ -17,16 +17,16 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
@@ -313,7 +313,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // keyring 为 null 说明未登录或状态异常,中止
         Log.auth.e('改密码中止：Keyring 未初始化（未登录或状态异常）');
         if (mounted) {
-          showSnackBarMessage(context, 'Keyring not initialized. Please log in again.'.tr());
+          showSnackBarMessage(
+            context,
+            'Keyring not initialized. Please log in again.'.tr(),
+          );
         }
         return;
       }
@@ -333,8 +336,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 其他异常(简化方案:失败必须中止)
         Log.auth.e('改密码中止：校验旧密码时发生异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(context, 'Failed to verify old passphrase: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          showSnackBarMessage(
+            context,
+            'Failed to verify old passphrase: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         }
         return;
       }
@@ -368,8 +375,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
         Log.auth.e('改密码失败：持久化新 keyring 时异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(context, 'Failed to change passphrase: {error}'
-              .tr(namedArgs: {'error': '$e'}));
+          showSnackBarMessage(
+            context,
+            'Failed to change passphrase: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
         }
         return;
       }
@@ -424,9 +435,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         title: 'Backup Failed'.tr(),
         content: errMsg != null
             ? 'Local backup write failed before passphrase change: {error}\n\nContinue changing the passphrase anyway?'
-                .tr(namedArgs: {'error': errMsg})
+                  .tr(namedArgs: {'error': errMsg})
             : 'Local backup write failed before passphrase change. It is recommended to fix the backup issue first.\n\nContinue changing the passphrase anyway?'
-                .tr(),
+                  .tr(),
         confirmText: 'Continue Changing Passphrase'.tr(),
         cancelText: 'Cancel'.tr(),
       );
@@ -489,17 +500,19 @@ class ChangePassphraseState extends State<ChangePassphrase> {
             return ShadDialog(
               title: Text(title),
               actions: [
-                shadDialogActionBar(actions: [
-                  ShadDialogAction(
-                    label: cancelText,
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                  ),
-                  ShadDialogAction(
-                    label: confirmText,
-                    primary: true,
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                  ),
-                ]),
+                shadDialogActionBar(
+                  actions: [
+                    ShadDialogAction(
+                      label: cancelText,
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                    ),
+                    ShadDialogAction(
+                      label: confirmText,
+                      primary: true,
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                    ),
+                  ],
+                ),
               ],
               child: Text(content),
             );

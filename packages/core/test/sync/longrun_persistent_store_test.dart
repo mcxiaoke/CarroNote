@@ -61,10 +61,7 @@ const String kSeedVaultRel = 'temp/safenotes-vault';
 
 /// 真实数据集的候选密码（最初始 safe-a-2026 → 改密 safe-a-2026aaa →
 /// safe-a-2026bbb，**当前密码放首位**）。
-const List<String> kSeedVaultPasswords = [
-  'hello.1234',
-  'hello.123',
-];
+const List<String> kSeedVaultPasswords = ['hello.1234', 'hello.123'];
 
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];
@@ -131,27 +128,27 @@ class LongRunState {
   List<Map<String, Object?>> history;
 
   static LongRunState fresh() => LongRunState(
-        generation: 0,
-        password: kInitialPassword,
-        vaultId: '',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        notes: <String, NoteFact>{},
-        deleted: <String>{},
-        journalSeq: <String, int>{},
-        history: <Map<String, Object?>>[],
-      );
+    generation: 0,
+    password: kInitialPassword,
+    vaultId: '',
+    createdAt: DateTime.now().millisecondsSinceEpoch,
+    notes: <String, NoteFact>{},
+    deleted: <String>{},
+    journalSeq: <String, int>{},
+    history: <Map<String, Object?>>[],
+  );
 
   Map<String, Object?> toJson() => {
-        'schema': kStateSchema,
-        'generation': generation,
-        'password': password,
-        'vaultId': vaultId,
-        'createdAt': createdAt,
-        'notes': notes.map((k, v) => MapEntry(k, v.toJson())),
-        'deleted': deleted.toList()..sort(),
-        'journalSeq': journalSeq,
-        'history': history,
-      };
+    'schema': kStateSchema,
+    'generation': generation,
+    'password': password,
+    'vaultId': vaultId,
+    'createdAt': createdAt,
+    'notes': notes.map((k, v) => MapEntry(k, v.toJson())),
+    'deleted': deleted.toList()..sort(),
+    'journalSeq': journalSeq,
+    'history': history,
+  };
 
   /// 解析账本；结构版本不符或字段损坏时返回 null（调用方视为需要重置）
   static LongRunState? tryParse(String raw) {
@@ -165,12 +162,15 @@ class LongRunState {
         vaultId: m['vaultId'] as String,
         createdAt: m['createdAt'] as int,
         notes: notesRaw.map(
-          (k, v) => MapEntry(k, NoteFact.fromJson((v as Map).cast<String, dynamic>())),
+          (k, v) => MapEntry(
+            k,
+            NoteFact.fromJson((v as Map).cast<String, dynamic>()),
+          ),
         ),
         deleted: (m['deleted'] as List).map((e) => e as String).toSet(),
         journalSeq: (m['journalSeq'] as Map).cast<String, dynamic>().map(
-              (k, v) => MapEntry(k, v as int),
-            ),
+          (k, v) => MapEntry(k, v as int),
+        ),
         history: (m['history'] as List)
             .map((e) => (e as Map).cast<String, Object?>())
             .toList(),
@@ -316,8 +316,10 @@ class LongRunStore {
     }
     if (workingPw == null) {
       // ignore: avoid_print
-      print('WARN: 无法用候选密码 $kSeedVaultPasswords 打开真实 vault，'
-          '回退为从零创建空库');
+      print(
+        'WARN: 无法用候选密码 $kSeedVaultPasswords 打开真实 vault，'
+        '回退为从零创建空库',
+      );
       return false;
     }
     state.password = workingPw;
@@ -347,9 +349,11 @@ class LongRunStore {
     }
 
     // ignore: avoid_print
-    print('种子数据集（真实流程）: 活跃 ${state.notes.length} 条 / '
-        '墓碑 ${state.deleted.length} 条 / keyVersion=${header.keyVersion} '
-        '/ 密码=$workingPw');
+    print(
+      '种子数据集（真实流程）: 活跃 ${state.notes.length} 条 / '
+      '墓碑 ${state.deleted.length} 条 / keyVersion=${header.keyVersion} '
+      '/ 密码=$workingPw',
+    );
     return true;
   }
 
@@ -454,10 +458,10 @@ class LongRunStore {
 
   // version 3：跨运行复用的文件库统一按当前 schema（含 synced_hash）创建。
   Future<Database> _openDb(String path) => openDatabase(
-        path,
-        version: 3,
-        onCreate: NotesDatabase.createDBForTesting,
-      );
+    path,
+    version: 3,
+    onCreate: NotesDatabase.createDBForTesting,
+  );
 
   Future<Keyring> _unlockFromRemote(String pw) async {
     final resp = await backend.getManifest();
@@ -508,7 +512,11 @@ class LongRunStore {
     return c.engine.sync();
   }
 
-  Future<SafeNote> createNote(LongRunClient c, String title, String desc) async {
+  Future<SafeNote> createNote(
+    LongRunClient c,
+    String title,
+    String desc,
+  ) async {
     activate(c);
     final note = SafeNote.create(title: title, description: desc);
     await NotesDatabase.instance.storeNote(note);
@@ -556,9 +564,9 @@ class LongRunStore {
 
   /// 落盘账本 + 关闭资源（**只关不删**，下次运行继续用）
   Future<void> persistAndClose() async {
-    await File(statePath).writeAsString(
-      const JsonEncoder.withIndent('  ').convert(state.toJson()),
-    );
+    await File(
+      statePath,
+    ).writeAsString(const JsonEncoder.withIndent('  ').convert(state.toJson()));
     for (final c in clients) {
       try {
         await c.journal.close();
@@ -595,10 +603,14 @@ void main() {
     // ignore: avoid_print
     print('存储目录 : ${store.rootPath}');
     // ignore: avoid_print
-    print('起始代数 : ${store.state.generation}'
-        '${store.freshlyCreated ? "（全新创建）" : "（复用既有数据）"}');
+    print(
+      '起始代数 : ${store.state.generation}'
+      '${store.freshlyCreated ? "（全新创建）" : "（复用既有数据）"}',
+    );
     // ignore: avoid_print
-    print('账本笔记 : 活跃 ${store.state.notes.length} 条 / 墓碑 ${store.state.deleted.length} 条');
+    print(
+      '账本笔记 : 活跃 ${store.state.notes.length} 条 / 墓碑 ${store.state.deleted.length} 条',
+    );
 
     try {
       // 复用既有数据时：先做**冷启动对账**，吸收「进程被杀 / 崩溃 / 断电」等极端故障
@@ -652,15 +664,24 @@ Future<void> _assertColdStartIntegrity(LongRunStore store) async {
       final uuid = entry.key;
       final fact = entry.value;
       final n = live[uuid];
-      expect(n, isNotNull,
-          reason: '冷启动自检失败：客户端 ${c.id} 丢失历史笔记 $uuid '
-              '(title=${fact.title})。上次运行结束时它还在账本里。');
-      expect(n!.title, fact.title,
-          reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 标题被改动');
-      expect(n.contentHash, fact.hash,
-          reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 内容哈希与账本不符（静默腐坏）');
-      expect(SafeNote.computeHash(n.title, n.description), n.contentHash,
-          reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 明文与自身哈希不自洽');
+      expect(
+        n,
+        isNotNull,
+        reason:
+            '冷启动自检失败：客户端 ${c.id} 丢失历史笔记 $uuid '
+            '(title=${fact.title})。上次运行结束时它还在账本里。',
+      );
+      expect(n!.title, fact.title, reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 标题被改动');
+      expect(
+        n.contentHash,
+        fact.hash,
+        reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 内容哈希与账本不符（静默腐坏）',
+      );
+      expect(
+        SafeNote.computeHash(n.title, n.description),
+        n.contentHash,
+        reason: '冷启动自检失败：客户端 ${c.id} 的 $uuid 明文与自身哈希不自洽',
+      );
     }
   }
 }
@@ -682,8 +703,10 @@ Future<void> _assertColdStartIntegrity(LongRunStore store) async {
 /// 无从预知这些新 uuid。补登它们，才不会把保数据机制误判成幽灵数据。
 ///
 /// 正常（无崩溃、无冲突）运行时本地与账本一致，本函数是无操作，不影响任何既有不变量。
-Future<void> _reconcileLedgerWithLocal(LongRunStore store,
-    {required String scene}) async {
+Future<void> _reconcileLedgerWithLocal(
+  LongRunStore store, {
+  required String scene,
+}) async {
   var patched = 0;
   final absorbed = <String>[];
   for (final c in store.clients) {
@@ -709,8 +732,10 @@ Future<void> _reconcileLedgerWithLocal(LongRunStore store,
   }
   if (patched > 0) {
     // ignore: avoid_print
-    print('$scene : 吸收 $patched 条账本外记录（账本已自愈，数据一条未删）'
-        '${absorbed.isEmpty ? "" : " → $absorbed"}');
+    print(
+      '$scene : 吸收 $patched 条账本外记录（账本已自愈，数据一条未删）'
+      '${absorbed.isEmpty ? "" : " → $absorbed"}',
+    );
   }
 }
 
@@ -787,8 +812,11 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
     for (final cl in store.clients) {
       final before = cl.journal.nextSeq;
       await store.restart(cl);
-      expect(cl.journal.nextSeq, greaterThanOrEqualTo(before),
-          reason: '重启后 ${cl.id} 的 journal seq 回退了，远端副本时序会错乱');
+      expect(
+        cl.journal.nextSeq,
+        greaterThanOrEqualTo(before),
+        reason: '重启后 ${cl.id} 的 journal seq 回退了，远端副本时序会错乱',
+      );
     }
   }
 
@@ -852,14 +880,16 @@ Future<void> _runGeneration(LongRunStore store, int gen) async {
   }
 
   // ignore: avoid_print
-  print('gen $gen: 活跃 ${metrics['live']} / 墓碑 ${metrics['tombstones']} / '
-      'blob ${metrics['blobs']} / 隔离 ${metrics['quarantine']} / '
-      'journal ${metrics['journalTotal']} / DB ${metrics['dbKB']}KB'
-      '${editedUuids.isNotEmpty ? " / 本代编辑 ${editedUuids.length} 条" : ""}'
-      '${created.isNotEmpty ? " / 本代新建 ${created.length} 条" : ""}'
-      '${deletedUuid != null ? " / 本代删 1 条" : ""}'
-      '${gen % 3 == 0 ? " / 本代改密" : ""}'
-      '${gen % 4 == 0 ? " / 本代重启" : ""}');
+  print(
+    'gen $gen: 活跃 ${metrics['live']} / 墓碑 ${metrics['tombstones']} / '
+    'blob ${metrics['blobs']} / 隔离 ${metrics['quarantine']} / '
+    'journal ${metrics['journalTotal']} / DB ${metrics['dbKB']}KB'
+    '${editedUuids.isNotEmpty ? " / 本代编辑 ${editedUuids.length} 条" : ""}'
+    '${created.isNotEmpty ? " / 本代新建 ${created.length} 条" : ""}'
+    '${deletedUuid != null ? " / 本代删 1 条" : ""}'
+    '${gen % 3 == 0 ? " / 本代改密" : ""}'
+    '${gen % 4 == 0 ? " / 本代重启" : ""}',
+  );
 }
 
 // ──────────────────────────────────────────────
@@ -876,27 +906,45 @@ Future<void> _assertInvariants(LongRunStore store, int gen) async {
     final shape = {for (final e in live.entries) e.key: e.value.contentHash};
 
     reference ??= shape;
-    expect(shape, reference,
-        reason: 'gen $gen I1 收敛失败：客户端 ${c.id} 与其他端 live 集合不一致');
+    expect(
+      shape,
+      reference,
+      reason: 'gen $gen I1 收敛失败：客户端 ${c.id} 与其他端 live 集合不一致',
+    );
 
     for (final entry in expectedLive.entries) {
       final n = live[entry.key];
-      expect(n, isNotNull,
-          reason: 'gen $gen I2 数据丢失：客户端 ${c.id} 少了 ${entry.key} '
-              '(title=${entry.value.title})');
-      expect(n!.contentHash, entry.value.hash,
-          reason: 'gen $gen I2 内容不符：客户端 ${c.id} 的 ${entry.key} '
-              'hash 与账本不一致');
+      expect(
+        n,
+        isNotNull,
+        reason:
+            'gen $gen I2 数据丢失：客户端 ${c.id} 少了 ${entry.key} '
+            '(title=${entry.value.title})',
+      );
+      expect(
+        n!.contentHash,
+        entry.value.hash,
+        reason:
+            'gen $gen I2 内容不符：客户端 ${c.id} 的 ${entry.key} '
+            'hash 与账本不一致',
+      );
       // I8：明文与哈希自洽（抓静默腐坏）
-      expect(SafeNote.computeHash(n.title, n.description), n.contentHash,
-          reason: 'gen $gen I8 静默腐坏：客户端 ${c.id} 的 ${entry.key} '
-              '明文与 contentHash 不自洽');
+      expect(
+        SafeNote.computeHash(n.title, n.description),
+        n.contentHash,
+        reason:
+            'gen $gen I8 静默腐坏：客户端 ${c.id} 的 ${entry.key} '
+            '明文与 contentHash 不自洽',
+      );
     }
 
     // 反向：本端不该有账本之外的活跃笔记（幽灵数据/删除未生效）
     for (final uuid in live.keys) {
-      expect(expectedLive.containsKey(uuid), isTrue,
-          reason: 'gen $gen 幽灵数据：客户端 ${c.id} 出现账本外的活跃笔记 $uuid');
+      expect(
+        expectedLive.containsKey(uuid),
+        isTrue,
+        reason: 'gen $gen 幽灵数据：客户端 ${c.id} 出现账本外的活跃笔记 $uuid',
+      );
     }
   }
 
@@ -905,20 +953,29 @@ Future<void> _assertInvariants(LongRunStore store, int gen) async {
   // I3：墓碑长期保留（30 天内不许 GC 掉，更不许静默消失）
   for (final uuid in store.state.deleted) {
     final item = manifest.items[uuid];
-    expect(item, isNotNull,
-        reason: 'gen $gen I3 墓碑丢失：$uuid 从 manifest 中消失，'
-            '其他端将永远收不到这条删除');
-    expect(item!.deleted, isTrue,
-        reason: 'gen $gen I3 墓碑复活：$uuid 的 deleted 标记被抹掉');
+    expect(
+      item,
+      isNotNull,
+      reason:
+          'gen $gen I3 墓碑丢失：$uuid 从 manifest 中消失，'
+          '其他端将永远收不到这条删除',
+    );
+    expect(
+      item!.deleted,
+      isTrue,
+      reason: 'gen $gen I3 墓碑复活：$uuid 的 deleted 标记被抹掉',
+    );
   }
 
   // manifest 应覆盖账本全部活跃笔记
   for (final uuid in expectedLive.keys) {
     final item = manifest.items[uuid];
-    expect(item, isNotNull,
-        reason: 'gen $gen manifest 缺失活跃条目 $uuid');
-    expect(item!.deleted, isFalse,
-        reason: 'gen $gen 活跃笔记 $uuid 在 manifest 中被标记为已删除');
+    expect(item, isNotNull, reason: 'gen $gen manifest 缺失活跃条目 $uuid');
+    expect(
+      item!.deleted,
+      isFalse,
+      reason: 'gen $gen 活跃笔记 $uuid 在 manifest 中被标记为已删除',
+    );
   }
 
   // I4：引用完整——每个非墓碑条目的 blob 必须真实存在
@@ -927,37 +984,59 @@ Future<void> _assertInvariants(LongRunStore store, int gen) async {
       if (!it.deleted) it.hash,
   };
   final blobFiles = store.blobsDir.existsSync()
-      ? store.blobsDir.listSync().whereType<File>().map((f) => p.basename(f.path)).toSet()
+      ? store.blobsDir
+            .listSync()
+            .whereType<File>()
+            .map((f) => p.basename(f.path))
+            .toSet()
       : <String>{};
   for (final h in referenced) {
-    expect(blobFiles.contains(h), isTrue,
-        reason: 'gen $gen I4 悬挂引用：manifest 引用了不存在的 blob $h');
+    expect(
+      blobFiles.contains(h),
+      isTrue,
+      reason: 'gen $gen I4 悬挂引用：manifest 引用了不存在的 blob $h',
+    );
   }
 
   // I5：GC 有效——blobs/ 不该堆积孤儿（老版本 blob 应被隔离走）
-  expect(blobFiles.length, referenced.length,
-      reason: 'gen $gen I5 孤儿堆积：blobs/ 有 ${blobFiles.length} 个文件，'
-          '但 manifest 只引用 ${referenced.length} 个。'
-          '多出来的：${blobFiles.difference(referenced).take(5).toList()}');
+  expect(
+    blobFiles.length,
+    referenced.length,
+    reason:
+        'gen $gen I5 孤儿堆积：blobs/ 有 ${blobFiles.length} 个文件，'
+        '但 manifest 只引用 ${referenced.length} 个。'
+        '多出来的：${blobFiles.difference(referenced).take(5).toList()}',
+  );
 
   // I6：journal 水位跨运行不回退
   for (final c in store.clients) {
     final prev = store.state.journalSeq[c.id];
     if (prev != null) {
-      expect(c.journal.nextSeq, greaterThanOrEqualTo(prev),
-          reason: 'gen $gen I6 水位回退：${c.id} 的 journal nextSeq '
-              '从 $prev 退到 ${c.journal.nextSeq}');
+      expect(
+        c.journal.nextSeq,
+        greaterThanOrEqualTo(prev),
+        reason:
+            'gen $gen I6 水位回退：${c.id} 的 journal nextSeq '
+            '从 $prev 退到 ${c.journal.nextSeq}',
+      );
     }
   }
 
   // I7：本地 keyring 与远端 header 的密钥纪元一致
   final header = await store.remoteHeader();
   for (final c in store.clients) {
-    expect(c.keyring.keyVersion, header.keyVersion,
-        reason: 'gen $gen I7 纪元漂移：${c.id} keyVersion=${c.keyring.keyVersion}，'
-            '远端=${header.keyVersion}');
-    expect(c.keyring.vaultId, header.vaultId,
-        reason: 'gen $gen I7 vaultId 漂移：${c.id}');
+    expect(
+      c.keyring.keyVersion,
+      header.keyVersion,
+      reason:
+          'gen $gen I7 纪元漂移：${c.id} keyVersion=${c.keyring.keyVersion}，'
+          '远端=${header.keyVersion}',
+    );
+    expect(
+      c.keyring.vaultId,
+      header.vaultId,
+      reason: 'gen $gen I7 vaultId 漂移：${c.id}',
+    );
   }
 
   // I9：隔离区有界（purge 路径必须持续生效）
@@ -968,17 +1047,24 @@ Future<void> _assertInvariants(LongRunStore store, int gen) async {
   // 若未来改动破坏 purge 路径（不调 purgeOrphans / 实现错误 / 保留期误用），
   // 隔离区会像 345 代审查里那样以每代 ~1.5 条线性增长，几十代内即突破上界红灯。
   final orphanCount = (await store.backend.listOrphanBlobs()).length;
-  expect(orphanCount, lessThanOrEqualTo(kQuarantineBound),
-      reason: 'gen $gen I9 隔离区膨胀：blobs-orphan 残留 $orphanCount 个 hash，'
-          '超过上界 $kQuarantineBound。purge 路径（_gcOrphanBlobs → '
-          'purgeOrphans）可能被破坏——超期隔离项未被清理，长期运行会无界膨胀。');
+  expect(
+    orphanCount,
+    lessThanOrEqualTo(kQuarantineBound),
+    reason:
+        'gen $gen I9 隔离区膨胀：blobs-orphan 残留 $orphanCount 个 hash，'
+        '超过上界 $kQuarantineBound。purge 路径（_gcOrphanBlobs → '
+        'purgeOrphans）可能被破坏——超期隔离项未被清理，长期运行会无界膨胀。',
+  );
 }
 
 // ──────────────────────────────────────────────
 // 规模指标
 // ──────────────────────────────────────────────
 
-Future<Map<String, Object?>> _collectMetrics(LongRunStore store, int gen) async {
+Future<Map<String, Object?>> _collectMetrics(
+  LongRunStore store,
+  int gen,
+) async {
   final manifest = await store.remoteManifest();
   final tombstones = manifest.items.values.where((i) => i.deleted).length;
   final blobs = store.blobsDir.existsSync()
@@ -1019,14 +1105,18 @@ void _printGrowthTable(LongRunState state) {
   print('gen   live  tomb  items  blobs  quarantine  journal   dbKB');
   for (final h in state.history.skip(max(0, state.history.length - 12))) {
     // ignore: avoid_print
-    print('${_pad(h['gen'], 5)}${_pad(h['live'], 6)}${_pad(h['tombstones'], 6)}'
-        '${_pad(h['manifestItems'], 7)}${_pad(h['blobs'], 7)}'
-        '${_pad(h['quarantine'], 12)}${_pad(h['journalTotal'], 9)}'
-        '${_pad(h['dbKB'], 7)}');
+    print(
+      '${_pad(h['gen'], 5)}${_pad(h['live'], 6)}${_pad(h['tombstones'], 6)}'
+      '${_pad(h['manifestItems'], 7)}${_pad(h['blobs'], 7)}'
+      '${_pad(h['quarantine'], 12)}${_pad(h['journalTotal'], 9)}'
+      '${_pad(h['dbKB'], 7)}',
+    );
   }
   // ignore: avoid_print
-  print('累计代数: ${state.generation}，'
-      '存储创建于 ${DateTime.fromMillisecondsSinceEpoch(state.createdAt)}');
+  print(
+    '累计代数: ${state.generation}，'
+    '存储创建于 ${DateTime.fromMillisecondsSinceEpoch(state.createdAt)}',
+  );
 }
 
 String _pad(Object? v, int w) => '$v'.padLeft(w);

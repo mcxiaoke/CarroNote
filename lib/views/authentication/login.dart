@@ -20,22 +20,22 @@ import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:after_layout/after_layout.dart';
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -330,7 +330,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _buildBiometricAuthButton(BuildContext context) {
     final bool isDesktop = isDesktopPlatform;
-    final bool enabled = PreferencesStorage.isBiometricAuthEnabled &&
+    final bool enabled =
+        PreferencesStorage.isBiometricAuthEnabled &&
         !forcePassphraseInput &&
         !_isLocked;
     return Column(
@@ -410,8 +411,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误,不扣尝试次数
           if (mounted) {
-            showSnackBarMessage(context,
-                'Unable to verify password (network unavailable). Check your connection and try again.'.tr());
+            showSnackBarMessage(
+              context,
+              'Unable to verify password (network unavailable). Check your connection and try again.'
+                  .tr(),
+            );
           }
           return;
         }
@@ -454,17 +458,19 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // 改为后台初始化：成功后再触发首次同步；失败仅记日志，由主界面
       // 同步状态 UI 展示"后端未就绪"，用户可正常使用本地笔记。
       unawaited(
-        SyncService.instance
-            .initBackend(database: NotesDatabase.instance)
-            .then((backendResult) {
-          if (!backendResult.success) {
-            Log.sync.w('登录后后端初始化失败（后台执行，不阻塞进入主界面）: '
-                '${backendResult.error}');
-          } else {
-            // 登录后执行一次初始同步,拉取远端最新数据
-            SyncService.instance.autoSync();
-          }
-        }),
+        SyncService.instance.initBackend(database: NotesDatabase.instance).then(
+          (backendResult) {
+            if (!backendResult.success) {
+              Log.sync.w(
+                '登录后后端初始化失败（后台执行，不阻塞进入主界面）: '
+                '${backendResult.error}',
+              );
+            } else {
+              // 登录后执行一次初始同步,拉取远端最新数据
+              SyncService.instance.autoSync();
+            }
+          },
+        ),
       );
     }
 
@@ -629,20 +635,22 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       builder: (dialogContext) => ShadDialog(
         title: Text('Forgot Passphrase'.tr()),
         actions: [
-          shadDialogActionBar(actions: [
-            ShadDialogAction(
-              label: 'Cancel'.tr(),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-            ShadDialogAction(
-              label: 'Reset Local Data'.tr(),
-              destructive: true,
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _confirmResetLocalData();
-              },
-            ),
-          ]),
+          shadDialogActionBar(
+            actions: [
+              ShadDialogAction(
+                label: 'Cancel'.tr(),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              ShadDialogAction(
+                label: 'Reset Local Data'.tr(),
+                destructive: true,
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _confirmResetLocalData();
+                },
+              ),
+            ],
+          ),
         ],
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -678,20 +686,22 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       builder: (dialogContext) => ShadDialog(
         title: Text('Confirm Reset'.tr()),
         actions: [
-          shadDialogActionBar(actions: [
-            ShadDialogAction(
-              label: 'Cancel'.tr(),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-            ShadDialogAction(
-              label: 'Delete Everything'.tr(),
-              destructive: true,
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _performLocalDataReset();
-              },
-            ),
-          ]),
+          shadDialogActionBar(
+            actions: [
+              ShadDialogAction(
+                label: 'Cancel'.tr(),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              ShadDialogAction(
+                label: 'Delete Everything'.tr(),
+                destructive: true,
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _performLocalDataReset();
+                },
+              ),
+            ],
+          ),
         ],
         child: Text(
           'This will permanently delete all local notes and keyring data. '
@@ -733,8 +743,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
     } on Exception catch (e) {
       if (mounted) {
-        showSnackBarMessage(context,
-            'Reset failed: {error}'.tr(namedArgs: {'error': '$e'}));
+        showSnackBarMessage(
+          context,
+          'Reset failed: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
       }
     }
   }

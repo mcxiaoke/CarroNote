@@ -14,25 +14,25 @@
 // Dart imports:
 import 'dart:convert';
 import 'dart:io';
-import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
-
-// Project imports:
-import 'package:core/core.dart';
 import 'package:media_scanner/media_scanner.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_password_input.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 
 class FileHandler {
   /// 备份导出数据源：笔记 JSON 数组（明文/加密两条路径共用，内容零差异）
@@ -55,11 +55,12 @@ class FileHandler {
   /// UI 将在导出面板上明确提示「该文件不加密，请妥善保管」。
   static Future<String> plainOutputBackupContent() async {
     final records = await loadRecordsForExport();
-    final String content =
-        BackupFileCodec.encodePlaintext(records);
+    final String content = BackupFileCodec.encodePlaintext(records);
     // 备份内容构造完成：记录条数与体积，与后续「写入到哪个路径」的日志配对
-    Log.backup.i('已生成明文备份内容: ${records.length} 条笔记, '
-        '${content.length} 字节');
+    Log.backup.i(
+      '已生成明文备份内容: ${records.length} 条笔记, '
+      '${content.length} 字节',
+    );
     return content;
   }
 
@@ -78,8 +79,10 @@ class FileHandler {
       records: records,
     );
     // 备份内容构造完成：记录条数与体积（信封 + 头开销），与后续落盘日志配对
-    Log.backup.i('已生成加密备份内容: ${records.length} 条笔记, '
-        '${content.length} 字节');
+    Log.backup.i(
+      '已生成加密备份内容: ${records.length} 条笔记, '
+      '${content.length} 字节',
+    );
     return content;
   }
 
@@ -128,7 +131,8 @@ class FileHandler {
         // ── 明文导入：无密码，直接解析（兼容旧备份与用户主动明文导出）──
         ImportEncryptionControl.setIsImportEncrypted(false);
         destroyImportCredentials();
-        plaintextNotice = 'This backup is NOT encrypted, imported as plain.'.tr();
+        plaintextNotice = 'This backup is NOT encrypted, imported as plain.'
+            .tr();
         parsedImportData = ImportParser.fromDecryptedPlaintext(
           backup.records,
           expectedTotal: backup.total,
@@ -138,8 +142,10 @@ class FileHandler {
         return "Unrecognized File!".tr();
       }
 
-      Log.backup.i('备份文件解析成功：共 ${parsedImportData.totalNotes} 条笔记，'
-          '等待用户确认导入');
+      Log.backup.i(
+        '备份文件解析成功：共 ${parsedImportData.totalNotes} 条笔记，'
+        '等待用户确认导入',
+      );
 
       bool importConfirmed = false;
       // TODO: refactor without using BuildContexts across async gap
@@ -155,14 +161,18 @@ class FileHandler {
         if (skipped > 0) {
           // 幂等去重提示：库中已存在同 uuid 的笔记被跳过，不重复导入
           final imported = parsedImportData.totalNotes - skipped;
-          Log.backup.i('导入去重提示: 导入 $imported 条, 跳过已存在 '
-              '$skipped 条');
+          Log.backup.i(
+            '导入去重提示: 导入 $imported 条, 跳过已存在 '
+            '$skipped 条',
+          );
           return '{imported} notes imported, {skipped} skipped (already exist).'
               .tr(namedArgs: {'imported': '$imported', 'skipped': '$skipped'});
         }
       } else {
-        Log.backup.i('导入取消：用户在确认对话框中放弃 '
-            '(${parsedImportData.totalNotes} 条笔记未导入)');
+        Log.backup.i(
+          '导入取消：用户在确认对话框中放弃 '
+          '(${parsedImportData.totalNotes} 条笔记未导入)',
+        );
         return "Import cancelled!".tr();
       }
     } catch (e, st) {
@@ -232,7 +242,8 @@ class FileHandler {
     return await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => ImportConfirm(importCount: totalNotes, notice: notice),
+          builder: (_) =>
+              ImportConfirm(importCount: totalNotes, notice: notice),
         ) ??
         false;
   }
@@ -246,8 +257,9 @@ class FileHandler {
       // 首选 Download/Safe Notes（有权限时）；不可用回退应用私有目录
       if (await Directory(SafeNotesConfig.androidDownloadDirectory).exists()) {
         try {
-          await Directory(SafeNotesConfig.androidBackupDirectory)
-              .create(recursive: false);
+          await Directory(
+            SafeNotesConfig.androidBackupDirectory,
+          ).create(recursive: false);
           return SafeNotesConfig.androidBackupDirectory;
         } on FileSystemException {
           // 目录创建失败回退应用文档目录（始终可写）
@@ -325,8 +337,10 @@ class FileHandler {
           PlatformFile file = result.files.first;
           if (file.size == 0) return null;
           if (file.size > maxImportBytes) {
-            Log.backup.w('导入失败：备份文件过大 ${file.size} '
-                '>(上限 $maxImportBytes 字节)');
+            Log.backup.w(
+              '导入失败：备份文件过大 ${file.size} '
+              '>(上限 $maxImportBytes 字节)',
+            );
             return "unrecognized";
           }
           path = file.path;
@@ -342,8 +356,10 @@ class FileHandler {
         if (result != null) {
           final file = result.files.single;
           if (file.size > maxImportBytes) {
-            Log.backup.w('导入失败：备份文件过大 ${file.size} '
-                '>(上限 $maxImportBytes 字节)');
+            Log.backup.w(
+              '导入失败：备份文件过大 ${file.size} '
+              '>(上限 $maxImportBytes 字节)',
+            );
             return "unrecognized";
           }
           path = file.path;
@@ -362,8 +378,10 @@ class FileHandler {
           final file = result.files.single;
           if (file.size == 0) return null;
           if (file.size > maxImportBytes) {
-            Log.backup.w('导入失败：备份文件过大 ${file.size} '
-                '>(上限 $maxImportBytes 字节)');
+            Log.backup.w(
+              '导入失败：备份文件过大 ${file.size} '
+              '>(上限 $maxImportBytes 字节)',
+            );
             return "unrecognized";
           }
           path = file.path;
@@ -388,12 +406,15 @@ class FileHandler {
     final startedAt = DateTime.now();
     // 评审 #10：整个导入放入单个事务，任一条失败整体回滚，
     // 不再出现「中途崩/错一条 → 半库数据」的脏状态。
-    final inserted =
-        await NotesDatabase.instance.storeNotesInTransaction(imported);
+    final inserted = await NotesDatabase.instance.storeNotesInTransaction(
+      imported,
+    );
     final skipped = imported.length - inserted;
     final ms = DateTime.now().difference(startedAt).inMilliseconds;
-    Log.backup.i('导入完成: 成功写入 $inserted/${imported.length} 条笔记'
-        '（跳过已存在 $skipped 条）, 耗时 ${ms}ms');
+    Log.backup.i(
+      '导入完成: 成功写入 $inserted/${imported.length} 条笔记'
+      '（跳过已存在 $skipped 条）, 耗时 ${ms}ms',
+    );
     return skipped;
   }
 }

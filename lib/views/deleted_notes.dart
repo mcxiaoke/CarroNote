@@ -8,17 +8,23 @@
  *     鐪熸姘镐箙娓呯悊闇€瑕?杩滅杩囨湡澧撶娓呯悊"鏈哄埗锛堟殏鏈疄鐜帮紝鍙傝 sync_design锛? */
 
 // Flutter 瀵煎叆
+
+// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package 瀵煎叆
-import 'package:easy_localization/easy_localization.dart';
-
-// Project 瀵煎叆
+// Package imports:
 import 'package:core/core.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+// Project imports:
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
+
+// Package 瀵煎叆
+
+// Project 瀵煎叆
 
 class DeletedNotesPage extends StatefulWidget {
   const DeletedNotesPage({super.key});
@@ -54,10 +60,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Recently Deleted'.tr(),
-          style: appBarTitle,
-        ),
+        title: Text('Recently Deleted'.tr(), style: appBarTitle),
         actions: [
           if (_deletedNotes.isNotEmpty)
             IconButton(
@@ -111,8 +114,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Restored: "{title}"'
-              .tr(namedArgs: {'title': _truncateTitle(note.title)})),
+          content: Text(
+            'Restored: "{title}"'.tr(
+              namedArgs: {'title': _truncateTitle(note.title)},
+            ),
+          ),
         ),
       );
       _refresh();
@@ -128,8 +134,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Permanently deleted: "{title}"'
-              .tr(namedArgs: {'title': _truncateTitle(note.title)})),
+          content: Text(
+            'Permanently deleted: "{title}"'.tr(
+              namedArgs: {'title': _truncateTitle(note.title)},
+            ),
+          ),
         ),
       );
       _refresh();
@@ -147,23 +156,25 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
       builder: (context) => ShadDialog(
         title: Text('Clear All Deleted Notes'.tr()),
         actions: [
-          shadDialogActionBar(actions: [
-            ShadDialogAction(
-              label: 'Cancel'.tr(),
-              onPressed: () {
-                Log.ui.i('用户取消清空回收站');
-                Navigator.pop(context);
-              },
-            ),
-            ShadDialogAction(
-              label: 'Permanently Delete'.tr(),
-              destructive: true,
-              onPressed: () async {
-                Navigator.pop(context);
-                await _clearAll();
-              },
-            ),
-          ]),
+          shadDialogActionBar(
+            actions: [
+              ShadDialogAction(
+                label: 'Cancel'.tr(),
+                onPressed: () {
+                  Log.ui.i('用户取消清空回收站');
+                  Navigator.pop(context);
+                },
+              ),
+              ShadDialogAction(
+                label: 'Permanently Delete'.tr(),
+                destructive: true,
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _clearAll();
+                },
+              ),
+            ],
+          ),
         ],
         child: Text(
           'This will permanently delete {count} notes. This action cannot be undone.\n\nNote: tombstones in the remote manifest remain; these notes may be re-synced from remote on the next sync.\nTo truly clean remote tombstones, wait for the "expired tombstone cleanup" feature.'
@@ -186,8 +197,13 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     SyncService.instance.autoSync();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cleared {count} notes'
-            .tr(namedArgs: {'count': '${_deletedNotes.length}'}))),
+        SnackBar(
+          content: Text(
+            'Cleared {count} notes'.tr(
+              namedArgs: {'count': '${_deletedNotes.length}'},
+            ),
+          ),
+        ),
       );
       _refresh();
     }
@@ -219,7 +235,8 @@ class _DeletedNoteTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final deletedTime = DateTime.fromMillisecondsSinceEpoch(note.updatedAt);
-    final timeStr = '${deletedTime.month}/${deletedTime.day} '
+    final timeStr =
+        '${deletedTime.month}/${deletedTime.day} '
         '${deletedTime.hour}:${deletedTime.minute.toString().padLeft(2, '0')}';
 
     return ShadCard(
@@ -243,18 +260,12 @@ class _DeletedNoteTile extends StatelessWidget {
               note.description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 4),
             Text(
               'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey.shade500,
-              ),
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
             ),
           ],
         ),
@@ -283,8 +294,10 @@ class _DeletedNoteTile extends StatelessWidget {
               value: 'delete',
               child: ListTile(
                 leading: Icon(Icons.delete_forever, color: Colors.red),
-                title: Text('Permanently Delete'.tr(),
-                    style: TextStyle(color: Colors.red)),
+                title: Text(
+                  'Permanently Delete'.tr(),
+                  style: TextStyle(color: Colors.red),
+                ),
                 dense: true,
               ),
             ),
@@ -302,23 +315,30 @@ class _DeletedNoteTile extends StatelessWidget {
       builder: (context) => ShadDialog(
         title: Text('Permanently Delete'.tr()),
         actions: [
-          shadDialogActionBar(actions: [
-            ShadDialogAction(
-              label: 'Cancel'.tr(),
-              onPressed: () => Navigator.pop(context),
-            ),
-            ShadDialogAction(
-              label: 'Permanently Delete'.tr(),
-              destructive: true,
-              onPressed: () {
-                Navigator.pop(context);
-                onPermanentDelete();
-              },
-            ),
-          ]),
+          shadDialogActionBar(
+            actions: [
+              ShadDialogAction(
+                label: 'Cancel'.tr(),
+                onPressed: () => Navigator.pop(context),
+              ),
+              ShadDialogAction(
+                label: 'Permanently Delete'.tr(),
+                destructive: true,
+                onPressed: () {
+                  Navigator.pop(context);
+                  onPermanentDelete();
+                },
+              ),
+            ],
+          ),
         ],
-        child: Text('Permanently delete "{title}"? This cannot be undone.'
-            .tr(namedArgs: {'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title})),
+        child: Text(
+          'Permanently delete "{title}"? This cannot be undone.'.tr(
+            namedArgs: {
+              'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title,
+            },
+          ),
+        ),
       ),
     );
   }

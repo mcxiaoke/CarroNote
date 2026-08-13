@@ -18,10 +18,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/views/authentication/login.dart';
 import 'package:safenotes/views/authentication/set_passphrase.dart';
 
@@ -50,8 +50,10 @@ class AuthWall extends StatelessWidget {
     // 简化方案:用 Keyring.isInitialized 判断路由(替代 passPhraseHash)
     // AppBootState.vaultInitialized 在 main() 预初始化时填充
     final bool initialized = AppBootState.vaultInitialized == true;
-    Log.ui.i('启动路由决策: vaultInitialized=${AppBootState.vaultInitialized} '
-        '→ ${initialized ? "登录页(已有密钥环)" : "设置密码页(首次初始化保险库)"}');
+    Log.ui.i(
+      '启动路由决策: vaultInitialized=${AppBootState.vaultInitialized} '
+      '→ ${initialized ? "登录页(已有密钥环)" : "设置密码页(首次初始化保险库)"}',
+    );
     return initialized
         ? EncryptionPhraseLoginPage(
             sessionStream: sessionStateStream,

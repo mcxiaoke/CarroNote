@@ -30,7 +30,6 @@ import 'package:zxcvbnm/zxcvbnm.dart';
 ///
 /// 归一化公式：normalized = (score + 1) / 5，将 [0,4] 映射到 [0.2, 1.0]
 double estimateBruteforceStrength(String passphrase) {
-
   // 使用英语字典（包含常见密码、常见人名、Wikipedia 常用词）
   final zxcvbnm = Zxcvbnm(dictionaries: en.dictionaries);
   final result = zxcvbnm(passphrase);

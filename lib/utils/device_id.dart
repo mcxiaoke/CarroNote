@@ -21,11 +21,17 @@
  */
 
 // Dart 原生导入
+
+// Dart imports:
 import 'dart:io' show Platform;
+
+// Package imports:
+import 'package:device_info_plus/device_info_plus.dart';
+
+// Project imports:
 import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入
-import 'package:device_info_plus/device_info_plus.dart';
 
 /// 设备 ID 提供者
 ///

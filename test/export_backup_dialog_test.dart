@@ -19,7 +19,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Project imports:
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/shad_theme.dart';
-
 import 'test_helpers.dart';
 
 /// widget 测试的 asset bundle 并不提供项目翻译文件，这里改用 rootBundle.loadString

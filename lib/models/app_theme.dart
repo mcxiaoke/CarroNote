@@ -84,7 +84,11 @@ class AppThemes {
       useMaterial3: true,
       // 组件级微调：统一圆角，桌面端更协调（M3 默认按钮/输入/卡片圆角各异）。
       // 对应原 flex_color_scheme 的 FlexSubThemesData(defaultRadius: 8)。
-      cardTheme: const CardThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8)))),
+      cardTheme: const CardThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+      ),
       textTheme: uiText,
       primaryTextTheme: uiText,
     );
@@ -101,10 +105,7 @@ class AppThemes {
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
       textStyle: WidgetStatePropertyAll(
-        TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
+        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
     );
     final ButtonStyle textBtn = ButtonStyle(
@@ -112,12 +113,11 @@ class AppThemes {
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
-      textStyle: WidgetStatePropertyAll(
-        TextStyle(fontSize: 16),
-      ),
+      textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 16)),
     );
-    final OutlineInputBorder inputBorder =
-        OutlineInputBorder(borderRadius: BorderRadius.circular(radius));
+    final OutlineInputBorder inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(radius),
+    );
 
     return base.copyWith(
       // 页面背景用 M3 的 surfaceContainerLow（亮色 #f3f3fa / 暗色 #191c20）：

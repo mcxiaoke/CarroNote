@@ -13,21 +13,29 @@
  */
 
 // Dart 导入
+
+// Dart imports:
 import 'dart:async';
 import 'dart:io';
 
-// Flutter 导入
+// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Package 导入
+// Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 
-// Project 导入
-import 'package:core/core.dart';
-import 'package:safenotes/sync/sync_service.dart';
+// Project imports:
 import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
+
+// Flutter 导入
+
+// Package 导入
+
+// Project 导入
 
 class SyncDiagnosticsPage extends StatefulWidget {
   const SyncDiagnosticsPage({super.key});
@@ -106,7 +114,10 @@ class _StatusTab extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Diagnostics Snapshot'.tr(), style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Diagnostics Snapshot'.tr(),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             Row(
               children: [
                 IconButton(
@@ -129,11 +140,18 @@ class _StatusTab extends StatelessWidget {
           _KV('Backend Ready'.tr(), snapshot.backendReady.toString()),
           _KV('Last Sync'.tr(), snapshot.lastSyncTime?.toString() ?? 'N/A'),
           if (snapshot.errorMessage != null)
-            _KV('Error Message'.tr(), snapshot.errorMessage!, color: Colors.red),
+            _KV(
+              'Error Message'.tr(),
+              snapshot.errorMessage!,
+              color: Colors.red,
+            ),
         ]),
         _buildSection(context, 'Backend Config'.tr(), [
-          _KV('Sync Master Switch'.tr(), snapshot.syncEnabled ? 'On'.tr() : 'Off'.tr(),
-              color: snapshot.syncEnabled ? null : Colors.orange),
+          _KV(
+            'Sync Master Switch'.tr(),
+            snapshot.syncEnabled ? 'On'.tr() : 'Off'.tr(),
+            color: snapshot.syncEnabled ? null : Colors.orange,
+          ),
           _KV('Type'.tr(), snapshot.backendDisplayName),
           _KV('Runtime Type'.tr(), snapshot.backendRuntimeType ?? 'N/A'),
           _KV('providerKey', snapshot.providerKey ?? 'N/A'),
@@ -151,10 +169,14 @@ class _StatusTab extends StatelessWidget {
           _KV('Keyring ID', snapshot.vaultId ?? 'N/A'),
           _KV('keyVersion', snapshot.keyVersion?.toString() ?? 'N/A'),
           _KV('dataKeyEpoch', snapshot.dataKeyEpoch?.toString() ?? 'N/A'),
-          _KV('keyFingerprint',
-              snapshot.keyFingerprint?.substring(0, 16) ?? 'N/A'),
-          _KV('KDF',
-              '${snapshot.kdfAlgorithm ?? "N/A"} (${snapshot.kdfIterations ?? "N/A"} iterations)'),
+          _KV(
+            'keyFingerprint',
+            snapshot.keyFingerprint?.substring(0, 16) ?? 'N/A',
+          ),
+          _KV(
+            'KDF',
+            '${snapshot.kdfAlgorithm ?? "N/A"} (${snapshot.kdfIterations ?? "N/A"} iterations)',
+          ),
         ]),
         _buildSection(context, 'Device'.tr(), [
           _KV('Device ID'.tr(), snapshot.deviceId ?? 'N/A'),
@@ -178,9 +200,12 @@ class _StatusTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 16),
-        Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            )),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
         const SizedBox(height: 8),
         ...items.map((kv) => _buildKVRow(context, kv)),
       ],
@@ -195,8 +220,10 @@ class _StatusTab extends StatelessWidget {
         children: [
           SizedBox(
             width: 120,
-            child: Text(kv.key,
-                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            child: Text(
+              kv.key,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
           ),
           Expanded(
             child: SelectableText(
@@ -241,24 +268,40 @@ class _SyncResultTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Latest Sync Result'.tr(), style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Latest Sync Result'.tr(),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const Divider(),
-        _buildKVRow(context, 'Success'.tr(),
-            snapshot.lastResultSuccess!.toString(),
-            color: snapshot.lastResultSuccess! ? Colors.green : Colors.red),
-        _buildKVRow(context, 'Retry Count'.tr(), snapshot.lastResultAttempts?.toString() ?? 'N/A'),
+        _buildKVRow(
+          context,
+          'Success'.tr(),
+          snapshot.lastResultSuccess!.toString(),
+          color: snapshot.lastResultSuccess! ? Colors.green : Colors.red,
+        ),
+        _buildKVRow(
+          context,
+          'Retry Count'.tr(),
+          snapshot.lastResultAttempts?.toString() ?? 'N/A',
+        ),
         const SizedBox(height: 12),
         Text('Statistics'.tr(), style: Theme.of(context).textTheme.titleSmall),
         _buildStatGrid(context, snapshot),
         const SizedBox(height: 12),
-        _buildKVRow(context, 'Requires Relogin'.tr(),
-            snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
-            color: (snapshot.lastResultRequiresRelogin ?? false)
-                ? Colors.red
-                : null),
+        _buildKVRow(
+          context,
+          'Requires Relogin'.tr(),
+          snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
+          color: (snapshot.lastResultRequiresRelogin ?? false)
+              ? Colors.red
+              : null,
+        ),
         if (snapshot.lastResultErrorMessage != null) ...[
           const SizedBox(height: 12),
-          Text('Error Message'.tr(), style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            'Error Message'.tr(),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 4),
           Container(
             padding: const EdgeInsets.all(8),
@@ -275,15 +318,22 @@ class _SyncResultTab extends StatelessWidget {
         if (snapshot.lastResultFailedNoteUuids != null &&
             snapshot.lastResultFailedNoteUuids!.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text('Failed Notes ({count})'.tr(
-              namedArgs: {'count': '${snapshot.lastResultFailedNoteUuids!.length}'}),
-              style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            'Failed Notes ({count})'.tr(
+              namedArgs: {
+                'count': '${snapshot.lastResultFailedNoteUuids!.length}',
+              },
+            ),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 4),
           ...snapshot.lastResultFailedNoteUuids!.map(
             (uuid) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 1),
-              child: SelectableText(uuid,
-                  style: TextStyle(fontSize: 12, color: Colors.orange[700])),
+              child: SelectableText(
+                uuid,
+                style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+              ),
             ),
           ),
         ],
@@ -292,14 +342,46 @@ class _SyncResultTab extends StatelessWidget {
   }
 
   Widget _buildStatGrid(
-      BuildContext context, SyncDiagnosticsSnapshot snapshot) {
+    BuildContext context,
+    SyncDiagnosticsSnapshot snapshot,
+  ) {
     final stats = [
-      ('Upload'.tr(), snapshot.lastResultUploaded ?? 0, Icons.upload, Colors.blue),
-      ('Download'.tr(), snapshot.lastResultDownloaded ?? 0, Icons.download, Colors.green),
-      ('Delete'.tr(), snapshot.lastResultDeleted ?? 0, Icons.delete, Colors.red),
-      ('Conflicts'.tr(), snapshot.lastResultConflicts ?? 0, Icons.warning, Colors.orange),
-      ('Migrated'.tr(), snapshot.lastResultMigrated ?? 0, Icons.swap_horiz, Colors.purple),
-      ('Skipped'.tr(), snapshot.lastResultSkipped ?? 0, Icons.skip_next, Colors.grey),
+      (
+        'Upload'.tr(),
+        snapshot.lastResultUploaded ?? 0,
+        Icons.upload,
+        Colors.blue,
+      ),
+      (
+        'Download'.tr(),
+        snapshot.lastResultDownloaded ?? 0,
+        Icons.download,
+        Colors.green,
+      ),
+      (
+        'Delete'.tr(),
+        snapshot.lastResultDeleted ?? 0,
+        Icons.delete,
+        Colors.red,
+      ),
+      (
+        'Conflicts'.tr(),
+        snapshot.lastResultConflicts ?? 0,
+        Icons.warning,
+        Colors.orange,
+      ),
+      (
+        'Migrated'.tr(),
+        snapshot.lastResultMigrated ?? 0,
+        Icons.swap_horiz,
+        Colors.purple,
+      ),
+      (
+        'Skipped'.tr(),
+        snapshot.lastResultSkipped ?? 0,
+        Icons.skip_next,
+        Colors.grey,
+      ),
     ];
     // 用 LayoutBuilder + Wrap 取代固定 childAspectRatio 的 GridView：
     // 窄屏下固定宽高比会让单元格高度不足以容纳内容，导致 RenderFlex 底部溢出。
@@ -310,7 +392,7 @@ class _SyncResultTab extends StatelessWidget {
         const spacing = 8.0;
         final chipWidth =
             (constraints.maxWidth - spacing * (crossAxisCount - 1)) /
-                crossAxisCount;
+            crossAxisCount;
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
@@ -334,15 +416,21 @@ class _SyncResultTab extends StatelessWidget {
                       children: [
                         Icon(icon, size: 16, color: color),
                         const SizedBox(width: 4),
-                        Text(label, style: TextStyle(fontSize: 12, color: color)),
+                        Text(
+                          label,
+                          style: TextStyle(fontSize: 12, color: color),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text('$count',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: color)),
+                    Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -353,8 +441,12 @@ class _SyncResultTab extends StatelessWidget {
     );
   }
 
-  Widget _buildKVRow(BuildContext context, String key, String value,
-      {Color? color}) {
+  Widget _buildKVRow(
+    BuildContext context,
+    String key,
+    String value, {
+    Color? color,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -362,12 +454,16 @@ class _SyncResultTab extends StatelessWidget {
         children: [
           SizedBox(
             width: 120,
-            child: Text(key,
-                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            child: Text(
+              key,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
           ),
           Expanded(
-            child: SelectableText(value,
-                style: TextStyle(fontSize: 13, color: color)),
+            child: SelectableText(
+              value,
+              style: TextStyle(fontSize: 13, color: color),
+            ),
           ),
         ],
       ),
@@ -439,10 +535,14 @@ class _ActionsTab extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ExpansionTile(
         leading: Icon(icon, color: color),
-        title: Text(action.type,
-            style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        title: Text(
+          action.type,
+          style: TextStyle(fontWeight: FontWeight.bold, color: color),
+        ),
         subtitle: Text(
-          action.uuid.isNotEmpty ? 'uuid: ${action.uuid}' : action.message ?? '',
+          action.uuid.isNotEmpty
+              ? 'uuid: ${action.uuid}'
+              : action.message ?? '',
           style: const TextStyle(fontSize: 12),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -453,16 +553,22 @@ class _ActionsTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (action.uuid.isNotEmpty)
-                  _buildDetail('UUID', action.uuid),
-                if (action.hash != null)
-                  _buildDetail('Hash', action.hash!),
+                if (action.uuid.isNotEmpty) _buildDetail('UUID', action.uuid),
+                if (action.hash != null) _buildDetail('Hash', action.hash!),
                 if (action.message != null)
                   _buildDetail('Message'.tr(), action.message!),
                 if (action.errorLabel != null)
-                  _buildDetail('Error Type'.tr(), action.errorLabel!, color: Colors.red),
+                  _buildDetail(
+                    'Error Type'.tr(),
+                    action.errorLabel!,
+                    color: Colors.red,
+                  ),
                 if (action.errorDisplay != null)
-                  _buildDetail('Error Details'.tr(), action.errorDisplay!, color: Colors.red),
+                  _buildDetail(
+                    'Error Details'.tr(),
+                    action.errorDisplay!,
+                    color: Colors.red,
+                  ),
               ],
             ),
           ),
@@ -479,12 +585,16 @@ class _ActionsTab extends StatelessWidget {
         children: [
           SizedBox(
             width: 80,
-            child: Text(key,
-                style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            child: Text(
+              key,
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
           ),
           Expanded(
-            child: SelectableText(value,
-                style: TextStyle(fontSize: 12, color: color)),
+            child: SelectableText(
+              value,
+              style: TextStyle(fontSize: 12, color: color),
+            ),
           ),
         ],
       ),
@@ -536,7 +646,8 @@ class _LogsTabState extends State<_LogsTab> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_scrollController.hasClients) {
               _scrollController.jumpTo(
-                  _scrollController.position.maxScrollExtent);
+                _scrollController.position.maxScrollExtent,
+              );
             }
           });
         }
@@ -566,7 +677,8 @@ class _LogsTabState extends State<_LogsTab> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: Border(
-                bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3))),
+              bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
           ),
           child: Row(
             children: [
@@ -585,8 +697,12 @@ class _LogsTabState extends State<_LogsTab> {
                     value: level,
                     child: Row(
                       children: [
-                        Icon(enabled ? Icons.check_box : Icons.check_box_outline_blank,
-                            size: 18),
+                        Icon(
+                          enabled
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          size: 18,
+                        ),
                         const SizedBox(width: 8),
                         Text(_levelName(level)),
                       ],
@@ -596,9 +712,15 @@ class _LogsTabState extends State<_LogsTab> {
               ),
               // 自动滚动
               IconButton(
-                icon: Icon(_autoScroll ? Icons.vertical_align_bottom : Icons.vertical_align_top,
-                    size: 20),
-                tooltip: _autoScroll ? 'Auto-scroll: On'.tr() : 'Auto-scroll: Off'.tr(),
+                icon: Icon(
+                  _autoScroll
+                      ? Icons.vertical_align_bottom
+                      : Icons.vertical_align_top,
+                  size: 20,
+                ),
+                tooltip: _autoScroll
+                    ? 'Auto-scroll: On'.tr()
+                    : 'Auto-scroll: Off'.tr(),
                 onPressed: () => setState(() => _autoScroll = !_autoScroll),
               ),
               const Spacer(),
@@ -608,8 +730,13 @@ class _LogsTabState extends State<_LogsTab> {
                 tooltip: 'Copy All Logs'.tr(),
                 onPressed: () {
                   final text = entries.map((e) => e.formattedLine).join('\n');
-                  _copyToClipboard(context, text, 'Copied {count} log entries'
-                      .tr(namedArgs: {'count': '${entries.length}'}));
+                  _copyToClipboard(
+                    context,
+                    text,
+                    'Copied {count} log entries'.tr(
+                      namedArgs: {'count': '${entries.length}'},
+                    ),
+                  );
                 },
               ),
               // 导出（复制诊断+日志）
@@ -619,7 +746,11 @@ class _LogsTabState extends State<_LogsTab> {
                 onPressed: () async {
                   final text = await SyncService.instance.exportAllLogsAsText();
                   if (context.mounted) {
-                    _copyToClipboard(context, text, 'Diagnostics + logs copied'.tr());
+                    _copyToClipboard(
+                      context,
+                      text,
+                      'Diagnostics + logs copied'.tr(),
+                    );
                   }
                 },
               ),
@@ -643,10 +774,12 @@ class _LogsTabState extends State<_LogsTab> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Text(
-            '{count} log entries (total {total})'.tr(namedArgs: {
-              'count': '${entries.length}',
-              'total': '${_entries.length}',
-            }),
+            '{count} log entries (total {total})'.tr(
+              namedArgs: {
+                'count': '${entries.length}',
+                'total': '${_entries.length}',
+              },
+            ),
             style: TextStyle(fontSize: 11, color: Colors.grey[600]),
           ),
         ),
@@ -754,8 +887,9 @@ class _WebServerTabState extends State<_WebServerTab> {
     final ip = await _getLocalIp();
     final port = LogWebServer.instance.port;
     setState(() {
-      _statusText = 'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
-          .tr(namedArgs: {'ip': ip, 'port': '$port'});
+      _statusText =
+          'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
+              .tr(namedArgs: {'ip': ip, 'port': '$port'});
     });
   }
 
@@ -770,12 +904,16 @@ class _WebServerTabState extends State<_WebServerTab> {
         // 获取本机 IP
         final ip = await _getLocalIp();
         setState(() {
-          _statusText = 'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
-              .tr(namedArgs: {'ip': ip, 'port': '$port'});
+          _statusText =
+              'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
+                  .tr(namedArgs: {'ip': ip, 'port': '$port'});
         });
       } on Object catch (e) {
-        setState(() => _statusText = 'Startup failed: {error}'.tr(
-            namedArgs: {'error': '$e'}));
+        setState(
+          () => _statusText = 'Startup failed: {error}'.tr(
+            namedArgs: {'error': '$e'},
+          ),
+        );
       } finally {
         setState(() => _isStarting = false);
       }
@@ -808,7 +946,10 @@ class _WebServerTabState extends State<_WebServerTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Log Web Server'.tr(), style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Log Web Server'.tr(),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 8),
         Text(
           'Start to view local logs in a PC browser in real time, no export needed.\nSuitable for mobile (where SD card export is limited).\n\nThe server is a global singleton; leaving this page does not stop it, only manual stop or app exit does.\n\nEndpoints:\n  /            → Real-time log viewer (WebSocket)\n  /logs        → Full log text (downloadable via curl)\n  /diagnostics → Diagnostics snapshot text'
@@ -821,20 +962,25 @@ class _WebServerTabState extends State<_WebServerTab> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: (isRunning ? Colors.green : Colors.grey)
-                .withValues(alpha: 0.1),
+            color: (isRunning ? Colors.green : Colors.grey).withValues(
+              alpha: 0.1,
+            ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: (isRunning ? Colors.green : Colors.grey)
-                    .withValues(alpha: 0.3)),
+              color: (isRunning ? Colors.green : Colors.grey).withValues(
+                alpha: 0.3,
+              ),
+            ),
           ),
           child: Column(
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(isRunning ? Icons.wifi : Icons.wifi_off,
-                      color: isRunning ? Colors.green : Colors.grey),
+                  Icon(
+                    isRunning ? Icons.wifi : Icons.wifi_off,
+                    color: isRunning ? Colors.green : Colors.grey,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     isRunning
@@ -903,7 +1049,6 @@ class _WebServerTabState extends State<_WebServerTab> {
   }
 }
 
-
 // ──────────────────────────────────────────────
 // 辅助：复制到剪贴板
 // ──────────────────────────────────────────────
@@ -911,9 +1056,6 @@ class _WebServerTabState extends State<_WebServerTab> {
 void _copyToClipboard(BuildContext context, String text, String message) {
   Clipboard.setData(ClipboardData(text: text));
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 2),
-    ),
+    SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
   );
 }

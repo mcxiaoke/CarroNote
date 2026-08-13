@@ -19,10 +19,10 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 加密备份导入时的密码输入框（docs/backup-encryption-design-20260810.md §7）
@@ -100,8 +100,7 @@ class BackupPasswordInputDialogState extends State<BackupPasswordInputDialog> {
                     _hidden ? Icons.visibility : Icons.visibility_off,
                     size: kInputIconSize,
                   ),
-                  onPressed: () =>
-                      setState(() => _hidden = !_hidden),
+                  onPressed: () => setState(() => _hidden = !_hidden),
                 ),
                 onSubmitted: (_) => _submit(),
               ),

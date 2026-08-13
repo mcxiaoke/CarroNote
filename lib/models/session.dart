@@ -15,10 +15,10 @@
 import 'dart:async';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/sync/sync_service.dart';
@@ -93,8 +93,5 @@ class SessionArguments {
   final StreamController<SessionState> sessionStream;
   final bool? isKeyboardFocused;
 
-  SessionArguments({
-    required this.sessionStream,
-    this.isKeyboardFocused,
-  });
+  SessionArguments({required this.sessionStream, this.isKeyboardFocused});
 }

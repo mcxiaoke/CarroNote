@@ -3,7 +3,10 @@
 // 验证 ShadTheme + ShadButton 在测试环境下可正常构建与交互，
 // 不依赖任何已删除的旧组件，也不触碰数据库。
 
+// Flutter imports:
 import 'package:flutter/material.dart';
+
+// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 

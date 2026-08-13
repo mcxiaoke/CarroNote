@@ -48,8 +48,11 @@ class NotesColorTheme {
   final String prefix;
   final String? helper;
   final List colorList;
-  const NotesColorTheme(
-      {required this.prefix, this.helper, required this.colorList});
+  const NotesColorTheme({
+    required this.prefix,
+    this.helper,
+    required this.colorList,
+  });
 }
 
 List<NotesColorTheme> allNotesColorTheme = [
@@ -117,85 +120,51 @@ List<NotesColorTheme> allNotesColorTheme = [
   const NotesColorTheme(
     prefix: 'Ensemble',
     helper: 'Light Purple, Light Blue and Light Green',
-    colorList: [
-      Color(0xFFD7A9E3),
-      Color(0xFF8BBEE8),
-      Color(0xFFA8D5BA),
-    ],
+    colorList: [Color(0xFFD7A9E3), Color(0xFF8BBEE8), Color(0xFFA8D5BA)],
   ),
   const NotesColorTheme(
     prefix: 'Radiant',
     helper: 'Radiant Yellow, Living Coral and Purple',
-    colorList: [
-      Color(0xFFF9A12E),
-      Color(0xFFFC766A),
-      Color(0xFF9B4A97),
-    ],
+    colorList: [Color(0xFFF9A12E), Color(0xFFFC766A), Color(0xFF9B4A97)],
   ),
   const NotesColorTheme(
     prefix: 'Innocent',
     helper: 'White, Pink Lady and Sky Blue',
-    colorList: [
-      Color(0xFFFCF6F5),
-      Color(0xFFEDC2D8),
-      Color(0xFF8ABAD3),
-    ],
+    colorList: [Color(0xFFFCF6F5), Color(0xFFEDC2D8), Color(0xFF8ABAD3)],
   ),
   const NotesColorTheme(
     prefix: 'Oktoberfest',
     helper: 'Red, Yellow and Navy',
-    colorList: [
-      Color(0xFFF65058),
-      Color(0xFFFBDE44),
-      Color(0xFF28334A),
-    ],
+    colorList: [Color(0xFFF65058), Color(0xFFFBDE44), Color(0xFF28334A)],
   ),
   const NotesColorTheme(
     prefix: 'Nature',
     helper: 'Tanager Turquoise, Teal Blue and Kelly Green',
-    colorList: [
-      Color(0xFF95DBE5),
-      Color(0xFF078282),
-      Color(0xFF339E66),
-    ],
+    colorList: [Color(0xFF95DBE5), Color(0xFF078282), Color(0xFF339E66)],
   ),
   const NotesColorTheme(
     prefix: 'Knockout',
     helper: 'Knockout Pink, Safety Yellow and Out of the Blue',
-    colorList: [
-      Color(0xFFFF3EA5),
-      Color(0xFFEDFF00),
-      Color(0xFF00A4CC),
-    ],
+    colorList: [Color(0xFFFF3EA5), Color(0xFFEDFF00), Color(0xFF00A4CC)],
   ),
   const NotesColorTheme(
     prefix: 'Danger',
     helper: 'Danger Red, Tap Shoe and Blue Blossom',
-    colorList: [
-      Color(0xFFD9514E),
-      Color(0xFF2A2B2D),
-      Color(0xFF2DA8D8),
-    ],
+    colorList: [Color(0xFFD9514E), Color(0xFF2A2B2D), Color(0xFF2DA8D8)],
   ),
   const NotesColorTheme(
     prefix: 'Light Teal',
     helper: null,
-    colorList: [
-      Color(0xFFA7BEAE),
-    ],
+    colorList: [Color(0xFFA7BEAE)],
   ),
   const NotesColorTheme(
     prefix: 'Fresh Mint',
     helper: null,
-    colorList: [
-      Color(0xFFADEFD1),
-    ],
+    colorList: [Color(0xFFADEFD1)],
   ),
   const NotesColorTheme(
     prefix: 'Sailor Blue',
     helper: null,
-    colorList: [
-      Color(0xFF00203F),
-    ],
+    colorList: [Color(0xFF00203F)],
   ),
 ];

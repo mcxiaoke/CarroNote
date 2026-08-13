@@ -54,8 +54,7 @@ class ImportParser {
     List<dynamic> records, {
     int? expectedTotal,
   }) {
-    List<SafeNote> notes =
-        records.map((i) => SafeNote.fromJson(i)).toList();
+    List<SafeNote> notes = records.map((i) => SafeNote.fromJson(i)).toList();
     return ImportParser(
       parsedNotes: notes,
       importHandlerPhrase: 'plaintext-v1',
@@ -149,8 +148,10 @@ class BackupHeader {
     final kdfAlgorithm = kdf?['algorithm'] as String?;
     if (encAlgorithm != kBackupEncAlgorithm ||
         !const {kPbkdf2Algorithm, kArgon2idAlgorithm}.contains(kdfAlgorithm)) {
-      throw FormatException('不支持的备份加密算法'
-          '（enc=$encAlgorithm kdf=$kdfAlgorithm）');
+      throw FormatException(
+        '不支持的备份加密算法'
+        '（enc=$encAlgorithm kdf=$kdfAlgorithm）',
+      );
     }
 
     final iterations = kdf?['iterations'] as int?;
@@ -199,10 +200,10 @@ class BackupHeader {
   /// 参数派发（Argon2id 用 memory/parallelism，PBKDF2 忽略）。salt 重新
   /// base64 编码为 KdfParams 所需的字符串形式。
   KdfParams get kdfParams => KdfParams(
-        algorithm: kdfAlgorithm,
-        salt: base64Encode(salt),
-        iterations: iterations,
-        memoryKiB: memoryKiB,
-        parallelism: parallelism,
-      );
+    algorithm: kdfAlgorithm,
+    salt: base64Encode(salt),
+    iterations: iterations,
+    memoryKiB: memoryKiB,
+    parallelism: parallelism,
+  );
 }

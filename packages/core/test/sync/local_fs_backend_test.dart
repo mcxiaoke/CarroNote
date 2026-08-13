@@ -48,8 +48,9 @@ void main() {
   group('LocalFsBackend - 初始化', () {
     test('init 创建 keyring 根目录和 blobs 子目录', () async {
       // 重新创建一个 backend 验证 init 行为
-      final freshDir =
-          await Directory.systemTemp.createTemp('safenotes_fresh_');
+      final freshDir = await Directory.systemTemp.createTemp(
+        'safenotes_fresh_',
+      );
       final freshBackend = LocalFsBackend(rootPath: freshDir.path);
 
       // 初始状态：目录不存在
@@ -61,8 +62,10 @@ void main() {
       // init 后：blobs 子目录应存在
       expect(await Directory(p.join(freshDir.path, 'blobs')).exists(), isTrue);
       // manifest.json 文件还不应存在
-      expect(await File(p.join(freshDir.path, 'manifest.json')).exists(),
-          isFalse);
+      expect(
+        await File(p.join(freshDir.path, 'manifest.json')).exists(),
+        isFalse,
+      );
 
       await freshBackend.close();
       await freshDir.delete(recursive: true);
@@ -247,7 +250,11 @@ void main() {
       expect(await backend.listOrphanBlobs(), [hash]);
       // 磁盘文件名应为 hash.<epochMs>（purge 依赖该时间戳）
       final orphanDir = Directory(p.join(tempDir.path, 'blobs-orphan'));
-      final names = orphanDir.listSync().whereType<File>().map((f) => f.path).toList();
+      final names = orphanDir
+          .listSync()
+          .whereType<File>()
+          .map((f) => f.path)
+          .toList();
       expect(names.length, 1);
       final base = p.basename(names.first);
       expect(base, startsWith('$hash.'));
@@ -288,8 +295,7 @@ void main() {
       await orphanDir.create(recursive: true);
       final now = DateTime.now().millisecondsSinceEpoch;
       final oldTs = now - 40 * 24 * 60 * 60 * 1000;
-      await File(p.join(orphanDir.path, 'old-hash.$oldTs'))
-          .writeAsString('x');
+      await File(p.join(orphanDir.path, 'old-hash.$oldTs')).writeAsString('x');
       await File(p.join(orphanDir.path, 'fresh-hash.$now')).writeAsString('y');
 
       await backend.purgeOrphans(const Duration(days: 30));
@@ -321,10 +327,7 @@ void main() {
 
       // Step 4: 模拟其他设备修改了 manifest（用错误 etag 应失败）
       expect(
-        () => backend.putManifest(
-          Uint8List.fromList([9, 9, 9]),
-          'stale-etag',
-        ),
+        () => backend.putManifest(Uint8List.fromList([9, 9, 9]), 'stale-etag'),
         throwsA(isA<ConflictException>()),
       );
 

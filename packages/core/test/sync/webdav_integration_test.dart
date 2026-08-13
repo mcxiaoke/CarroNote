@@ -82,10 +82,12 @@ class WebDavServerProcess {
     // 2. 如果还没退出，用 taskkill /T /F 强杀进程树
     if (!exited && Platform.isWindows) {
       try {
-        await Process.run(
-          'taskkill',
-          ['/T', '/F', '/PID', process.pid.toString()],
-        );
+        await Process.run('taskkill', [
+          '/T',
+          '/F',
+          '/PID',
+          process.pid.toString(),
+        ]);
       } catch (_) {}
       try {
         await process.exitCode.timeout(const Duration(seconds: 2));
@@ -105,11 +107,12 @@ class WebDavServerProcess {
             'Basic ${base64Encode(utf8.encode('$kTestUser:$kTestPass'))}';
         req.headers['Depth'] = '0';
         req.headers['Content-Type'] = 'application/xml; charset=utf-8';
-        req.body = '<?xml version="1.0"?>'
+        req.body =
+            '<?xml version="1.0"?>'
             '<propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
-        final streamedRes = await _httpClient.send(req).timeout(
-              const Duration(seconds: 2),
-            );
+        final streamedRes = await _httpClient
+            .send(req)
+            .timeout(const Duration(seconds: 2));
         final res = await http.Response.fromStream(streamedRes);
         if (res.statusCode == 207 || res.statusCode == 200) {
           return true;
@@ -146,7 +149,8 @@ Future<void> generateConfig({
   required int port,
   required String dataDir,
 }) async {
-  final config = '''
+  final config =
+      '''
 # WebDAV 测试服务器配置（自动生成）
 address: 127.0.0.1
 port: $port
@@ -173,13 +177,13 @@ Future<void> cleanupResidual() async {
   if (!Platform.isWindows) return;
   try {
     // 杀残留 webdav.exe 进程
-    final result = await Process.run(
-      'pwsh',
-      ['-NoProfile', '-Command',
-        "Get-Process webdav -ErrorAction SilentlyContinue | Stop-Process -Force; "
-        "Get-NetTCPConnection -LocalPort $kTestPort -ErrorAction SilentlyContinue | "
-        "ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }"],
-    );
+    final result = await Process.run('pwsh', [
+      '-NoProfile',
+      '-Command',
+      "Get-Process webdav -ErrorAction SilentlyContinue | Stop-Process -Force; "
+          "Get-NetTCPConnection -LocalPort $kTestPort -ErrorAction SilentlyContinue | "
+          "ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }",
+    ]);
     // 忽略错误
     if (result.exitCode != 0) {
       // pwsh 不可用就跳过
@@ -199,11 +203,10 @@ Future<WebDavServerProcess?> startServer(int port, String dataDir) async {
 
   final logFile = '$kTestRoot\\webdav-$port.log';
   try {
-    final process = await Process.start(
-      kWebDavBinary,
-      ['-c', kConfigPath],
-      workingDirectory: dataDir,
-    );
+    final process = await Process.start(kWebDavBinary, [
+      '-c',
+      kConfigPath,
+    ], workingDirectory: dataDir);
 
     // 转发 stderr 到日志文件（便于调试）
     final log = File(logFile);
@@ -343,9 +346,7 @@ void main() {
     // 3. 启动 webdav server
     final serverProc = await startServer(kTestPort, dataDir);
     if (serverProc == null) {
-      throw StateError(
-        '无法启动 webdav server（$kWebDavBinary 不存在）',
-      );
+      throw StateError('无法启动 webdav server（$kWebDavBinary 不存在）');
     }
     server = serverProc;
 
@@ -597,10 +598,7 @@ void main() {
   group('WebDavBackend - backupCorruptManifest', () {
     test('backupCorruptManifest 删除损坏的 manifest 文件', () async {
       // 先上传一个 manifest
-      await backend.putManifest(
-        Uint8List.fromList([1, 2, 3]),
-        '',
-      );
+      await backend.putManifest(Uint8List.fromList([1, 2, 3]), '');
 
       // 调用 backupCorruptManifest（应删除该文件）
       await backend.backupCorruptManifest(Uint8List(0));
@@ -624,10 +622,7 @@ void main() {
         password: 'wrong-password',
       );
       // init 时 MKCOL 会因认证失败抛异常
-      expect(
-        () => badBackend.init(),
-        throwsA(isA<Exception>()),
-      );
+      expect(() => badBackend.init(), throwsA(isA<Exception>()));
     });
   });
 
@@ -799,11 +794,13 @@ void main() {
     test('updatedAt 更大的远端笔记覆盖本地', () async {
       // 设备 A 上传笔记
       final earlyTime = DateTime.now().millisecondsSinceEpoch;
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-conflict',
-        title: 'Original',
-        updatedAt: earlyTime,
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-conflict',
+          title: 'Original',
+          updatedAt: earlyTime,
+        ),
+      );
       final engineA = _makeEngine(
         backend: backend,
         database: database,
@@ -822,11 +819,13 @@ void main() {
       NotesDatabase.setDatabaseForTesting(dbB);
       database.setDataKey(testDataKey);
 
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-conflict',
-        title: 'Local Edit',
-        updatedAt: earlyTime - 1000, // 本地更早 → 远端胜
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-conflict',
+          title: 'Local Edit',
+          updatedAt: earlyTime - 1000, // 本地更早 → 远端胜
+        ),
+      );
 
       final engineB = _makeEngine(
         backend: backend,
@@ -849,11 +848,9 @@ void main() {
     test('软删除传播到已下载笔记的设备', () async {
       // 设备 A：上传 1 条笔记（时间戳 T1）
       final t1 = DateTime.now().millisecondsSinceEpoch;
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        updatedAt: t1,
-      ));
+      await database.storeNote(
+        _makeNote(uuid: 'uuid-del', title: 'To Delete', updatedAt: t1),
+      );
       final engineA = _makeEngine(
         backend: backend,
         database: database,
@@ -873,12 +870,14 @@ void main() {
       database.setDataKey(testDataKey);
 
       final t2 = t1 + 5000;
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        deleted: true,
-        updatedAt: t2,
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-del',
+          title: 'To Delete',
+          deleted: true,
+          updatedAt: t2,
+        ),
+      );
       final engineA2 = _makeEngine(
         backend: backend,
         database: database,
@@ -897,11 +896,13 @@ void main() {
       NotesDatabase.setDatabaseForTesting(dbB2);
       database.setDataKey(testDataKey);
 
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        updatedAt: t1, // 原始时间戳，比删除时间 T2 早
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-del',
+          title: 'To Delete',
+          updatedAt: t1, // 原始时间戳，比删除时间 T2 早
+        ),
+      );
 
       final engineB2 = _makeEngine(
         backend: backend,
@@ -1039,7 +1040,9 @@ void main() {
     test('远端一个 blob 用错误密钥加密，同步不抛异常且报告失败 uuid', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyWrong = SyncCrypto.generateDataKey();
-      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(
+        await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew),
+      );
       database.setDataKey(dataKeyNew);
 
       // 1. 设备 A：上传一条正常笔记，建立干净的远端状态
@@ -1068,7 +1071,10 @@ void main() {
         contentSize: badTitle.length + badDesc.length,
       );
       final remoteResp = await backend.getManifest();
-      final cur = await ManifestCrypto.deserialize(dataKeyNew, remoteResp.ciphertext);
+      final cur = await ManifestCrypto.deserialize(
+        dataKeyNew,
+        remoteResp.ciphertext,
+      );
       final newItems = Map<String, ManifestItem>.from(cur.items)
         ..['note-bad'] = badItem;
       await _uploadRemoteManifest(
@@ -1108,27 +1114,29 @@ void main() {
       );
       final result = await engineB.sync();
 
-      expect(result.success, isTrue,
-          reason: '单个坏 blob 不应中断整次同步');
-      expect(result.failedNoteUuids, contains('note-bad'),
-          reason: '坏 blob 应被记录为失败 uuid，供下次重试');
+      expect(result.success, isTrue, reason: '单个坏 blob 不应中断整次同步');
+      expect(
+        result.failedNoteUuids,
+        contains('note-bad'),
+        reason: '坏 blob 应被记录为失败 uuid，供下次重试',
+      );
       expect(result.failedNoteUuids.length, 1);
       expect(result.downloaded, 1, reason: '正常笔记应成功下载');
       final goodLocal = await database.readNoteByUuid('note-good');
       expect(goodLocal, isNotNull);
       expect(goodLocal!.title, 'Good');
       final badLocal = await database.readNoteByUuid('note-bad');
-      expect(badLocal, isNull,
-          reason: '无本地明文的坏笔记不应写入本地（避免静默损坏）');
+      expect(badLocal, isNull, reason: '无本地明文的坏笔记不应写入本地（避免静默损坏）');
     });
   });
 
   group('容错与自愈 - Layer 2a 密钥变更触发 blob 重传', () {
-    test('pending 重传标记下，相同 hash 的笔记在同步中被强制重传（覆盖旧密钥 blob）',
-        () async {
+    test('pending 重传标记下，相同 hash 的笔记在同步中被强制重传（覆盖旧密钥 blob）', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(
+        await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew),
+      );
       database.setDataKey(dataKeyNew);
 
       // 1. 本地有一条笔记（用 dataKeyNew 存储），内容与 hash 记为 H
@@ -1177,10 +1185,8 @@ void main() {
       final result = await engine.sync();
 
       expect(result.success, isTrue);
-      expect(result.uploaded, greaterThanOrEqualTo(1),
-          reason: '应触发强制重传');
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '重传后不应再报告失败');
+      expect(result.uploaded, greaterThanOrEqualTo(1), reason: '应触发强制重传');
+      expect(result.failedNoteUuids, isEmpty, reason: '重传后不应再报告失败');
 
       // 断言：blob 现在用 dataKeyNew 加密（旧密钥打不开，新密钥能打开并还原内容）
       // blob 纯化 v4：AAD = 内容 hash（无 epoch）
@@ -1203,7 +1209,10 @@ void main() {
       final localSalt = SyncCrypto.generateSalt();
       final L = SyncCrypto.generateDataKey();
       final R = SyncCrypto.generateDataKey();
-      final localMk = await SyncCrypto.deriveMasterKey(password, salt: localSalt);
+      final localMk = await SyncCrypto.deriveMasterKey(
+        password,
+        salt: localSalt,
+      );
       final localEdk = base64Encode(await SyncCrypto.wrapDataKey(localMk, L));
       // 用 localMk 包裹 R，使 checkMigrationNeeded 能解开并拿到 remoteDataKey=R
       final remoteEdk = base64Encode(await SyncCrypto.wrapDataKey(localMk, R));
@@ -1231,8 +1240,11 @@ void main() {
 
       await keyring.migrateToRemote(result: migration, database: database);
       final pending = await database.getPendingReuploadUuids();
-      expect(pending, containsAll(['u1', 'u2']),
-          reason: 'dataKey 变更应把所有本地笔记标记为待重传');
+      expect(
+        pending,
+        containsAll(['u1', 'u2']),
+        reason: 'dataKey 变更应把所有本地笔记标记为待重传',
+      );
     });
   });
 
@@ -1240,7 +1252,9 @@ void main() {
     test('本地持有明文、远端 blob 损坏：自愈重传且后续设备可正常下载', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyWrong = SyncCrypto.generateDataKey();
-      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(
+        await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew),
+      );
       database.setDataKey(dataKeyNew);
 
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -1264,12 +1278,14 @@ void main() {
       //
       // 这正是自愈场景的真实语义：服务器持有上次同步版本，本地编辑后服务器
       //  blob 损坏，本地重新上传覆盖即可，不该多留一份副本。
-      await database.storeNote(_makeNote(
-        uuid: 'note-heal',
-        title: localTitle,
-        description: 'desc',
-        updatedAt: now,
-      ).copyWith(syncedHash: remoteHash));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'note-heal',
+          title: localTitle,
+          description: 'desc',
+          updatedAt: now,
+        ).copyWith(syncedHash: remoteHash),
+      );
       // 远端 manifest 引用 remoteHash（不同内容），updatedAt 较晚
       // （P0-B 后 updatedAt 不再决定胜负，base-hash 判定优先）
       await _uploadRemoteManifest(
@@ -1307,22 +1323,30 @@ void main() {
       final result = await engine.sync();
 
       expect(result.success, isTrue);
-      expect(result.failedNoteUuids, isEmpty,
-          reason: 'fast-forward 上传成功，不应报告失败');
-      expect(result.uploaded, greaterThanOrEqualTo(1),
-          reason: 'fast-forward 应上传本地内容覆盖远端');
+      expect(
+        result.failedNoteUuids,
+        isEmpty,
+        reason: 'fast-forward 上传成功，不应报告失败',
+      );
+      expect(
+        result.uploaded,
+        greaterThanOrEqualTo(1),
+        reason: 'fast-forward 应上传本地内容覆盖远端',
+      );
       // P0-B 修复后：本场景走 fast-forward，不进入 _handleDownloadFailure，
       // 因此不产生 heal 动作（heal 是「下载失败后自愈重传」的语义，fast-forward
       // 是「单边变更直接上传」的语义，两者路径不同但最终结果一致）
       expect(
-        result.actions.any((a) =>
-            a.type == SyncActionType.heal && a.uuid == 'note-heal'),
+        result.actions.any(
+          (a) => a.type == SyncActionType.heal && a.uuid == 'note-heal',
+        ),
         isFalse,
         reason: 'P0-B 后走 fast-forward，不应产生 heal 动作',
       );
       expect(
-        result.actions.any((a) =>
-            a.type == SyncActionType.upload && a.uuid == 'note-heal'),
+        result.actions.any(
+          (a) => a.type == SyncActionType.upload && a.uuid == 'note-heal',
+        ),
         isTrue,
         reason: '应产生 upload 动作（fast-forward 上传本地内容）',
       );
@@ -1400,15 +1424,17 @@ void main() {
       final resultB = await engineB.sync();
 
       expect(resultB.success, isTrue);
-      expect(resultB.failedNoteUuids, isEmpty,
-          reason: 'v2 协议下共享 blob 不应导致任何一条解密失败');
+      expect(
+        resultB.failedNoteUuids,
+        isEmpty,
+        reason: 'v2 协议下共享 blob 不应导致任何一条解密失败',
+      );
       expect(resultB.downloaded, 2, reason: '两条同内容笔记都应下载成功');
       final n1 = await database.readNoteByUuid('twin-1');
       final n2 = await database.readNoteByUuid('twin-2');
       expect(n1?.title, 'Same');
       expect(n2?.title, 'Same');
     });
-
   });
 
   group('容错与自愈 - blob 纯化（v4）审计元数据', () {
@@ -1451,16 +1477,22 @@ void main() {
       );
 
       // 注入 blob：blob 纯化后 AAD=内容 hash（与纪元无关，当前 key 可直接解开）
-      final content =
-          _makeNote(uuid: uuid, title: title, description: description);
-      final blob = await SyncCrypto.seal(dataKey, hash, content.toContentBytes());
+      final content = _makeNote(
+        uuid: uuid,
+        title: title,
+        description: description,
+      );
+      final blob = await SyncCrypto.seal(
+        dataKey,
+        hash,
+        content.toContentBytes(),
+      );
       await backend.putBlob(hash, blob);
 
       final result = await engine.sync();
       expect(result.success, isTrue, reason: '同步应成功');
       expect(result.downloaded, greaterThanOrEqualTo(1));
-      expect(result.failedNoteUuids, isEmpty,
-          reason: '声明纪元不同不是失败原因，v4 不再需要自愈');
+      expect(result.failedNoteUuids, isEmpty, reason: '声明纪元不同不是失败原因，v4 不再需要自愈');
 
       // v4 删除了「纪元不符→当前纪元重传」的 heal 分支，不应产生 heal action
       final healed = result.actions
@@ -1486,7 +1518,9 @@ void main() {
     test('无密钥无明文时 repair 标记损坏（不丢数据）', () async {
       final dataKeyNew = SyncCrypto.generateDataKey();
       final dataKeyOld = SyncCrypto.generateDataKey();
-      final encK = base64Encode(await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew));
+      final encK = base64Encode(
+        await SyncCrypto.wrapDataKey(dataKeyNew, dataKeyNew),
+      );
       database.setDataKey(dataKeyNew);
       final engine = _makeEngine(
         backend: backend,
@@ -1521,8 +1555,11 @@ void main() {
 
       // 坏 blob 用 dataKeyOld 加密，但本机未归档该历史密钥、也无明文
       // （blob 纯化 v4：AAD=hash，dataKeyOld 解不开即损坏）
-      final content =
-          _makeNote(uuid: uuid, title: title, description: description);
+      final content = _makeNote(
+        uuid: uuid,
+        title: title,
+        description: description,
+      );
       final blob = await SyncCrypto.seal(
         dataKeyOld,
         hash,

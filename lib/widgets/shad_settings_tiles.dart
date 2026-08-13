@@ -86,20 +86,19 @@ Widget shadNavigationTile(
               Text(
                 title,
                 style: ShadTheme.of(context).textTheme.p.copyWith(
-                      color: destructive
-                          ? ShadTheme.of(context).colorScheme.destructive
-                          : null,
-                    ),
+                  color: destructive
+                      ? ShadTheme.of(context).colorScheme.destructive
+                      : null,
+                ),
               ),
               if (subtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     subtitle,
-                    style: ShadTheme.of(context)
-                        .textTheme
-                        .muted
-                        .copyWith(fontSize: 12),
+                    style: ShadTheme.of(
+                      context,
+                    ).textTheme.muted.copyWith(fontSize: 12),
                   ),
                 ),
             ],
@@ -118,10 +117,9 @@ Widget shadNavigationTile(
                   textAlign: TextAlign.end,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: ShadTheme.of(context)
-                      .textTheme
-                      .muted
-                      .copyWith(fontSize: 13),
+                  style: ShadTheme.of(
+                    context,
+                  ).textTheme.muted.copyWith(fontSize: 13),
                 ),
               ),
             ),
@@ -162,10 +160,9 @@ Widget shadSwitchTile(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     description,
-                    style: ShadTheme.of(context)
-                        .textTheme
-                        .muted
-                        .copyWith(fontSize: 12),
+                    style: ShadTheme.of(
+                      context,
+                    ).textTheme.muted.copyWith(fontSize: 12),
                   ),
                 ),
             ],
@@ -254,10 +251,9 @@ Widget shadInfoTile(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     description,
-                    style: ShadTheme.of(context)
-                        .textTheme
-                        .muted
-                        .copyWith(fontSize: 12),
+                    style: ShadTheme.of(
+                      context,
+                    ).textTheme.muted.copyWith(fontSize: 12),
                   ),
                 ),
             ],
@@ -271,10 +267,9 @@ Widget shadInfoTile(
               textAlign: TextAlign.end,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: ShadTheme.of(context)
-                  .textTheme
-                  .muted
-                  .copyWith(fontSize: 13),
+              style: ShadTheme.of(
+                context,
+              ).textTheme.muted.copyWith(fontSize: 13),
             ),
           ),
         ),

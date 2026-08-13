@@ -41,19 +41,27 @@
  */
 
 // Dart 导入
+
+// Dart imports:
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+// Flutter imports:
+import 'package:flutter/services.dart';
+
+// Package imports:
+import 'package:core/core.dart';
+import 'package:path/path.dart' as p;
+
+// Project imports:
+import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter 导入
-import 'package:flutter/services.dart';
 
 // Project 导入
-import 'package:path/path.dart' as p;
-import 'package:core/core.dart';
-import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/sync/sync_service.dart';
 
 /// 日志 HTTP 服务器（全局单例，全平台可用）
 class LogWebServer {
@@ -158,9 +166,11 @@ class LogWebServer {
     );
 
     final addrs = await localAddresses();
-    Log.web.i('日志 Web 服务器已启动: '
-        '${addrs.map((a) => 'http://$a:$_port').join(', ')}'
-        '${addrs.isEmpty ? '端口 $_port' : ''}');
+    Log.web.i(
+      '日志 Web 服务器已启动: '
+      '${addrs.map((a) => 'http://$a:$_port').join(', ')}'
+      '${addrs.isEmpty ? '端口 $_port' : ''}',
+    );
 
     return _port;
   }
@@ -314,8 +324,10 @@ class LogWebServer {
       if (table != null && table.isNotEmpty) {
         final limit =
             int.tryParse(request.uri.queryParameters['limit'] ?? '100') ?? 100;
-        final rows =
-            await NotesDatabase.instance.queryTableRows(table, limit: limit);
+        final rows = await NotesDatabase.instance.queryTableRows(
+          table,
+          limit: limit,
+        );
         await _sendJson(request, {
           'table': table,
           'limit': limit,
@@ -338,7 +350,8 @@ class LogWebServer {
     request.response.headers.contentType = ContentType.html;
     try {
       request.response.write(
-          await rootBundle.loadString('assets/web/dashboard.html'));
+        await rootBundle.loadString('assets/web/dashboard.html'),
+      );
     } on Object catch (e, st) {
       Log.web.e('读取 dashboard.html 失败', error: e, stackTrace: st);
       request.response.statusCode = HttpStatus.internalServerError;
@@ -365,8 +378,11 @@ class LogWebServer {
     for (final line in AppLogBuffer.instance.allLines()) {
       buffer.writeln(line);
     }
-    request.response.headers.contentType =
-        ContentType('text', 'plain', charset: 'utf-8');
+    request.response.headers.contentType = ContentType(
+      'text',
+      'plain',
+      charset: 'utf-8',
+    );
     request.response.write(buffer.toString());
     await request.response.close();
   }
@@ -400,8 +416,11 @@ class LogWebServer {
 
     // 先 flush，保证下载到的是最新内容
     await AppLogFile.flush();
-    request.response.headers.contentType =
-        ContentType('text', 'plain', charset: 'utf-8');
+    request.response.headers.contentType = ContentType(
+      'text',
+      'plain',
+      charset: 'utf-8',
+    );
     request.response.headers.add(
       'Content-Disposition',
       'attachment; filename="${p.basename(path)}"',
@@ -427,17 +446,19 @@ class LogWebServer {
       }
     }
     request.response.headers.contentType = ContentType.json;
-    request.response.write(jsonEncode({
-      'dir': AppLogFile.dirPath,
-      'files': list,
-    }));
+    request.response.write(
+      jsonEncode({'dir': AppLogFile.dirPath, 'files': list}),
+    );
     await request.response.close();
   }
 
   /// 同步诊断快照（直接调用 SyncService，无需 provider 注入）
   Future<void> _serveDiagnostics(HttpRequest request) async {
-    request.response.headers.contentType =
-        ContentType('text', 'plain', charset: 'utf-8');
+    request.response.headers.contentType = ContentType(
+      'text',
+      'plain',
+      charset: 'utf-8',
+    );
     try {
       request.response.write(await SyncService.instance.exportAllLogsAsText());
     } on Object catch (e) {
@@ -483,12 +504,18 @@ class LogWebServer {
   // ──────────────────────────────────────────────
 
   /// 通用附件响应（自动带 CORS 头）
-  Future<void> _sendAttachment(HttpRequest request, String filename,
-      String content, String mime) async {
+  Future<void> _sendAttachment(
+    HttpRequest request,
+    String filename,
+    String content,
+    String mime,
+  ) async {
     _setCors(request.response);
     request.response.headers.contentType = ContentType.parse(mime);
-    request.response.headers
-        .add('Content-Disposition', 'attachment; filename="$filename"');
+    request.response.headers.add(
+      'Content-Disposition',
+      'attachment; filename="$filename"',
+    );
     request.response.write(content);
     await request.response.close();
   }
@@ -503,12 +530,17 @@ class LogWebServer {
       }
       final bytes = await File(path).readAsBytes();
       _setCors(request.response);
-      request.response.headers.contentType =
-          ContentType('application', 'octet-stream');
-      final name = 'safenotes_db_'
+      request.response.headers.contentType = ContentType(
+        'application',
+        'octet-stream',
+      );
+      final name =
+          'safenotes_db_'
           '${DateTime.now().toIso8601String().replaceAll(':', '-')}.db';
-      request.response.headers
-          .add('Content-Disposition', 'attachment; filename="$name"');
+      request.response.headers.add(
+        'Content-Disposition',
+        'attachment; filename="$name"',
+      );
       request.response.add(bytes);
       await request.response.close();
     } on Object catch (e) {
@@ -519,15 +551,23 @@ class LogWebServer {
   /// 下载 SharedPreferences（JSON）
   Future<void> _serveDownloadSp(HttpRequest request) async {
     final data = PreferencesStorage.dumpAll();
-    await _sendAttachment(request, 'shared_preferences.json',
-        jsonEncode(data), 'application/json');
+    await _sendAttachment(
+      request,
+      'shared_preferences.json',
+      jsonEncode(data),
+      'application/json',
+    );
   }
 
   /// 下载 Journal（JSON，含全部条目）
   Future<void> _serveDownloadJournal(HttpRequest request) async {
     final dump = await SyncService.instance.getJournalDump();
-    await _sendAttachment(request, 'journal.json', jsonEncode(dump),
-        'application/json');
+    await _sendAttachment(
+      request,
+      'journal.json',
+      jsonEncode(dump),
+      'application/json',
+    );
   }
 
   // ──────────────────────────────────────────────
@@ -721,5 +761,4 @@ connect();
 </body>
 </html>''';
   }
-
 }

@@ -144,8 +144,10 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
   /// 应用所选主题色：写入 Provider（全局重建）+ 持久化。
   void _applyTheme() {
     if (!_hasPendingChange) return;
-    Provider.of<ThemeProvider>(context, listen: false)
-        .setThemeColor(_groupIndex, _colorIndex);
+    Provider.of<ThemeProvider>(
+      context,
+      listen: false,
+    ).setThemeColor(_groupIndex, _colorIndex);
   }
 
   /// 当前所选配色的大色条预览（顶部常驻）。
@@ -174,15 +176,10 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
     } else {
       // 本地未选中（刚切到非当前组）：展示当前已应用主题色。
       previewColor = tp.seedColor;
-      title = '${'Current'.tr()}: '
-          '${AppThemeSeeds.displayName(
-                AppThemeSeeds.itemByIndex(tp.groupIndex, tp.colorIndex),
-                isZh: _isZh,
-              )}'
-          ' · ${AppThemeSeeds.displayGroupName(
-                AppThemeSeeds.groupByIndex(tp.groupIndex),
-                isZh: _isZh,
-              )}';
+      title =
+          '${'Current'.tr()}: '
+          '${AppThemeSeeds.displayName(AppThemeSeeds.itemByIndex(tp.groupIndex, tp.colorIndex), isZh: _isZh)}'
+          ' · ${AppThemeSeeds.displayGroupName(AppThemeSeeds.groupByIndex(tp.groupIndex), isZh: _isZh)}';
     }
 
     return ShadCard(
@@ -219,8 +216,7 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
       // 内容高度：padding 10*2 + 色块 30 + 间距 8 + 名称行 ~17 ≈ 75。
       mainAxisExtent: 84,
       children: [
-        for (var i = 0; i < group.colors.length; i++)
-          _colorCard(context, g, i),
+        for (var i = 0; i < group.colors.length; i++) _colorCard(context, g, i),
       ],
     );
   }
@@ -229,8 +225,7 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
   Widget _colorCard(BuildContext context, int g, int i) {
     final theme = ShadTheme.of(context);
     final item = AppThemeSeeds.itemByIndex(g, i);
-    final selected =
-        _hasColorSelected && g == _groupIndex && i == _colorIndex;
+    final selected = _hasColorSelected && g == _groupIndex && i == _colorIndex;
 
     return Material(
       color: theme.colorScheme.card,
@@ -282,8 +277,11 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
                     ),
                   ),
                   if (selected)
-                    Icon(LucideIcons.check,
-                        size: 14, color: theme.colorScheme.primary),
+                    Icon(
+                      LucideIcons.check,
+                      size: 14,
+                      color: theme.colorScheme.primary,
+                    ),
                 ],
               ),
             ],

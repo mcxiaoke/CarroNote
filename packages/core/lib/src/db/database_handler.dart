@@ -74,9 +74,7 @@ class DataKeyNotSetException implements Exception {
 /// 但 UI 的 readAllNotes 等读操作不经过同步锁，需此标志额外保护。
 class MigrationInProgressException implements Exception {
   final String message;
-  MigrationInProgressException([
-    this.message = '数据迁移进行中，请稍候',
-  ]);
+  MigrationInProgressException([this.message = '数据迁移进行中，请稍候']);
 
   @override
   String toString() => 'MigrationInProgressException: $message';
@@ -136,10 +134,10 @@ class NotesDatabase {
 
   /// 内存态快照（仅元数据，不含敏感内容），供调试面板 / WebServer 使用。
   Map<String, dynamic> getCacheInfo() => {
-        'isMigrating': _isMigrating,
-        'cacheBuilt': _notesCache != null,
-        'cacheCount': _notesCache?.length ?? 0,
-      };
+    'isMigrating': _isMigrating,
+    'cacheBuilt': _notesCache != null,
+    'cacheCount': _notesCache?.length ?? 0,
+  };
 
   /// 缓存笔记摘要（供内存快照 / DB Inspector 展示，不含正文内容）。
   ///
@@ -148,14 +146,19 @@ class NotesDatabase {
   List<Map<String, dynamic>> cachedNoteSummaries() {
     final cache = _notesCache;
     if (cache == null) return const [];
-    return cache.map((n) => <String, dynamic>{
-          'uuid': n.uuid,
-          'title': n.title,
-          'deleted': n.deleted,
-          'updatedAt':
-              DateTime.fromMillisecondsSinceEpoch(n.updatedAt).toIso8601String(),
-          'synced': n.synced,
-        }).toList();
+    return cache
+        .map(
+          (n) => <String, dynamic>{
+            'uuid': n.uuid,
+            'title': n.title,
+            'deleted': n.deleted,
+            'updatedAt': DateTime.fromMillisecondsSinceEpoch(
+              n.updatedAt,
+            ).toIso8601String(),
+            'synced': n.synced,
+          },
+        )
+        .toList();
   }
 
   /// 查询指定表的前 [limit] 行数据（DB Inspector 展示用）。
@@ -163,8 +166,10 @@ class NotesDatabase {
   /// 隐私约束：blob 列（如 notes 表的加密包络）不展开内容，仅以占位符
   /// `<blob N B>` 表示——notes 表存储密文包络、无明文，天然不泄露笔记内容。
   /// [table] 必须是合法 SQL 标识符（白名单校验，防注入）。
-  Future<List<Map<String, dynamic>>> queryTableRows(String table,
-      {int limit = 100}) async {
+  Future<List<Map<String, dynamic>>> queryTableRows(
+    String table, {
+    int limit = 100,
+  }) async {
     if (!_isSafeIdentifier(table)) {
       throw ArgumentError('非法表名: $table');
     }
@@ -183,8 +188,7 @@ class NotesDatabase {
     if (objType != 'table' && objType != 'view') {
       throw ArgumentError('$table 是 $objType 类型，不是表/视图，无法查询行数据');
     }
-    final rows =
-        await db.rawQuery('SELECT * FROM "$table" LIMIT ?', [limit]);
+    final rows = await db.rawQuery('SELECT * FROM "$table" LIMIT ?', [limit]);
     return rows.map((row) {
       final out = <String, dynamic>{};
       row.forEach((k, v) {
@@ -204,8 +208,7 @@ class NotesDatabase {
   Future<String> get dbFilePath async => (await database).path;
 
   static bool _isSafeIdentifier(String s) =>
-      s.isNotEmpty &&
-      RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(s);
+      s.isNotEmpty && RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(s);
 
   /// Database Inspector：返回本地库结构元数据（表清单、行数、列 schema、文件信息）。
   ///
@@ -222,8 +225,9 @@ class NotesDatabase {
       sizeBytes = null;
     }
     final objects = await db.rawQuery(
-        "SELECT name, type, sql FROM sqlite_master "
-        "WHERE type IN ('table','view','index','trigger') ORDER BY type, name");
+      "SELECT name, type, sql FROM sqlite_master "
+      "WHERE type IN ('table','view','index','trigger') ORDER BY type, name",
+    );
     final tables = <Map<String, dynamic>>[];
     for (final o in objects) {
       final name = o['name'] as String;
@@ -241,13 +245,15 @@ class NotesDatabase {
         try {
           final info = await db.rawQuery('PRAGMA table_info("$name")');
           columns = info
-              .map((r) => <String, dynamic>{
-                    'cid': r['cid'],
-                    'name': r['name'],
-                    'type': r['type'],
-                    'notnull': r['notnull'],
-                    'pk': r['pk'],
-                  })
+              .map(
+                (r) => <String, dynamic>{
+                  'cid': r['cid'],
+                  'name': r['name'],
+                  'type': r['type'],
+                  'notnull': r['notnull'],
+                  'pk': r['pk'],
+                },
+              )
               .toList();
         } on Object {
           columns = null;
@@ -332,7 +338,10 @@ class NotesDatabase {
   /// （[markAllSynced] 传空集即「全部标记」；[markAllSyncedExcept] 传排除集）。
   /// 同步收敛时 synced_hash 刷新为当前 content_hash、synced_deleted 刷新为
   /// 当前 deleted——这一刻本地与远端已一致，该 (hash,deleted) 即下一轮判定 base。
-  void _applySyncedToCache({required Set<String> uuids, required bool exclude}) {
+  void _applySyncedToCache({
+    required Set<String> uuids,
+    required bool exclude,
+  }) {
     final cache = _notesCache;
     if (cache == null || (uuids.isEmpty && !exclude)) return;
     _notesCache = [
@@ -442,9 +451,7 @@ class NotesDatabase {
     } catch (e) {
       // 解密失败：dataKey 不匹配或数据损坏
       // 抛异常而不是返回原始值，避免静默错误
-      throw DataKeyNotSetException(
-        '解密失败：dataKey 不匹配或数据损坏 - $e',
-      );
+      throw DataKeyNotSetException('解密失败：dataKey 不匹配或数据损坏 - $e');
     }
   }
 
@@ -452,8 +459,10 @@ class NotesDatabase {
   Future<Map<String, dynamic>> _toEncryptedRow(SafeNote note) async {
     final json = note.toJson();
     json[NoteFields.title] = await _encryptField(note.uuid, note.title);
-    json[NoteFields.description] =
-        await _encryptField(note.uuid, note.description);
+    json[NoteFields.description] = await _encryptField(
+      note.uuid,
+      note.description,
+    );
     return json;
   }
 
@@ -464,7 +473,10 @@ class NotesDatabase {
     final encryptedDesc = json[NoteFields.description] as String? ?? '';
     final decrypted = Map<String, dynamic>.from(json);
     decrypted[NoteFields.title] = await _decryptField(uuid, encryptedTitle);
-    decrypted[NoteFields.description] = await _decryptField(uuid, encryptedDesc);
+    decrypted[NoteFields.description] = await _decryptField(
+      uuid,
+      encryptedDesc,
+    );
     return SafeNote.fromJson(decrypted);
   }
 
@@ -539,11 +551,14 @@ class NotesDatabase {
     ''');
 
     await db.execute(
-        'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})');
+      'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})',
+    );
     await db.execute(
-        'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})');
+      'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})',
+    );
     await db.execute(
-        'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
+      'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})',
+    );
   }
 
   /// 创建新数据库（version 4 schema）
@@ -573,13 +588,16 @@ class NotesDatabase {
 
     // 索引：按 uuid 快速查找（同步用）
     await db.execute(
-        'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})');
+      'CREATE INDEX idx_notes_uuid ON $tableNotes(${NoteFields.uuid})',
+    );
     // 索引：按 deleted 过滤（最近删除视图用）
     await db.execute(
-        'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})');
+      'CREATE INDEX idx_notes_deleted ON $tableNotes(${NoteFields.deleted})',
+    );
     // 索引：按 synced 过滤（同步用，找未同步的笔记）
     await db.execute(
-        'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})');
+      'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})',
+    );
   }
 
   /// schema 升级回调（version 3 → 4：新增 synced_deleted 列）
@@ -597,7 +615,11 @@ class NotesDatabase {
   ///     （删除会触发 synced=0），所以默认 0 与实际语义一致
   ///   - 未同步的笔记（synced=0）：synced_deleted 取何值都不影响判定
   ///     （base = synced_hash==null 时直接退化为「保守冲突」分支）
-  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  static Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
     Log.db.i('数据库升级: $oldVersion → $newVersion');
     if (oldVersion < 4) {
       await db.execute(
@@ -620,9 +642,11 @@ class NotesDatabase {
       final id = await db.insert(tableNotes, await _toEncryptedRow(note));
       _upsertCacheEntry(note.copyWith(id: id)); // 单条新增：直接更新缓存，避免全量重解密
       // 只记录元数据，不记录标题 / 正文（见文件顶部隐私红线说明）
-      Log.note.i('新增笔记 uuid=${note.uuid} id=$id '
-          'hash=${_hashBrief(note.contentHash)} '
-          'len=${note.title.length}+${note.description.length}');
+      Log.note.i(
+        '新增笔记 uuid=${note.uuid} id=$id '
+        'hash=${_hashBrief(note.contentHash)} '
+        'len=${note.title.length}+${note.description.length}',
+      );
       return note.copyWith(id: id);
     } on Object catch (e, st) {
       Log.note.e('新增笔记失败 uuid=${note.uuid}', error: e, stackTrace: st);
@@ -649,15 +673,16 @@ class NotesDatabase {
 
     // 幂等去重：先查候选 uuid 是否已存在于库（含墓碑，墓碑同样占用唯一键），
     // 已存在的跳过，避免裸 INSERT 触发 UNIQUE 约束整体回滚。
-    final existingUuids = await _existingUuids(
-        db, notes.map((n) => n.uuid));
+    final existingUuids = await _existingUuids(db, notes.map((n) => n.uuid));
     final toInsert = existingUuids.isEmpty
         ? notes
         : notes.where((n) => !existingUuids.contains(n.uuid)).toList();
     final skipped = notes.length - toInsert.length;
     if (skipped > 0) {
-      Log.note.i('事务批量新增: 跳过 $skipped/${notes.length} 条已存在 uuid'
-          '（幂等去重）');
+      Log.note.i(
+        '事务批量新增: 跳过 $skipped/${notes.length} 条已存在 uuid'
+        '（幂等去重）',
+      );
     }
 
     try {
@@ -674,12 +699,17 @@ class NotesDatabase {
       for (final entry in rows) {
         _upsertCacheEntry(entry.note);
       }
-      Log.note.i('事务批量新增完成: 实际插入 ${rows.length}/${notes.length} 条'
-          '笔记（导入，跳过 $skipped 条）');
+      Log.note.i(
+        '事务批量新增完成: 实际插入 ${rows.length}/${notes.length} 条'
+        '笔记（导入，跳过 $skipped 条）',
+      );
       return rows.length;
     } on Object catch (e, st) {
-      Log.note.e('事务批量新增失败，已整体回滚: ${toInsert.length} 条笔记（导入）',
-          error: e, stackTrace: st);
+      Log.note.e(
+        '事务批量新增失败，已整体回滚: ${toInsert.length} 条笔记（导入）',
+        error: e,
+        stackTrace: st,
+      );
       rethrow;
     }
   }
@@ -690,7 +720,9 @@ class NotesDatabase {
   /// 变量占位符上限（SQLITE_MAX_VARIABLE_NUMBER）。含墓碑——墓碑同样占用
   /// `safe_notes.uuid` 唯一键。
   Future<Set<String>> _existingUuids(
-      Database db, Iterable<String> uuids) async {
+    Database db,
+    Iterable<String> uuids,
+  ) async {
     final unique = uuids.toSet();
     if (unique.isEmpty) return const {};
     final existing = <String>{};
@@ -800,8 +832,10 @@ class NotesDatabase {
     final notes = all.where((n) => !n.deleted).toList()
       ..sort((a, b) => a.createdTime.compareTo(b.createdTime));
     // 数据加载条数是排障关键信息（启动/刷新时都会打印）
-    Log.db.i('加载笔记列表: ${notes.length} 条（未删除）'
-        '${cacheHit ? '（缓存命中，跳过解密）' : '（缓存失效，已重新解密）'}');
+    Log.db.i(
+      '加载笔记列表: ${notes.length} 条（未删除）'
+      '${cacheHit ? '（缓存命中，跳过解密）' : '（缓存失效，已重新解密）'}',
+    );
     return notes;
   }
 
@@ -819,8 +853,10 @@ class NotesDatabase {
     final notes = await Future.wait(
       result.map((json) => _fromEncryptedRow(json)).toList(),
     );
-    Log.db.i('加载回收站笔记: ${notes.length} 条（已删除）, '
-        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    Log.db.i(
+      '加载回收站笔记: ${notes.length} 条（已删除）, '
+      '解密耗时 ${sw.elapsedMilliseconds}ms',
+    );
     return notes;
   }
 
@@ -855,9 +891,11 @@ class NotesDatabase {
     );
     _notesCache = notes;
     final tombstones = notes.where((n) => n.deleted).length;
-    Log.db.i('加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
-        '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
-        '解密耗时 ${sw.elapsedMilliseconds}ms');
+    Log.db.i(
+      '加载全量笔记（含墓碑）: 共 ${notes.length} 条 '
+      '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
+      '解密耗时 ${sw.elapsedMilliseconds}ms',
+    );
     // 返回副本：避免调用方（如 _buildLocalManifest）在遍历时因
     // hardDeleteByUuid 改写 _notesCache 而触发并发修改异常。
     return List.of(notes);
@@ -875,13 +913,18 @@ class NotesDatabase {
         whereArgs: [note.id],
       );
       _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
-      Log.note.i('修改笔记 uuid=${note.uuid} id=${note.id} '
-          'hash=${_hashBrief(note.contentHash)} '
-          'len=${note.title.length}+${note.description.length} rows=$rows');
+      Log.note.i(
+        '修改笔记 uuid=${note.uuid} id=${note.id} '
+        'hash=${_hashBrief(note.contentHash)} '
+        'len=${note.title.length}+${note.description.length} rows=$rows',
+      );
       return rows;
     } on Object catch (e, st) {
-      Log.note.e('修改笔记失败 uuid=${note.uuid} id=${note.id}',
-          error: e, stackTrace: st);
+      Log.note.e(
+        '修改笔记失败 uuid=${note.uuid} id=${note.id}',
+        error: e,
+        stackTrace: st,
+      );
       rethrow;
     }
   }
@@ -898,13 +941,14 @@ class NotesDatabase {
         whereArgs: [note.uuid],
       );
       _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
-      Log.note.i('按 uuid 更新笔记 uuid=${note.uuid} '
-          'hash=${_hashBrief(note.contentHash)} '
-          'deleted=${note.deleted} rows=$rows');
+      Log.note.i(
+        '按 uuid 更新笔记 uuid=${note.uuid} '
+        'hash=${_hashBrief(note.contentHash)} '
+        'deleted=${note.deleted} rows=$rows',
+      );
       return rows;
     } on Object catch (e, st) {
-      Log.note.e('按 uuid 更新笔记失败 uuid=${note.uuid}',
-          error: e, stackTrace: st);
+      Log.note.e('按 uuid 更新笔记失败 uuid=${note.uuid}', error: e, stackTrace: st);
       rethrow;
     }
   }
@@ -930,7 +974,11 @@ class NotesDatabase {
         final i = _notesCache!.indexWhere((n) => n.id == id);
         if (i >= 0) {
           _upsertCacheEntry(
-            _notesCache![i].copyWith(deleted: true, synced: false, updatedAt: now),
+            _notesCache![i].copyWith(
+              deleted: true,
+              synced: false,
+              updatedAt: now,
+            ),
           );
         }
       }
@@ -984,8 +1032,10 @@ class NotesDatabase {
     _removeCacheEntry(id: id); // 笔记被删除：从缓存移除该条目
 
     // 不可恢复的破坏性操作，必须留痕
-    Log.note.i('永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
-        '已加入 purged 列表待同步清理');
+    Log.note.i(
+      '永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
+      '已加入 purged 列表待同步清理',
+    );
     return deleted;
   }
 
@@ -1024,18 +1074,16 @@ class NotesDatabase {
       whereArgs: [MetaKeys.purgedUuids],
       limit: 1,
     );
-    final existing = maps.isNotEmpty ? maps.first[MetaFields.value] as String? : null;
+    final existing = maps.isNotEmpty
+        ? maps.first[MetaFields.value] as String?
+        : null;
     final list = _parseUuidList(existing);
     if (!list.contains(uuid)) {
       list.add(uuid);
-      await txn.insert(
-        tableMeta,
-        {
-          MetaFields.key: MetaKeys.purgedUuids,
-          MetaFields.value: _serializeUuidList(list),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await txn.insert(tableMeta, {
+        MetaFields.key: MetaKeys.purgedUuids,
+        MetaFields.value: _serializeUuidList(list),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -1069,9 +1117,7 @@ class NotesDatabase {
       // 由上层提示用户、停止拉取，而不是带着错误的空列表继续。
       throw FormatException('MetaKeys.purgedUuids 解析失败（JSON 损坏）: $e');
     }
-    throw const FormatException(
-      'MetaKeys.purgedUuids 格式错误：根节点不是 JSON 数组',
-    );
+    throw const FormatException('MetaKeys.purgedUuids 格式错误：根节点不是 JSON 数组');
   }
 
   /// 序列化 uuid 列表为 JSON 字符串
@@ -1105,7 +1151,11 @@ class NotesDatabase {
         final i = _notesCache!.indexWhere((n) => n.id == id);
         if (i >= 0) {
           _upsertCacheEntry(
-            _notesCache![i].copyWith(deleted: false, synced: false, updatedAt: now),
+            _notesCache![i].copyWith(
+              deleted: false,
+              synced: false,
+              updatedAt: now,
+            ),
           );
         }
       }
@@ -1168,10 +1218,7 @@ class NotesDatabase {
       for (final note in notes) {
         final row = await _toEncryptedRow(note);
         // 保留 id 和 uuid 用于 UPDATE WHERE 条件
-        encryptedRows.add({
-          'where_uuid': note.uuid,
-          'row': row,
-        });
+        encryptedRows.add({'where_uuid': note.uuid, 'row': row});
       }
 
       // 5. 在事务中一次性写入所有新密文（atomic）
@@ -1190,7 +1237,7 @@ class NotesDatabase {
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
 
-    // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
+      // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
@@ -1199,8 +1246,7 @@ class NotesDatabase {
     } catch (e, st) {
       // 失败时恢复 _dataKey 为原始值（可能是 oldKey 或 originalDataKey）
       _dataKey = originalDataKey;
-      Log.db.f('全库重加密失败，已回滚事务并恢复原 dataKey',
-          error: e, stackTrace: st);
+      Log.db.f('全库重加密失败，已回滚事务并恢复原 dataKey', error: e, stackTrace: st);
       rethrow;
     } finally {
       // F4 修复：无论成功或失败，清除迁移中标志
@@ -1249,17 +1295,16 @@ class NotesDatabase {
       final encryptedRows = <Map<String, dynamic>>[];
       for (final note in notes) {
         final row = await _toEncryptedRow(note);
-        encryptedRows.add({
-          'where_uuid': note.uuid,
-          'row': row,
-        });
+        encryptedRows.add({'where_uuid': note.uuid, 'row': row});
       }
 
       // 4. 需标记重传的 uuid（dataKey 真变时：非墓碑全部标记）
       List<String>? reuploadUuids;
       if (markBlobReupload) {
-        reuploadUuids =
-            notes.where((n) => !n.deleted).map((n) => n.uuid).toList();
+        reuploadUuids = notes
+            .where((n) => !n.deleted)
+            .map((n) => n.uuid)
+            .toList();
       }
 
       // 5. 同一事务：重加密 + 账本 + 重传标记（atomic，B1）
@@ -1274,23 +1319,15 @@ class NotesDatabase {
             whereArgs: [uuid],
           );
         }
-        await txn.insert(
-          tableMeta,
-          {
-            MetaFields.key: MetaKeys.keyring,
-            MetaFields.value: keyringJson,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await txn.insert(tableMeta, {
+          MetaFields.key: MetaKeys.keyring,
+          MetaFields.value: keyringJson,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
         if (reuploadUuids != null) {
-          await txn.insert(
-            tableMeta,
-            {
-              MetaFields.key: MetaKeys.blobReuploadPending,
-              MetaFields.value: jsonEncode(reuploadUuids),
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          await txn.insert(tableMeta, {
+            MetaFields.key: MetaKeys.blobReuploadPending,
+            MetaFields.value: jsonEncode(reuploadUuids),
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       });
 
@@ -1304,8 +1341,7 @@ class NotesDatabase {
       return notes.length;
     } catch (e, st) {
       _dataKey = originalDataKey;
-      Log.db.f('原子化迁移失败，事务已回滚并恢复原 dataKey',
-          error: e, stackTrace: st);
+      Log.db.f('原子化迁移失败，事务已回滚并恢复原 dataKey', error: e, stackTrace: st);
       rethrow;
     } finally {
       _isMigrating = false;
@@ -1464,7 +1500,10 @@ class NotesDatabase {
     if (remaining.isEmpty) {
       await clearAllPendingReupload();
     } else {
-      await setMeta(MetaKeys.blobReuploadPending, jsonEncode(remaining.toList()));
+      await setMeta(
+        MetaKeys.blobReuploadPending,
+        jsonEncode(remaining.toList()),
+      );
     }
   }
 
@@ -1527,11 +1566,10 @@ class NotesDatabase {
   /// 写入 meta 值（upsert）
   Future<void> setMeta(String key, String value) async {
     final db = await instance.database;
-    await db.insert(
-      tableMeta,
-      {MetaFields.key: key, MetaFields.value: value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(tableMeta, {
+      MetaFields.key: key,
+      MetaFields.value: value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// 读取 manifest 版本号（按 providerKey 隔离存储）
@@ -1547,18 +1585,17 @@ class NotesDatabase {
     // 同步链路意外崩溃。这里容错降级为 0（首次同步语义）并留日志。
     final version = int.tryParse(value);
     if (version == null) {
-      Log.db.w('getManifestVersion: meta 值非整数（损坏），降级为 0: '
-          'providerKey=$providerKey value=$value');
+      Log.db.w(
+        'getManifestVersion: meta 值非整数（损坏），降级为 0: '
+        'providerKey=$providerKey value=$value',
+      );
       return 0;
     }
     return version;
   }
 
   /// 写入 manifest 版本号（按 providerKey 隔离存储）
-  Future<void> setManifestVersion(
-    String providerKey,
-    int version,
-  ) async {
+  Future<void> setManifestVersion(String providerKey, int version) async {
     await setMeta(_manifestVersionKey(providerKey), version.toString());
   }
 

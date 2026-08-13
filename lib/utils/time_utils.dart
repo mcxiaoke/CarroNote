@@ -18,10 +18,7 @@ import 'package:timeago/timeago.dart' as timeago;
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
-String humanTime({
-  required DateTime time,
-  required String localeString,
-}) {
+String humanTime({required DateTime time, required String localeString}) {
   // set local for all supported language
   SafeNotesConfig.setTimeagoLocale();
 

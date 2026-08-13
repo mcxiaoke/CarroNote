@@ -216,8 +216,7 @@ void main() {
   });
 
   group('多设备交互 - H1: 改密码后他端同步（v4：scenario-b 中止 + 只读不 echo）', () {
-    test('设备 A 改密码推送成功；设备 B 旧密码同步中止；B 用新密码登录后正常',
-        () async {
+    test('设备 A 改密码推送成功；设备 B 旧密码同步中止；B 用新密码登录后正常', () async {
       // 场景：
       //   1. 设备 A 和设备 B 共享同一个 keyring（相同 dataKey + encryptedDataKey_A）
       //   2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变，keyVersion 2）
@@ -232,8 +231,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mkA = await SyncCrypto.deriveMasterKey('password-A', salt: salt);
-      final encryptedDataKeyA =
-          base64.encode(await SyncCrypto.wrapDataKey(mkA, dataKey));
+      final encryptedDataKeyA = base64.encode(
+        await SyncCrypto.wrapDataKey(mkA, dataKey),
+      );
 
       // 设备 A：创建笔记并首次同步
       var db = await _makeDatabase();
@@ -248,15 +248,23 @@ void main() {
         mk: mkA,
       );
       await db.storeNote(
-          _makeNote(uuid: 'uuid-h1', title: 'Note H1', description: 'Desc'));
+        _makeNote(uuid: 'uuid-h1', title: 'Note H1', description: 'Desc'),
+      );
       await engine.sync();
 
       // 2. 设备 A 改密码 → 新 MK + 新 encryptedDataKey（dataKey 不变，keyVersion 2）
-      final mkANew = await SyncCrypto.deriveMasterKey('password-A-new', salt: salt);
-      final encryptedDataKeyANew =
-          base64.encode(await SyncCrypto.wrapDataKey(mkANew, dataKey));
-      await persistTestKeyring(db,
-          encryptedDataKey: encryptedDataKeyANew, keyVersion: 2);
+      final mkANew = await SyncCrypto.deriveMasterKey(
+        'password-A-new',
+        salt: salt,
+      );
+      final encryptedDataKeyANew = base64.encode(
+        await SyncCrypto.wrapDataKey(mkANew, dataKey),
+      );
+      await persistTestKeyring(
+        db,
+        encryptedDataKey: encryptedDataKeyANew,
+        keyVersion: 2,
+      );
       engine = _makeEngine(
         backend: backend,
         database: db,
@@ -284,14 +292,20 @@ void main() {
         mk: mkA, // 旧密码派生的 MK
       );
       final resultBOld = await engineBOld.sync();
-      expect(resultBOld.success, isFalse,
-          reason: 'B 旧密码会话同步应中止（scenario-b，他端改了密码）');
+      expect(
+        resultBOld.success,
+        isFalse,
+        reason: 'B 旧密码会话同步应中止（scenario-b，他端改了密码）',
+      );
       expect(resultBOld.errorMessage, contains('密码已在其他设备修改'));
 
       // 5. 设备 B 用新密码登录（派生新 MK），本地 meta 仍为旧包裹
       //    模拟真实 login 流程：新密码经远端验证后覆盖本地账本为远端新包裹
-      await persistTestKeyring(db,
-          encryptedDataKey: encryptedDataKeyANew, keyVersion: 2);
+      await persistTestKeyring(
+        db,
+        encryptedDataKey: encryptedDataKeyANew,
+        keyVersion: 2,
+      );
       final engineB = _makeEngine(
         backend: backend,
         database: db,
@@ -307,8 +321,11 @@ void main() {
       // 6. v4 只读不 echo：B 本地账本已是远端一致值（登录时覆盖），
       //    同步不再回写任何东西
       final localEncryptedDataKey = await persistedEncryptedDataKey(db);
-      expect(localEncryptedDataKey, equals(encryptedDataKeyANew),
-          reason: 'B 本地账本保持登录时采用的新包裹（同步零写入）');
+      expect(
+        localEncryptedDataKey,
+        equals(encryptedDataKeyANew),
+        reason: 'B 本地账本保持登录时采用的新包裹（同步零写入）',
+      );
     });
   });
 
@@ -318,8 +335,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -356,8 +374,11 @@ void main() {
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
-      expect(remoteManifest.items.containsKey('uuid-purge'), isFalse,
-          reason: '硬删除的笔记应从远端 manifest 移除');
+      expect(
+        remoteManifest.items.containsKey('uuid-purge'),
+        isFalse,
+        reason: '硬删除的笔记应从远端 manifest 移除',
+      );
       expect(remoteManifest.items.containsKey('uuid-keep'), isTrue);
 
       // 验证待清理列表已清空
@@ -370,8 +391,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -385,8 +407,9 @@ void main() {
       );
 
       // 创建并同步一条笔记
-      final note =
-          await db.storeNote(_makeNote(uuid: 'uuid-revive', title: 'Revive'));
+      final note = await db.storeNote(
+        _makeNote(uuid: 'uuid-revive', title: 'Revive'),
+      );
       await engine.sync();
 
       // 硬删除
@@ -398,8 +421,11 @@ void main() {
 
       // 验证笔记没有复活
       final notes = await db.readAllNotesIncludingDeleted();
-      expect(notes.any((n) => n.uuid == 'uuid-revive'), isFalse,
-          reason: '硬删除的笔记不应在后续同步中复活');
+      expect(
+        notes.any((n) => n.uuid == 'uuid-revive'),
+        isFalse,
+        reason: '硬删除的笔记不应在后续同步中复活',
+      );
     });
   });
 
@@ -417,14 +443,14 @@ void main() {
   // 使用中几乎必然触发，属数据正确性 P0。
   // ────────────────────────────────────────────────────────────
   group('多设备交互 - BUG-P0: 删除不被冲突副本机制复活', () {
-    test('本地删除 + 远端仍活跃（时间差超阈值）→ 不得产生新 uuid 的活跃副本',
-        () async {
+    test('本地删除 + 远端仍活跃（时间差超阈值）→ 不得产生新 uuid 的活跃副本', () async {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -438,13 +464,10 @@ void main() {
       );
 
       // 1) 一条 10 分钟前写入的笔记，先同步上去（远端记为活跃）
-      final tenMinAgo =
-          DateTime.now().millisecondsSinceEpoch - 10 * 60 * 1000;
-      final note = await db.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'ToDelete',
-        updatedAt: tenMinAgo,
-      ));
+      final tenMinAgo = DateTime.now().millisecondsSinceEpoch - 10 * 60 * 1000;
+      final note = await db.storeNote(
+        _makeNote(uuid: 'uuid-del', title: 'ToDelete', updatedAt: tenMinAgo),
+      );
       await engine.sync();
 
       // 2) 用户删除它（softDelete 把 updatedAt 刷成当前时刻）
@@ -455,27 +478,37 @@ void main() {
 
       // 3) 删除必须真正生效：本地不得残留任何活跃笔记
       final live = await db.readAllNotes();
-      expect(live, isEmpty,
-          reason: '删除被冲突副本机制复活：本地出现了 ${live.length} 条活跃笔记 '
-              '${live.map((n) => n.uuid).toList()}');
+      expect(
+        live,
+        isEmpty,
+        reason:
+            '删除被冲突副本机制复活：本地出现了 ${live.length} 条活跃笔记 '
+            '${live.map((n) => n.uuid).toList()}',
+      );
 
       // 4) 远端 manifest 里只应有这一条墓碑，不得多出活跃条目
       final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
-      final remoteLive =
-          remote.items.entries.where((e) => !e.value.deleted).toList();
-      expect(remoteLive, isEmpty,
-          reason: '远端出现复活副本：${remoteLive.map((e) => e.key).toList()}');
-      expect(remote.items['uuid-del']?.deleted, isTrue,
-          reason: '墓碑必须保留，供其他设备同步到这次删除');
+      final remoteLive = remote.items.entries
+          .where((e) => !e.value.deleted)
+          .toList();
+      expect(
+        remoteLive,
+        isEmpty,
+        reason: '远端出现复活副本：${remoteLive.map((e) => e.key).toList()}',
+      );
+      expect(
+        remote.items['uuid-del']?.deleted,
+        isTrue,
+        reason: '墓碑必须保留，供其他设备同步到这次删除',
+      );
 
       // 5) 反复同步不得再生出副本（增殖是原缺陷最致命的表现）
       await engine.sync();
       await engine.sync();
-      expect(await db.readAllNotes(), isEmpty,
-          reason: '多次同步后仍不得出现复活副本');
+      expect(await db.readAllNotes(), isEmpty, reason: '多次同步后仍不得出现复活副本');
     });
 
     test('双方都活跃且内容真分叉 → 仍必须保留败方副本（防止修复过度）', () async {
@@ -490,8 +523,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -509,12 +543,14 @@ void main() {
 
       // 1) 远端：另一台设备把 v1 推进到了 v2。
       //    先建 v1 同步（远端=v1），再改成 v2 同步（远端=v2），制造既成事实。
-      await db.storeNote(_makeNote(
-        uuid: 'uuid-fork',
-        title: 'Fork',
-        description: 'v1',
-        updatedAt: DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000,
-      ));
+      await db.storeNote(
+        _makeNote(
+          uuid: 'uuid-fork',
+          title: 'Fork',
+          description: 'v1',
+          updatedAt: DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000,
+        ),
+      );
       await engine.sync();
       final toV2 = (await db.readNoteByUuid('uuid-fork'))!.copyWith(
         description: 'v2',
@@ -529,32 +565,37 @@ void main() {
       //    （synced_hash=v1），此后离线把内容改成 v3、尚未同步。
       //    v3 的 updatedAt 比 v2 新 → LWW 里 v3 胜、v2 是败方。
       final existing = (await db.readNoteByUuid('uuid-fork'))!;
-      await db.updateNoteByUuid(SafeNote(
-        id: existing.id,
-        uuid: 'uuid-fork',
-        title: 'Fork',
-        description: 'v3',
-        contentHash: SafeNote.computeHash('Fork', 'v3'),
-        deleted: false,
-        createdTime: existing.createdTime,
-        updatedAt: DateTime.now().millisecondsSinceEpoch - 1 * 60 * 1000,
-        synced: false,
-        syncedHash: baseHash, // 关键：共同祖先 = v1（真三方合并 base）
-      ));
+      await db.updateNoteByUuid(
+        SafeNote(
+          id: existing.id,
+          uuid: 'uuid-fork',
+          title: 'Fork',
+          description: 'v3',
+          contentHash: SafeNote.computeHash('Fork', 'v3'),
+          deleted: false,
+          createdTime: existing.createdTime,
+          updatedAt: DateTime.now().millisecondsSinceEpoch - 1 * 60 * 1000,
+          synced: false,
+          syncedHash: baseHash, // 关键：共同祖先 = v1（真三方合并 base）
+        ),
+      );
       await engine.sync();
 
       // 3) 真并发：v3 胜（updatedAt 更新），败方 v2 必须以【新 uuid】保留，绝不丢。
       final live = await db.readAllNotes();
-      expect(live.length, 2,
-          reason: '真实内容分叉时应保留败方副本，实际活跃 ${live.length} 条');
-      expect(live.map((n) => n.description).toSet(), {'v2', 'v3'},
-          reason: '胜方 v3 与败方 v2 都应存在');
-      expect(live.where((n) => n.uuid == 'uuid-fork').single.description, 'v3',
-          reason: '原 uuid 应持有 LWW 胜方内容');
+      expect(live.length, 2, reason: '真实内容分叉时应保留败方副本，实际活跃 ${live.length} 条');
+      expect(live.map((n) => n.description).toSet(), {
+        'v2',
+        'v3',
+      }, reason: '胜方 v3 与败方 v2 都应存在');
+      expect(
+        live.where((n) => n.uuid == 'uuid-fork').single.description,
+        'v3',
+        reason: '原 uuid 应持有 LWW 胜方内容',
+      );
       // 败方必须是【新 uuid】的独立副本（拷贝语义），不能顶掉原 uuid。
       final copy = live.where((n) => n.uuid != 'uuid-fork').single;
-      expect(copy.description, 'v2',
-          reason: '败方 v2 必须作为独立副本保留');
+      expect(copy.description, 'v2', reason: '败方 v2 必须作为独立副本保留');
     });
   });
 
@@ -580,8 +621,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -598,12 +640,14 @@ void main() {
       // 1) 30 分钟前建的笔记，已同步：远端与本地完全一致，无任何分歧
       final thirtyMinAgo =
           DateTime.now().millisecondsSinceEpoch - 30 * 60 * 1000;
-      await db.storeNote(_makeNote(
-        uuid: 'uuid-edit',
-        title: 'Note',
-        description: 'v1',
-        updatedAt: thirtyMinAgo,
-      ));
+      await db.storeNote(
+        _makeNote(
+          uuid: 'uuid-edit',
+          title: 'Note',
+          description: 'v1',
+          updatedAt: thirtyMinAgo,
+        ),
+      );
       // 首次同步收敛后，markAllSynced 会把 synced_hash 回填为 v1 的 content_hash。
       await engine.sync();
 
@@ -624,16 +668,19 @@ void main() {
 
       // 3) 编辑一条笔记不该凭空多出一条笔记
       final live = await db.readAllNotes();
-      expect(live.length, 1,
-          reason: '单边编辑被误判为冲突，旧版本被另存为副本：'
-              '${live.map((n) => "${n.uuid.substring(0, 8)}/${n.description}").toList()}');
+      expect(
+        live.length,
+        1,
+        reason:
+            '单边编辑被误判为冲突，旧版本被另存为副本：'
+            '${live.map((n) => "${n.uuid.substring(0, 8)}/${n.description}").toList()}',
+      );
       expect(live.single.description, 'v2');
 
       // 4) 反复同步同样不得增殖
       await engine.sync();
       await engine.sync();
-      expect((await db.readAllNotes()).length, 1,
-          reason: '多次同步后仍不得出现旧版本副本');
+      expect((await db.readAllNotes()).length, 1, reason: '多次同步后仍不得出现旧版本副本');
     });
 
     test('真并发编辑（时间差小于旧阈值）→ 败方内容不得静默丢失', () async {
@@ -648,8 +695,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -667,12 +715,14 @@ void main() {
       final baseHash = SafeNote.computeHash('Race', 'v1');
 
       // 1) 远端：另一台设备把 v1 推进到 v2（2 分钟前）。
-      await db.storeNote(_makeNote(
-        uuid: 'uuid-race',
-        title: 'Race',
-        description: 'v1',
-        updatedAt: DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000,
-      ));
+      await db.storeNote(
+        _makeNote(
+          uuid: 'uuid-race',
+          title: 'Race',
+          description: 'v1',
+          updatedAt: DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000,
+        ),
+      );
       await engine.sync();
       final toV2 = (await db.readNoteByUuid('uuid-race'))!.copyWith(
         description: 'v2',
@@ -686,25 +736,30 @@ void main() {
       // 2) 本地改写成「设备 B 视角」：base=v1，离线改成 v3（1 分钟前）。
       //    v2 与 v3 只差 1 分钟——旧阈值下会被误判为「并发编辑」而 LWW 覆盖。
       final existing = (await db.readNoteByUuid('uuid-race'))!;
-      await db.updateNoteByUuid(SafeNote(
-        id: existing.id,
-        uuid: 'uuid-race',
-        title: 'Race',
-        description: 'v3',
-        contentHash: SafeNote.computeHash('Race', 'v3'),
-        deleted: false,
-        createdTime: existing.createdTime,
-        updatedAt: DateTime.now().millisecondsSinceEpoch - 60 * 1000,
-        synced: false,
-        syncedHash: baseHash, // 关键：共同祖先 = v1
-      ));
+      await db.updateNoteByUuid(
+        SafeNote(
+          id: existing.id,
+          uuid: 'uuid-race',
+          title: 'Race',
+          description: 'v3',
+          contentHash: SafeNote.computeHash('Race', 'v3'),
+          deleted: false,
+          createdTime: existing.createdTime,
+          updatedAt: DateTime.now().millisecondsSinceEpoch - 60 * 1000,
+          synced: false,
+          syncedHash: baseHash, // 关键：共同祖先 = v1
+        ),
+      );
       await engine.sync();
 
       // 两份并发修改都必须活下来，一个字都不能丢
       final live = await db.readAllNotes();
       final bodies = live.map((n) => n.description).toSet();
-      expect(bodies.containsAll({'v2', 'v3'}), isTrue,
-          reason: '并发编辑被 LWW 静默覆盖，丢失了一方内容。当前存活：$bodies');
+      expect(
+        bodies.containsAll({'v2', 'v3'}),
+        isTrue,
+        reason: '并发编辑被 LWW 静默覆盖，丢失了一方内容。当前存活：$bodies',
+      );
     });
   });
 
@@ -722,8 +777,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -739,47 +795,62 @@ void main() {
       // 1) 两条笔记：一条留着当对照，一条将成为超期墓碑
       final keep = await db.storeNote(_makeNote(uuid: 'uuid-alive'));
       final old = await db.storeNote(
-          _makeNote(uuid: 'uuid-old-tomb', title: 'OldTomb'));
+        _makeNote(uuid: 'uuid-old-tomb', title: 'OldTomb'),
+      );
       await engine.sync();
 
       // 2) 把 uuid-old-tomb 改成「31 天前删除」的墓碑
       final thirtyOneDaysAgo = DateTime.now()
           .subtract(const Duration(days: 31))
           .millisecondsSinceEpoch;
-      await db.updateNoteByUuid(SafeNote(
-        id: old.id,
-        uuid: 'uuid-old-tomb',
-        title: 'OldTomb',
-        description: old.description,
-        contentHash: old.contentHash,
-        deleted: true,
-        createdTime: old.createdTime,
-        updatedAt: thirtyOneDaysAgo,
-        synced: true,
-      ));
+      await db.updateNoteByUuid(
+        SafeNote(
+          id: old.id,
+          uuid: 'uuid-old-tomb',
+          title: 'OldTomb',
+          description: old.description,
+          contentHash: old.contentHash,
+          deleted: true,
+          createdTime: old.createdTime,
+          updatedAt: thirtyOneDaysAgo,
+          synced: true,
+        ),
+      );
 
       // 3) 同步：GC 应在构建本地 manifest 时触发
       await engine.sync();
 
       final all = await db.readAllNotesIncludingDeleted();
-      expect(all.any((n) => n.uuid == 'uuid-old-tomb'), isFalse,
-          reason: '超期墓碑应被硬删除，否则墓碑会无限累积');
-      expect(all.any((n) => n.uuid == 'uuid-alive'), isTrue,
-          reason: '未超期的活跃笔记不得被误删');
+      expect(
+        all.any((n) => n.uuid == 'uuid-old-tomb'),
+        isFalse,
+        reason: '超期墓碑应被硬删除，否则墓碑会无限累积',
+      );
+      expect(
+        all.any((n) => n.uuid == 'uuid-alive'),
+        isTrue,
+        reason: '未超期的活跃笔记不得被误删',
+      );
 
       final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
-      expect(remote.items.containsKey('uuid-old-tomb'), isFalse,
-          reason: '超期墓碑应从远端 manifest 移除');
+      expect(
+        remote.items.containsKey('uuid-old-tomb'),
+        isFalse,
+        reason: '超期墓碑应从远端 manifest 移除',
+      );
       expect(remote.items.containsKey('uuid-alive'), isTrue);
 
       // 4) 再次同步不得让它从远端复活（purgedUuids 兜底）
       await engine.sync();
       final after = await db.readAllNotesIncludingDeleted();
-      expect(after.any((n) => n.uuid == 'uuid-old-tomb'), isFalse,
-          reason: 'GC 掉的墓碑不得在后续同步中复活');
+      expect(
+        after.any((n) => n.uuid == 'uuid-old-tomb'),
+        isFalse,
+        reason: 'GC 掉的墓碑不得在后续同步中复活',
+      );
       expect(keep.uuid, 'uuid-alive');
     });
 
@@ -788,8 +859,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       final db = await _makeDatabase();
       db.setDataKey(dataKey);
@@ -804,38 +876,45 @@ void main() {
 
       // 笔记本身写于 30 天前，这样后面「29 天前删除」在 LWW 里才是更新的
       // 一方（否则远端那份 updatedAt=同步时刻的活跃条目会赢，把墓碑覆盖掉）。
-      final note = await db.storeNote(_makeNote(
-        uuid: 'uuid-fresh-tomb',
-        title: 'FreshTomb',
-        updatedAt: DateTime.now()
-            .subtract(const Duration(days: 30))
-            .millisecondsSinceEpoch,
-      ));
+      final note = await db.storeNote(
+        _makeNote(
+          uuid: 'uuid-fresh-tomb',
+          title: 'FreshTomb',
+          updatedAt: DateTime.now()
+              .subtract(const Duration(days: 30))
+              .millisecondsSinceEpoch,
+        ),
+      );
       await engine.sync();
 
       // 29 天前删除 —— 差一天到阈值，必须留着
       final twentyNineDaysAgo = DateTime.now()
           .subtract(const Duration(days: 29))
           .millisecondsSinceEpoch;
-      await db.updateNoteByUuid(SafeNote(
-        id: note.id,
-        uuid: 'uuid-fresh-tomb',
-        title: 'FreshTomb',
-        description: note.description,
-        contentHash: note.contentHash,
-        deleted: true,
-        createdTime: note.createdTime,
-        updatedAt: twentyNineDaysAgo,
-        synced: true,
-      ));
+      await db.updateNoteByUuid(
+        SafeNote(
+          id: note.id,
+          uuid: 'uuid-fresh-tomb',
+          title: 'FreshTomb',
+          description: note.description,
+          contentHash: note.contentHash,
+          deleted: true,
+          createdTime: note.createdTime,
+          updatedAt: twentyNineDaysAgo,
+          synced: true,
+        ),
+      );
       await engine.sync();
 
       final remote = await ManifestCrypto.deserialize(
         dataKey,
         (await backend.getManifest()).ciphertext,
       );
-      expect(remote.items['uuid-fresh-tomb']?.deleted, isTrue,
-          reason: '未超期墓碑必须保留在 manifest，否则离线设备收不到删除');
+      expect(
+        remote.items['uuid-fresh-tomb']?.deleted,
+        isTrue,
+        reason: '未超期墓碑必须保留在 manifest，否则离线设备收不到删除',
+      );
     });
   });
 
@@ -845,8 +924,9 @@ void main() {
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
       final mk = await SyncCrypto.deriveMasterKey('password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       // 设备 A：创建笔记并同步
       var db = await _makeDatabase();
@@ -873,10 +953,14 @@ void main() {
       final tamperedEnvelope = await SyncCrypto.seal(
         dataKey,
         originalHash,
-        Uint8List.fromList(utf8.encode(jsonEncode({
-          'title': 'Tampered',
-          'description': 'Malicious content',
-        }))),
+        Uint8List.fromList(
+          utf8.encode(
+            jsonEncode({
+              'title': 'Tampered',
+              'description': 'Malicious content',
+            }),
+          ),
+        ),
       );
       backend.putTamperedBlob(originalHash, tamperedEnvelope);
 
@@ -914,9 +998,13 @@ void main() {
       final backend = FakeBackend();
       final dataKey = SyncCrypto.generateDataKey();
       final salt = SyncCrypto.generateSalt();
-      final mk = await SyncCrypto.deriveMasterKey('shared-password', salt: salt);
-      final encryptedDataKey =
-          base64.encode(await SyncCrypto.wrapDataKey(mk, dataKey));
+      final mk = await SyncCrypto.deriveMasterKey(
+        'shared-password',
+        salt: salt,
+      );
+      final encryptedDataKey = base64.encode(
+        await SyncCrypto.wrapDataKey(mk, dataKey),
+      );
 
       // 设备 A：创建 3 条笔记
       var db = await _makeDatabase();
@@ -954,12 +1042,17 @@ void main() {
 
       // 设备 B：修改 note-2
       final note2 = await db.readNoteByUuid('note-2');
-      await db.updateNoteByUuid(note2!.copyWith(
-        title: 'Title 2 Modified',
-        contentHash: SafeNote.computeHash('Title 2 Modified', 'Test Description'),
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        synced: false,
-      ));
+      await db.updateNoteByUuid(
+        note2!.copyWith(
+          title: 'Title 2 Modified',
+          contentHash: SafeNote.computeHash(
+            'Title 2 Modified',
+            'Test Description',
+          ),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          synced: false,
+        ),
+      );
       await engine.sync();
 
       // 设备 C：同步获取所有笔记
@@ -979,8 +1072,7 @@ void main() {
       final notesC = await db.readAllNotes();
       expect(notesC.length, 3);
       final note2C = await db.readNoteByUuid('note-2');
-      expect(note2C!.title, 'Title 2 Modified',
-          reason: '设备 C 应获得设备 B 的修改');
+      expect(note2C!.title, 'Title 2 Modified', reason: '设备 C 应获得设备 B 的修改');
 
       // 设备 A：重新创建并同步获取设备 B 的修改
       db = await _makeDatabase();
@@ -996,8 +1088,7 @@ void main() {
       );
       await engine.sync();
       final note2A = await db.readNoteByUuid('note-2');
-      expect(note2A!.title, 'Title 2 Modified',
-          reason: '设备 A 应获得设备 B 的修改');
+      expect(note2A!.title, 'Title 2 Modified', reason: '设备 A 应获得设备 B 的修改');
 
       // 最终一致性验证：设备 A 和 C 的 note-2 内容相同
       expect(note2A.title, equals(note2C.title));
@@ -1024,10 +1115,7 @@ void main() {
 
       // ── 设备 A：独立创建 keyring，加 2 条笔记，同步上传 ──
       var db = await _makeDatabase();
-      final vaultA = await Keyring.createNew(
-        password: password,
-        database: db,
-      );
+      final vaultA = await Keyring.createNew(password: password, database: db);
       db.setDataKey(vaultA.dataKey);
 
       await db.storeNote(_makeNote(uuid: 'note-a-1', title: 'Note A1'));
@@ -1053,21 +1141,30 @@ void main() {
 
       // ── 设备 B：独立创建 keyring（相同密码、不同 salt/dataKey），加 1 条笔记 ──
       db = await _makeDatabase();
-      final vaultB = await Keyring.createNew(
-        password: password,
-        database: db,
-      );
+      final vaultB = await Keyring.createNew(password: password, database: db);
       db.setDataKey(vaultB.dataKey);
 
       // 验证前提：两设备 keyring 参数确实不同
-      expect(vaultB.vaultId, isNot(equals(vaultAVaultId)),
-          reason: '独立 keyring 应有不同 vaultId');
-      expect(vaultB.kdf.salt, isNot(equals(vaultASalt)),
-          reason: '独立 keyring 应有不同 salt');
-      expect(vaultB.dataKey, isNot(equals(vaultADataKey)),
-          reason: '独立 keyring 应有不同 dataKey');
-      expect(vaultB.keyFingerprint, isNot(equals(vaultAFingerprint)),
-          reason: '不同 salt → 不同 MK → 不同 fingerprint');
+      expect(
+        vaultB.vaultId,
+        isNot(equals(vaultAVaultId)),
+        reason: '独立 keyring 应有不同 vaultId',
+      );
+      expect(
+        vaultB.kdf.salt,
+        isNot(equals(vaultASalt)),
+        reason: '独立 keyring 应有不同 salt',
+      );
+      expect(
+        vaultB.dataKey,
+        isNot(equals(vaultADataKey)),
+        reason: '独立 keyring 应有不同 dataKey',
+      );
+      expect(
+        vaultB.keyFingerprint,
+        isNot(equals(vaultAFingerprint)),
+        reason: '不同 salt → 不同 MK → 不同 fingerprint',
+      );
 
       await db.storeNote(_makeNote(uuid: 'note-b-1', title: 'Note B1'));
 
@@ -1083,26 +1180,43 @@ void main() {
       final resultB = await engineB.sync();
 
       // 验证：同步成功（不是失败）
-      expect(resultB.success, isTrue,
-          reason: '场景 d：相同密码应迁移成功，而非报 dataKey 迁移失败');
-      expect(resultB.migrated, greaterThan(0),
-          reason: '应有迁移操作（本地数据重新加密到远端 dataKey）');
+      expect(
+        resultB.success,
+        isTrue,
+        reason: '场景 d：相同密码应迁移成功，而非报 dataKey 迁移失败',
+      );
+      expect(
+        resultB.migrated,
+        greaterThan(0),
+        reason: '应有迁移操作（本地数据重新加密到远端 dataKey）',
+      );
 
       // 验证：设备 B 本地现在有 3 条笔记（A 的 2 条 + B 的 1 条）
       final allNotesB = await db.readAllNotesIncludingDeleted();
-      expect(allNotesB.length, 3,
-          reason: '迁移 + 同步后，设备 B 应有 A 和 B 的所有笔记');
+      expect(allNotesB.length, 3, reason: '迁移 + 同步后，设备 B 应有 A 和 B 的所有笔记');
 
       // 验证：设备 B 的 keyring 元数据已更新为远端（设备 A）的值
       final vaultBAfter = engineB.keyring;
-      expect(vaultBAfter.vaultId, equals(vaultAVaultId),
-          reason: '迁移后 vaultId 应为远端值');
-      expect(vaultBAfter.kdf.salt, equals(vaultASalt),
-          reason: '迁移后 salt 应为远端值');
-      expect(vaultBAfter.dataKey, equals(vaultADataKey),
-          reason: '迁移后 dataKey 应为远端值');
-      expect(vaultBAfter.keyFingerprint, equals(vaultAFingerprint),
-          reason: '迁移后 fingerprint 应为远端值');
+      expect(
+        vaultBAfter.vaultId,
+        equals(vaultAVaultId),
+        reason: '迁移后 vaultId 应为远端值',
+      );
+      expect(
+        vaultBAfter.kdf.salt,
+        equals(vaultASalt),
+        reason: '迁移后 salt 应为远端值',
+      );
+      expect(
+        vaultBAfter.dataKey,
+        equals(vaultADataKey),
+        reason: '迁移后 dataKey 应为远端值',
+      );
+      expect(
+        vaultBAfter.keyFingerprint,
+        equals(vaultAFingerprint),
+        reason: '迁移后 fingerprint 应为远端值',
+      );
 
       // 验证：远端 manifest 现在包含 3 条笔记
       final remoteManifest = await backend.getManifest();
@@ -1110,8 +1224,7 @@ void main() {
         vaultADataKey,
         remoteManifest.ciphertext,
       );
-      expect(manifest.items.length, 3,
-          reason: '远端 manifest 应有 3 条笔记');
+      expect(manifest.items.length, 3, reason: '远端 manifest 应有 3 条笔记');
       expect(manifest.items.containsKey('note-a-1'), isTrue);
       expect(manifest.items.containsKey('note-a-2'), isTrue);
       expect(manifest.items.containsKey('note-b-1'), isTrue);
@@ -1124,10 +1237,7 @@ void main() {
 
       // 设备 A 创建 keyring 并同步
       var db = await _makeDatabase();
-      final vaultA = await Keyring.createNew(
-        password: passwordA,
-        database: db,
-      );
+      final vaultA = await Keyring.createNew(password: passwordA, database: db);
       db.setDataKey(vaultA.dataKey);
       await db.storeNote(_makeNote(uuid: 'note-a-1', title: 'Note A1'));
 
@@ -1143,10 +1253,7 @@ void main() {
 
       // 设备 B 用不同密码创建 keyring
       db = await _makeDatabase();
-      final vaultB = await Keyring.createNew(
-        password: passwordB,
-        database: db,
-      );
+      final vaultB = await Keyring.createNew(password: passwordB, database: db);
       db.setDataKey(vaultB.dataKey);
 
       final engineB = SyncEngine(
@@ -1160,10 +1267,8 @@ void main() {
       final resultB = await engineB.sync();
 
       // 验证：同步失败（密码不匹配）
-      expect(resultB.success, isFalse,
-          reason: '不同密码应同步失败');
-      expect(resultB.errorMessage, contains('密码'),
-          reason: '错误信息应提示密码不匹配');
+      expect(resultB.success, isFalse, reason: '不同密码应同步失败');
+      expect(resultB.errorMessage, contains('密码'), reason: '错误信息应提示密码不匹配');
     });
   });
 }

@@ -15,17 +15,17 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 import 'package:safenotes/utils/time_utils.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class NoteCardWidget extends StatelessWidget {
   final SafeNote note;
@@ -55,43 +55,43 @@ class NoteCardWidget extends StatelessWidget {
       radius: BorderRadius.circular(10),
       border: ShadBorder.none,
       child: Column(
-          mainAxisSize: MainAxisSize.min,
-          //crossAxisAlignment: CrossAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              sanitize(note.title),
-              textDirection: getTextDirecton(note.title),
-              style: TextStyle(
-                color: fontColor,
-                fontSize: 20,
-                height: 1.2,
-                fontWeight: FontWeight.bold,
-                fontFamily: uiFontFamily,
-                fontFamilyFallback: uiFontFamilyFallback,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.clip,
+        mainAxisSize: MainAxisSize.min,
+        //crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            sanitize(note.title),
+            textDirection: getTextDirecton(note.title),
+            style: TextStyle(
+              color: fontColor,
+              fontSize: 20,
+              height: 1.2,
+              fontWeight: FontWeight.bold,
+              fontFamily: uiFontFamily,
+              fontFamilyFallback: uiFontFamilyFallback,
             ),
-            const SizedBox(height: 4),
-            Text(
-              time,
-              textDirection: getTextDirecton(time),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: fontColor,
-              ),
+            maxLines: 2,
+            overflow: TextOverflow.clip,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            time,
+            textDirection: getTextDirecton(time),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: fontColor,
             ),
-            const SizedBox(height: 6),
-            Text(
-              sanitize(note.abstractText),
-              textDirection: getTextDirecton(note.abstractText),
-              style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
-              maxLines: getMaxLine(index), //3,
-              overflow: TextOverflow.clip,
-            ),
-          ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            sanitize(note.abstractText),
+            textDirection: getTextDirecton(note.abstractText),
+            style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
+            maxLines: getMaxLine(index), //3,
+            overflow: TextOverflow.clip,
+          ),
+        ],
       ),
     );
   }

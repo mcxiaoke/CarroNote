@@ -10,12 +10,12 @@
 
 // Dart imports:
 import 'dart:io';
-import 'package:safenotes/utils/platform_ui.dart';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
@@ -26,7 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/file_handler.dart';
-import 'package:core/core.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/storage_permission.dart';
@@ -112,54 +112,54 @@ class BackupSettingState extends State<BackupSetting> {
     final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
 
     return shadSettingsList([
-        shadSettingsCard([
-          shadSwitchTile(
-            context,
-            icon: LucideIcons.cloud,
-            title: 'Auto Backup'.tr(),
-            description:
-                'This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ.'
-                    .tr(),
-            value: isBackupOn,
-            onChanged: (value) async {
-              await PreferencesStorage.setIsBackupOn(value);
-              if (value == true) {
-                await onBackupNow();
-              }
-              setState(() => isBackupOn = value);
-            },
-          ),
-        ]),
-        shadSectionTitle(context, 'Backup'.tr()),
-        shadSettingsCard([
-          shadInfoTile(
-            context,
-            icon: LucideIcons.history,
-            title: 'Last Backup'.tr(),
-            value: lastUpdateTime.isEmpty ? 'Never synced'.tr() : lastUpdateTime,
-          ),
-          shadNavigationTile(
-            context,
-            icon: LucideIcons.folderOpen,
-            title: 'Location'.tr(),
-            value: path.isEmpty ? '—' : path,
-            onTap: canOpen ? () => _openBackupDirectory() : () {},
-          ),
-          shadNavigationTile(
-            context,
-            icon: LucideIcons.folderInput,
-            title: 'Change location'.tr(),
-            onTap: () => _pickBackupLocation(),
-          ),
-          shadNavigationTile(
-            context,
-            icon: LucideIcons.cloudUpload,
-            title: 'Backup Now'.tr(),
-            onTap: () => onBackupNow(),
-          ),
-          _encryptedBadge(),
-        ]),
-        const SizedBox(height: 12),
+      shadSettingsCard([
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.cloud,
+          title: 'Auto Backup'.tr(),
+          description:
+              'This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ.'
+                  .tr(),
+          value: isBackupOn,
+          onChanged: (value) async {
+            await PreferencesStorage.setIsBackupOn(value);
+            if (value == true) {
+              await onBackupNow();
+            }
+            setState(() => isBackupOn = value);
+          },
+        ),
+      ]),
+      shadSectionTitle(context, 'Backup'.tr()),
+      shadSettingsCard([
+        shadInfoTile(
+          context,
+          icon: LucideIcons.history,
+          title: 'Last Backup'.tr(),
+          value: lastUpdateTime.isEmpty ? 'Never synced'.tr() : lastUpdateTime,
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.folderOpen,
+          title: 'Location'.tr(),
+          value: path.isEmpty ? '—' : path,
+          onTap: canOpen ? () => _openBackupDirectory() : () {},
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.folderInput,
+          title: 'Change location'.tr(),
+          onTap: () => _pickBackupLocation(),
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.cloudUpload,
+          title: 'Backup Now'.tr(),
+          onTap: () => onBackupNow(),
+        ),
+        _encryptedBadge(),
+      ]),
+      const SizedBox(height: 12),
     ]);
   }
 
@@ -170,8 +170,7 @@ class BackupSettingState extends State<BackupSetting> {
         children: [
           const Icon(LucideIcons.lock, size: 15, color: Colors.green),
           const SizedBox(width: 6),
-          Text('Backup encrypted'.tr(),
-              style: const TextStyle(fontSize: 12)),
+          Text('Backup encrypted'.tr(), style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -195,8 +194,9 @@ class BackupSettingState extends State<BackupSetting> {
     try {
       final dir = await FilePicker.getDirectoryPath(
         dialogTitle: 'Select backup folder'.tr(),
-        initialDirectory:
-            validWorkingBackupDirectory.isNotEmpty ? validWorkingBackupDirectory : null,
+        initialDirectory: validWorkingBackupDirectory.isNotEmpty
+            ? validWorkingBackupDirectory
+            : null,
       );
       if (dir != null && dir.isNotEmpty) {
         await PreferencesStorage.setBackupDirectory(dir);

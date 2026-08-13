@@ -93,10 +93,7 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   Future<void> deleteBlobSoft(String hash) async {
     final d = _blobs.remove(hash);
     if (d != null) {
-      _orphans[hash] = (
-        data: d,
-        ts: DateTime.now().millisecondsSinceEpoch,
-      );
+      _orphans[hash] = (data: d, ts: DateTime.now().millisecondsSinceEpoch);
     }
   }
 
@@ -106,8 +103,7 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   /// P1-2：清理超期隔离项（retention 之前写入的视为超期）
   @override
   Future<void> purgeOrphans(Duration retention) async {
-    final cutoff =
-        DateTime.now().subtract(retention).millisecondsSinceEpoch;
+    final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
     _orphans.removeWhere((h, v) => v.ts < cutoff);
   }
 
@@ -129,8 +125,8 @@ class FakeBackend with FakeJournalStore implements SyncBackend {
   /// P1-1 读侧：从新到旧返回所有备份名（对应 _backups 逆序）
   @override
   Future<List<String>> listManifestBackups() async => [
-        for (var i = _backups.length - 1; i >= 0; i--) 'backup-$i',
-      ];
+    for (var i = _backups.length - 1; i >= 0; i--) 'backup-$i',
+  ];
 
   @override
   Future<Uint8List?> readManifestBackup(String name) async {
@@ -168,8 +164,8 @@ SyncEngine _makeEngine({
   String vaultId = 'test-keyring',
   String deviceId = 'test-device',
 }) {
-  final edk = encryptedDataKey ??
-      base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
+  final edk =
+      encryptedDataKey ?? base64Encode(Uint8List(60)..fillRange(0, 60, 0xAB));
   final keyring = makeTestKeyring(
     vaultId: vaultId,
     dataKey: dataKey,
@@ -257,8 +253,11 @@ void main() {
 
       expect(result.success, isTrue);
       // 其他设备的 blob 应被保留（skipGc 生效，未执行孤儿 GC）
-      expect(backend._blobs.containsKey(otherHash), isTrue,
-          reason: '远端空时不应误删其他设备 blob');
+      expect(
+        backend._blobs.containsKey(otherHash),
+        isTrue,
+        reason: '远端空时不应误删其他设备 blob',
+      );
       // 本端笔记 blob 已上传
       expect(backend._blobs.containsKey(note.contentHash), isTrue);
     });
@@ -283,8 +282,11 @@ void main() {
 
       expect(result.success, isTrue);
       // 重建分支直接 early-return，根本不会执行 GC
-      expect(backend._blobs.containsKey(otherHash), isTrue,
-          reason: '损坏重建不应误删其他设备 blob');
+      expect(
+        backend._blobs.containsKey(otherHash),
+        isTrue,
+        reason: '损坏重建不应误删其他设备 blob',
+      );
     });
   });
 
@@ -325,8 +327,11 @@ void main() {
         (a) => a.uuid == '' && a.type == SyncActionType.skip,
         orElse: () => throw StateError('缺少恢复动作'),
       );
-      expect(recoverAction.message, contains('bak'),
-          reason: '应从 bak 恢复而非本地空重建');
+      expect(
+        recoverAction.message,
+        contains('bak'),
+        reason: '应从 bak 恢复而非本地空重建',
+      );
       // 远端数据未丢：两次同步的笔记都还在本地
       expect(await database.readNoteByUuid('p1f-note'), isNotNull);
       expect(await database.readNoteByUuid('p1f-note2'), isNotNull);
@@ -358,8 +363,7 @@ void main() {
       // 无 bak → 本地重建；backupCorruptManifest 把损坏文件移除（F-H01），
       // 因此重建上传必须用空 etag（首传语义），否则会因文件不存在而 412 失败
       final r = await engine.sync();
-      expect(r.success, isTrue,
-          reason: '本地重建 + 空 etag 首传必须成功（F-H01）');
+      expect(r.success, isTrue, reason: '本地重建 + 空 etag 首传必须成功（F-H01）');
       final recoverAction = r.actions.firstWhere(
         (a) => a.uuid == '' && a.type == SyncActionType.skip,
         orElse: () => throw StateError('缺少恢复动作'),
@@ -379,7 +383,11 @@ void main() {
   // ────────────────────────────────────────────
   group('P0-3 repairRemote blob 缺失兜底', () {
     test('远端 blob 缺失，本机有明文则重传修复', () async {
-      final note = _makeNote(uuid: 'p03-note', title: 'P0-3', description: 'hi');
+      final note = _makeNote(
+        uuid: 'p03-note',
+        title: 'P0-3',
+        description: 'hi',
+      );
       await database.storeNote(note);
 
       final engine = _makeEngine(
@@ -397,12 +405,16 @@ void main() {
       // 本机仍持有明文 → repairRemote 应自愈补回
       final result = await engine.repairRemote();
       expect(result.success, isTrue);
-      expect(backend._blobs.containsKey(note.contentHash), isTrue,
-          reason: '缺失 blob 应被本机明文重传补回');
+      expect(
+        backend._blobs.containsKey(note.contentHash),
+        isTrue,
+        reason: '缺失 blob 应被本机明文重传补回',
+      );
       expect(result.failedNoteUuids, isNot(contains('p03-note')));
       expect(
-        result.actions
-            .any((a) => a.uuid == 'p03-note' && a.type == SyncActionType.heal),
+        result.actions.any(
+          (a) => a.uuid == 'p03-note' && a.type == SyncActionType.heal,
+        ),
         isTrue,
         reason: '应记录一次 heal 动作',
       );
@@ -483,8 +495,11 @@ void main() {
 
       expect(result.success, isTrue);
       // 下载 p04-note 时 blob 缺失 → 用孪生明文自愈重传，blob 补回
-      expect(backend._blobs.containsKey(note1.contentHash), isTrue,
-          reason: '缺失 blob 应被孪生明文自愈补回');
+      expect(
+        backend._blobs.containsKey(note1.contentHash),
+        isTrue,
+        reason: '缺失 blob 应被孪生明文自愈补回',
+      );
       expect(result.failedNoteUuids, isNot(contains('p04-note')));
     });
   });
@@ -512,12 +527,12 @@ void main() {
     });
 
     SyncEngine fsEngine(String id) => _makeEngine(
-          backend: fsBackend,
-          database: database,
-          dataKey: fsKey,
-          vaultId: 'p1x-keyring',
-          deviceId: id,
-        );
+      backend: fsBackend,
+      database: database,
+      dataKey: fsKey,
+      vaultId: 'p1x-keyring',
+      deviceId: id,
+    );
 
     test('P1-1 覆盖远端 manifest 前生成可恢复环形备份', () async {
       final engine = fsEngine('p11');
@@ -541,8 +556,11 @@ void main() {
 
       // 应存在环形备份文件 manifest.bak-*（位于 keyring 的 manifest-backup/ 子目录）
       final backupDir = Directory(p.join(dir.path, 'manifest-backup'));
-      expect(backupDir.existsSync(), isTrue,
-          reason: '应创建 manifest-backup/ 子目录');
+      expect(
+        backupDir.existsSync(),
+        isTrue,
+        reason: '应创建 manifest-backup/ 子目录',
+      );
       final bakFiles = backupDir
           .listSync()
           .whereType<File>()
@@ -571,31 +589,42 @@ void main() {
       final note = _makeNote(uuid: 'p12-note', title: 'P1-2');
       await database.storeNote(note);
       await engine.sync(); // 上传 blob + manifest
-      expect(await File('${dir.path}/blobs/${note.contentHash}').exists(), isTrue);
+      expect(
+        await File('${dir.path}/blobs/${note.contentHash}').exists(),
+        isTrue,
+      );
 
       // 注入一个孤儿 blob（历史遗留，不在 manifest 引用中）
       final orphanHash = 'b' * 64;
-      await File('${dir.path}/blobs/$orphanHash')
-          .writeAsBytes([7, 7, 7]);
+      await File('${dir.path}/blobs/$orphanHash').writeAsBytes([7, 7, 7]);
 
       // 首次同步：P2 两阶段 GC 只登记候选、不隔离（保护「他端正在上传」的窗口）
       final r1 = await engine.sync();
       expect(r1.success, isTrue);
-      expect(await File('${dir.path}/blobs/$orphanHash').exists(), isTrue,
-          reason: '两阶段 GC：首次观察只登记候选，不应立即隔离');
+      expect(
+        await File('${dir.path}/blobs/$orphanHash').exists(),
+        isTrue,
+        reason: '两阶段 GC：首次观察只登记候选，不应立即隔离',
+      );
 
       // 再次同步：连续第二次观察仍为孤儿 → 软删除到隔离区
       final r2 = await engine.sync();
       expect(r2.success, isTrue);
 
       // 孤儿 blob 不应再留在 blobs/，而应进入 blobs-orphan/
-      expect(await File('${dir.path}/blobs/$orphanHash').exists(), isFalse,
-          reason: '孤儿 blob 不应被物理删除，应进隔离区');
+      expect(
+        await File('${dir.path}/blobs/$orphanHash').exists(),
+        isFalse,
+        reason: '孤儿 blob 不应被物理删除，应进隔离区',
+      );
       final orphans = await fsBackend.listOrphanBlobs();
       expect(orphans, contains(orphanHash), reason: '孤儿 blob 应出现在隔离区');
 
       // 本端笔记 blob 仍保留
-      expect(await File('${dir.path}/blobs/${note.contentHash}').exists(), isTrue);
+      expect(
+        await File('${dir.path}/blobs/${note.contentHash}').exists(),
+        isTrue,
+      );
     });
 
     test('P1-2 purgeOrphans 仅清理超期隔离项', () async {
@@ -612,17 +641,22 @@ void main() {
 
       await fsBackend.purgeOrphans(const Duration(days: 30));
 
-      expect(await File('${orphanDir.path}/$oldHash.$oldTs').exists(), isFalse,
-          reason: '超期隔离项应被彻底删除');
-      expect(await File('${orphanDir.path}/$recentHash.$recentTs').exists(), isTrue,
-          reason: '未超期隔离项应保留');
+      expect(
+        await File('${orphanDir.path}/$oldHash.$oldTs').exists(),
+        isFalse,
+        reason: '超期隔离项应被彻底删除',
+      );
+      expect(
+        await File('${orphanDir.path}/$recentHash.$recentTs').exists(),
+        isTrue,
+        reason: '未超期隔离项应保留',
+      );
     });
 
     // ──────────────────────────────────────────
     // 混沌：随机破坏远端 blob → 自愈或 failedNoteUuids
     // ──────────────────────────────────────────
-    test('混沌：随机删掉/翻转远端 blob，repairRemote 自愈补回（绝不静默丢失）',
-        () async {
+    test('混沌：随机删掉/翻转远端 blob，repairRemote 自愈补回（绝不静默丢失）', () async {
       for (final seed in const [1, 2, 3, 7, 99]) {
         final rng = Random(seed);
         final engine = fsEngine('chaos-$seed');
@@ -657,17 +691,24 @@ void main() {
         // 本机持有明文 → repairRemote 应自愈补回
         final r1 = await engine.repairRemote();
         expect(r1.success, isTrue);
-        expect(await File('${dir.path}/blobs/${victim.contentHash}').exists(),
-            isTrue,
-            reason: 'seed=$seed 受害者 blob 应被自愈补回');
-        expect(r1.failedNoteUuids, isNot(contains(victim.uuid)),
-            reason: 'seed=$seed 有明文应 heal 而非失败');
+        expect(
+          await File('${dir.path}/blobs/${victim.contentHash}').exists(),
+          isTrue,
+          reason: 'seed=$seed 受害者 blob 应被自愈补回',
+        );
+        expect(
+          r1.failedNoteUuids,
+          isNot(contains(victim.uuid)),
+          reason: 'seed=$seed 有明文应 heal 而非失败',
+        );
 
         // 其余笔记的 blob 未被误伤
         for (final n in notes) {
-          expect(await File('${dir.path}/blobs/${n.contentHash}').exists(),
-              isTrue,
-              reason: 'seed=$seed 其余 blob 不应被误伤');
+          expect(
+            await File('${dir.path}/blobs/${n.contentHash}').exists(),
+            isTrue,
+            reason: 'seed=$seed 其余 blob 不应被误伤',
+          );
         }
       }
     });
@@ -675,16 +716,24 @@ void main() {
     test('混沌：blob 缺失且无任何设备持有明文 → 进入 failedNoteUuids', () async {
       // 客户端 A 上传一条笔记
       final engineA = fsEngine('chaos-fail-A');
-      final note = _makeNote(uuid: 'chaos-fail-note', title: 'X', description: 'Y');
+      final note = _makeNote(
+        uuid: 'chaos-fail-note',
+        title: 'X',
+        description: 'Y',
+      );
       await database.storeNote(note);
       await engineA.sync();
-      expect(await File('${dir.path}/blobs/${note.contentHash}').exists(), isTrue);
+      expect(
+        await File('${dir.path}/blobs/${note.contentHash}').exists(),
+        isTrue,
+      );
 
       // 把远端 blob 改写为"存在但无法解密"的损坏内容，并软删除本机明文，
       // 模拟"任何设备都持有不了这条笔记的可用明文"（同一 database，避免切库导致
       // 解密密钥缺失）。
-      await File('${dir.path}/blobs/${note.contentHash}')
-          .writeAsBytes([9, 9, 9, 9, 9]);
+      await File(
+        '${dir.path}/blobs/${note.contentHash}',
+      ).writeAsBytes([9, 9, 9, 9, 9]);
       final stored = await database.readNoteByUuid('chaos-fail-note');
       await database.softDelete(stored!.id!);
 

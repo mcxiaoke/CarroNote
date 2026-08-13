@@ -19,12 +19,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/session.dart';
@@ -32,7 +33,6 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 
@@ -88,10 +88,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: AppBar(
-          title: Text(
-            'Set Passphrase'.tr(),
-            style: appBarTitle,
-          ),
+          title: Text('Set Passphrase'.tr(), style: appBarTitle),
           centerTitle: true,
         ),
         body: CustomScrollView(
@@ -172,8 +169,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
   void scrollToBottomIfOnScreenKeyboard() {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
-      _scrollController.animateTo(_scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 500), curve: Curves.ease);
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.ease,
+      );
     }
   }
 
@@ -239,8 +239,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     return passphrase.length < minPassphraseLength
         ? 'Must be at least 8 characters long!'.tr()
         : (estimateBruteforceStrength(passphrase) < minPassphraseStrength)
-            ? 'Passphrase is too weak!'.tr()
-            : null;
+        ? 'Passphrase is too weak!'.tr()
+        : null;
   }
 
   String? _confirmInputValidator(String passphraseConfirm) {
@@ -297,9 +297,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       Log.auth.d('设置密码步骤 1/4：表单校验通过 (长度=${enteredPassphrase.length})');
 
       if (enteredPassphrase == enteredPassphraseConfirm) {
-      // 评审 #14 修复：成功提示不再前置——原实现先弹 "Passphrase set!" 再
-      // _initKeyring，keyring 失败（如旧 db 残留导致 createNew 被拒）时已误报
-      // 成功。现在 keyring 初始化成功、会话副作用完成后才正式提示成功。
+        // 评审 #14 修复：成功提示不再前置——原实现先弹 "Passphrase set!" 再
+        // _initKeyring，keyring 失败（如旧 db 残留导致 createNew 被拒）时已误报
+        // 成功。现在 keyring 初始化成功、会话副作用完成后才正式提示成功。
 
         // 初始化 Keyring：生成 dataKey 并注入 database（本地加密存储）
         // 这是 B1 方案的核心——无论是否启用同步，都要初始化 dataKey
@@ -375,7 +375,10 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       // 路由异常场景：已有 keyring 却走到设置页，拒绝覆盖以防数据丢失
       Log.crypto.e('拒绝创建新 Keyring：检测到已存在的加密元数据(应走登录流程)');
       if (mounted) {
-        showSnackBarMessage(context, 'Encrypted data detected. Please go back and log in.'.tr());
+        showSnackBarMessage(
+          context,
+          'Encrypted data detected. Please go back and log in.'.tr(),
+        );
       }
       return false;
     }
@@ -402,8 +405,10 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       }
       return false;
     }
-    Log.crypto.i('新建 Keyring 成功, dataKey 已注入数据库 '
-        '(耗时 ${swKeyring.elapsedMilliseconds}ms)');
+    Log.crypto.i(
+      '新建 Keyring 成功, dataKey 已注入数据库 '
+      '(耗时 ${swKeyring.elapsedMilliseconds}ms)',
+    );
 
     // 如果同步开关已开且后端配置完整，顺带初始化后端
     await SyncConfig.init();
@@ -427,9 +432,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       }
       // 后端失败不阻断进入 home——keyring 已就绪，用户可在设置页修复后端
     } else {
-      Log.sync.d('同步未启用或后端未配置, 跳过后端初始化 '
-          '(enabled=${SyncConfig.isSyncEnabled}, '
-          'configured=${SyncConfig.hasBackendConfig})');
+      Log.sync.d(
+        '同步未启用或后端未配置, 跳过后端初始化 '
+        '(enabled=${SyncConfig.isSyncEnabled}, '
+        'configured=${SyncConfig.hasBackendConfig})',
+      );
     }
     return true;
   }

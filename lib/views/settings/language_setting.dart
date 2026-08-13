@@ -38,8 +38,9 @@ class _LanguageSettingState extends State<LanguageSetting> {
     var selectedIndex = 0;
     final localeKey = context.locale.toString();
     if (SafeNotesConfig.mapLocaleName.containsKey(localeKey)) {
-      selectedIndex =
-          indexofLanguage(SafeNotesConfig.mapLocaleName[localeKey]!);
+      selectedIndex = indexofLanguage(
+        SafeNotesConfig.mapLocaleName[localeKey]!,
+      );
     }
 
     return Scaffold(

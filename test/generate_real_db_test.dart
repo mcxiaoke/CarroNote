@@ -27,15 +27,16 @@
  *   GEN_DB_CORPUS    自定义语料文件（绝对路径 .txt）
  */
 
+// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+// Package imports:
+import 'package:core/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-
-import 'package:core/core.dart';
 
 /// 单条笔记目标大小范围（字节）
 const int kMinBytes = 512; // 512B
@@ -58,11 +59,13 @@ String _sanitize(String corpus) {
   final len = corpus.length;
   while (i < len) {
     final c = corpus.codeUnitAt(i);
-    if (c == 0xFFFD) { // 转码替换符（乱码）
+    if (c == 0xFFFD) {
+      // 转码替换符（乱码）
       i++;
       continue;
     }
-    if (c >= 0xD800 && c <= 0xDBFF) { // 高代理
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      // 高代理
       if (i + 1 < len) {
         final lo = corpus.codeUnitAt(i + 1);
         if (lo >= 0xDC00 && lo <= 0xDFFF) {
@@ -75,7 +78,8 @@ String _sanitize(String corpus) {
       i++; // 孤立高代理 → 丢弃
       continue;
     }
-    if (c >= 0xDC00 && c <= 0xDFFF) { // 孤立低代理 → 丢弃
+    if (c >= 0xDC00 && c <= 0xDFFF) {
+      // 孤立低代理 → 丢弃
       i++;
       continue;
     }
@@ -126,7 +130,10 @@ String _sliceToBytes(String corpus, int start, int targetBytes) {
 /// 截取片段若不足 [kMinBytes]（随机起点太靠近语料末尾），换起点重试
 /// （最多 [kSampleRetries] 次），保证单条满足 1KB~100KB 要求。
 ({String title, String description}) _sampleNote(
-    String corpus, Random rng, int targetBytes) {
+  String corpus,
+  Random rng,
+  int targetBytes,
+) {
   const kSampleRetries = 8;
   for (var attempt = 0; attempt < kSampleRetries; attempt++) {
     final start = rng.nextInt(corpus.length > 10 ? corpus.length - 1 : 1);
@@ -174,12 +181,13 @@ Future<String> _loadCorpus() async {
       }
       final dir = Directory(root);
       if (dir.existsSync()) {
-        final files = dir
-            .listSync()
-            .whereType<File>()
-            .where((f) => f.path.toLowerCase().endsWith('.txt'))
-            .toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
+        final files =
+            dir
+                .listSync()
+                .whereType<File>()
+                .where((f) => f.path.toLowerCase().endsWith('.txt'))
+                .toList()
+              ..sort((a, b) => a.path.compareTo(b.path));
         if (files.isEmpty) continue;
         final buf = StringBuffer();
         for (final f in files) {
@@ -197,8 +205,10 @@ Future<String> _loadCorpus() async {
       continue;
     }
   }
-  throw StateError('语料不可用：请提供可读取的 .txt（GEN_DB_CORPUS，'
-      '或使用默认 $kCorpusRfc / $kTxtRootUtf8 / $kTxtRoot）。');
+  throw StateError(
+    '语料不可用：请提供可读取的 .txt（GEN_DB_CORPUS，'
+    '或使用默认 $kCorpusRfc / $kTxtRootUtf8 / $kTxtRoot）。',
+  );
 }
 
 /// 为一个设备生成完整数据库（真实 keyring + 真实 storeNote 加密落盘）
@@ -267,9 +277,11 @@ Future<void> _generateOneDevice({
   final fileSize = File(dbPath).lengthSync();
   final sizes = all.map((n) => utf8.encode(n.title + n.description).length);
   // ignore: avoid_print
-  print('[GEN] $deviceName: 写入 ${all.length} 条 / 文件 ${(fileSize / 1024).toStringAsFixed(1)}KB'
-      ' / 大小范围 ${sizes.reduce(min)}B~${sizes.reduce(max)}B'
-      ' / 密码 "$password" / 路径 $dbPath');
+  print(
+    '[GEN] $deviceName: 写入 ${all.length} 条 / 文件 ${(fileSize / 1024).toStringAsFixed(1)}KB'
+    ' / 大小范围 ${sizes.reduce(min)}B~${sizes.reduce(max)}B'
+    ' / 密码 "$password" / 路径 $dbPath',
+  );
   if (all.length != noteCount) {
     fail('$deviceName 验证失败：期望 $noteCount 条，实际 ${all.length} 条');
   }
@@ -283,8 +295,10 @@ Future<void> _generateOneDevice({
     return false;
   }).toList();
   if (bad.isNotEmpty) {
-    fail('$deviceName 含乱码 ${bad.length} 条（U+FFFD/孤立代理），'
-        '首条 title="${bad.first.title.substring(0, bad.first.title.length > 30 ? 30 : bad.first.title.length)}"');
+    fail(
+      '$deviceName 含乱码 ${bad.length} 条（U+FFFD/孤立代理），'
+      '首条 title="${bad.first.title.substring(0, bad.first.title.length > 30 ? 30 : bad.first.title.length)}"',
+    );
   }
 }
 
@@ -294,46 +308,54 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('生成两个真实数据库（可复制替换客户端 safenotes_sync.db）', () async {
-    // ── 参数（环境变量可覆盖）──
-    final outRel = Platform.environment['GEN_DB_OUT'] ?? 'temp/generated-db';
-    // 绝对化输出根目录（避免 ffi 相对路径解析到默认数据库目录）
-    final outRoot = p.isAbsolute(outRel)
-        ? outRel
-        : p.join(Directory.current.path, outRel);
-    final pwA = Platform.environment['GEN_DB_PASSWORD_A'] ?? 'safe-a-2026';
-    final pwB = Platform.environment['GEN_DB_PASSWORD_B'] ?? 'safe-b-2026';
-    final count = int.tryParse(Platform.environment['GEN_DB_COUNT'] ?? '') ?? 40;
-    final seed = int.tryParse(Platform.environment['GEN_DB_SEED'] ?? '') ??
-        DateTime.now().millisecondsSinceEpoch;
-    // ignore: avoid_print
-    print('[GEN] 参数: out=$outRoot count=$count seed=$seed');
-    final rng = Random(seed);
+  test(
+    '生成两个真实数据库（可复制替换客户端 safenotes_sync.db）',
+    () async {
+      // ── 参数（环境变量可覆盖）──
+      final outRel = Platform.environment['GEN_DB_OUT'] ?? 'temp/generated-db';
+      // 绝对化输出根目录（避免 ffi 相对路径解析到默认数据库目录）
+      final outRoot = p.isAbsolute(outRel)
+          ? outRel
+          : p.join(Directory.current.path, outRel);
+      final pwA = Platform.environment['GEN_DB_PASSWORD_A'] ?? 'safe-a-2026';
+      final pwB = Platform.environment['GEN_DB_PASSWORD_B'] ?? 'safe-b-2026';
+      final count =
+          int.tryParse(Platform.environment['GEN_DB_COUNT'] ?? '') ?? 40;
+      final seed =
+          int.tryParse(Platform.environment['GEN_DB_SEED'] ?? '') ??
+          DateTime.now().millisecondsSinceEpoch;
+      // ignore: avoid_print
+      print('[GEN] 参数: out=$outRoot count=$count seed=$seed');
+      final rng = Random(seed);
 
-    // ── 素材 ──
-    final corpus = await _loadCorpus();
+      // ── 素材 ──
+      final corpus = await _loadCorpus();
 
-    // ── 设备 A / B（各自独立 keyring，vaultId/salt/dataKey/密码均不同）──
-    await _generateOneDevice(
-      outputDir: p.join(outRoot, 'deviceA'),
-      deviceName: 'deviceA',
-      password: pwA,
-      noteCount: count,
-      corpus: corpus,
-      rng: rng,
-    );
-    await _generateOneDevice(
-      outputDir: p.join(outRoot, 'deviceB'),
-      deviceName: 'deviceB',
-      password: pwB,
-      noteCount: count,
-      corpus: corpus,
-      rng: rng,
-    );
+      // ── 设备 A / B（各自独立 keyring，vaultId/salt/dataKey/密码均不同）──
+      await _generateOneDevice(
+        outputDir: p.join(outRoot, 'deviceA'),
+        deviceName: 'deviceA',
+        password: pwA,
+        noteCount: count,
+        corpus: corpus,
+        rng: rng,
+      );
+      await _generateOneDevice(
+        outputDir: p.join(outRoot, 'deviceB'),
+        deviceName: 'deviceB',
+        password: pwB,
+        noteCount: count,
+        corpus: corpus,
+        rng: rng,
+      );
 
-    // ignore: avoid_print
-    print('[GEN] 完成。将 deviceA/safenotes_sync.db、deviceB/safenotes_sync.db'
+      // ignore: avoid_print
+      print(
+        '[GEN] 完成。将 deviceA/safenotes_sync.db、deviceB/safenotes_sync.db'
         ' 复制到客户端数据目录替换同名文件即可，'
-        '分别用密码 "$pwA" / "$pwB" 登录。');
-  }, timeout: const Timeout(Duration(minutes: 5)));
+        '分别用密码 "$pwA" / "$pwB" 登录。',
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 }

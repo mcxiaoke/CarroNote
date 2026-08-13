@@ -14,8 +14,10 @@
 // Dart imports:
 import 'dart:async';
 
-// Project imports:
+// Package imports:
 import 'package:core/core.dart';
+
+// Project imports:
 import 'package:safenotes/sync/sync_service.dart';
 
 class NoteEditorState {
@@ -26,7 +28,7 @@ class NoteEditorState {
   static bool wasNoteSaveAttempted = false;
   static void setSaveAttempted(bool flag) => wasNoteSaveAttempted = flag;
 
-// to be called everytime content of note in editor is changes
+  // to be called everytime content of note in editor is changes
   static void setState(SafeNote? note, String titleNew, String descriptionNew) {
     original = note;
     title = titleNew;
@@ -45,16 +47,18 @@ class NoteEditorState {
     wasNoteSaveAttempted = false;
   }
 
-// to be called during inactivity timeOut
+  // to be called during inactivity timeOut
   Future<void> handleUngracefulNoteExit() async {
     // if note content was changed and note editor was closed(due to inactivity)
     // without user opting for saving or discarding
     if (wasNoteSaveAttempted == false &&
         (title.isNotEmpty || description.isNotEmpty)) {
       // 超时锁定导致的非正常退出：自动保存草稿，属于需要关注的事件
-      Log.note.w('编辑器非正常退出(会话超时): 自动保存未提交内容 '
-          'uuid=${original?.uuid ?? "(新建)"} '
-          'len=${title.length}+${description.length}');
+      Log.note.w(
+        '编辑器非正常退出(会话超时): 自动保存未提交内容 '
+        'uuid=${original?.uuid ?? "(新建)"} '
+        'len=${title.length}+${description.length}',
+      );
       await addOrUpdateNote();
     }
   }
@@ -99,19 +103,20 @@ class NoteEditorState {
   }
 
   Future addNote() async {
-    final note = SafeNote.create(
-      title: title,
-      description: description,
-    );
+    final note = SafeNote.create(title: title, description: description);
     // 只记录长度，正文内容不入日志（隐私红线）
-    Log.note.i('保存新建笔记: uuid=${note.uuid} '
-        'len=${title.length}+${description.length}');
+    Log.note.i(
+      '保存新建笔记: uuid=${note.uuid} '
+      'len=${title.length}+${description.length}',
+    );
     await NotesDatabase.instance.storeNote(note);
   }
 
   Future updateNote() async {
-    Log.note.i('保存编辑后的笔记: uuid=${original!.uuid} '
-        'len=${title.length}+${description.length}');
+    Log.note.i(
+      '保存编辑后的笔记: uuid=${original!.uuid} '
+      'len=${title.length}+${description.length}',
+    );
     final now = DateTime.now();
     final note = original!.copyWith(
       title: title,

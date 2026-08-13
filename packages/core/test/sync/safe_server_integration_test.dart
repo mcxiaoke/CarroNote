@@ -104,10 +104,12 @@ class ServerProcess {
       if (Platform.isWindows) {
         // taskkill /T /F：杀进程树（包括子进程），/F 强制
         try {
-          await Process.run(
-            'taskkill',
-            ['/T', '/F', '/PID', process.pid.toString()],
-          );
+          await Process.run('taskkill', [
+            '/T',
+            '/F',
+            '/PID',
+            process.pid.toString(),
+          ]);
         } catch (_) {}
       } else {
         try {
@@ -128,9 +130,9 @@ class ServerProcess {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
-        final res = await http.get(Uri.parse(healthUrl)).timeout(
-              const Duration(seconds: 2),
-            );
+        final res = await http
+            .get(Uri.parse(healthUrl))
+            .timeout(const Duration(seconds: 2));
         if (res.statusCode == 200 && res.body == 'ok') {
           return true;
         }
@@ -176,9 +178,12 @@ Future<void> runCleanupScript({
 
   final args = <String>[
     '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', kCleanupScriptPath,
-    '-Ports', ports.join(','),
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    kCleanupScriptPath,
+    '-Ports',
+    ports.join(','),
     if (skipFileCleanup) '-SkipFileCleanup',
     if (detailed) '-Detailed',
   ];
@@ -216,9 +221,9 @@ Future<String> generateGoConfig({
     'logJSON': false,
   };
   final configPath = '$kTestRoot\\go-config.json';
-  await File(configPath).writeAsString(
-    const JsonEncoder.withIndent('  ').convert(config),
-  );
+  await File(
+    configPath,
+  ).writeAsString(const JsonEncoder.withIndent('  ').convert(config));
   return configPath;
 }
 
@@ -241,9 +246,9 @@ Future<String> generateNodeConfig({
     'logJSON': false,
   };
   final configPath = '$kTestRoot\\node-config.json';
-  await File(configPath).writeAsString(
-    const JsonEncoder.withIndent('  ').convert(config),
-  );
+  await File(
+    configPath,
+  ).writeAsString(const JsonEncoder.withIndent('  ').convert(config));
   return configPath;
 }
 
@@ -309,11 +314,12 @@ Future<String?> buildGoBinary() async {
     }
   }
 
-  final result = await Process.run(
-    'go',
-    ['build', '-o', binPath, '.'],
-    workingDirectory: goSrcDir,
-  );
+  final result = await Process.run('go', [
+    'build',
+    '-o',
+    binPath,
+    '.',
+  ], workingDirectory: goSrcDir);
 
   if (result.exitCode != 0) {
     print('Go build failed:');
@@ -346,10 +352,10 @@ Future<ServerProcess?> startGoServer(int port, String dataDir) async {
 
   try {
     // 用配置文件启动，无需其他 CLI 参数
-    final process = await Process.start(
-      _goBinaryPath!,
-      ['-config', _configFilePath!],
-    );
+    final process = await Process.start(_goBinaryPath!, [
+      '-config',
+      _configFilePath!,
+    ]);
     return ServerProcess(process, port, dataDir, logFile);
   } catch (e) {
     print('Failed to start Go server: $e');
@@ -387,10 +393,11 @@ Future<ServerProcess?> startNodeServer(int port, String dataDir) async {
 
   try {
     // 用配置文件启动，无需其他 CLI 参数
-    final process = await Process.start(
-      'node',
-      [scriptPath, '--config', _configFilePath!],
-    );
+    final process = await Process.start('node', [
+      scriptPath,
+      '--config',
+      _configFilePath!,
+    ]);
     return ServerProcess(process, port, dataDir, logFile);
   } catch (e) {
     print('Failed to start Node.js server: $e');
@@ -409,7 +416,8 @@ Future<ServerProcess?> startServer(int port, String dataDir) async {
 
 /// 创建唯一的测试数据目录
 String makeTestDataDir(String label) {
-  final dir = '$kTestRoot\\data-$label-${DateTime.now().millisecondsSinceEpoch}';
+  final dir =
+      '$kTestRoot\\data-$label-${DateTime.now().millisecondsSinceEpoch}';
   Directory(dir).createSync(recursive: true);
   return dir;
 }
@@ -484,9 +492,7 @@ void main() {
     final infraReady = await setupTestInfra(useGo: useGo);
     if (!infraReady) {
       throw StateError(
-        useGo
-            ? '无法构建 Go server 二进制（go 不在 PATH 或编译失败）'
-            : '无法初始化 Node.js 测试环境',
+        useGo ? '无法构建 Go server 二进制（go 不在 PATH 或编译失败）' : '无法初始化 Node.js 测试环境',
       );
     }
 
@@ -519,10 +525,7 @@ void main() {
     await server.clearData();
 
     // 创建新的 SafeServerBackend（每次测试用新的 HTTP client）
-    backend = SafeServerBackend(
-      baseUrl: server.baseUrl,
-      token: kTestToken,
-    );
+    backend = SafeServerBackend(baseUrl: server.baseUrl, token: kTestToken);
     await backend.init();
 
     // 创建 in-memory 数据库
@@ -682,7 +685,7 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.downloaded, 1); // 从远端拉到 A
-      expect(result.uploaded, 1);   // 推送 B 到远端
+      expect(result.uploaded, 1); // 推送 B 到远端
 
       // 验证本地同时有 A 和 B
       final notes = await database.readAllNotes();
@@ -696,11 +699,13 @@ void main() {
     test('updatedAt 更大的远端笔记覆盖本地', () async {
       // 设备 A 上传笔记
       final earlyTime = DateTime.now().millisecondsSinceEpoch;
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-conflict',
-        title: 'Original',
-        updatedAt: earlyTime,
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-conflict',
+          title: 'Original',
+          updatedAt: earlyTime,
+        ),
+      );
       final engineA = _makeEngine(
         backend: backend,
         database: database,
@@ -719,11 +724,13 @@ void main() {
       NotesDatabase.setDatabaseForTesting(dbB);
       database.setDataKey(testDataKey);
 
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-conflict',
-        title: 'Local Edit',
-        updatedAt: earlyTime - 1000, // 本地更早 → 远端胜
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-conflict',
+          title: 'Local Edit',
+          updatedAt: earlyTime - 1000, // 本地更早 → 远端胜
+        ),
+      );
 
       final engineB = _makeEngine(
         backend: backend,
@@ -746,11 +753,9 @@ void main() {
     test('软删除传播到已下载笔记的设备', () async {
       // 设备 A：上传 1 条笔记（时间戳 T1）
       final t1 = DateTime.now().millisecondsSinceEpoch;
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        updatedAt: t1,
-      ));
+      await database.storeNote(
+        _makeNote(uuid: 'uuid-del', title: 'To Delete', updatedAt: t1),
+      );
       final engineA = _makeEngine(
         backend: backend,
         database: database,
@@ -793,12 +798,14 @@ void main() {
       database.setDataKey(testDataKey);
 
       final t2 = t1 + 5000; // 删除时间晚于创建时间
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        deleted: true,
-        updatedAt: t2,
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-del',
+          title: 'To Delete',
+          deleted: true,
+          updatedAt: t2,
+        ),
+      );
       final engineA2 = _makeEngine(
         backend: backend,
         database: database,
@@ -818,11 +825,13 @@ void main() {
       database.setDataKey(testDataKey);
 
       // 设备 B 本地已有笔记（updatedAt=T1，从上次同步得到）
-      await database.storeNote(_makeNote(
-        uuid: 'uuid-del',
-        title: 'To Delete',
-        updatedAt: t1, // 用原始时间戳，比删除时间 T2 早
-      ));
+      await database.storeNote(
+        _makeNote(
+          uuid: 'uuid-del',
+          title: 'To Delete',
+          updatedAt: t1, // 用原始时间戳，比删除时间 T2 早
+        ),
+      );
       final engineB2 = _makeEngine(
         backend: backend,
         database: database,
@@ -1003,9 +1012,7 @@ void main() {
     });
 
     test('GET /api/v2/health 不需要认证', () async {
-      final res = await http.get(
-        Uri.parse('${server.baseUrl}/api/v2/health'),
-      );
+      final res = await http.get(Uri.parse('${server.baseUrl}/api/v2/health'));
       expect(res.statusCode, 200);
       expect(res.body, 'ok');
     });
@@ -1158,88 +1165,97 @@ void main() {
       expect(res.statusCode, 204);
     });
 
-    test('SafeServerBackend.backupCorruptManifest() 通过客户端调用清理 manifest',
-        () async {
-      // 先上传 manifest
-      await http.put(
-        Uri.parse('${server.baseUrl}/api/v2/manifest'),
-        headers: {
-          'Authorization': 'Bearer $kTestToken',
-          'If-None-Match': '*',
-          'Content-Type': 'application/octet-stream',
-        },
-        body: utf8.encode('corrupt'),
-      );
+    test(
+      'SafeServerBackend.backupCorruptManifest() 通过客户端调用清理 manifest',
+      () async {
+        // 先上传 manifest
+        await http.put(
+          Uri.parse('${server.baseUrl}/api/v2/manifest'),
+          headers: {
+            'Authorization': 'Bearer $kTestToken',
+            'If-None-Match': '*',
+            'Content-Type': 'application/octet-stream',
+          },
+          body: utf8.encode('corrupt'),
+        );
 
-      // 通过 backend 调用
-      await backend.backupCorruptManifest(Uint8List.fromList(utf8.encode('corrupt')));
+        // 通过 backend 调用
+        await backend.backupCorruptManifest(
+          Uint8List.fromList(utf8.encode('corrupt')),
+        );
 
-      // 验证已删除
-      final getRes = await http.get(
-        Uri.parse('${server.baseUrl}/api/v2/manifest'),
-        headers: {'Authorization': 'Bearer $kTestToken'},
-      );
-      expect(getRes.statusCode, 404);
-    });
+        // 验证已删除
+        final getRes = await http.get(
+          Uri.parse('${server.baseUrl}/api/v2/manifest'),
+          headers: {'Authorization': 'Bearer $kTestToken'},
+        );
+        expect(getRes.statusCode, 404);
+      },
+    );
 
     test(
-        'SafeServerBackend.deleteBlobSoft/listOrphanBlobs/purgeOrphans 真实 server 隔离与清理链路',
-        () async {
-      // 64 位 hex 哈希（sha256 空串），满足 purgeOrphans 的 hash 长度过滤（==64）
-      const hash =
-          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      'SafeServerBackend.deleteBlobSoft/listOrphanBlobs/purgeOrphans 真实 server 隔离与清理链路',
+      () async {
+        // 64 位 hex 哈希（sha256 空串），满足 purgeOrphans 的 hash 长度过滤（==64）
+        const hash =
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
-      // 1. 上传一个真实 blob
-      await http.put(
-        Uri.parse('${server.baseUrl}/api/v2/blob/$hash'),
-        headers: {
-          'Authorization': 'Bearer $kTestToken',
-          'Content-Type': 'application/octet-stream',
-        },
-        body: utf8.encode('orphan-blob-content'),
-      );
+        // 1. 上传一个真实 blob
+        await http.put(
+          Uri.parse('${server.baseUrl}/api/v2/blob/$hash'),
+          headers: {
+            'Authorization': 'Bearer $kTestToken',
+            'Content-Type': 'application/octet-stream',
+          },
+          body: utf8.encode('orphan-blob-content'),
+        );
 
-      // 2. 上传后：活动 blobs 列表包含该 hash
-      expect(await backend.listBlobs(), contains(hash));
+        // 2. 上传后：活动 blobs 列表包含该 hash
+        expect(await backend.listBlobs(), contains(hash));
 
-      // 3. 软删除（v2.2 资源层 move 到 blobs-orphan/）
-      await backend.deleteBlobSoft(hash);
+        // 3. 软删除（v2.2 资源层 move 到 blobs-orphan/）
+        await backend.deleteBlobSoft(hash);
 
-      // 4. 软删除后：活动 blobs 不再包含该 hash，但隔离区包含它
-      expect(await backend.listBlobs(), isNot(contains(hash)));
-      expect(await backend.listOrphanBlobs(), contains(hash));
+        // 4. 软删除后：活动 blobs 不再包含该 hash，但隔离区包含它
+        expect(await backend.listBlobs(), isNot(contains(hash)));
+        expect(await backend.listOrphanBlobs(), contains(hash));
 
-      // 5. 隔离区确有物理文件（propfind 可见），证明是 move 而非直接删除
-      //    （propfind depth=1 返回目录自身 + 子项，故按文件名是否含 hash 过滤）
-      final orphanDir = await http.post(
-        Uri.parse('${server.baseUrl}/api/v2/resources/blobs-orphan'),
-        headers: {
-          'Authorization': 'Bearer $kTestToken',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'op': 'propfind', 'depth': 1}),
-      );
-      expect(orphanDir.statusCode, 200);
-      final orphanEntries = jsonDecode(orphanDir.body) as List<dynamic>;
-      final orphanFiles = orphanEntries
-          .where((e) => ((e is Map ? e['name'] : null)?.toString() ?? '')
-              .contains(hash))
-          .toList();
-      expect(orphanFiles.length, 1,
-          reason: 'blobs-orphan/ 应恰有一个以该 hash 命名的孤儿文件');
+        // 5. 隔离区确有物理文件（propfind 可见），证明是 move 而非直接删除
+        //    （propfind depth=1 返回目录自身 + 子项，故按文件名是否含 hash 过滤）
+        final orphanDir = await http.post(
+          Uri.parse('${server.baseUrl}/api/v2/resources/blobs-orphan'),
+          headers: {
+            'Authorization': 'Bearer $kTestToken',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'op': 'propfind', 'depth': 1}),
+        );
+        expect(orphanDir.statusCode, 200);
+        final orphanEntries = jsonDecode(orphanDir.body) as List<dynamic>;
+        final orphanFiles = orphanEntries
+            .where(
+              (e) => ((e is Map ? e['name'] : null)?.toString() ?? '').contains(
+                hash,
+              ),
+            )
+            .toList();
+        expect(
+          orphanFiles.length,
+          1,
+          reason: 'blobs-orphan/ 应恰有一个以该 hash 命名的孤儿文件',
+        );
 
-      // 6. 立即 purge（retention=0，孤儿 ts 早于 now 必删）
-      await backend.purgeOrphans(Duration.zero);
+        // 6. 立即 purge（retention=0，孤儿 ts 早于 now 必删）
+        await backend.purgeOrphans(Duration.zero);
 
-      // 7. 清理后：隔离区清空，活动 blobs 仍不含该 hash
-      expect(await backend.listOrphanBlobs(), isNot(contains(hash)));
-      expect(await backend.listBlobs(), isNot(contains(hash)));
-    });
+        // 7. 清理后：隔离区清空，活动 blobs 仍不含该 hash
+        expect(await backend.listOrphanBlobs(), isNot(contains(hash)));
+        expect(await backend.listBlobs(), isNot(contains(hash)));
+      },
+    );
 
     test('未认证访问 GET /api/v2/blobs 返回 401', () async {
-      final res = await http.get(
-        Uri.parse('${server.baseUrl}/api/v2/blobs'),
-      );
+      final res = await http.get(Uri.parse('${server.baseUrl}/api/v2/blobs'));
       expect(res.statusCode, 401);
     });
   });
@@ -1262,8 +1278,11 @@ void main() {
           expect(res.headers['retry-after'], isNotNull);
           break;
         }
-        expect(res.statusCode, 401,
-            reason: '触发限速前应返回 401，第 ${i + 1} 次却返回了 ${res.statusCode}');
+        expect(
+          res.statusCode,
+          401,
+          reason: '触发限速前应返回 401，第 ${i + 1} 次却返回了 ${res.statusCode}',
+        );
       }
       expect(got429, isTrue, reason: '应在达到认证失败阈值后返回 429');
     });

@@ -8,17 +8,23 @@
 //   - 其他异常                 → 崩溃（带堆栈，退出码 2）
 
 // Dart 原生导入
+
+// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package 导入
+// Package imports:
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 
-// 项目导入
+// Project imports:
 import 'cli_context.dart';
+
+// Package 导入
+
+// 项目导入
 
 /// 所有命令的公共基类：提供上下文引导与全局参数便捷访问。
 ///
@@ -604,16 +610,16 @@ class NotePurgeDeletedCommand extends SafeNotesCommand {
 class ExportCommand extends SafeNotesCommand {
   ExportCommand() {
     argParser
-      ..addOption('out', help: '输出文件路径（默认 <data-dir>/backup.json 或 backup.snbak）')
+      ..addOption(
+        'out',
+        help: '输出文件路径（默认 <data-dir>/backup.json 或 backup.snbak）',
+      )
       ..addOption(
         'format',
         allowed: ['plaintext', 'encrypted'],
         help: '导出格式：encrypted=加密 snbak（默认）/ plaintext=明文 json',
       )
-      ..addOption(
-        'backup-password',
-        help: '加密导出口令（默认取解锁密码；缺失时交互输入）',
-      );
+      ..addOption('backup-password', help: '加密导出口令（默认取解锁密码；缺失时交互输入）');
   }
 
   @override
@@ -625,39 +631,40 @@ class ExportCommand extends SafeNotesCommand {
 
   @override
   Future<String?> run() => withCtx((ctx) async {
-        await unlocked(ctx);
-        final notes = await ctx.database.readAllNotes();
-        final records = notes.map((n) => n.toJson()).toList();
-        final format = a['format'] as String? ?? 'encrypted';
-        final out = a['out'] as String? ??
-            p.join(ctx.dataDir, format == 'encrypted' ? 'backup.snbak' : 'backup.json');
+    await unlocked(ctx);
+    final notes = await ctx.database.readAllNotes();
+    final records = notes.map((n) => n.toJson()).toList();
+    final format = a['format'] as String? ?? 'encrypted';
+    final out =
+        a['out'] as String? ??
+        p.join(
+          ctx.dataDir,
+          format == 'encrypted' ? 'backup.snbak' : 'backup.json',
+        );
 
-        final String content;
-        if (format == 'encrypted') {
-          final password = await _requireBackupPassword(
-            g,
-            a['backup-password'] as String?,
-          );
-          content = await BackupFileCodec.encodeEncrypted(
-            password: password,
-            records: records,
-          );
-        } else {
-          content = BackupFileCodec.encodePlaintext(records);
-        }
-        await File(out).writeAsString(content, flush: true);
-        return '已导出 ${notes.length} 条笔记（$format）→ $out';
-      });
+    final String content;
+    if (format == 'encrypted') {
+      final password = await _requireBackupPassword(
+        g,
+        a['backup-password'] as String?,
+      );
+      content = await BackupFileCodec.encodeEncrypted(
+        password: password,
+        records: records,
+      );
+    } else {
+      content = BackupFileCodec.encodePlaintext(records);
+    }
+    await File(out).writeAsString(content, flush: true);
+    return '已导出 ${notes.length} 条笔记（$format）→ $out';
+  });
 }
 
 class ImportCommand extends SafeNotesCommand {
   ImportCommand() {
     argParser
       ..addOption('in', help: '导入文件路径（必须）')
-      ..addOption(
-        'backup-password',
-        help: '加密备份解密口令（默认取解锁密码；缺失时交互输入）',
-      )
+      ..addOption('backup-password', help: '加密备份解密口令（默认取解锁密码；缺失时交互输入）')
       ..addFlag('json', help: '机器可读输出');
   }
 
@@ -665,74 +672,72 @@ class ImportCommand extends SafeNotesCommand {
   String get name => 'import';
 
   @override
-  String get description =>
-      '从备份文件导入笔记（snbak 加密需口令；plaintext-v1 明文直接导入）';
+  String get description => '从备份文件导入笔记（snbak 加密需口令；plaintext-v1 明文直接导入）';
 
   @override
   Future<String?> run() => withCtx((ctx) async {
-        await unlocked(ctx);
-        final path = a['in'] as String?;
-        if (path == null || path.isEmpty) throw CliException('需要 --in <文件>');
-        final file = File(path);
-        if (!file.existsSync()) throw CliException('文件不存在: $path');
+    await unlocked(ctx);
+    final path = a['in'] as String?;
+    if (path == null || path.isEmpty) throw CliException('需要 --in <文件>');
+    final file = File(path);
+    if (!file.existsSync()) throw CliException('文件不存在: $path');
 
-        // 自动按格式分流：snbak 加密 / plaintext-v1 明文（与 App FileHandler 同逻辑）
-        final BackupFile backup;
-        try {
-          backup = BackupFileCodec.parse(await file.readAsString());
-        } on FormatException catch (e) {
-          throw CliException('无法识别的备份文件：${e.message}');
-        }
+    // 自动按格式分流：snbak 加密 / plaintext-v1 明文（与 App FileHandler 同逻辑）
+    final BackupFile backup;
+    try {
+      backup = BackupFileCodec.parse(await file.readAsString());
+    } on FormatException catch (e) {
+      throw CliException('无法识别的备份文件：${e.message}');
+    }
 
-        final ImportParser parsed;
-        if (backup is BackupFileEncrypted) {
-          final password = await _requireBackupPassword(
-            g,
-            a['backup-password'] as String?,
-          );
-          final List<dynamic> records;
-          try {
-            records =
-                await BackupFileCodec.decryptEncrypted(backup, password);
-          } on SyncDecryptionException {
-            throw CliException('备份密码错误或文件损坏');
-          }
-          parsed = ImportParser.fromDecryptedPlaintext(
-            records,
-            expectedTotal: backup.header.total,
-          );
-        } else if (backup is BackupFilePlaintext) {
-          parsed = ImportParser.fromDecryptedPlaintext(
-            backup.records,
-            expectedTotal: backup.total,
-          );
-        } else {
-          throw CliException('无法识别的备份文件格式');
-        }
+    final ImportParser parsed;
+    if (backup is BackupFileEncrypted) {
+      final password = await _requireBackupPassword(
+        g,
+        a['backup-password'] as String?,
+      );
+      final List<dynamic> records;
+      try {
+        records = await BackupFileCodec.decryptEncrypted(backup, password);
+      } on SyncDecryptionException {
+        throw CliException('备份密码错误或文件损坏');
+      }
+      parsed = ImportParser.fromDecryptedPlaintext(
+        records,
+        expectedTotal: backup.header.total,
+      );
+    } else if (backup is BackupFilePlaintext) {
+      parsed = ImportParser.fromDecryptedPlaintext(
+        backup.records,
+        expectedTotal: backup.total,
+      );
+    } else {
+      throw CliException('无法识别的备份文件格式');
+    }
 
-        // 幂等导入：已存在同 uuid 的笔记跳过（App 直接 storeNote 会 UNIQUE 冲突，
-        // CLI 作为测试工具改为跳过，便于重复导入 / 恢复流程验证）。
-        var imported = 0;
-        var skipped = 0;
-        for (final note in parsed.getAllNotes()) {
-          final exists = await ctx.database.readNoteByUuid(note.uuid);
-          if (exists != null) {
-            skipped++;
-            continue;
-          }
-          await ctx.database.storeNote(note);
-          imported++;
-        }
-        if (a['json'] as bool) {
-          return jsonEncode({
-            'imported': imported,
-            'skipped': skipped,
-            'countMismatch': parsed.isNoteCountMissmatched,
-          });
-        }
-        return '已导入 $imported 条笔记（跳过已存在 $skipped 条）'
-            '${parsed.isNoteCountMissmatched ? '（数量与备份不一致，请核对）' : ''}';
+    // 幂等导入：已存在同 uuid 的笔记跳过（App 直接 storeNote 会 UNIQUE 冲突，
+    // CLI 作为测试工具改为跳过，便于重复导入 / 恢复流程验证）。
+    var imported = 0;
+    var skipped = 0;
+    for (final note in parsed.getAllNotes()) {
+      final exists = await ctx.database.readNoteByUuid(note.uuid);
+      if (exists != null) {
+        skipped++;
+        continue;
+      }
+      await ctx.database.storeNote(note);
+      imported++;
+    }
+    if (a['json'] as bool) {
+      return jsonEncode({
+        'imported': imported,
+        'skipped': skipped,
+        'countMismatch': parsed.isNoteCountMissmatched,
       });
+    }
+    return '已导入 $imported 条笔记（跳过已存在 $skipped 条）'
+        '${parsed.isNoteCountMissmatched ? '（数量与备份不一致，请核对）' : ''}';
+  });
 }
 
 /// 解析备份加密口令：显式 --backup-password > 全局解锁密码 > 交互输入。

@@ -14,14 +14,18 @@
 // /迁移测试。密码 / WebDAV 凭据 / SafeServer Token 均不入 SQLite。
 
 // Dart 原生导入
+
+// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package 导入
+// Package imports:
 import 'package:args/args.dart';
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+// Package 导入
 
 /// CLI 用户可预期错误：打印消息后退出码 1（不打印堆栈）。
 class CliException implements Exception {

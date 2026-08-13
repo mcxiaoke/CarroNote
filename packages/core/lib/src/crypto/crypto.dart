@@ -35,8 +35,8 @@ import 'dart:typed_data';
 // 第三方加密库（cryptography 2.x 全部为异步 API）
 // 仅取用所需符号，避免命名冲突（Mac / Hmac / SecretKey 等）。
 import 'package:crypto/crypto.dart' show sha256;
-import 'package:cryptography/cryptography.dart' show
-    AesGcm, Argon2id, Hmac, Mac, Pbkdf2, SecretBox, SecretKey;
+import 'package:cryptography/cryptography.dart'
+    show AesGcm, Argon2id, Hmac, Mac, Pbkdf2, SecretBox, SecretKey;
 
 // 项目导入
 import 'package:core/src/sync/sync_error.dart';
@@ -165,7 +165,10 @@ class SyncCrypto {
       iterations: iterations,
       bits: _keyLength * 8,
     );
-    final key = await algo.deriveKeyFromPassword(password: password, nonce: salt);
+    final key = await algo.deriveKeyFromPassword(
+      password: password,
+      nonce: salt,
+    );
     return Uint8List.fromList(await key.extractBytes());
   }
 
@@ -223,7 +226,11 @@ class SyncCrypto {
       );
     }
     // 默认 / 存量数据：PBKDF2-HMAC-SHA256
-    return deriveMasterKey(password, salt: kdf.saltBytes, iterations: kdf.iterations);
+    return deriveMasterKey(
+      password,
+      salt: kdf.saltBytes,
+      iterations: kdf.iterations,
+    );
   }
 
   /// 异步派生 MK（不阻塞 UI 线程）
@@ -236,12 +243,16 @@ class SyncCrypto {
     required KdfParams kdf,
   }) async {
     final sw = Stopwatch()..start();
-    Log.crypto.d('开始派生主密钥 MK: 算法=${kdf.algorithm} 迭代=${kdf.iterations} '
-        'memory=${kdf.memoryKiB}KiB parallelism=${kdf.parallelism} '
-        'salt=${kdf.saltBytes.length}字节');
+    Log.crypto.d(
+      '开始派生主密钥 MK: 算法=${kdf.algorithm} 迭代=${kdf.iterations} '
+      'memory=${kdf.memoryKiB}KiB parallelism=${kdf.parallelism} '
+      'salt=${kdf.saltBytes.length}字节',
+    );
     final result = await deriveKeyFromKdf(password, kdf: kdf);
-    Log.crypto.i('主密钥 MK 派生完成: ${result.length} 字节, '
-        '耗时 ${sw.elapsedMilliseconds}ms');
+    Log.crypto.i(
+      '主密钥 MK 派生完成: ${result.length} 字节, '
+      '耗时 ${sw.elapsedMilliseconds}ms',
+    );
     return result;
   }
 
@@ -312,8 +323,7 @@ class SyncCrypto {
   ) async {
     // dataKey 的 AAD 为固定字符串，确保 dataKey 信封不可互换
     final aad = Uint8List.fromList(utf8.encode('datakey-wrap'));
-    return _aesGcmEncrypt(
-        masterKey, _secureRandom(_nonceLength), aad, dataKey);
+    return _aesGcmEncrypt(masterKey, _secureRandom(_nonceLength), aad, dataKey);
   }
 
   /// 用 MK 解开 dataKey（从 manifest 中恢复 dataKey）
@@ -362,7 +372,11 @@ class SyncCrypto {
   }) async {
     final aad = _blobAad(id);
     return _aesGcmEncrypt(
-        dataKey, nonce ?? _secureRandom(_nonceLength), aad, plaintext);
+      dataKey,
+      nonce ?? _secureRandom(_nonceLength),
+      aad,
+      plaintext,
+    );
   }
 
   /// 用 dataKey 解密笔记信封，返回明文字节
@@ -497,8 +511,10 @@ class SyncCrypto {
     // 最小合法长度 = nonce(12) + tag(16) = 28。
     final minEnvelopeLength = _nonceLength + _tagLength;
     if (envelope.length < minEnvelopeLength) {
-      Log.crypto.w('AES-GCM 解密失败: 信封长度不足 '
-          '(${envelope.length} < $minEnvelopeLength)');
+      Log.crypto.w(
+        'AES-GCM 解密失败: 信封长度不足 '
+        '(${envelope.length} < $minEnvelopeLength)',
+      );
       throw SyncDecryptionException(
         '信封长度不足（${envelope.length} < $minEnvelopeLength）',
         aadId: aad.length <= 32 ? utf8.decode(aad, allowMalformed: true) : null,
@@ -513,13 +529,19 @@ class SyncCrypto {
       mac: Mac(ctAndTag.sublist(ctAndTag.length - _tagLength)),
     );
     try {
-      final plain = await _gcm.decrypt(box, secretKey: SecretKey(key), aad: aad);
+      final plain = await _gcm.decrypt(
+        box,
+        secretKey: SecretKey(key),
+        aad: aad,
+      );
       return Uint8List.fromList(plain);
     } on Object catch (e) {
       // 密钥不匹配/AAD 不符/数据损坏等，统一包装为可捕获的异常。
       // 用 debug 级别：批量解密失败时由上层聚合成 warning/error，此处避免刷屏
-      Log.crypto.d('AES-GCM 解密失败: 信封 ${envelope.length} 字节, '
-          'AAD ${aad.length} 字节 (密钥不匹配/AAD 不符/数据损坏): $e');
+      Log.crypto.d(
+        'AES-GCM 解密失败: 信封 ${envelope.length} 字节, '
+        'AAD ${aad.length} 字节 (密钥不匹配/AAD 不符/数据损坏): $e',
+      );
       throw wrapDecryptionError(e);
     }
   }

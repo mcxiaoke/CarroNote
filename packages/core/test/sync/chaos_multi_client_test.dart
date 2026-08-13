@@ -228,9 +228,11 @@ class ChaosHarness {
     for (final a in r.actions) {
       final t = a.type.toString().split('.').last;
       if (t == 'skip') continue;
-      trace.add('    SYNC${tag.isEmpty ? '' : '($tag)'} client=${c.id} '
-          '$t uuid=${a.uuid} hash=${a.hash == null ? '-' : a.hash!.substring(0, 10)} '
-          '${a.message ?? ''}');
+      trace.add(
+        '    SYNC${tag.isEmpty ? '' : '($tag)'} client=${c.id} '
+        '$t uuid=${a.uuid} hash=${a.hash == null ? '-' : a.hash!.substring(0, 10)} '
+        '${a.message ?? ''}',
+      );
       // 仅对引擎明确标记的冲突副本补充 model（避免误判合法 hash 共享）
       if (a.message != null && a.message!.startsWith('conflict-copy from ')) {
         model.addHash(a.uuid, a.hash!);
@@ -251,10 +253,11 @@ class ChaosHarness {
     LocalFsBackend backend,
   ) async {
     var current = result;
-    for (var attempt = 0;
-        attempt < 4 &&
-            (current.passwordEpochMismatch || current.requiresRelogin);
-        attempt++) {
+    for (
+      var attempt = 0;
+      attempt < 4 && (current.passwordEpochMismatch || current.requiresRelogin);
+      attempt++
+    ) {
       final resp = await backend.getManifest();
       final header = ManifestCrypto.deserializeHeaderOnly(resp.ciphertext);
       final remoteKv = header.keyVersion;
@@ -337,16 +340,22 @@ class ChaosHarness {
       knownPasswords.add(workingPassword);
       // 共享 dataKey（keyring 级，改密码不变）+ 基线模型（真实 118 数据）
       final probeResp = await backend.getManifest();
-      final probeVault = (await _openRealVault(backend, [workingPassword])).keyring;
+      final probeVault = (await _openRealVault(backend, [
+        workingPassword,
+      ])).keyring;
       sharedDataKey = probeVault.dataKey;
-      final baseline =
-          await ManifestCrypto.deserialize(sharedDataKey, probeResp.ciphertext);
+      final baseline = await ManifestCrypto.deserialize(
+        sharedDataKey,
+        probeResp.ciphertext,
+      );
       for (final entry in baseline.items.entries) {
         model.addHash(entry.key, entry.value.hash);
         if (entry.value.deleted) model.markDeleted(entry.key);
       }
-      trace.add('MODE=real-data kv=${probeVault.keyVersion} '
-          'baseline=${baseline.items.length}');
+      trace.add(
+        'MODE=real-data kv=${probeVault.keyVersion} '
+        'baseline=${baseline.items.length}',
+      );
       for (var i = 0; i < clientCount; i++) {
         final id = String.fromCharCode(65 + i); // A, B, C, ...
         final db = await _newDb(p.join(runDir, 'client-$id.db'));
@@ -358,20 +367,24 @@ class ChaosHarness {
           vaultId: cOpened.keyring.vaultId,
           deviceId: id,
         );
-        clients.add(ChaosClient(
-          id,
-          db,
-          cOpened.keyring,
-          _buildEngine(cOpened.keyring, id, journal),
-          cOpened.password,
-          journal: journal,
-          journalBaseDir: jBase,
-        ));
+        clients.add(
+          ChaosClient(
+            id,
+            db,
+            cOpened.keyring,
+            _buildEngine(cOpened.keyring, id, journal),
+            cOpened.password,
+            journal: journal,
+            journalBaseDir: jBase,
+          ),
+        );
       }
     } else {
       // 兜底：全新空 keyring（独立目录），仍完整验证引擎的密钥纪元/迁移/repair 逻辑。
-      print('WARN seed 模式: 真实 keyring 打不开（密码不匹配），'
-          '回退到全新空 keyring 跑混沌（真实数据校验需正确密码）。');
+      print(
+        'WARN seed 模式: 真实 keyring 打不开（密码不匹配），'
+        '回退到全新空 keyring 跑混沌（真实数据校验需正确密码）。',
+      );
       final freshDir = p.join(runDir, 'fresh-keyring');
       await Directory(freshDir).create(recursive: true);
       backend = LocalFsBackend(rootPath: freshDir);
@@ -394,22 +407,26 @@ class ChaosHarness {
         final db = await _newDb(p.join(runDir, 'client-$id.db'));
         NotesDatabase.setDatabaseForTesting(db);
         // 每个客户端（含 A）都从远端 manifest 解锁，保证 keyring meta 落到各自 DB。
-        final keyring = (await _openRealVault(backend, [workingPassword])).keyring;
+        final keyring = (await _openRealVault(backend, [
+          workingPassword,
+        ])).keyring;
         final jBase = p.join(runDir, 'journal-$id');
         final journal = await Journal.open(
           baseDir: jBase,
           vaultId: keyring.vaultId,
           deviceId: id,
         );
-        clients.add(ChaosClient(
-          id,
-          db,
-          keyring,
-          _buildEngine(keyring, id, journal),
-          workingPassword,
-          journal: journal,
-          journalBaseDir: jBase,
-        ));
+        clients.add(
+          ChaosClient(
+            id,
+            db,
+            keyring,
+            _buildEngine(keyring, id, journal),
+            workingPassword,
+            journal: journal,
+            journalBaseDir: jBase,
+          ),
+        );
       }
     }
 
@@ -457,24 +474,34 @@ class ChaosHarness {
         trace.add('[step $step] ERROR client=${c.id} op=$op : $e');
         try {
           final rows = await c.db.query('safe_notes');
-          trace.add('  rawNotes=${rows.length} '
-              'sharedKey=${sharedDataKey.join(',')} '
-              'vaultKey=${c.keyring.dataKey.join(',')} '
-              'keysEqual=${_bytesEq(sharedDataKey, c.keyring.dataKey)}');
+          trace.add(
+            '  rawNotes=${rows.length} '
+            'sharedKey=${sharedDataKey.join(',')} '
+            'vaultKey=${c.keyring.dataKey.join(',')} '
+            'keysEqual=${_bytesEq(sharedDataKey, c.keyring.dataKey)}',
+          );
           for (final r in rows.take(5)) {
             final title = r['title'];
-            trace.add('  row uuid=${r['uuid']} deleted=${r['deleted']} '
-                'titleType=${title.runtimeType} titleLen=${title is String ? title.length : '?'}');
+            trace.add(
+              '  row uuid=${r['uuid']} deleted=${r['deleted']} '
+              'titleType=${title.runtimeType} titleLen=${title is String ? title.length : '?'}',
+            );
           }
           final rm = await backend.getManifest();
           try {
-            final rmManifest =
-                await ManifestCrypto.deserialize(sharedDataKey, rm.ciphertext);
-            trace.add('  backendPath=${backend.rootPath} '
-                'remoteItems=${rmManifest.items.length}');
+            final rmManifest = await ManifestCrypto.deserialize(
+              sharedDataKey,
+              rm.ciphertext,
+            );
+            trace.add(
+              '  backendPath=${backend.rootPath} '
+              'remoteItems=${rmManifest.items.length}',
+            );
           } on Object catch (de) {
-            trace.add('  backendPath=${backend.rootPath} '
-                'remoteDeserializeFAIL=$de');
+            trace.add(
+              '  backendPath=${backend.rootPath} '
+              'remoteDeserializeFAIL=$de',
+            );
           }
         } catch (e2) {
           trace.add('  rawQueryErr=$e2');
@@ -490,8 +517,8 @@ class ChaosHarness {
       for (final cc in clients) {
         NotesDatabase.setDatabaseForTesting(cc.db);
         NotesDatabase.instance.setDataKey(sharedDataKey);
-        final rows =
-            await NotesDatabase.instance.readAllNotesIncludingDeleted();
+        final rows = await NotesDatabase.instance
+            .readAllNotesIncludingDeleted();
         for (final n in rows) {
           final legal = model.hashes[n.uuid];
           if (legal == null || legal.contains(n.contentHash)) continue;
@@ -500,12 +527,16 @@ class ChaosHarness {
               .map((x) => x.key)
               .toList();
           if (owners.isEmpty) continue; // 未知 hash（如冲突副本重算）另案处理
-          trace.add('[step $step] LOCAL-MISWIRE 发现于 client=${cc.id} '
-              '(本步操作 client=${c.id} op=$op) uuid=${n.uuid} '
-              'hash=${n.contentHash.substring(0, 10)} deleted=${n.deleted} '
-              'hash属于=$owners');
-          fail('本地跨 uuid 错位 @step $step 库=${cc.id} 操作端=${c.id} op=$op '
-              'uuid=${n.uuid}');
+          trace.add(
+            '[step $step] LOCAL-MISWIRE 发现于 client=${cc.id} '
+            '(本步操作 client=${c.id} op=$op) uuid=${n.uuid} '
+            'hash=${n.contentHash.substring(0, 10)} deleted=${n.deleted} '
+            'hash属于=$owners',
+          );
+          fail(
+            '本地跨 uuid 错位 @step $step 库=${cc.id} 操作端=${c.id} op=$op '
+            'uuid=${n.uuid}',
+          );
         }
       }
       _activate(c);
@@ -514,7 +545,9 @@ class ChaosHarness {
       // 第一时间抓住"跨 uuid 内容错位"被写上远端的精确 step + 客户端。
       try {
         final rm = await ManifestCrypto.deserialize(
-            sharedDataKey, (await backend.getManifest()).ciphertext);
+          sharedDataKey,
+          (await backend.getManifest()).ciphertext,
+        );
         for (final e in rm.items.entries) {
           final prev = _shadowRemote[e.key];
           if (prev == e.value.hash) continue; // 未变化
@@ -524,12 +557,16 @@ class ChaosHarness {
                 .where((x) => x.value.contains(e.value.hash))
                 .map((x) => x.key)
                 .toList();
-            trace.add('[step $step] REMOTE-MISWIRE client=${c.id} op=$op '
-                'uuid=${e.key} prev=${prev?.substring(0, 10)} '
-                'now=${e.value.hash.substring(0, 10)} deleted=${e.value.deleted} '
-                'updatedBy=${e.value.updatedBy} hash属于=$owners');
-            fail('远端 manifest 跨 uuid 错位 @step $step client=${c.id} op=$op '
-                'uuid=${e.key}');
+            trace.add(
+              '[step $step] REMOTE-MISWIRE client=${c.id} op=$op '
+              'uuid=${e.key} prev=${prev?.substring(0, 10)} '
+              'now=${e.value.hash.substring(0, 10)} deleted=${e.value.deleted} '
+              'updatedBy=${e.value.updatedBy} hash属于=$owners',
+            );
+            fail(
+              '远端 manifest 跨 uuid 错位 @step $step client=${c.id} op=$op '
+              'uuid=${e.key}',
+            );
           }
           _shadowRemote[e.key] = e.value.hash;
         }
@@ -583,8 +620,11 @@ class ChaosHarness {
       );
 
   /// 新建独立文件型 DB（避免 :memory: 在同一进程内被多个 openDatabase 共享导致串库）。
-  static Future<Database> _newDb(String path) =>
-      openDatabase(path, version: 2, onCreate: NotesDatabase.createDBForTesting);
+  static Future<Database> _newDb(String path) => openDatabase(
+    path,
+    version: 2,
+    onCreate: NotesDatabase.createDBForTesting,
+  );
 
   static bool _bytesEq(Uint8List a, Uint8List b) {
     if (a.length != b.length) return false;
@@ -676,10 +716,14 @@ class ChaosHarness {
           vaultId: c.keyring.vaultId,
           deviceId: c.id,
         );
-        _expect(c.journal.nextSeq >= seqBefore,
-            'restart 后 journal seq 水位回退了（会造成远端副本 seq 冲突）');
+        _expect(
+          c.journal.nextSeq >= seqBefore,
+          'restart 后 journal seq 水位回退了（会造成远端副本 seq 冲突）',
+        );
         c.engine = _buildEngine(c.keyring, c.id, c.journal);
-        trace.add('    RESTART client=${c.id} seq $seqBefore -> ${c.journal.nextSeq}');
+        trace.add(
+          '    RESTART client=${c.id} seq $seqBefore -> ${c.journal.nextSeq}',
+        );
         break;
 
       case 'journalCorrupt':
@@ -691,7 +735,8 @@ class ChaosHarness {
           final raw = await logFile.readAsString();
           // 截半 + 追加垃圾：既非合法 JSON，也不是空文件
           await logFile.writeAsString(
-              '${raw.substring(0, raw.length ~/ 2)}\u0000<<CHAOS-CORRUPT>>');
+            '${raw.substring(0, raw.length ~/ 2)}\u0000<<CHAOS-CORRUPT>>',
+          );
         }
         await c.journal.close();
         c.journal = await Journal.open(
@@ -702,7 +747,10 @@ class ChaosHarness {
         journalCorruptedClients.add(c.id);
         c.engine = _buildEngine(c.keyring, c.id, c.journal);
         // 损坏后仍必须能追加 + 同步
-        c.journal.append(type: JournalEventType.noteUpsert, uuid: 'post-corrupt');
+        c.journal.append(
+          type: JournalEventType.noteUpsert,
+          uuid: 'post-corrupt',
+        );
         final rc = await _sync(c, tag: "post-journal-corrupt");
         await _reconcile(c, rc, backend);
         trace.add('    JOURNAL-CORRUPT client=${c.id} 已隔离并继续');
@@ -713,7 +761,8 @@ class ChaosHarness {
   /// 7 条不变量断言。
   Future<void> _assertInvariants() async {
     // 收集每客户端本地状态
-    final states = <String, Map<String, ({String contentHash, bool deleted})>>{};
+    final states =
+        <String, Map<String, ({String contentHash, bool deleted})>>{};
     for (final c in clients) {
       _activate(c);
       final all = await NotesDatabase.instance.readAllNotesIncludingDeleted();
@@ -736,8 +785,10 @@ class ChaosHarness {
         if (got == null) {
           // 缺席仅在该笔记曾被删除时合法：远端墓碑对"从未见过该 uuid"的客户端
           // 不要求落地本地墓碑行。活跃状态互斥由不变量3（活跃集互比）保证。
-          _expect(model.everDeleted.contains(uuid),
-              '不变量1 失败: client ${c.id} 缺失从未被删除的笔记 $uuid(真丢失)');
+          _expect(
+            model.everDeleted.contains(uuid),
+            '不变量1 失败: client ${c.id} 缺失从未被删除的笔记 $uuid(真丢失)',
+          );
           continue;
         }
         if (!legalHashes.contains(got.contentHash)) {
@@ -750,21 +801,27 @@ class ChaosHarness {
           String remoteInfo = '?';
           try {
             final rm = await ManifestCrypto.deserialize(
-                sharedDataKey, (await backend.getManifest()).ciphertext);
+              sharedDataKey,
+              (await backend.getManifest()).ciphertext,
+            );
             final ri = rm.items[uuid];
             remoteInfo = ri == null
                 ? 'absent'
                 : 'hash=${ri.hash} deleted=${ri.deleted} '
-                    'updatedBy=${ri.updatedBy} updatedAt=${ri.updatedAt}';
+                      'updatedBy=${ri.updatedBy} updatedAt=${ri.updatedAt}';
           } catch (_) {}
-          fail('不变量2 失败: client ${c.id} 笔记 $uuid 终态 hash '
-              '${got.contentHash} 不在合法集合 legal=$legalHashes\n'
-              '  该 hash 属于其他 uuid: $owners\n'
-              '  远端 manifest: $remoteInfo');
+          fail(
+            '不变量2 失败: client ${c.id} 笔记 $uuid 终态 hash '
+            '${got.contentHash} 不在合法集合 legal=$legalHashes\n'
+            '  该 hash 属于其他 uuid: $owners\n'
+            '  远端 manifest: $remoteInfo',
+          );
         }
         if (got.deleted) {
-          _expect(model.everDeleted.contains(uuid),
-              '不变量2b 失败: client ${c.id} 笔记 $uuid 被标删除但从未有删除操作(幽灵删除)');
+          _expect(
+            model.everDeleted.contains(uuid),
+            '不变量2b 失败: client ${c.id} 笔记 $uuid 被标删除但从未有删除操作(幽灵删除)',
+          );
         }
       }
     }
@@ -772,8 +829,10 @@ class ChaosHarness {
     // 不变量 4：无幽灵笔记（客户端存在但 model 从未见过该 uuid）
     for (final c in clients) {
       for (final uuid in states[c.id]!.keys) {
-        _expect(model.hashes.containsKey(uuid),
-            '不变量4 失败: client ${c.id} 存在幽灵笔记 $uuid');
+        _expect(
+          model.hashes.containsKey(uuid),
+          '不变量4 失败: client ${c.id} 存在幽灵笔记 $uuid',
+        );
       }
     }
 
@@ -787,27 +846,35 @@ class ChaosHarness {
       if (ref == null) {
         ref = live;
       } else {
-        _expect(_stringMapEquals(live, ref),
-            '不变量3 失败: client ${c.id} 活跃笔记集合未与首端收敛');
+        _expect(
+          _stringMapEquals(live, ref),
+          '不变量3 失败: client ${c.id} 活跃笔记集合未与首端收敛',
+        );
       }
     }
 
     // 不变量 5：密钥一致性（keyVersion 全网一致）
     final keyVersions = clients.map((c) => c.keyring.keyVersion).toSet();
-    _expect(keyVersions.length == 1,
-        '不变量5 失败: 各客户端 keyVersion 未收敛 $keyVersions');
+    _expect(
+      keyVersions.length == 1,
+      '不变量5 失败: 各客户端 keyVersion 未收敛 $keyVersions',
+    );
 
     // 不变量 6：manifest 完整性（远端可解析 + keyVersion 与客户端一致）
     final remoteKv = await _remoteKeyVersion(backend);
-    _expect(remoteKv == clients.first.keyring.keyVersion,
-        '不变量6 失败: 远端 keyVersion 与客户端不一致');
+    _expect(
+      remoteKv == clients.first.keyring.keyVersion,
+      '不变量6 失败: 远端 keyVersion 与客户端不一致',
+    );
 
     // 不变量 7：无遗留坏 blob（最终同步后 failedNoteUuids 为空）
     for (final c in clients) {
       _activate(c);
       final r = await _sync(c, tag: "inv7");
-      _expect(r.failedNoteUuids.isEmpty,
-          '不变量7 失败: client ${c.id} 仍有失败 blob ${r.failedNoteUuids}');
+      _expect(
+        r.failedNoteUuids.isEmpty,
+        '不变量7 失败: client ${c.id} 仍有失败 blob ${r.failedNoteUuids}',
+      );
     }
 
     await _assertJournalInvariants();
@@ -826,32 +893,35 @@ class ChaosHarness {
       final all = await c.journal.readAll();
       var prev = 0;
       for (final e in all) {
-        _expect(e.seq > 0,
-            '不变量8 失败: client ${c.id} journal 出现非法 seq=${e.seq}');
+        _expect(e.seq > 0, '不变量8 失败: client ${c.id} journal 出现非法 seq=${e.seq}');
         if (!journalCorruptedClients.contains(c.id)) {
-          _expect(e.seq > prev,
-              '不变量8 失败: client ${c.id} journal seq 非严格递增 '
-                  '($prev -> ${e.seq})');
+          _expect(
+            e.seq > prev,
+            '不变量8 失败: client ${c.id} journal seq 非严格递增 '
+            '($prev -> ${e.seq})',
+          );
         }
         prev = e.seq;
       }
       // 悬挂的跨步操作：收敛后不应残留（两段式 start 都该有 done/failed）
       final incomplete = await c.journal.findIncompleteOperations();
-      _expect(incomplete.isEmpty,
-          '不变量8 失败: client ${c.id} 收敛后仍有未完成跨步操作 $incomplete');
+      _expect(
+        incomplete.isEmpty,
+        '不变量8 失败: client ${c.id} 收敛后仍有未完成跨步操作 $incomplete',
+      );
     }
 
     // ── 不变量 9：远端 journal 副本可解密 ──
     final names = await backend.listJournalObjects();
-    _expect(names.isNotEmpty,
-        '不变量9 失败: 同步多轮后远端竟无任何 journal 副本（第二数据源缺失）');
+    _expect(names.isNotEmpty, '不变量9 失败: 同步多轮后远端竟无任何 journal 副本（第二数据源缺失）');
     final remote = await Journal.fetchRemoteEntries(backend, sharedDataKey);
-    _expect(remote.isNotEmpty,
-        '不变量9 失败: 远端 journal 副本无法用 dataKey 解出任何条目');
+    _expect(remote.isNotEmpty, '不变量9 失败: 远端 journal 副本无法用 dataKey 解出任何条目');
     // 远端副本必须是密文（抽查一个对象，不得出现明文事件名）
     final sample = await backend.getJournalObject(names.first);
-    _expect(!String.fromCharCodes(sample!).contains('note.upsert'),
-        '不变量9 失败: 远端 journal 副本落了明文');
+    _expect(
+      !String.fromCharCodes(sample!).contains('note.upsert'),
+      '不变量9 失败: 远端 journal 副本落了明文',
+    );
 
     // ── 不变量 10：journal 重放出的 keyVersion 不落后于终态 ──
     // 用 >= 而非 ==：某端可能在别端改密后尚未产生自己的 key 事件，
@@ -860,9 +930,11 @@ class ChaosHarness {
     for (final c in clients) {
       final replayed = await c.journal.replayKeyState();
       if (replayed == null) continue; // 该端从未参与密钥变更，合法
-      _expect(replayed.keyVersion <= finalKv,
-          '不变量10 失败: client ${c.id} journal 重放出超前的 keyVersion '
-              '${replayed.keyVersion} > 终态 $finalKv');
+      _expect(
+        replayed.keyVersion <= finalKv,
+        '不变量10 失败: client ${c.id} journal 重放出超前的 keyVersion '
+        '${replayed.keyVersion} > 终态 $finalKv',
+      );
     }
     // 全网合并视角：远端副本里最新的 key 事件应当就是终态 keyVersion
     JournalKeyState? newest;
@@ -882,9 +954,11 @@ class ChaosHarness {
       // 不经过引擎的 adoptRemoteEpoch，因此远端 journal 里最新的 key 事件
       // 合法地可能落后于终态。要守的底线是**绝不超前**——超前意味着
       // journal 记录了一个从未真正生效的密钥纪元，坏纪元取真时会取错。
-      _expect(newest.keyVersion <= finalKv,
-          '不变量10 失败: 远端 journal 合并后的 keyVersion '
-              '${newest.keyVersion} 超前于终态 $finalKv');
+      _expect(
+        newest.keyVersion <= finalKv,
+        '不变量10 失败: 远端 journal 合并后的 keyVersion '
+        '${newest.keyVersion} 超前于终态 $finalKv',
+      );
     }
   }
 }
@@ -924,7 +998,9 @@ class P2FaultFixture {
     await backend.init();
 
     // 建库者：创建 keyring + 上传初始空 manifest
-    final creatorDb = await ChaosHarness._newDb(p.join(root.path, 'creator.db'));
+    final creatorDb = await ChaosHarness._newDb(
+      p.join(root.path, 'creator.db'),
+    );
     NotesDatabase.setDatabaseForTesting(creatorDb);
     final created = await Keyring.createNew(
       password: password,
@@ -1116,11 +1192,13 @@ bool _stringMapEquals(Map<String, String> a, Map<String, String> b) {
 Future<List<int>> _runSeedsParallel(List<int> seeds) async {
   final futures = <Future<MapEntry<int, String?>>>[];
   for (final seed in seeds) {
-    futures.add(Isolate.run(() => _runChaosSeedIsolate(seed)).then((detail) {
-      print('─── seed=$seed ${detail == null ? '通过' : '失败'} ───');
-      if (detail != null) print(detail);
-      return MapEntry(seed, detail);
-    }));
+    futures.add(
+      Isolate.run(() => _runChaosSeedIsolate(seed)).then((detail) {
+        print('─── seed=$seed ${detail == null ? '通过' : '失败'} ───');
+        if (detail != null) print(detail);
+        return MapEntry(seed, detail);
+      }),
+    );
   }
   final results = await Future.wait(futures);
   return [
@@ -1151,8 +1229,10 @@ void main() {
       const seeds = [12, 345, 6789];
       final sw = Stopwatch()..start();
       final failures = await _runSeedsParallel(seeds);
-      print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
-          '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
+      print(
+        '总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
+        '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s',
+      );
       if (failures.isNotEmpty) {
         fail('失败的 seed: $failures');
       }
@@ -1185,8 +1265,10 @@ void main() {
       print('自定义 seed 并行运行: $seeds（共 ${seeds.length} 个）');
       final sw = Stopwatch()..start();
       final failures = await _runSeedsParallel(seeds);
-      print('总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
-          '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s');
+      print(
+        '总计: ${seeds.length} 个 seed，${seeds.length - failures.length} '
+        '通过，${failures.length} 失败，耗时 ${sw.elapsed.inSeconds}s',
+      );
       if (failures.isNotEmpty) {
         fail('失败的 seed: $failures');
       }
@@ -1219,7 +1301,8 @@ void main() {
       final log = File(p.join(a.journalBaseDir, 'journal', 'log.json'));
       final raw = await log.readAsString();
       await log.writeAsString(
-          '${raw.substring(0, raw.length ~/ 2)}\u0000<<CORRUPT>>');
+        '${raw.substring(0, raw.length ~/ 2)}\u0000<<CORRUPT>>',
+      );
       await a.journal.close();
       a.journal = await Journal.open(
         baseDir: a.journalBaseDir,
@@ -1229,16 +1312,21 @@ void main() {
       f.activate(a);
       a.engine = f.buildEngine(a.keyring, a.id, a.journal);
 
-      expect(f.journalFiles(a, prefix: 'log.json.corrupt-'), isNotEmpty,
-          reason: '损坏日志必须改名保留取证，而不是被静默覆盖');
+      expect(
+        f.journalFiles(a, prefix: 'log.json.corrupt-'),
+        isNotEmpty,
+        reason: '损坏日志必须改名保留取证，而不是被静默覆盖',
+      );
 
       // 损坏之后一切照旧
       await f.createNote(a, 't2');
       final r = await f.sync(a);
       expect(r.success, isTrue, reason: 'journal 损坏不得让同步失败');
       await f.sync(b);
-      expect(await f.liveTitles(b), {'t1', 't2'},
-          reason: 'journal 损坏不得造成任何数据丢失');
+      expect(await f.liveTitles(b), {
+        't1',
+        't2',
+      }, reason: 'journal 损坏不得造成任何数据丢失');
     });
 
     test('journal 目录被整体删除（用户清缓存）→ 同步照常', () async {
@@ -1248,8 +1336,9 @@ void main() {
       await f.sync(a);
 
       await a.journal.close();
-      await Directory(p.join(a.journalBaseDir, 'journal'))
-          .delete(recursive: true);
+      await Directory(
+        p.join(a.journalBaseDir, 'journal'),
+      ).delete(recursive: true);
       a.journal = await Journal.open(
         baseDir: a.journalBaseDir,
         vaultId: f.vaultId,
@@ -1282,11 +1371,17 @@ void main() {
       // 远端副本里 A 的 seq 必须互不重复——重复即意味着覆盖丢事件
       final remote = await Journal.fetchRemoteEntries(f.backend, f.dataKey);
       final aSeqs = remote.where((e) => e.by == 'A').map((e) => e.seq).toList();
-      expect(aSeqs.toSet().length, aSeqs.length,
-          reason: 'seq 重复会让远端副本按 by#seq 去重时静默丢事件');
+      expect(
+        aSeqs.toSet().length,
+        aSeqs.length,
+        reason: 'seq 重复会让远端副本按 by#seq 去重时静默丢事件',
+      );
       final localSeqs = (await a.journal.readAll()).map((e) => e.seq).toSet();
-      expect(aSeqs.toSet(), localSeqs,
-          reason: '远端副本应完整覆盖本地 journal（第二数据源不能有缺口）');
+      expect(
+        aSeqs.toSet(),
+        localSeqs,
+        reason: '远端副本应完整覆盖本地 journal（第二数据源不能有缺口）',
+      );
     });
 
     // ── 故障 3：远端 manifest 损坏 ──
@@ -1302,16 +1397,21 @@ void main() {
 
       // 注入：把远端 manifest 写成垃圾（GCM 校验必失败）
       await f.remoteManifestFile.writeAsBytes(
-          Uint8List.fromList(List<int>.generate(256, (i) => i % 251)));
+        Uint8List.fromList(List<int>.generate(256, (i) => i % 251)),
+      );
 
       final r = await f.sync(a);
       expect(r.success, isTrue, reason: 'manifest 损坏应触发重建而非同步失败');
 
       await f.converge();
-      expect(await f.liveTitles(a), {'from-a', 'from-b'},
-          reason: '重建不得丢数据（A 本地有全量）');
-      expect(await f.liveTitles(b), {'from-a', 'from-b'},
-          reason: '重建后 B 仍应收敛到同一集合');
+      expect(await f.liveTitles(a), {
+        'from-a',
+        'from-b',
+      }, reason: '重建不得丢数据（A 本地有全量）');
+      expect(await f.liveTitles(b), {
+        'from-a',
+        'from-b',
+      }, reason: '重建后 B 仍应收敛到同一集合');
 
       // journal 必须留下 manifest 重建事件——这正是"第二数据源"最该记的一笔
       final events = await a.journal.readAll();
@@ -1358,7 +1458,8 @@ void main() {
         createdAt: ledger.createdAt,
         current: ledger.current.copyWith(
           encryptedDataKey: base64Encode(
-              Uint8List.fromList(List<int>.filled(60, 0xAB))),
+            Uint8List.fromList(List<int>.filled(60, 0xAB)),
+          ),
           dataKeyEpoch: 999,
           keyVersion: 999,
         ),
@@ -1368,7 +1469,9 @@ void main() {
       // 污染确实生效：本地解锁挂了
       await expectLater(
         Keyring.unlockLocal(
-            password: f.password, database: NotesDatabase.instance),
+          password: f.password,
+          database: NotesDatabase.instance,
+        ),
         throwsA(isA<WrongPasswordException>()),
       );
 
@@ -1392,9 +1495,14 @@ void main() {
       );
       await repaired.persist(NotesDatabase.instance);
       final recovered = await Keyring.unlockLocal(
-          password: f.password, database: NotesDatabase.instance);
-      expect(recovered.dataKey, equals(f.dataKey),
-          reason: '恢复出的 dataKey 必须与原 dataKey 逐字节相同，否则所有 blob 都废了');
+        password: f.password,
+        database: NotesDatabase.instance,
+      );
+      expect(
+        recovered.dataKey,
+        equals(f.dataKey),
+        reason: '恢复出的 dataKey 必须与原 dataKey 逐字节相同，否则所有 blob 都废了',
+      );
     });
 
     // ── 故障 5：keyring 账本回滚（备份还原 / 文件翻转）──
@@ -1407,7 +1515,8 @@ void main() {
       // 改密前的账本快照（模拟"用户从旧备份恢复了一份 App 数据"）
       f.activate(a);
       final snapshotJson = jsonEncode(
-          (await KeyringLedger.load(NotesDatabase.instance))!.toJson());
+        (await KeyringLedger.load(NotesDatabase.instance))!.toJson(),
+      );
 
       // A 改密码 → v2，并推到远端
       const newPw = 'p2-fault-pw-v2';
@@ -1419,32 +1528,31 @@ void main() {
       a.engine.keyring = a.keyring;
       await f.sync(a);
       final remoteKvAfterChange = ManifestCrypto.deserializeHeaderOnly(
-              (await f.backend.getManifest()).ciphertext)
-          .keyVersion;
+        (await f.backend.getManifest()).ciphertext,
+      ).keyVersion;
       expect(remoteKvAfterChange, 2);
 
       // 注入：把 A 的账本回滚到改密之前
       f.activate(a);
       await KeyringLedger.fromJson(
-              jsonDecode(snapshotJson) as Map<String, dynamic>)
-          .persist(NotesDatabase.instance);
+        jsonDecode(snapshotJson) as Map<String, dynamic>,
+      ).persist(NotesDatabase.instance);
       a.keyring = await Keyring.unlockLocal(
-          password: f.password, database: NotesDatabase.instance);
+        password: f.password,
+        database: NotesDatabase.instance,
+      );
       expect(a.keyring.keyVersion, 1, reason: '回滚注入应生效');
       a.engine = f.buildEngine(a.keyring, a.id, a.journal);
 
       // 关键断言：A 用旧纪元同步，**远端 keyVersion 不得被拉回 1**
       final r = await f.sync(a);
       final remoteKvAfterRollback = ManifestCrypto.deserializeHeaderOnly(
-              (await f.backend.getManifest()).ciphertext)
-          .keyVersion;
-      expect(remoteKvAfterRollback, 2,
-          reason: '本地账本回滚把远端纪元也带回旧值 = 所有其他设备被踢下线');
+        (await f.backend.getManifest()).ciphertext,
+      ).keyVersion;
+      expect(remoteKvAfterRollback, 2, reason: '本地账本回滚把远端纪元也带回旧值 = 所有其他设备被踢下线');
       // v4（epoch 消除 §8.2[I] 选项 B）：scenario-b 中止 + 提示重登录
-      expect(r.success, isFalse,
-          reason: 'A 旧纪元（回滚后）同步应中止（他端改了密码）');
-      expect(r.errorMessage, contains('密码已在其他设备修改'),
-          reason: '应明确提示用户用新密码重新登录');
+      expect(r.success, isFalse, reason: 'A 旧纪元（回滚后）同步应中止（他端改了密码）');
+      expect(r.errorMessage, contains('密码已在其他设备修改'), reason: '应明确提示用户用新密码重新登录');
 
       // 用新密码从远端重新解锁后收敛
       f.activate(a);
@@ -1476,8 +1584,11 @@ void main() {
       final remote = await Journal.fetchRemoteEntries(f.backend, f.dataKey);
       expect(remote, isNotEmpty, reason: '本地没了，远端就是唯一线索');
       final devices = remote.map((e) => e.by).toSet();
-      expect(devices, containsAll(<String>{'A', 'B'}),
-          reason: '两端的副本都应在远端，且互不覆盖');
+      expect(
+        devices,
+        containsAll(<String>{'A', 'B'}),
+        reason: '两端的副本都应在远端，且互不覆盖',
+      );
       expect(
         remote.any((e) => e.type == JournalEventType.noteUpsert),
         isTrue,
@@ -1522,9 +1633,13 @@ void main() {
       final r = await f.sync(a);
       expect(r.success, isTrue, reason: 'blob 悬空不得让同步失败');
       await f.converge();
-      expect(blobsDir.listSync(), isEmpty,
-          reason: '增量 sync 不做物理体检——若这里变成非空，说明有人在 sync 里'
-              '加了全量 getBlob，性能契约被破坏，需重新评审');
+      expect(
+        blobsDir.listSync(),
+        isEmpty,
+        reason:
+            '增量 sync 不做物理体检——若这里变成非空，说明有人在 sync 里'
+            '加了全量 getBlob，性能契约被破坏，需重新评审',
+      );
 
       // 关键：本地数据一条都不能少（远端坏了不能反向污染本地）
       expect(await f.liveTitles(a), {'heal-me'});
@@ -1535,12 +1650,17 @@ void main() {
       final c = await f.addClient('C');
       final rc = await f.sync(c);
       expect(rc.success, isTrue, reason: '新设备遇到悬空引用不得整次失败');
-      expect(rc.failedNoteUuids, isEmpty,
-          reason: 'blob 缺失走 skip（可能是他端没传完）而非 corrupt，不该报数据损坏');
       expect(
-        rc.actions.any((x) =>
-            x.type == SyncActionType.skip &&
-            (x.message ?? '').contains('blob missing')),
+        rc.failedNoteUuids,
+        isEmpty,
+        reason: 'blob 缺失走 skip（可能是他端没传完）而非 corrupt，不该报数据损坏',
+      );
+      expect(
+        rc.actions.any(
+          (x) =>
+              x.type == SyncActionType.skip &&
+              (x.message ?? '').contains('blob missing'),
+        ),
         isTrue,
         reason: '必须显式记录 skip 动作，否则悬空引用会变成静默数据丢失',
       );
@@ -1569,21 +1689,20 @@ void main() {
       final repair = await a.engine.repairRemote();
       expect(repair.success, isTrue);
       expect(
-        repair.actions
-            .where((x) => x.type == SyncActionType.heal)
-            .length,
+        repair.actions.where((x) => x.type == SyncActionType.heal).length,
         2,
         reason: 'repairRemote 必须为每个缺失 blob 触发一次 heal 重传',
       );
-      expect(blobsDir.listSync().length, before,
-          reason: '自愈后 blob 数量应完全恢复');
+      expect(blobsDir.listSync().length, before, reason: '自愈后 blob 数量应完全恢复');
 
       // 真正的验收：一台从没见过这些数据的新设备能不能拉全
       final c = await f.addClient('C');
       final rc = await f.sync(c);
       expect(rc.success, isTrue);
-      expect(await f.liveTitles(c), {'heal-me', 'heal-me-2'},
-          reason: '自愈的意义就在于新设备能重新拿到完整内容');
+      expect(await f.liveTitles(c), {
+        'heal-me',
+        'heal-me-2',
+      }, reason: '自愈的意义就在于新设备能重新拿到完整内容');
 
       // 老设备不受影响
       await f.converge();
@@ -1609,9 +1728,11 @@ void main() {
       final repair = await a.engine.repairRemote();
       expect(repair.success, isTrue, reason: '救不回来也不能让修复流程崩掉');
       expect(
-        repair.actions.any((x) =>
-            x.type == SyncActionType.skip &&
-            (x.message ?? '').contains('无本机明文')),
+        repair.actions.any(
+          (x) =>
+              x.type == SyncActionType.skip &&
+              (x.message ?? '').contains('无本机明文'),
+        ),
         isTrue,
         reason: '无明文可救时必须显式跳过并保留条目，等其他设备来救',
       );
@@ -1619,10 +1740,12 @@ void main() {
       // 远端条目仍在（新设备下次仍会尝试，其他设备仍有机会自愈）
       final resp = await f.backend.getManifest();
       final m = await ManifestCrypto.deserialize(f.dataKey, resp.ciphertext);
-      expect(m.items.length, 1,
-          reason: '救不回来就删条目 = 用"修复"的名义造成永久数据丢失，绝对禁止');
-      expect(m.items.values.single.deleted, isFalse,
-          reason: '不得把救不回来的笔记标记为已删除');
+      expect(m.items.length, 1, reason: '救不回来就删条目 = 用"修复"的名义造成永久数据丢失，绝对禁止');
+      expect(
+        m.items.values.single.deleted,
+        isFalse,
+        reason: '不得把救不回来的笔记标记为已删除',
+      );
     });
 
     // ── 墓碑 GC：超期才清，且清完不许复活 ──────────────────────
@@ -1652,11 +1775,15 @@ void main() {
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );
-      expect(m.items[doomed.uuid]?.deleted, isTrue,
-          reason: '近期墓碑必须保留，否则离线设备永远收不到这条删除');
+      expect(
+        m.items[doomed.uuid]?.deleted,
+        isTrue,
+        reason: '近期墓碑必须保留，否则离线设备永远收不到这条删除',
+      );
 
       // 把两端的墓碑时间戳回填到 31 天前（直接改行，等价于"时间过去了"）
-      final longAgo = DateTime.now().millisecondsSinceEpoch -
+      final longAgo =
+          DateTime.now().millisecondsSinceEpoch -
           SyncEngine.kTombstoneGcThresholdMs -
           const Duration(days: 1).inMilliseconds;
       for (final c in [a, b]) {
@@ -1675,27 +1802,37 @@ void main() {
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );
-      expect(m.items.containsKey(doomed.uuid), isFalse,
-          reason: '超期墓碑应被 GC 出 manifest，否则墓碑无限累积');
-      expect(m.items.containsKey(keep.uuid), isTrue,
-          reason: 'GC 只能清墓碑，不许误伤活跃笔记');
+      expect(
+        m.items.containsKey(doomed.uuid),
+        isFalse,
+        reason: '超期墓碑应被 GC 出 manifest，否则墓碑无限累积',
+      );
+      expect(
+        m.items.containsKey(keep.uuid),
+        isTrue,
+        reason: 'GC 只能清墓碑，不许误伤活跃笔记',
+      );
 
       f.activate(a);
-      expect(await NotesDatabase.instance.readNoteByUuid(doomed.uuid), isNull,
-          reason: 'GC 后本地记录应被硬删除');
+      expect(
+        await NotesDatabase.instance.readNoteByUuid(doomed.uuid),
+        isNull,
+        reason: 'GC 后本地记录应被硬删除',
+      );
 
       // 关键：B 端再同步不能把这条"复活"成活跃笔记
       await f.converge();
-      expect(await f.liveTitles(a), {'keep-me'},
-          reason: 'GC 后不得复活为活跃笔记');
-      expect(await f.liveTitles(b), {'keep-me'},
-          reason: 'GC 后不得复活为活跃笔记');
+      expect(await f.liveTitles(a), {'keep-me'}, reason: 'GC 后不得复活为活跃笔记');
+      expect(await f.liveTitles(b), {'keep-me'}, reason: 'GC 后不得复活为活跃笔记');
       m = await ManifestCrypto.deserialize(
         f.dataKey,
         (await f.backend.getManifest()).ciphertext,
       );
-      expect(m.items.containsKey(doomed.uuid), isFalse,
-          reason: 'B 端本地墓碑也已超期，不得把条目重新写回 manifest');
+      expect(
+        m.items.containsKey(doomed.uuid),
+        isFalse,
+        reason: 'B 端本地墓碑也已超期，不得把条目重新写回 manifest',
+      );
     });
   });
 }

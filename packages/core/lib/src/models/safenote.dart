@@ -109,9 +109,7 @@ class SafeNote {
   /// 最后修改时间（由 [updatedAt] 的 Unix 毫秒转换）。
   ///
   /// 列表默认按此字段排序，卡片也可选择展示此时间。
-  DateTime get modifiedTime =>
-      DateTime.fromMillisecondsSinceEpoch(updatedAt);
-
+  DateTime get modifiedTime => DateTime.fromMillisecondsSinceEpoch(updatedAt);
 
   /// 创建新笔记的工厂构造函数
   ///
@@ -162,20 +160,19 @@ class SafeNote {
     bool? synced,
     String? syncedHash,
     bool? syncedDeleted,
-  }) =>
-      SafeNote(
-        id: id ?? this.id,
-        uuid: uuid ?? this.uuid,
-        title: title ?? this.title,
-        description: description ?? this.description,
-        contentHash: contentHash ?? this.contentHash,
-        deleted: deleted ?? this.deleted,
-        createdTime: createdTime ?? this.createdTime,
-        updatedAt: updatedAt ?? this.updatedAt,
-        synced: synced ?? this.synced,
-        syncedHash: syncedHash ?? this.syncedHash,
-        syncedDeleted: syncedDeleted ?? this.syncedDeleted,
-      );
+  }) => SafeNote(
+    id: id ?? this.id,
+    uuid: uuid ?? this.uuid,
+    title: title ?? this.title,
+    description: description ?? this.description,
+    contentHash: contentHash ?? this.contentHash,
+    deleted: deleted ?? this.deleted,
+    createdTime: createdTime ?? this.createdTime,
+    updatedAt: updatedAt ?? this.updatedAt,
+    synced: synced ?? this.synced,
+    syncedHash: syncedHash ?? this.syncedHash,
+    syncedDeleted: syncedDeleted ?? this.syncedDeleted,
+  );
 
   /// 从数据库行构造（明文存储，无需解密）
   ///
@@ -190,9 +187,11 @@ class SafeNote {
     // 兼容旧格式：缺少的字段自动补全
     final uuid = json[NoteFields.uuid] as String? ?? generateUuid();
     final contentHash =
-        json[NoteFields.contentHash] as String? ?? computeHash(title, description);
+        json[NoteFields.contentHash] as String? ??
+        computeHash(title, description);
     final deleted = (json[NoteFields.deleted] as int?) == 1;
-    final updatedAt = (json[NoteFields.updatedAt] as int?) ??
+    final updatedAt =
+        (json[NoteFields.updatedAt] as int?) ??
         DateTime.now().millisecondsSinceEpoch;
     final synced = (json[NoteFields.synced] as int?) == 1;
     // 共同祖先 hash：可空。旧备份格式无此字段 → null（视为未同步基线）。
@@ -276,7 +275,8 @@ class SafeNote {
   /// 故无需分支处理。
   /// 返回 (title, description)
   static ({String title, String description}) fromContentBytes(
-      Uint8List bytes) {
+    Uint8List bytes,
+  ) {
     final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     return (
       title: json['title'] as String,

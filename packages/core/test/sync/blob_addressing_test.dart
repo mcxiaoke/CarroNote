@@ -169,16 +169,15 @@ void main() {
   });
 
   SyncEngine makeEngine() => SyncEngine(
-        backend: backend,
-        database: database,
-        keyring: makeTestKeyring(dataKey: dataKey),
-        deviceId: 'test-device',
-        journal: makeTestJournal(),
-      );
+    backend: backend,
+    database: database,
+    keyring: makeTestKeyring(dataKey: dataKey),
+    deviceId: 'test-device',
+    journal: makeTestJournal(),
+  );
 
   group('blob 寻址不变量', () {
-    test('I1/I2: putBlob 键 == manifest.hash == computeHash，且该键即 AAD',
-        () async {
+    test('I1/I2: putBlob 键 == manifest.hash == computeHash，且该键即 AAD', () async {
       for (final note in samples) {
         await database.storeNote(note);
       }
@@ -200,7 +199,8 @@ void main() {
         expect(
           backend.blobs.containsKey(expectedId),
           isTrue,
-          reason: 'blob id 必须是 SafeNote.computeHash(title, description)，'
+          reason:
+              'blob id 必须是 SafeNote.computeHash(title, description)，'
               'uuid=${note.uuid}',
         );
 
@@ -267,7 +267,8 @@ void main() {
     test('I4: blob 身份与 payload 的 "v" 版本字段无关', () async {
       final note = samples[0];
       final payload =
-          jsonDecode(utf8.decode(note.toContentBytes())) as Map<String, dynamic>;
+          jsonDecode(utf8.decode(note.toContentBytes()))
+              as Map<String, dynamic>;
 
       // payload 确实带版本字段
       expect(payload['v'], isNotNull);

@@ -18,10 +18,10 @@ import 'dart:ui' show PlatformDispatcher;
 
 // Flutter imports:
 import 'package:flutter/material.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:flutter/services.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:path_provider/path_provider.dart';
@@ -30,17 +30,17 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 // Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/dialogs/logout_alert.dart';
+import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/src/logger/log_webserver.dart';
-import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 
@@ -79,14 +79,22 @@ Future<void> _initLogging() async {
   Log.app.i('════════ SafeNotes 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
   Log.app.i('版本: ${BuildInfo.version} (build ${BuildInfo.buildNumber})');
-  Log.app.i('Git: ${BuildInfo.gitHashShort} @ ${BuildInfo.gitBranch}'
-      '${BuildInfo.gitDirty ? " (工作区有未提交改动)" : ""}');
+  Log.app.i(
+    'Git: ${BuildInfo.gitHashShort} @ ${BuildInfo.gitBranch}'
+    '${BuildInfo.gitDirty ? " (工作区有未提交改动)" : ""}',
+  );
   Log.app.i('Commit: ${BuildInfo.gitHash}');
-  Log.app.i('Tag: ${BuildInfo.gitTag.isEmpty ? "无 tag" : BuildInfo.gitTag} '
-      '(累计提交 ${BuildInfo.gitCommitCount})');
-  Log.app.i('构建时间: ${BuildInfo.buildDateReadable} (UTC ${BuildInfo.buildDate})');
-  Log.app.i('平台: ${Platform.operatingSystem} '
-      '${Platform.operatingSystemVersion}');
+  Log.app.i(
+    'Tag: ${BuildInfo.gitTag.isEmpty ? "无 tag" : BuildInfo.gitTag} '
+    '(累计提交 ${BuildInfo.gitCommitCount})',
+  );
+  Log.app.i(
+    '构建时间: ${BuildInfo.buildDateReadable} (UTC ${BuildInfo.buildDate})',
+  );
+  Log.app.i(
+    '平台: ${Platform.operatingSystem} '
+    '${Platform.operatingSystemVersion}',
+  );
   Log.app.i('Dart: ${Platform.version.split(' ').first}');
   Log.app.i('日志目录: ${AppLogFile.dirPath ?? "不可用（仅内存 + 控制台）"}');
 }
@@ -129,30 +137,34 @@ Future<void> _bootstrap() async {
     // NotesDatabase.instance.database），此处顺序满足要求。
     final supportDir = await getApplicationSupportDirectory();
     await databaseFactory.setDatabasesPath(supportDir.path);
-    Log.app.i('桌面平台，sqflite_ffi数据库目录已指向应用支持目录: '
-        '${supportDir.path}\\safenotes_sync.db');
+    Log.app.i(
+      '桌面平台，sqflite_ffi数据库目录已指向应用支持目录: '
+      '${supportDir.path}\\safenotes_sync.db',
+    );
   }
 
   // 统一注入数据库工厂：桌面端已被换成 FFI 实现，移动端由 sqflite 插件注册
   // （同一注入点、两套平台实现，不引入分支）。
   NotesDatabase.dbFactoryOverride = databaseFactory;
 
-  WidgetsBinding.instance.addObserver(AppLifecycleEventHandler(
-    inactiveCallBack: ScheduledTask.backup,
-    resumeCallBack: () async {
-      Log.app.i('应用回到前台');
-      // App 回前台时触发自动同步，拉取期间其他端可能产生的远端变更
-      // autoSync 内部会判断 _engine 是否就绪，未登录/未启用同步时直接返回
-      SyncService.instance.autoSync();
-    },
-    pausedCallBack: () async {
-      Log.app.i('应用进入后台');
-      // 进后台立即 flush，避免进程被系统回收导致日志丢失
-      await AppLogFile.flush();
-    },
-    // 应用真正退出：停止日志 Web 服务器并关闭日志文件
-    detachedCallBack: _shutdown,
-  ));
+  WidgetsBinding.instance.addObserver(
+    AppLifecycleEventHandler(
+      inactiveCallBack: ScheduledTask.backup,
+      resumeCallBack: () async {
+        Log.app.i('应用回到前台');
+        // App 回前台时触发自动同步，拉取期间其他端可能产生的远端变更
+        // autoSync 内部会判断 _engine 是否就绪，未登录/未启用同步时直接返回
+        SyncService.instance.autoSync();
+      },
+      pausedCallBack: () async {
+        Log.app.i('应用进入后台');
+        // 进后台立即 flush，避免进程被系统回收导致日志丢失
+        await AppLogFile.flush();
+      },
+      // 应用真正退出：停止日志 Web 服务器并关闭日志文件
+      detachedCallBack: _shutdown,
+    ),
+  );
 
   await PreferencesStorage.init();
 
@@ -169,14 +181,14 @@ Future<void> _bootstrap() async {
   // 简化方案:预初始化 db + 一次性查询 Keyring.isInitialized
   // 避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁
   await NotesDatabase.instance.database;
-  AppBootState.vaultInitialized =
-      await Keyring.isInitialized(NotesDatabase.instance);
+  AppBootState.vaultInitialized = await Keyring.isInitialized(
+    NotesDatabase.instance,
+  );
   Log.app.i('数据库就绪 (vaultInitialized=${AppBootState.vaultInitialized})');
 
   // 桌面/大屏适配（P1-3）：Windows/macOS/Linux 窗口可自由缩放，
   // 强制取向在桌面是 no-op 且不符合桌面预期，故仅在移动端（非 Web）执行。
-  final isDesktopUi =
-      isDesktopPlatform;
+  final isDesktopUi = isDesktopPlatform;
   if (!isDesktopUi) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -184,7 +196,7 @@ Future<void> _bootstrap() async {
       if (PreferencesStorage.isAutoRotate) ...[
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
-      ]
+      ],
     ]);
   }
 
@@ -289,8 +301,9 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
       _cachedInactivityTimeout = inactivityTimeout;
       _cachedSessionConfig = SessionConfig(
         invalidateSessionForAppLostFocus: Duration(seconds: focusTimeout),
-        invalidateSessionForUserInactivity:
-            Duration(seconds: inactivityTimeout),
+        invalidateSessionForUserInactivity: Duration(
+          seconds: inactivityTimeout,
+        ),
       );
       _rebuildSessionSubscription(_cachedSessionConfig!);
     }
@@ -319,22 +332,18 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     if (timeoutEvent == SessionTimeoutState.userInactivityTimeout &&
         PreferencesStorage.isInactivityTimeoutOn) {
       Log.auth.i('会话超时：用户长时间无操作，准备锁定');
-      await onTimeOutDo(
-        context: context,
-        showPreLogoffAlert: true,
-      );
+      await onTimeOutDo(context: context, showPreLogoffAlert: true);
       // Don't logout if user is active
     } else if (timeoutEvent == SessionTimeoutState.appFocusTimeout) {
       Log.auth.i('会话超时：应用失焦超时，准备锁定');
-      await onTimeOutDo(
-        context: context,
-        showPreLogoffAlert: false,
-      );
+      await onTimeOutDo(context: context, showPreLogoffAlert: false);
     }
   }
 
-  Future<void> onTimeOutDo(
-      {required BuildContext context, required bool showPreLogoffAlert}) async {
+  Future<void> onTimeOutDo({
+    required BuildContext context,
+    required bool showPreLogoffAlert,
+  }) async {
     // execute only if user is already logged
     // no need to logout and redirect to authwall if user is not loggedIN
     // 简化方案:用 dataKey 是否注入判断登录状态(替代 PhraseHandler.getPass)
@@ -349,10 +358,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
 
         // TODO: refactor without using BuildContexts across async gap
         if (context.mounted) {
-          logout(
-            context: context,
-            showLogoutMsg: true,
-          );
+          logout(context: context, showLogoutMsg: true);
         }
       }
       if (isUserActive == false) {
@@ -360,10 +366,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
 
         // TODO: refactor without using BuildContexts across async gap
         if (context.mounted) {
-          logout(
-            context: context,
-            showLogoutMsg: false,
-          );
+          logout(context: context, showLogoutMsg: false);
         }
       }
       //else user pressed cancel and is active
@@ -403,9 +406,11 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
 // run once every update
 void onAppUpdate() async {
   if (PreferencesStorage.appVersionCode != SafeNotesConfig.appVersionCode) {
-    Log.app.i('检测到应用升级: '
-        '${PreferencesStorage.appVersionCode} → '
-        '${SafeNotesConfig.appVersionCode}');
+    Log.app.i(
+      '检测到应用升级: '
+      '${PreferencesStorage.appVersionCode} → '
+      '${SafeNotesConfig.appVersionCode}',
+    );
     if (PreferencesStorage.isBackupOn) {
       try {
         if (await handleBackupPermissionAndLocation()) {

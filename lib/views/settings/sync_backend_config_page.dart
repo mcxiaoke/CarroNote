@@ -17,18 +17,24 @@
  */
 
 // Flutter 导入
+
+// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package 导入
+// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project 导入
+// Project imports:
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+
+// Package 导入
+
+// Project 导入
 
 /// 打开同步后端配置面板
 ///
@@ -60,9 +66,7 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
           ),
           child: Column(
             children: [
-              _DialogHeader(
-                onClose: () => Navigator.of(dialogContext).pop(),
-              ),
+              _DialogHeader(onClose: () => Navigator.of(dialogContext).pop()),
               Expanded(
                 child: SyncBackendConfigPage(initialDraft: initialDraft),
               ),
@@ -79,9 +83,7 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
       fullscreenDialog: true,
       builder: (_) => Scaffold(
         backgroundColor: theme.colorScheme.background,
-        appBar: AppBar(
-          title: Text('Sync Configuration'.tr()),
-        ),
+        appBar: AppBar(title: Text('Sync Configuration'.tr())),
         body: SafeArea(
           bottom: false,
           child: SyncBackendConfigPage(initialDraft: initialDraft),
@@ -182,14 +184,14 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
 
   /// 由当前界面输入组装草稿（含所有类型的字段，切换类型不丢内容）
   SyncBackendDraft get _draft => SyncBackendDraft(
-        type: _type,
-        localFsPath: _localFsPathCtrl.text,
-        webdavUrl: _webdavUrlCtrl.text,
-        webdavUsername: _webdavUsernameCtrl.text,
-        webdavPassword: _webdavPasswordCtrl.text,
-        safeServerUrl: _safeServerUrlCtrl.text,
-        safeServerToken: _safeServerTokenCtrl.text,
-      );
+    type: _type,
+    localFsPath: _localFsPathCtrl.text,
+    webdavUrl: _webdavUrlCtrl.text,
+    webdavUsername: _webdavUsernameCtrl.text,
+    webdavPassword: _webdavPasswordCtrl.text,
+    safeServerUrl: _safeServerUrlCtrl.text,
+    safeServerToken: _safeServerTokenCtrl.text,
+  );
 
   /// 「不同步」不需要测试，其余类型必须字段齐全且已测试通过
   bool get _canSave {
@@ -253,10 +255,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _typeTitle(type),
-                          style: theme.textTheme.p,
-                        ),
+                        Text(_typeTitle(type), style: theme.textTheme.p),
                         Text(
                           _typeSubtitle(type),
                           style: theme.textTheme.muted.copyWith(fontSize: 12),
@@ -348,7 +347,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
-              'Selected "No Sync"; saving will clear the backend selection.'.tr(),
+              'Selected "No Sync"; saving will clear the backend selection.'
+                  .tr(),
               style: ShadTheme.of(context).textTheme.muted,
             ),
           ),
@@ -397,7 +397,10 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
               ),
             ),
           ),
-          _hint('The client automatically creates a safenotes-vault subdirectory under this address for sync data.'.tr()),
+          _hint(
+            'The client automatically creates a safenotes-vault subdirectory under this address for sync data.'
+                .tr(),
+          ),
         ];
       case SyncBackendType.safeServer:
         return [
@@ -427,36 +430,34 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
   }
 
   Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 4),
-        child: Text(
-          text,
-          style: ShadTheme.of(context)
-              .textTheme
-              .small
-              .copyWith(fontWeight: FontWeight.w600),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 20, bottom: 4),
+    child: Text(
+      text,
+      style: ShadTheme.of(
+        context,
+      ).textTheme.small.copyWith(fontWeight: FontWeight.w600),
+    ),
+  );
 
   Widget _hint(String text) => Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(
-          text,
-          style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 12),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 4),
+    child: Text(
+      text,
+      style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 12),
+    ),
+  );
 
   Widget _obscureToggle({
     required bool obscured,
     required VoidCallback onPressed,
-  }) =>
-      kInputIconButton(
-        icon: Icon(
-          obscured ? LucideIcons.eyeOff : LucideIcons.eye,
-          size: kInputIconSize,
-        ),
-        tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
-        onPressed: _testing ? null : onPressed,
-      );
+  }) => kInputIconButton(
+    icon: Icon(
+      obscured ? LucideIcons.eyeOff : LucideIcons.eye,
+      size: kInputIconSize,
+    ),
+    tooltip: obscured ? 'Show'.tr() : 'Hide'.tr(),
+    onPressed: _testing ? null : onPressed,
+  );
 
   Widget _textField({
     required TextEditingController controller,
@@ -569,8 +570,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
       color = theme.colorScheme.mutedForeground;
       icon = LucideIcons.info;
     } else if (_type == SyncBackendType.none) {
-      message =
-          '"No Sync" does not require testing; you can save directly.'.tr();
+      message = '"No Sync" does not require testing; you can save directly.'
+          .tr();
       color = theme.colorScheme.mutedForeground;
       icon = LucideIcons.info;
     } else if (!_draft.isComplete) {
@@ -588,7 +589,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
       icon = LucideIcons.circleCheck;
     } else {
       message = 'Connection failed: {error}'.tr(
-          namedArgs: {'error': _resultError ?? ''});
+        namedArgs: {'error': _resultError ?? ''},
+      );
       color = theme.colorScheme.destructive;
       icon = LucideIcons.circleAlert;
     }
@@ -626,7 +628,9 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     setState(() {
       _testing = false;
       _resultSignature = signature;
-      _resultError = result.success ? null : (result.error ?? 'Unknown error'.tr());
+      _resultError = result.success
+          ? null
+          : (result.error ?? 'Unknown error'.tr());
       // 只有成功才记录「已通过」的指纹，保存按钮据此解锁
       if (result.success) _passedSignature = signature;
     });

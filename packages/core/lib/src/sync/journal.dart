@@ -152,9 +152,7 @@ enum JournalEventType {
 
   /// 是否为密钥状态相关事件（用于 replayKeyState 过滤）
   bool get isKeyEvent =>
-      this == keyChangePassword ||
-      this == keyMigrate ||
-      this == keyAdoptEpoch;
+      this == keyChangePassword || this == keyMigrate || this == keyAdoptEpoch;
 }
 
 /// 事件阶段（对设计 §3.6b「两段式记录」的机器可读实现）
@@ -217,11 +215,11 @@ class JournalKeyState {
   });
 
   Map<String, Object?> toJson() => {
-        'keyVersion': keyVersion,
-        'dataKeyEpoch': dataKeyEpoch,
-        'keyFingerprint': keyFingerprint,
-        'encryptedDataKey': encryptedDataKey,
-      };
+    'keyVersion': keyVersion,
+    'dataKeyEpoch': dataKeyEpoch,
+    'keyFingerprint': keyFingerprint,
+    'encryptedDataKey': encryptedDataKey,
+  };
 
   static JournalKeyState? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -306,18 +304,18 @@ class JournalEntry {
   });
 
   Map<String, Object?> toJson() => {
-        'seq': seq,
-        'ts': ts,
-        'type': type.wire,
-        if (phase != JournalPhase.none) 'phase': phase.wire,
-        if (uuid != null) 'uuid': uuid,
-        if (hash != null) 'hash': hash,
-        if (dataKeyEpoch != null) 'dataKeyEpoch': dataKeyEpoch,
-        'by': by,
-        if (opId != null) 'opId': opId,
-        if (keyState != null) 'keyState': keyState!.toJson(),
-        if (note != null) 'note': note,
-      };
+    'seq': seq,
+    'ts': ts,
+    'type': type.wire,
+    if (phase != JournalPhase.none) 'phase': phase.wire,
+    if (uuid != null) 'uuid': uuid,
+    if (hash != null) 'hash': hash,
+    if (dataKeyEpoch != null) 'dataKeyEpoch': dataKeyEpoch,
+    'by': by,
+    if (opId != null) 'opId': opId,
+    if (keyState != null) 'keyState': keyState!.toJson(),
+    if (note != null) 'note': note,
+  };
 
   /// 反序列化；格式不合法或类型未知时返回 null（跳过坏条目而非整体失败）
   static JournalEntry? fromJson(Object? raw) {
@@ -348,7 +346,8 @@ class JournalEntry {
   }
 
   @override
-  String toString() => 'JournalEntry(#$seq ${type.wire}'
+  String toString() =>
+      'JournalEntry(#$seq ${type.wire}'
       '${phase == JournalPhase.none ? '' : '/${phase.wire}'}'
       '${uuid == null ? '' : ' uuid=$uuid'}'
       '${dataKeyEpoch == null ? '' : ' epoch=$dataKeyEpoch'} by=$by)';
@@ -422,18 +421,15 @@ class Journal {
     required int nextSeq,
     required int uploadedSeq,
     bool memoryOnly = false,
-  })  : _entries = entries,
-        _nextSeq = nextSeq,
-        _uploadedSeq = uploadedSeq,
-        _memoryOnly = memoryOnly;
+  }) : _entries = entries,
+       _nextSeq = nextSeq,
+       _uploadedSeq = uploadedSeq,
+       _memoryOnly = memoryOnly;
 
   /// 内存 journal（无文件 I/O）
   ///
   /// 用于单元测试。语义与文件模式一致，只是不落盘、不归档、不上传远端。
-  factory Journal.inMemory({
-    String vaultId = '',
-    String deviceId = 'memory',
-  }) =>
+  factory Journal.inMemory({String vaultId = '', String deviceId = 'memory'}) =>
       Journal._(
         dirPath: '',
         vaultId: vaultId,
@@ -496,8 +492,10 @@ class Journal {
         journal._entries.addAll(parsed.entries);
         if (parsed.vaultMismatch) {
           // 串库保护：journal 属于别的 vault → 归档隔离，重新开始
-          Log.sync.w('[Journal] vaultId 不匹配（file=${parsed.vaultId}, '
-              'expect=$vaultId），隔离旧 journal 并重新开始');
+          Log.sync.w(
+            '[Journal] vaultId 不匹配（file=${parsed.vaultId}, '
+            'expect=$vaultId），隔离旧 journal 并重新开始',
+          );
           journal._entries.clear();
           await journal._quarantineCurrentLog('vault-mismatch');
         }
@@ -507,8 +505,7 @@ class Journal {
         await journal._quarantineCurrentLog('corrupt');
       } on Error catch (e) {
         // jsonDecode 对某些坏输入抛 Error 而非 Exception
-        Log.sync.w('[Journal] 当前日志解析异常，隔离后以空日志继续',
-            error: StateError('$e'));
+        Log.sync.w('[Journal] 当前日志解析异常，隔离后以空日志继续', error: StateError('$e'));
         journal._entries.clear();
         await journal._quarantineCurrentLog('corrupt');
       }
@@ -539,8 +536,10 @@ class Journal {
       journal._uploadedSeq = 0;
     }
 
-    Log.sync.d('[Journal] 打开 dir=$dirPath entries=${journal._entries.length} '
-        'nextSeq=${journal._nextSeq} uploadedSeq=${journal._uploadedSeq}');
+    Log.sync.d(
+      '[Journal] 打开 dir=$dirPath entries=${journal._entries.length} '
+      'nextSeq=${journal._nextSeq} uploadedSeq=${journal._uploadedSeq}',
+    );
     return journal;
   }
 
@@ -574,19 +573,21 @@ class Journal {
   }) {
     if (_closed) return -1;
     final seq = _nextSeq++;
-    _pending.add(JournalEntry(
-      seq: seq,
-      ts: DateTime.now().millisecondsSinceEpoch,
-      type: type,
-      phase: phase,
-      uuid: uuid,
-      hash: hash,
-      dataKeyEpoch: dataKeyEpoch,
-      by: deviceId,
-      opId: opId,
-      keyState: keyState,
-      note: note,
-    ));
+    _pending.add(
+      JournalEntry(
+        seq: seq,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        type: type,
+        phase: phase,
+        uuid: uuid,
+        hash: hash,
+        dataKeyEpoch: dataKeyEpoch,
+        by: deviceId,
+        opId: opId,
+        keyState: keyState,
+        note: note,
+      ),
+    );
     _scheduleFlush();
     return seq;
   }
@@ -627,8 +628,10 @@ class Journal {
     final chained = _writeChain.then((_) => _doFlush());
     // 单点吞掉异常，保证 _writeChain 永不进入 error 状态导致后续全挂
     _writeChain = chained.catchError((Object e) {
-      Log.sync.w('[Journal] flush 失败（已忽略，不影响同步）',
-          error: e is Exception ? e : StateError('$e'));
+      Log.sync.w(
+        '[Journal] flush 失败（已忽略，不影响同步）',
+        error: e is Exception ? e : StateError('$e'),
+      );
     });
     await _writeChain;
   }
@@ -705,8 +708,10 @@ class Journal {
     final toDelete = seqs.sublist(0, seqs.length - kJournalArchiveKeep);
     for (final seq in toDelete) {
       if (seq > _uploadedSeq) {
-        Log.sync.w('[Journal] 归档 log-$seq.json 尚未上传远端即被淘汰，'
-            '该段历史将不可恢复（uploadedSeq=$_uploadedSeq）');
+        Log.sync.w(
+          '[Journal] 归档 log-$seq.json 尚未上传远端即被淘汰，'
+          '该段历史将不可恢复（uploadedSeq=$_uploadedSeq）',
+        );
       }
       try {
         await File(_archivePath(seq)).delete();
@@ -778,8 +783,10 @@ class Journal {
       } on Exception catch (e) {
         Log.sync.w('[Journal] 归档 log-$seq.json 解析失败，跳过', error: e);
       } on Error catch (e) {
-        Log.sync.w('[Journal] 归档 log-$seq.json 解析异常，跳过',
-            error: StateError('$e'));
+        Log.sync.w(
+          '[Journal] 归档 log-$seq.json 解析异常，跳过',
+          error: StateError('$e'),
+        );
       }
     }
     all.addAll(_entries);
@@ -922,18 +929,16 @@ class Journal {
     } on Exception catch (e) {
       Log.sync.d('[Journal] 远端副本上传失败（降级为本地-only）', error: e);
     } on Error catch (e) {
-      Log.sync.d('[Journal] 远端副本上传异常（降级为本地-only）',
-          error: StateError('$e'));
+      Log.sync.d('[Journal] 远端副本上传异常（降级为本地-only）', error: StateError('$e'));
     }
   }
 
   Future<void> _persistState() async {
     if (_memoryOnly) return;
     try {
-      await File(_statePath).writeAsString(
-        jsonEncode({'uploadedSeq': _uploadedSeq}),
-        flush: true,
-      );
+      await File(
+        _statePath,
+      ).writeAsString(jsonEncode({'uploadedSeq': _uploadedSeq}), flush: true);
     } on Exception catch (e) {
       Log.sync.d('[Journal] 状态持久化失败', error: e);
     }
@@ -971,8 +976,7 @@ class Journal {
       } on Exception catch (e) {
         Log.sync.d('[Journal] 远端副本 $name 解密/解析失败，跳过', error: e);
       } on Error catch (e) {
-        Log.sync.d('[Journal] 远端副本 $name 解析异常，跳过',
-            error: StateError('$e'));
+        Log.sync.d('[Journal] 远端副本 $name 解析异常，跳过', error: StateError('$e'));
       }
     }
     final list = result.values.toList()..sort((a, b) => a.ts.compareTo(b.ts));
@@ -983,7 +987,10 @@ class Journal {
   // 解析工具
   // ──────────────────────────────────────────────
 
-  static _ParsedLog _parseLogMap(Object? raw, {required String? expectVaultId}) {
+  static _ParsedLog _parseLogMap(
+    Object? raw, {
+    required String? expectVaultId,
+  }) {
     if (raw is! Map) {
       throw const FormatException('journal 根节点不是对象');
     }
@@ -997,7 +1004,8 @@ class Journal {
       final e = JournalEntry.fromJson(item);
       if (e != null) entries.add(e); // 坏条目跳过，不整体失败
     }
-    final mismatch = expectVaultId != null &&
+    final mismatch =
+        expectVaultId != null &&
         fileVaultId is String &&
         fileVaultId.isNotEmpty &&
         fileVaultId != expectVaultId;

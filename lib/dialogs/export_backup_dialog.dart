@@ -21,13 +21,13 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 导出面板返回的选项（docs/backup-encryption-design-20260810.md §6）
@@ -277,14 +277,14 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
               _formatTile(
                 value: true,
                 title: 'Encrypted (.snbak) (Recommended)'.tr(),
-                subtitle:
-                    'Encrypted with a password, safe to store or share.'.tr(),
+                subtitle: 'Encrypted with a password, safe to store or share.'
+                    .tr(),
               ),
               _formatTile(
                 value: false,
                 title: 'Plain text (.json)'.tr(),
-                subtitle:
-                    'Not encrypted; anyone with the file can read it.'.tr(),
+                subtitle: 'Not encrypted; anyone with the file can read it.'
+                    .tr(),
               ),
             ],
           ),
@@ -305,30 +305,28 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
     return GestureDetector(
       onTap: () => setState(() => _encrypted = value),
       child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _formatIndicator(selected),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: theme.textTheme.p),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.muted.copyWith(fontSize: 12),
-                  ),
-                ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _formatIndicator(selected),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.p),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.muted.copyWith(fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
@@ -416,7 +414,8 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
   Widget _buildPlaintextNotice() {
     return Text(
       'Plain-export warning: the file is NOT encrypted. Keep it in a '
-      'safe place.'.tr(),
+              'safe place.'
+          .tr(),
       style: TextStyle(
         fontSize: 13,
         color: ShadTheme.of(context).colorScheme.destructive,
@@ -437,7 +436,9 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
               // 传 width=Infinity，而 ShadInput 内部 ConstrainedBox 拿到无限宽会
               // 崩溃（Android 上尤为明显）。这里限定最大宽度，避免无限宽透传。
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: kInputMaxWidthInRow),
+                constraints: const BoxConstraints(
+                  maxWidth: kInputMaxWidthInRow,
+                ),
                 child: ShadInputFormField(
                   key: ValueKey(_locationPath),
                   initialValue: _locationPath,

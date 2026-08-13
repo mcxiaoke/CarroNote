@@ -18,19 +18,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/editor_state.dart';
-import 'package:core/core.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
+import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/utils/url_launcher.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 未保存退出弹框的三种选择。
@@ -102,9 +102,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           body: _previewMode
               ? _buildPreview(context)
               : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
-              // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
-              // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
-              _KeyboardAwarePadding(child: _buildBody()),
+                // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
+                // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
+                _KeyboardAwarePadding(child: _buildBody()),
         ),
       ),
     );
@@ -124,9 +124,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     if (!mounted) return;
     if (action == null || action == UnsavedAction.cancel) return; // 留在本页
     if (action == UnsavedAction.save) {
-      Log.note.i(
-        '退出编辑页前用户选择保存: uuid=${widget.note?.uuid ?? "(新建)"}',
-      );
+      Log.note.i('退出编辑页前用户选择保存: uuid=${widget.note?.uuid ?? "(新建)"}');
       await NoteEditorState().addOrUpdateNote();
     }
     // 保存或放弃都关闭页面（放弃不写库）。
@@ -149,25 +147,25 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         return ShadDialog(
           title: Text('Unsaved changes'.tr()),
           actions: [
-            shadDialogActionBar(actions: [
-              ShadDialogAction(
-                label: 'Cancel'.tr(),
-                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.cancel),
-              ),
-              ShadDialogAction(
-                label: 'Discard'.tr(),
-                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.discard),
-              ),
-              ShadDialogAction(
-                label: 'Save'.tr(),
-                primary: true,
-                onPressed: () => Navigator.of(ctx).pop(UnsavedAction.save),
-              ),
-            ]),
+            shadDialogActionBar(
+              actions: [
+                ShadDialogAction(
+                  label: 'Cancel'.tr(),
+                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.cancel),
+                ),
+                ShadDialogAction(
+                  label: 'Discard'.tr(),
+                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.discard),
+                ),
+                ShadDialogAction(
+                  label: 'Save'.tr(),
+                  primary: true,
+                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.save),
+                ),
+              ],
+            ),
           ],
-          child: Text(
-            'You have unsaved changes. Save before leaving?'.tr(),
-          ),
+          child: Text('You have unsaved changes. Save before leaving?'.tr()),
         );
       },
     );
@@ -207,8 +205,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       tooltip: 'Delete'.tr(),
       onPressed: () async {
         if (widget.note == null) return;
-        Log.ui.i('用户点击删除笔记(编辑页), 弹出确认对话框 '
-            'uuid=${widget.note!.uuid}');
+        Log.ui.i(
+          '用户点击删除笔记(编辑页), 弹出确认对话框 '
+          'uuid=${widget.note!.uuid}',
+        );
         await showDialog(
           context: context,
           barrierDismissible: true,
@@ -218,8 +218,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
                 // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
                 setState(() => _isDeleting = true);
                 final childNavigator = Navigator.of(contextChild);
-                Log.note.i('用户确认删除笔记(移入回收站): '
-                    'uuid=${widget.note!.uuid} id=${widget.note!.id}');
+                Log.note.i(
+                  '用户确认删除笔记(移入回收站): '
+                  'uuid=${widget.note!.uuid} id=${widget.note!.id}',
+                );
                 await NotesDatabase.instance.softDelete(widget.note!.id!);
                 // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
                 Log.sync.d('笔记软删除后触发自动同步');
@@ -249,10 +251,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
             MarkdownBody(
               data: description,
               selectable: true,
-              styleSheet:
-                  MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                p: const TextStyle(fontSize: 18),
-              ),
+              styleSheet: MarkdownStyleSheet.fromTheme(
+                Theme.of(context),
+              ).copyWith(p: const TextStyle(fontSize: 18)),
               // 隐私：不加载任何网络/本地图片，避免泄露 IP / 元数据
               imageBuilder: (uri, _, _) => const SizedBox.shrink(),
               onTapLink: (text, href, _) {
@@ -265,10 +266,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               },
             )
           else
-            SelectableText(
-              description,
-              style: const TextStyle(fontSize: 18),
-            ),
+            SelectableText(description, style: const TextStyle(fontSize: 18)),
         ],
       ),
     );
