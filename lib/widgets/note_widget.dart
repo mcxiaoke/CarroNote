@@ -84,6 +84,8 @@ class NoteFormWidget extends StatelessWidget {
         fontSize: fontSize,
       ),
       placeholder: Text(titleHint),
+      // 防御主题层 minHeight:48 抬高：编辑器标题/正文保持按内容（行高）紧凑布局
+      constraints: const BoxConstraints(minHeight: 0),
       padding: EdgeInsets.zero,
       inputPadding: EdgeInsets.zero,
       // 全 border 显式置 none + 透明背景，维持 borderless 编辑器的紧凑外观，
@@ -120,6 +122,8 @@ class NoteFormWidget extends StatelessWidget {
       alignment: Alignment.topLeft,
       style: const TextStyle(fontSize: fontSize),
       placeholder: Text(hintDescription),
+      // 防御主题层 minHeight:48 抬高（同标题框）
+      constraints: const BoxConstraints(minHeight: 0),
       padding: EdgeInsets.zero,
       inputPadding: EdgeInsets.zero,
       decoration: const ShadDecoration(

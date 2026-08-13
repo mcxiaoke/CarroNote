@@ -53,12 +53,10 @@ class SearchWidgetState extends State<SearchWidget> {
     final style = widget.text.isEmpty ? styleHint : styleActive;
     const searchBoxRadius = 7.0;
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
-    // 亮色模式用更浅的 surfaceContainerLow，避免 surfaceContainerHighest 偏深发灰；
-    // 暗色模式沿用 surfaceContainerHighest（本就是深色容器）。
-    final bool isDark = colorScheme.brightness == Brightness.dark;
-    final Color boxColor = isDark
-        ? colorScheme.surfaceContainerHighest
-        : colorScheme.surfaceContainerLow;
+    // 亮色/暗色统一用 surfaceContainerHighest（浅亮灰/深灰容器），
+    // 与页面背景 surfaceContainerLow 拉开对比，保证搜索框有清晰背景色块；
+    // 亮色不再用与页面同色的 surfaceContainerLow（会"融化"在页面里，看起来没背景）。
+    final Color boxColor = colorScheme.surfaceContainerHighest;
 
     return Container(
       height: 44,
@@ -66,7 +64,8 @@ class SearchWidgetState extends State<SearchWidget> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(searchBoxRadius),
         color: boxColor,
-        // 不再画 outlineVariant 边框：避免深色"黑线"突兀。
+        // 轻描边勾勒框体：outlineVariant 亮色浅灰/暗色深灰，非突兀黑线。
+        border: Border.all(color: colorScheme.outlineVariant, width: 1),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       // 搜索图标、输入框、清除按钮放在同一 Row，由 Row 统一垂直居中。
@@ -108,6 +107,10 @@ class SearchWidgetState extends State<SearchWidget> {
               // 与迁移前 TextField(isCollapsed + zero padding + border none) 视觉一致。
               placeholder: Text(widget.hintText, style: styleHint),
               style: styleActive,
+              // 显式锁死内边距：外层 Container 44 高含 1px 边框（可用 42），
+              // 垂直取 10（10*2+行高约20=40 < 42）留裕量防溢出，文字近似居中；
+              // 防止主题 inputTheme padding 变动波及搜索框内部布局。
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               inputPadding: EdgeInsets.zero,
               decoration: const ShadDecoration(
                 border: ShadBorder.none,

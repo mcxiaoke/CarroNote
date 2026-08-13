@@ -40,6 +40,38 @@ class ShadThemes {
     return ShadThemeData(
       brightness: brightness,
       colorScheme: scheme,
+      // 统一按钮高度为 48（手指触控标准，桌面/移动端一致）：
+      // 只覆盖 regular，sm/lg/icon 保持 shadcn 默认（ShadApp 内 merge 保底），
+      // 因此所有未显式指定 size 的 ShadButton 都会统一变 48，无需逐个改。
+      buttonSizesTheme: const ShadButtonSizesTheme(
+        regular: ShadButtonSizeTheme(
+          height: 48,
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+      ),
+      // 输入框与按钮同高（48）：外层 minHeight 垫高 + 对称大内边距使文字垂直居中，
+      // 避免「minHeight 只把内容顶到上方、底部留空」的偏上观感。
+      // 仅在此覆盖，未显式指定 padding/constraints 的 ShadInput/ShadInputFormField 全部生效。
+      inputTheme: const ShadInputTheme(
+        constraints: BoxConstraints(minHeight: 48),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+      // 按钮文字随 48 高度放大一档（14→16），与 Material 按钮视觉一致；link 保持原样。
+      primaryButtonTheme: ShadButtonTheme(
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+      destructiveButtonTheme: ShadButtonTheme(
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+      outlineButtonTheme: ShadButtonTheme(
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+      secondaryButtonTheme: ShadButtonTheme(
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
+      ghostButtonTheme: ShadButtonTheme(
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      ),
       // switch 未选中轨道默认用 colorScheme.input（暗色 Slate 下 #1e293b 近黑，
       // 偏重）。改用 M3 的 surfaceContainerHighest（暗色 #33353a、亮色 #e1e2e9）
       // —— 同属中性色，但暗色下更柔和、层次更清晰。

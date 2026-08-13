@@ -25,9 +25,14 @@ class ShadDialogAction {
 }
 
 /// 右对齐的 ShadButton 操作组，替代 DialogActionBar。
+///
+/// [buttonMinWidth]：按钮统一最小宽度。action bar 长度本按文字自适应，
+/// 短词按钮（Cancel/Export/OK）会显得很窄；给定最小宽度后所有对话框
+/// 按钮宽度整齐一致（文字本身更宽的按钮不受影响）。
 Widget shadDialogActionBar({
   required List<ShadDialogAction> actions,
   double? spacing,
+  double buttonMinWidth = 100.0,
 }) {
   final double gap = spacing ?? 8.0;
   final children = <Widget>[];
@@ -35,31 +40,32 @@ Widget shadDialogActionBar({
     if (i > 0) children.add(SizedBox(width: gap));
     final a = actions[i];
     final buttonChild = Text(a.label);
+    Widget button;
     if (a.destructive) {
-      children.add(
-        ShadButton.destructive(
-          onPressed: a.onPressed,
-          enabled: a.enabled,
-          child: buttonChild,
-        ),
+      button = ShadButton.destructive(
+        onPressed: a.onPressed,
+        enabled: a.enabled,
+        child: buttonChild,
       );
     } else if (a.primary) {
-      children.add(
-        ShadButton(
-          onPressed: a.onPressed,
-          enabled: a.enabled,
-          child: buttonChild,
-        ),
+      button = ShadButton(
+        onPressed: a.onPressed,
+        enabled: a.enabled,
+        child: buttonChild,
       );
     } else {
-      children.add(
-        ShadButton.outline(
-          onPressed: a.onPressed,
-          enabled: a.enabled,
-          child: buttonChild,
-        ),
+      button = ShadButton.outline(
+        onPressed: a.onPressed,
+        enabled: a.enabled,
+        child: buttonChild,
       );
     }
+    children.add(
+      ConstrainedBox(
+        constraints: BoxConstraints(minWidth: buttonMinWidth),
+        child: button,
+      ),
+    );
   }
   return Row(mainAxisAlignment: MainAxisAlignment.end, children: children);
 }

@@ -33,10 +33,12 @@ TextStyle appBarTitle = uiTitleStyle(fontSize: 20);
 /// 把输入框撑高、或与无图标框不一致；配合 [kInputIconButton] 使用。
 const double kInputIconSize = 20.0;
 
-/// 输入框统一内边距（左右 12、上下 6）。上下用对称内边距而非仅靠
+/// 输入框统一内边距（左右 12、上下 12）。上下用对称内边距而非仅靠
 /// minHeight：对称内边距会让 [leading]/文字/trailing 在框内垂直居中，
 /// 而 minHeight 只是把内容顶到上方、底部留空，导致文字看起来偏上。
-const EdgeInsets kInputPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+/// 上下取 12 而不是精确撑满 48：14px 字号行高约 20，12*2+20=44，
+/// 给主题层 minHeight:48 的垫高留出边框裕量，避免小高度上下文溢出。
+const EdgeInsets kInputPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 12);
 
 /// 桌面端窄表单/对话框最大宽度：登录、设置/修改口令、导出备份等单列居中内容，
 /// 避免在宽窗口上被拉满。

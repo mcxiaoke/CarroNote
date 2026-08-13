@@ -96,24 +96,24 @@ class AppThemes {
     final bool desktop = isDesktopPlatform;
     final double radius = desktop ? 8 : 12;
     final ButtonStyle secondaryBtn = ButtonStyle(
-      minimumSize: WidgetStatePropertyAll(const Size(0, 44)),
+      minimumSize: WidgetStatePropertyAll(const Size(0, 48)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
       textStyle: WidgetStatePropertyAll(
         TextStyle(
-          fontSize: desktop ? 14 : 15,
+          fontSize: 16,
           fontWeight: FontWeight.w600,
         ),
       ),
     );
     final ButtonStyle textBtn = ButtonStyle(
-      minimumSize: WidgetStatePropertyAll(const Size(0, 44)),
+      minimumSize: WidgetStatePropertyAll(const Size(0, 48)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
       textStyle: WidgetStatePropertyAll(
-        TextStyle(fontSize: desktop ? 14 : 14),
+        TextStyle(fontSize: 16),
       ),
     );
     final OutlineInputBorder inputBorder =
