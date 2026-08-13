@@ -53,8 +53,8 @@ app.*.map.json
 #Ignore Some local Devlopment File
 _local_temp/
 
-#Generated build info (recreated by scripts/generate_build_info.py)
-lib/utils/build_info.dart
+#Generated build info (recreated by scripts/generate_build_info.dart,
+#output to lib/generated/, which is already ignored by the generated/ rule)
 
 #Sync reference servers (not committed, for local testing only)
 
