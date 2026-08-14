@@ -31,6 +31,7 @@ import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -171,7 +172,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 500),
+        // P1-11：500ms → AppMotion.slow。
+        duration: AppMotion.slow,
         curve: Curves.ease,
       );
     }

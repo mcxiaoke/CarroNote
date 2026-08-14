@@ -10,6 +10,9 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// Project imports:
+import 'package:safenotes/utils/spacing.dart';
+
 /// 设置类页面的标准内容容器：统一内边距 + 桌面端限宽居中。
 ///
 /// 桌面窗口可以拉得很宽，设置项撑满整行会让开关跑到视线之外、阅读动线断裂，
@@ -322,7 +325,7 @@ class _TileIcon extends StatelessWidget {
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(icon, size: 18, color: color),
+      child: Icon(icon, size: AppIcon.sm, color: color),
     );
   }
 }

@@ -34,8 +34,10 @@ import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -189,7 +191,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       if (MediaQuery.of(context).viewInsets.bottom > 0) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 500),
+          // P1-11：500ms → AppMotion.slow。
+          duration: AppMotion.slow,
           curve: Curves.ease,
         );
       }
@@ -329,7 +332,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildBiometricAuthButton(BuildContext context) {
-    final bool isDesktop = isDesktopPlatform;
     final bool enabled =
         PreferencesStorage.isBiometricAuthEnabled &&
         !forcePassphraseInput &&
@@ -344,7 +346,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           padding: const EdgeInsets.only(top: 10, bottom: 20),
           child: ShadButton(
             width: double.infinity,
-            leading: Icon(LucideIcons.fingerprint, size: isDesktop ? 22 : 28),
+            // P1-20：图标走 AppIcon.lg，删除桌面/移动分支（22/28 不一致）。
+            leading: Icon(LucideIcons.fingerprint, size: AppIcon.lg),
             onPressed: enabled ? _authenticate : null,
             child: Text('Biometric'.tr()),
           ),

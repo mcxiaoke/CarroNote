@@ -19,6 +19,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
 class SearchWidget extends StatefulWidget {
@@ -53,7 +54,7 @@ class SearchWidgetState extends State<SearchWidget> {
     final styleActive = TextStyle(color: colorScheme.onSurface);
     final styleHint = TextStyle(color: colorScheme.onSurfaceVariant);
     final style = widget.text.isEmpty ? styleHint : styleActive;
-    const searchBoxRadius = 7.0;
+    // P1-14：圆角走 AppShape.inputRadius（8），与 ShadInput 主题一致。
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
     // 亮色/暗色统一用 surfaceContainerHighest（浅亮灰/深灰容器），
     // 与页面背景 surfaceContainerLow 拉开对比，保证搜索框有清晰背景色块；
@@ -61,22 +62,23 @@ class SearchWidgetState extends State<SearchWidget> {
     final Color boxColor = colorScheme.surfaceContainerHighest;
 
     return Container(
-      height: 44,
+      // P1-14：高度走 AppShape.searchHeight（48），与 ShadInput 48 对齐。
+      height: AppShape.searchHeight,
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(searchBoxRadius),
+        borderRadius: BorderRadius.circular(AppShape.inputRadius),
         color: boxColor,
         // 轻描边勾勒框体：outlineVariant 亮色浅灰/暗色深灰，非突兀黑线。
         border: Border.all(color: colorScheme.outlineVariant, width: 1),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
       // 搜索图标、输入框、清除按钮放在同一 Row，由 Row 统一垂直居中。
       // 注意：不要给 TextField 设 textAlignVertical —— 在 isCollapsed + 零内边距下，
       // 它会把文字/hint 额外下移约 4px（真实字体实测）；不设时文字天然居中。
       // 也不用 InputDecoration 的 leading icon / suffixIcon，避免内部布局差异。
       child: Row(
         children: [
-          Icon(LucideIcons.search, color: style.color, size: 20),
+          Icon(LucideIcons.search, color: style.color, size: AppIcon.md),
           const SizedBox(width: 10),
           Expanded(
             child: ShadInput(
@@ -109,10 +111,10 @@ class SearchWidgetState extends State<SearchWidget> {
               // 与迁移前 TextField(isCollapsed + zero padding + border none) 视觉一致。
               placeholder: Text(widget.hintText, style: styleHint),
               style: styleActive,
-              // 显式锁死内边距：外层 Container 44 高含 1px 边框（可用 42），
-              // 垂直取 10（10*2+行高约20=40 < 42）留裕量防溢出，文字近似居中；
+              // 显式锁死内边距：外层 Container 48 高含 1px 边框（可用 46），
+              // 垂直取 12（12*2+行高约20=44 < 46）留裕量防溢出，文字近似居中；
               // 防止主题 inputTheme padding 变动波及搜索框内部布局。
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               inputPadding: EdgeInsets.zero,
               decoration: const ShadDecoration(
                 border: ShadBorder.none,

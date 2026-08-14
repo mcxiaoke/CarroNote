@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 
 // Project imports:
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/spacing.dart';
 
 class Style {
   static TextStyle buttonTextStyle(BuildContext context) {
@@ -31,7 +32,8 @@ TextStyle appBarTitle = uiTitleStyle(fontSize: 20);
 
 /// 输入框内 leading/trailing 图标统一尺寸：限制到 20，避免默认 24 的图标
 /// 把输入框撑高、或与无图标框不一致；配合 [kInputIconButton] 使用。
-const double kInputIconSize = 20.0;
+/// P1-20：与 AppIcon.md（20）同源。
+const double kInputIconSize = AppIcon.md;
 
 /// 输入框统一内边距（左右 12、上下 12）。上下用对称内边距而非仅靠
 /// minHeight：对称内边距会让 [leading]/文字/trailing 在框内垂直居中，

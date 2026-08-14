@@ -29,6 +29,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 
@@ -289,7 +290,8 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           child: SizedBox.square(
             dimension: 16,
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 100),
+              // P1-11：100ms → AppMotion.fast。
+              duration: AppMotion.fast,
               child: selected
                   ? Align(
                       child: SizedBox.square(

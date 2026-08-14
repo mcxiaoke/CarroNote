@@ -24,8 +24,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
 
 class NoteCardWidgetCompact extends StatelessWidget {
@@ -55,8 +57,8 @@ class NoteCardWidgetCompact extends StatelessWidget {
 
     return ShadCard(
       backgroundColor: color,
-      padding: const EdgeInsets.all(10),
-      radius: BorderRadius.circular(10),
+      padding: AppSpace.cardPadding,
+      radius: BorderRadius.circular(AppShape.cardRadius),
       border: ShadBorder.none,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -65,26 +67,20 @@ class NoteCardWidgetCompact extends StatelessWidget {
           AutoSizeText(
             sanitize(previewText),
             textDirection: getTextDirecton(previewText),
-            style: TextStyle(
+            style: AppText.titleCompact.copyWith(
               color: fontColor,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
               fontFamily: uiFontFamily,
               fontFamilyFallback: uiFontFamilyFallback,
             ),
             minFontSize: 15,
             maxLines: 2,
-            overflow: TextOverflow.clip,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpace.xs),
           Text(
             time,
             textDirection: getTextDirecton(time),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: fontColor,
-            ),
+            style: AppText.caption.copyWith(color: fontColor),
           ),
         ],
       ),

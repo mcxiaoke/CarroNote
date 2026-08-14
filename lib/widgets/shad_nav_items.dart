@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// Project imports:
+import 'package:safenotes/utils/spacing.dart';
+
 /// 单个导航菜单项。
 ///
 /// - [icon] 显示在品牌色（Nord 蓝 / 危险红）圆角容器内；
@@ -44,7 +47,7 @@ Widget shadNavMenuItem(
                 color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(9),
               ),
-              child: Icon(icon, size: 18, color: color),
+              child: Icon(icon, size: AppIcon.sm, color: color),
             ),
             const SizedBox(width: 14),
             Expanded(

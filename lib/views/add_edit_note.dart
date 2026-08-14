@@ -29,6 +29,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -323,7 +324,8 @@ class _KeyboardAwarePadding extends StatelessWidget {
     // viewInsetsOf 只订阅 viewInsets 细分依赖，比 MediaQuery.of 重建范围更小。
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
-      duration: const Duration(milliseconds: 150),
+      // P1-11：150ms → AppMotion.normal，与系统键盘节奏对齐。
+      duration: AppMotion.normal,
       curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: bottom),
       child: child,

@@ -21,6 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
+import 'package:safenotes/widgets/states.dart';
 
 // Package 瀵煎叆
 
@@ -76,14 +77,13 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      // P0-5：骨架占位替代转圈。
+      return loadingState();
     }
     if (_deletedNotes.isEmpty) {
-      return Center(
-        child: Text(
-          'No deleted notes'.tr(),
-          style: TextStyle(fontSize: 16, color: Colors.grey),
-        ),
+      return emptyState(
+        icon: Icons.delete_outline,
+        text: 'No deleted notes'.tr(),
       );
     }
     return ListView.separated(

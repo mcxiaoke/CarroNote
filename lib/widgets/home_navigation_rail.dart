@@ -17,7 +17,6 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -60,13 +59,16 @@ class HomeSidebar extends StatelessWidget {
     // 订阅 ThemeProvider：主题切换后本侧栏的颜色随之刷新。
     Provider.of<ThemeProvider>(context);
 
-    // 直接复用 shadcn 主题色板，保证侧栏与设置页/抽屉等整体主题一致（含暗色/亮色）。
-    final theme = ShadTheme.of(context);
-    final Color fg = theme.colorScheme.foreground;
-    final Color bg = theme.colorScheme.background;
-    final Color divider = theme.colorScheme.border;
+    // 背景/前景/分隔线用 Material 主题（与移动端 Drawer / body 一致）。
+    // 修复：43d05ed 曾改为 ShadTheme.colorScheme.background（亮色下纯白），
+    // 导致宽屏侧边栏与浅灰 body 背景割裂、"背景丢失"；还原为 surfaceContainerLow。
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final Color fg = colorScheme.onSurface;
+    final Color bg = colorScheme.surfaceContainerLow;
+    final Color divider = colorScheme.outlineVariant;
     // 明暗 + 主题色统一入口：文案「切换主题」+ 调色板图标（与移动端 Drawer 一致）。
-    final String themeText = 'Switch Theme'.tr();
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final String themeText = isDark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
       return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);

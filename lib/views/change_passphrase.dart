@@ -24,6 +24,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
@@ -99,7 +100,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
+        // P1-11：300ms → AppMotion.normal。
+        duration: AppMotion.normal,
         curve: Curves.ease,
       );
     }

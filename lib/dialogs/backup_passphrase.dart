@@ -49,7 +49,8 @@ class ImportPassPhraseDialogState extends State<ImportPassPhraseDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const double importDataPassDialogRadious = 10.0;
+    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
+    const double importDataPassDialogRadious = 12.0;
 
     return BackdropFilter(
       filter: ImageFilter.blur(),

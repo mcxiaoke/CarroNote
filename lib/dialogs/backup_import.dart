@@ -35,7 +35,8 @@ class FileImportDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const double paddingAllAround = 20.0;
-    const double dialogRadius = 10.0;
+    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
+    const double dialogRadius = 12.0;
 
     return BackdropFilter(
       filter: ImageFilter.blur(),

@@ -35,9 +35,11 @@ import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/dev_mode.dart';
+import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/route_observer.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
@@ -45,10 +47,12 @@ import 'package:safenotes/widgets/drawer.dart';
 import 'package:safenotes/widgets/home_navigation_rail.dart';
 import 'package:safenotes/widgets/note_card.dart';
 import 'package:safenotes/widgets/note_card_compact.dart';
+import 'package:safenotes/widgets/note_card_press_feedback.dart';
 import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
+import 'package:safenotes/widgets/states.dart';
 
 class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -499,20 +503,31 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _handleAndBuildNotes() {
     final String noNotes = 'No Notes'.tr();
-    const double fontSize = 24.0;
 
     return Expanded(
       child: !isLoading
           ? notes.isEmpty
-                ? Center(
-                    child: Text(
-                      noNotes,
-                      style: const TextStyle(fontSize: fontSize),
-                    ),
+                ? emptyState(
+                    icon: Icons.note_alt_outlined,
+                    text: noNotes,
+                    cta: 'New Note'.tr(),
+                    onCta: _openAddNote,
                   )
                 : (isGridView ? _buildNotes() : _buildNotesTile())
-          : const Center(child: CircularProgressIndicator()),
+          : loadingState(),
     );
+  }
+
+  /// 新建笔记：FAB 与空状态 CTA 共用入口。
+  Future<void> _openAddNote() async {
+    Log.ui.i('界面切换: 主界面 → 新建笔记(/addnote)');
+    await Navigator.pushNamed(
+      context,
+      '/addnote',
+      arguments: widget.sessionStateStream,
+    );
+    Log.ui.d('界面返回: 新建笔记 → 主界面, 触发列表刷新');
+    refreshNotes();
   }
 
   Widget _addANewNoteButton(BuildContext context) {
@@ -526,17 +541,8 @@ class HomePageState extends State<HomePage> with RouteAware {
           radius: const BorderRadius.all(Radius.circular(28)),
         ),
       ),
+      onPressed: _openAddNote,
       child: const Icon(Icons.add),
-      onPressed: () async {
-        Log.ui.i('界面切换: 主界面 → 新建笔记(/addnote)');
-        await Navigator.pushNamed(
-          context,
-          '/addnote',
-          arguments: widget.sessionStateStream,
-        );
-        Log.ui.d('界面返回: 新建笔记 → 主界面, 触发列表刷新');
-        refreshNotes();
-      },
     );
   }
 
@@ -634,14 +640,15 @@ class HomePageState extends State<HomePage> with RouteAware {
     final Color cardColor = NotesColor.getNoteColor(notIndex: index);
     return OpenContainer(
       tappable: false,
-      // 250ms：动画期间编辑页会被 FittedBox 缩放渲染，时长过长易掉帧；
-      // 缩短后配合 Markdown 首帧延迟渲染（add_edit_note），动画更跟手。
-      transitionDuration: const Duration(milliseconds: 250),
+      // P1-11：时长走 AppMotion.pageTransition（保持 250ms：动画期间编辑页
+      // 会被 FittedBox 缩放渲染，时长过长易掉帧，故不上调到 slow）。
+      transitionDuration: AppMotion.pageTransition,
       transitionType: ContainerTransitionType.fade,
       closedColor: cardColor,
       openColor: Theme.of(context).scaffoldBackgroundColor,
       closedShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        // P1-14：与卡片圆角（AppShape.cardRadius）保持一致。
+        borderRadius: BorderRadius.circular(AppShape.cardRadius),
       ),
       openShape: const RoundedRectangleBorder(),
       closedElevation: 0,
@@ -656,7 +663,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       onClosed: (_) {
         if (mounted) refreshNotes();
       },
-      closedBuilder: (context, action) => GestureDetector(
+      closedBuilder: (context, action) => NoteCardPressFeedback(
         onTap: () {
           // 只记录 uuid 与序号，不记录标题正文（隐私红线）
           Log.ui.i(

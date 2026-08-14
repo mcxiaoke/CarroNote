@@ -23,8 +23,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
 
 class NoteTileWidget extends StatelessWidget {
@@ -50,8 +52,8 @@ class NoteTileWidget extends StatelessWidget {
 
     return ShadCard(
       backgroundColor: color,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      radius: BorderRadius.circular(10),
+      padding: AppSpace.cardPadding,
+      radius: BorderRadius.circular(AppShape.cardRadius),
       border: ShadBorder.none,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -62,34 +64,27 @@ class NoteTileWidget extends StatelessWidget {
           Text(
             sanitize(note.title),
             textDirection: getTextDirecton(note.title),
-            style: TextStyle(
+            style: AppText.title.copyWith(
               color: fontColor,
-              fontSize: 20,
-              height: 1.2,
-              fontWeight: FontWeight.bold,
               fontFamily: uiFontFamily,
               fontFamilyFallback: uiFontFamilyFallback,
             ),
             maxLines: 1,
-            overflow: TextOverflow.clip,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox.square(dimension: 5),
+          const SizedBox.square(dimension: AppSpace.xs),
           Text(
             time,
             textDirection: getTextDirecton(time),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: fontColor,
-            ),
+            style: AppText.caption.copyWith(color: fontColor),
           ),
-          const SizedBox.square(dimension: 5),
+          const SizedBox.square(dimension: AppSpace.xs),
           Text(
             sanitize(note.abstractText),
             textDirection: getTextDirecton(note.abstractText),
-            style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
+            style: AppText.body.copyWith(color: fontColor),
             maxLines: 2,
-            overflow: TextOverflow.clip,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

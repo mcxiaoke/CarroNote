@@ -23,8 +23,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/string_utils.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
 
 class NoteCardWidget extends StatelessWidget {
@@ -51,8 +53,8 @@ class NoteCardWidget extends StatelessWidget {
 
     return ShadCard(
       backgroundColor: color,
-      padding: const EdgeInsets.all(10),
-      radius: BorderRadius.circular(10),
+      padding: AppSpace.cardPadding,
+      radius: BorderRadius.circular(AppShape.cardRadius),
       border: ShadBorder.none,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -62,52 +64,31 @@ class NoteCardWidget extends StatelessWidget {
           Text(
             sanitize(note.title),
             textDirection: getTextDirecton(note.title),
-            style: TextStyle(
+            style: AppText.title.copyWith(
               color: fontColor,
-              fontSize: 20,
-              height: 1.2,
-              fontWeight: FontWeight.bold,
               fontFamily: uiFontFamily,
               fontFamilyFallback: uiFontFamilyFallback,
             ),
             maxLines: 2,
-            overflow: TextOverflow.clip,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpace.xs),
           Text(
             time,
             textDirection: getTextDirecton(time),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: fontColor,
-            ),
+            style: AppText.caption.copyWith(color: fontColor),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpace.sm),
           Text(
             sanitize(note.abstractText),
             textDirection: getTextDirecton(note.abstractText),
-            style: TextStyle(color: fontColor, fontSize: 16, height: 1.2),
-            maxLines: getMaxLine(index), //3,
-            overflow: TextOverflow.clip,
+            style: AppText.body.copyWith(color: fontColor),
+            // P0-1：固定行数，消除 index%4 驱动的卡片高度锯齿。
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
     );
-  }
-
-  int getMaxLine(int index) {
-    switch (index % 4) {
-      case 0:
-        return 2;
-      case 1:
-        return 3;
-      case 2:
-        return 4;
-      case 3:
-        return 3;
-      default:
-        return 3;
-    }
   }
 }
