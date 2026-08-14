@@ -1,0 +1,7 @@
+# 构建上下文限定（仅用于 server/docker/Dockerfile 编译 wsns）
+# 排除仓库其余部分，避免把 Flutter 工程 / 大目录送进构建上下文。
+**/*
+!server/go/
+!server/go/**
+!server/docker/
+!server/docker/**

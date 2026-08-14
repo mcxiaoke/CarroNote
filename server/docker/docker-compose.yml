@@ -1,0 +1,42 @@
+# wsns (SafeServer) Docker Compose
+#
+# 用法（在 server/docker/ 目录下）：
+#   docker compose up -d --build      # 首次/重新构建并后台启动
+#   docker compose logs -f            # 看日志（容器 stdout）
+#   docker compose down               # 停止并移除容器
+#
+# 所有配置 / 数据 / 日志 / 备份 都落在宿主机 ./wsns-data 这一个目录里：
+#   wsns-data/
+#   ├── config/    config.json        （首次启动自动生成，可编辑后重启生效）
+#   ├── data/      vaults/            （实际笔记密文数据）
+#   ├── logs/      wsns.log           （服务日志文件）
+#   └── backups/                       （Tier 2 归档 zip/tar.gz）
+#
+# 鉴权 Token：通过环境变量 SAFESERVER_TOKEN 注入（默认是占位符，务必改成强随机值）。
+# 也可在同级目录放一个 .env 文件写 WSNS_TOKEN=你的强token。
+
+services:
+  wsns:
+    build:
+      # 构建上下文为仓库根目录（需 COPY server/go 源码）
+      context: ../..
+      dockerfile: server/docker/Dockerfile
+    image: wsns:local
+    container_name: wsns
+    hostname: wsns
+    restart: unless-stopped
+    ports:
+      - "4080:4080"
+    environment:
+      # 务必改成强随机 token；建议用 .env 文件管理，不要硬编码进 compose
+      SAFESERVER_TOKEN: "${WSNS_TOKEN:-change-me-to-a-strong-random-token}"
+      TZ: "Asia/Shanghai"
+    volumes:
+      # 单一根目录：配置/数据/日志/备份全部在其下的子目录中
+      - ./wsns-data:/srv/wsns
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4080/api/v2/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

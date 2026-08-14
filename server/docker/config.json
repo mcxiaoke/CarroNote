@@ -1,0 +1,29 @@
+{
+  "_comment": "wsns Docker 默认配置（自动写入挂载目录的 config/ 下）。dataDir/logFile/backup.archive.path 全部位于 /srv/wsns 单一根目录的子目录中。token 不在此文件里，由环境变量 SAFESERVER_TOKEN 注入。",
+  "addr": ":4080",
+  "dataDir": "/srv/wsns/data",
+  "logLevel": "info",
+  "logFile": "/srv/wsns/logs/wsns.log",
+  "logJSON": false,
+  "rateLimit": 10,
+  "maxBodyBytes": 67108864,
+  "readTimeout": "60s",
+  "writeTimeout": "60s",
+  "idleTimeout": "120s",
+  "behindProxy": false,
+  "backup": {
+    "enabled": true,
+    "scheduleInterval": "6h",
+    "autoOnWrite": true,
+    "writeDebounceMs": 5000,
+    "maxSnapshots": 100,
+    "retentionDays": 180,
+    "archive": {
+      "enabled": true,
+      "interval": "24h",
+      "path": "/srv/wsns/backups",
+      "format": "zip",
+      "maxArchives": 30
+    }
+  }
+}
