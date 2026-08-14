@@ -332,10 +332,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildBiometricAuthButton(BuildContext context) {
-    final bool enabled =
-        PreferencesStorage.isBiometricAuthEnabled &&
-        !forcePassphraseInput &&
-        !_isLocked;
+    // 设置里未启用生物识别时不显示该按钮（含「OR」分隔文字）。
+    if (!PreferencesStorage.isBiometricAuthEnabled) {
+      return const SizedBox.shrink();
+    }
+    final bool enabled = !forcePassphraseInput && !_isLocked;
     return Column(
       children: [
         Padding(
@@ -434,9 +435,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   /// 登录成功后的统一处理
   Future<void> _onLoginSuccess(String passphrase) async {
-    if (mounted) {
-      showSnackBarMessage(context, 'Decrypting your notes!'.tr());
-    }
     Session.login(passphrase);
     Log.auth.i('登录成功：进入主界面（密码登录）');
 

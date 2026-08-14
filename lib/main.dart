@@ -31,8 +31,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/dialogs/generic.dart';
-import 'package:safenotes/dialogs/logout_alert.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
@@ -202,6 +200,7 @@ Future<void> _bootstrap() async {
 
   onAppUpdate();
 
+  EasyLocalization.logger.enableBuildModes = [];
   await EasyLocalization.ensureInitialized();
   runApp(
     EasyLocalization(
@@ -332,51 +331,31 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     if (timeoutEvent == SessionTimeoutState.userInactivityTimeout &&
         PreferencesStorage.isInactivityTimeoutOn) {
       Log.auth.i('会话超时：用户长时间无操作，准备锁定');
-      await onTimeOutDo(context: context, showPreLogoffAlert: true);
+      await onTimeOutDo(context: context);
       // Don't logout if user is active
     } else if (timeoutEvent == SessionTimeoutState.appFocusTimeout) {
       Log.auth.i('会话超时：应用失焦超时，准备锁定');
-      await onTimeOutDo(context: context, showPreLogoffAlert: false);
+      await onTimeOutDo(context: context);
     }
   }
 
   Future<void> onTimeOutDo({
     required BuildContext context,
-    required bool showPreLogoffAlert,
   }) async {
+    // 简化方案:会话超时直接登出，不再弹「超时锁定」倒计时框，也不弹退出提示框。
     // execute only if user is already logged
     // no need to logout and redirect to authwall if user is not loggedIN
     // 简化方案:用 dataKey 是否注入判断登录状态(替代 PhraseHandler.getPass)
     if (NotesDatabase.instance.isEncryptionEnabled) {
-      bool? isUserActive;
-      if (showPreLogoffAlert) {
-        isUserActive = await preInactivityLogOffAlert(context);
+      if (context.mounted) {
+        logout(context: context);
       }
-      if (isUserActive == null || showPreLogoffAlert == false) {
-        // isUserActive == null => show him logout Msg
-        // showPreLogoffAlert == false => i.e. triggered by appFocusTimeout
-
-        // TODO: refactor without using BuildContexts across async gap
-        if (context.mounted) {
-          logout(context: context, showLogoutMsg: true);
-        }
-      }
-      if (isUserActive == false) {
-        // isUserActive == false => user choose to logout, don't show msg
-
-        // TODO: refactor without using BuildContexts across async gap
-        if (context.mounted) {
-          logout(context: context, showLogoutMsg: false);
-        }
-      }
-      //else user pressed cancel and is active
     }
     // User is already on authpage
   }
 
   Future<void> logout({
     required BuildContext context,
-    required bool showLogoutMsg,
   }) async {
     _navigator?.pushNamedAndRemoveUntil(
       '/authwall',
@@ -386,15 +365,6 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
         isKeyboardFocused: false,
       ),
     );
-
-    if (showLogoutMsg) {
-      showGenericDialog(
-        context: context,
-        message:
-            "You were logged out due to extended inactivity. This is to protect your privacy."
-                .tr(),
-      );
-    }
 
     // save unsaved note if any
     await NoteEditorState().handleUngracefulNoteExit();

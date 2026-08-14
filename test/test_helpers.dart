@@ -380,6 +380,10 @@ Future<void> initTestEnv() async {
   // 集成测试关闭日志 HTTP 服务器：其 HttpServer idle timeout 会在 FakeAsync 下
   // 留下永远 pending 的周期性 Timer（见 log_webserver.dart 的 enableWebServer 注释）。
   LogWebServer.enableWebServer = false;
+  // 屏蔽 easy_localization 在 flutter test 下的翻译缺失等 warning 日志。
+  // 注意：flutter test 不执行 main()，必须在测试初始化阶段、ensureInitialized()
+  // 之前设置静态 logger（构造 EasyLocalization 不会重置该静态实例）。
+  EasyLocalization.logger.enableBuildModes = [];
   await EasyLocalization.ensureInitialized();
 }
 
