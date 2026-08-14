@@ -42,6 +42,16 @@ class SearchWidgetState extends State<SearchWidget> {
   final controller = TextEditingController();
 
   @override
+  void didUpdateWidget(SearchWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 外部 query 变化时同步 controller（如空状态 CTA 清空搜索），
+    // 避免清除按钮点了但文字还在。
+    if (widget.text != oldWidget.text && widget.text != controller.text) {
+      controller.text = widget.text;
+    }
+  }
+
+  @override
   void dispose() {
     // F-H11 修复：搜索框 controller 需要 dispose
     controller.dispose();

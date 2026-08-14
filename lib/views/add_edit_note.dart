@@ -30,6 +30,7 @@ import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_widget.dart';
@@ -261,9 +262,19 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       '用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
       'len=${title.length}+${description.length}',
     );
-    await NoteEditorState()
-        .addOrUpdateNote(); // this will also set NoteEditorState.setSaveAttempted = true
-    await _closePage();
+    try {
+      await NoteEditorState()
+          .addOrUpdateNote(); // this will also set NoteEditorState.setSaveAttempted = true
+      await _closePage();
+    } on Exception catch (e, st) {
+      Log.note.e('保存笔记失败', error: e, stackTrace: st);
+      if (mounted) {
+        showErrorToast(
+          context,
+          'Failed to save note: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
+      }
+    }
   }
 
   bool isNoteNewOrContentChanged() {

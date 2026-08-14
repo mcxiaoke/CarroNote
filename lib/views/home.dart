@@ -88,6 +88,9 @@ class HomePageState extends State<HomePage> with RouteAware {
   final ScrollController _notesListScroll = ScrollController();
   final ScrollController _notesGridScroll = ScrollController();
 
+  /// 搜索防抖（P1-6）：200ms 内连续输入只触发一次过滤，避免大笔记库卡顿。
+  Timer? _debounceTimer;
+
   //bool isListner = false;
   @override
   void initState() {
@@ -119,6 +122,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       routeObserver.unsubscribe(this);
     }
     _syncStateSub?.cancel();
+    _debounceTimer?.cancel();
     _notesListScroll.dispose();
     _notesGridScroll.dispose();
     // 注意：此处不停止日志 Web 服务器。
@@ -645,9 +649,13 @@ class HomePageState extends State<HomePage> with RouteAware {
     required int index,
     required bool grid,
   }) {
-    // 卡片背景色：与 NoteTileWidget/NoteCardWidget 内部取色保持一致
+    // 卡片背景色：用 allnotes 中的稳定索引取色，避免搜索过滤后同一笔记颜色跳变。
+    // allnotes 是排序固定的全量列表，搜索后 notes 是过滤子集，index 会变。
+    // indexOf 返回其在全量列表中的位置，颜色始终与排序顺序挂钩。
+    final int stableIndex = allnotes.indexOf(note);
+    final int colorIndex = stableIndex >= 0 ? stableIndex : index; // 兜底
     final Color cardColor =
-        NotesColor.getNoteColor(notIndex: index, context: context);
+        NotesColor.getNoteColor(notIndex: colorIndex, context: context);
     return OpenContainer(
       tappable: false,
       // P1-11：时长走 AppMotion.pageTransition（保持 250ms：动画期间编辑页
@@ -684,11 +692,11 @@ class HomePageState extends State<HomePage> with RouteAware {
         },
         child: PreferencesStorage.isCompactPreview
             ? (grid
-                  ? NoteCardWidgetCompact(note: note, index: index)
-                  : NoteTileWidgetCompact(note: note, index: index))
+                  ? NoteCardWidgetCompact(note: note, index: colorIndex)
+                  : NoteTileWidgetCompact(note: note, index: colorIndex))
             : (grid
-                  ? NoteCardWidget(note: note, index: index)
-                  : NoteTileWidget(note: note, index: index)),
+                  ? NoteCardWidget(note: note, index: colorIndex)
+                  : NoteTileWidget(note: note, index: colorIndex)),
       ),
       openBuilder: (context, closeAction) => AddEditNotePage(
         sessionStateStream: widget.sessionStateStream,
@@ -760,24 +768,30 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   void _searchNote(String query) {
-    final notes = allnotes.where((note) {
-      final titleLower = note.title.toLowerCase();
-      final descriptionLower = note.description.toLowerCase();
-      final queryLower = query.toLowerCase().trim();
+    // 搜索防抖：200ms 内连续输入只执行最后一次过滤。
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 200), () {
+      final notes = allnotes.where((note) {
+        final titleLower = note.title.toLowerCase();
+        final descriptionLower = note.description.toLowerCase();
+        final queryLower = query.toLowerCase().trim();
 
-      return titleLower.contains(queryLower) ||
-          descriptionLower.contains(queryLower);
-    }).toList();
+        return titleLower.contains(queryLower) ||
+            descriptionLower.contains(queryLower);
+      }).toList();
 
-    setState(() {
-      this.query = query;
-      this.notes = notes;
+      if (mounted) {
+        setState(() {
+          this.query = query;
+          this.notes = notes;
+        });
+      }
+      // 只记录关键词长度与命中数，绝不记录关键词内容（可能含敏感信息）
+      Log.ui.d(
+        '笔记搜索: 关键词长度=${query.trim().length}, '
+        '命中 ${notes.length}/${allnotes.length} 条',
+      );
     });
-    // 只记录关键词长度与命中数，绝不记录关键词内容（可能含敏感信息）
-    Log.ui.d(
-      '笔记搜索: 关键词长度=${query.trim().length}, '
-      '命中 ${notes.length}/${allnotes.length} 条',
-    );
   }
 
   void dismissKeyboard([Object? _]) {

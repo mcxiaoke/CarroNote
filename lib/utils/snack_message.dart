@@ -21,22 +21,39 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 ///
 /// 桌面端宽度由 ShadSonner 自动约束（≥md 断点 maxWidth 420）；
 /// 信息类 3 秒，错误类 6 秒（[showErrorToast]）。
+/// ShadSonner 不可用时（如 showDialog 内 context 不在 Sonner 子树），
+/// 降级到 Material ScaffoldMessenger 避免提示无声消失。
 void showSnackBarMessage(BuildContext context, String? message) {
   if (message == null) return;
-  ShadSonner.maybeOf(context)?.show(
+  final shown = ShadSonner.maybeOf(context)?.show(
     ShadToast(
       title: Text(message, textAlign: TextAlign.center),
       duration: const Duration(seconds: 3),
     ),
   );
+  // fallback：ShadSonner 不在子树中时走 ScaffoldMessenger
+  if (shown == null) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+    );
+  }
 }
 
 /// 错误提示：destructive 变体 + 6 秒，用于同步失败等关键场景。
 void showErrorToast(BuildContext context, String message) {
-  ShadSonner.maybeOf(context)?.show(
+  final shown = ShadSonner.maybeOf(context)?.show(
     ShadToast.destructive(
       title: Text(message, textAlign: TextAlign.center),
       duration: const Duration(seconds: 6),
     ),
   );
+  if (shown == null) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 6),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
 }
