@@ -9,6 +9,9 @@ Flutter 加密笔记应用，本地优先 + E2EE 多设备同步。
 - `docs/`：文档；`temp/`：临时文件
 - `server/`：服务端参考实现（Go / Node.js）
 
+## 环境路径
+- `PUB_CACHE`: 这里 C:\Home\Develop\flutter\dart\cache\hosted
+
 ## 开发测试
 - 格式化: 需要运行 `dart run import_sorter:main` 和 `dart format .` 确保代码格式一致
 - 测试: 改代码后运行 `flutter analyze` 和 `dart test` 和 `flutter test` 测试通过

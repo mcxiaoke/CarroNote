@@ -81,6 +81,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.0.0"
+  awesome_extensions:
+    dependency: "direct main"
+    description:
+      name: awesome_extensions
+      sha256: "87aa78bb2e75a2578a072b5e511910c06a8e750350afc951c1dc4301639fed95"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.1.1"
   boolean_selector:
     dependency: transitive
     description:

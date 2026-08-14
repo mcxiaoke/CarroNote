@@ -66,6 +66,7 @@ dependencies:
   cryptography: ^2.9.0
   cryptography_flutter: ^2.3.4
   shadcn_ui: ^0.56.1
+  awesome_extensions: ^2.1.1
 
 
 dev_dependencies:
