@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 // Project imports:
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/spacing.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 class Style {
   static TextStyle buttonTextStyle(BuildContext context) {
@@ -24,10 +25,13 @@ class Style {
   }
 }
 
-TextStyle dialogBodyTextStyle = const TextStyle(fontSize: 14);
+/// 对话框正文（14，源自 AppText.bodySmall）
+TextStyle dialogBodyTextStyle = AppText.bodySmall;
 
+/// 对话框标题（20，源自 AppText.title + 平台字体族）
 TextStyle dialogHeadTextStyle = uiTitleStyle(fontSize: 20);
 
+/// AppBar 标题（20，源自 AppText.title + 平台字体族）
 TextStyle appBarTitle = uiTitleStyle(fontSize: 20);
 
 /// 输入框内 leading/trailing 图标统一尺寸：限制到 20，避免默认 24 的图标

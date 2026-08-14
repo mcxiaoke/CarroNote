@@ -292,7 +292,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             const SizedBox(height: 8),
             Text(
               widget.errorText!,
-              style: TextStyle(color: scheme.error, fontSize: 13),
+              style: TextStyle(color: scheme.error, fontSize: 12),
             ),
           ],
           const SizedBox(height: 16),

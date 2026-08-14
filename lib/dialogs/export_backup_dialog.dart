@@ -418,7 +418,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
               'safe place.'
           .tr(),
       style: TextStyle(
-        fontSize: 13,
+        fontSize: 12,
         color: ShadTheme.of(context).colorScheme.destructive,
       ),
     );

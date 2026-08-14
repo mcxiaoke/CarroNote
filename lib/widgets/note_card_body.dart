@@ -90,7 +90,7 @@ class NoteCardBody extends StatelessWidget {
         Text(
           sanitize(note.title),
           textDirection: getTextDirecton(note.title),
-          style: AppText.title.copyWith(
+          style: AppText.body.copyWith(fontWeight: FontWeight.bold,
             color: fontColor,
             fontFamily: uiFontFamily,
             fontFamilyFallback: uiFontFamilyFallback,
@@ -102,7 +102,7 @@ class NoteCardBody extends StatelessWidget {
         Text(
           time,
           textDirection: getTextDirecton(time),
-          style: AppText.caption.copyWith(color: fontColor),
+          style: AppText.label.copyWith(color: fontColor),
         ),
         const SizedBox(height: AppSpace.sm),
         Text(
@@ -126,7 +126,7 @@ class NoteCardBody extends StatelessWidget {
         AutoSizeText(
           sanitize(previewText),
           textDirection: getTextDirecton(previewText),
-          style: AppText.titleCompact.copyWith(
+          style: AppText.body.copyWith(fontWeight: FontWeight.bold,
             color: fontColor,
             fontFamily: uiFontFamily,
             fontFamilyFallback: uiFontFamilyFallback,
@@ -139,7 +139,7 @@ class NoteCardBody extends StatelessWidget {
         Text(
           time,
           textDirection: getTextDirecton(time),
-          style: AppText.caption.copyWith(color: fontColor),
+          style: AppText.label.copyWith(color: fontColor),
         ),
       ],
     );

@@ -101,7 +101,7 @@ class HomeSidebar extends StatelessWidget {
                         fontFamily: uiFontFamily,
                         fontFamilyFallback: uiFontFamilyFallback,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                        fontSize: 16,
                       ),
                     ),
                   ),

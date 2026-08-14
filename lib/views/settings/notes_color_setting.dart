@@ -136,7 +136,7 @@ class ColorPalletState extends State<ColorPallet> {
                     child: Text(
                       items[i].prefix,
                       style: theme.textTheme.p.copyWith(
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: selected ? FontWeight.w600 : null,
                         color: selected ? theme.colorScheme.primary : null,
                       ),

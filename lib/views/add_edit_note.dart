@@ -217,7 +217,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         children: [
           SelectableText(
             title,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
@@ -227,7 +227,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               selectable: true,
               styleSheet: MarkdownStyleSheet.fromTheme(
                 Theme.of(context),
-              ).copyWith(p: const TextStyle(fontSize: 18)),
+              ).copyWith(p: const TextStyle(fontSize: 16)),
               // 隐私：不加载任何网络/本地图片，避免泄露 IP / 元数据
               imageBuilder: (uri, _, _) => const SizedBox.shrink(),
               onTapLink: (text, href, _) {
@@ -240,7 +240,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               },
             )
           else
-            SelectableText(description, style: const TextStyle(fontSize: 18)),
+            SelectableText(description, style: const TextStyle(fontSize: 16)),
         ],
       ),
     );

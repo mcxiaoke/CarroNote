@@ -49,7 +49,7 @@ class AboutPage extends StatelessWidget {
                     fontFamily: uiFontFamily,
                     fontFamilyFallback: uiFontFamilyFallback,
                     fontWeight: FontWeight.bold,
-                    fontSize: 22,
+                    fontSize: 20,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -115,16 +115,14 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.p.copyWith(
-                color: theme.colorScheme.mutedForeground,
-              ),
+          Text(
+            label,
+            style: theme.textTheme.p.copyWith(
+              color: theme.colorScheme.mutedForeground,
             ),
           ),
           const SizedBox(width: 16),
-          Flexible(
+          Expanded(
             child: Text(
               value,
               textAlign: TextAlign.end,

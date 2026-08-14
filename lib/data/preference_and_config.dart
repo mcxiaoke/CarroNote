@@ -670,6 +670,18 @@ class SafeNotesConfig {
     return '$_backupFileNamePrefix$redundancyCounter$_backupExtension';
   }
 
+  /// 手动备份文件名：带时间戳（safenotes_backup_YYYYMMDD_HHMMSS.snbak），
+  /// 避免同目录覆盖，用于「立即备份」等手动触发场景。
+  static String get manualBackupFileName {
+    var now = DateTime.now()
+        .toString()
+        .replaceAll('-', '')
+        .replaceAll(' ', '_')
+        .replaceAll(':', '')
+        .substring(0, 15);
+    return '${_backupFileNamePrefix}_$now$_backupExtension';
+  }
+
   static String get exportFileName => exportFileNameFor(encrypted: false);
 
   /// 导出文件名：加密导出 `.snbak`，明文导出 `.json`

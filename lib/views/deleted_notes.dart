@@ -271,7 +271,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
                 const SizedBox(height: AppSpace.xs),
                 Text(
                   'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
-                  style: AppText.caption.copyWith(color: fontColor),
+                  style: AppText.label.copyWith(color: fontColor),
                 ),
                 const SizedBox(height: AppSpace.sm),
                 Text(

@@ -229,13 +229,13 @@ class _StatusTab extends StatelessWidget {
             width: 120,
             child: Text(
               kv.key,
-              style: TextStyle(color: _semNeutral(context), fontSize: 13),
+              style: TextStyle(color: _semNeutral(context), fontSize: 12),
             ),
           ),
           Expanded(
             child: SelectableText(
               kv.value,
-              style: TextStyle(fontSize: 13, color: kv.color),
+              style: TextStyle(fontSize: 12, color: kv.color),
             ),
           ),
         ],
@@ -318,7 +318,7 @@ class _SyncResultTab extends StatelessWidget {
             ),
             child: SelectableText(
               snapshot.lastResultErrorMessage!,
-              style: TextStyle(fontSize: 13, color: _semDanger(context)),
+              style: TextStyle(fontSize: 12, color: _semDanger(context)),
             ),
           ),
         ],
@@ -463,13 +463,13 @@ class _SyncResultTab extends StatelessWidget {
             width: 120,
             child: Text(
               key,
-              style: TextStyle(color: _semNeutral(context), fontSize: 13),
+              style: TextStyle(color: _semNeutral(context), fontSize: 12),
             ),
           ),
           Expanded(
             child: SelectableText(
               value,
-              style: TextStyle(fontSize: 13, color: color),
+              style: TextStyle(fontSize: 12, color: color),
             ),
           ),
         ],
@@ -837,7 +837,7 @@ class _LogsTabState extends State<_LogsTab> {
                 'total': '${_entries.length}',
               },
             ),
-            style: TextStyle(fontSize: 11, color: _semNeutral(context)),
+            style: TextStyle(fontSize: 12, color: _semNeutral(context)),
           ),
         ),
         // 日志列表
@@ -865,7 +865,7 @@ class _LogsTabState extends State<_LogsTab> {
       child: SelectableText(
         entry.formattedLine,
         style: TextStyle(
-          fontSize: 11,
+          fontSize: 12,
           fontFamily: 'Consolas',
           color: color,
           height: 1.4,
@@ -1011,7 +1011,7 @@ class _WebServerTabState extends State<_WebServerTab> {
         Text(
           'Start to view local logs in a PC browser in real time, no export needed.\nSuitable for mobile (where SD card export is limited).\n\nThe server is a global singleton; leaving this page does not stop it, only manual stop or app exit does.\n\nEndpoints:\n  /            → Real-time log viewer (WebSocket)\n  /logs        → Full log text (downloadable via curl)\n  /diagnostics → Diagnostics snapshot text'
               .tr(),
-          style: TextStyle(fontSize: 13, color: _semNeutral(context)),
+          style: TextStyle(fontSize: 12, color: _semNeutral(context)),
         ),
         const SizedBox(height: 24),
         // 状态指示
@@ -1059,7 +1059,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                 SelectableText(
                   _statusText,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13),
+                  style: const TextStyle(fontSize: 12),
                 ),
               ],
             ],

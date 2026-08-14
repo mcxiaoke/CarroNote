@@ -24,6 +24,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
 class NoteFormWidget extends StatelessWidget {
@@ -67,7 +68,6 @@ class NoteFormWidget extends StatelessWidget {
   }
 
   Widget _buildTitle() {
-    const double fontSize = 24.0;
     final String titleHint = 'Title'.tr();
     //Disable IMEPL if keyboard incognito mode is true
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
@@ -75,11 +75,12 @@ class NoteFormWidget extends StatelessWidget {
     return ShadInputFormField(
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
-      maxLines: 1,
+      maxLines: null,
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20,
+        fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback),
       placeholder: Text(titleHint),
       // 防御主题层 minHeight:48 抬高：编辑器标题/正文保持按内容（行高）紧凑布局
       constraints: const BoxConstraints(minHeight: 0),
@@ -102,9 +103,6 @@ class NoteFormWidget extends StatelessWidget {
 
   Widget buildDescription(BuildContext context) {
     // maxLine is used in resizing description field on keyboard activation or dismissal
-    // final int maxLinesToShowAtTimeDescription =
-    //     computeMaxLine(context: context, fontHeight: 30.0);
-    const double fontSize = 18.0;
     final String hintDescription = 'Type something...'.tr();
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
 
@@ -117,7 +115,8 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
-      style: const TextStyle(fontSize: fontSize),
+      style: TextStyle(fontSize: 16,
+        fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback),
       placeholder: Text(hintDescription),
       // 防御主题层 minHeight:48 抬高（同标题框）
       constraints: const BoxConstraints(minHeight: 0),

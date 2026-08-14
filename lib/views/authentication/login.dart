@@ -266,7 +266,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
               ),
               style: TextStyle(
                 color: ShadTheme.of(context).colorScheme.destructive,
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -341,7 +341,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 10),
-          child: Text('OR'.tr(), style: const TextStyle(fontSize: 15)),
+          child: Text('OR'.tr(), style: const TextStyle(fontSize: 14)),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 20),

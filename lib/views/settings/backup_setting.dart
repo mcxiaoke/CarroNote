@@ -108,8 +108,8 @@ class BackupSettingState extends State<BackupSetting> {
   }
 
   Widget _bodyBackup(BuildContext context) {
-    final String path = validWorkingBackupFullyQualifiedPath;
-    final bool canOpen = validWorkingBackupDirectory.isNotEmpty;
+    final String dir = validWorkingBackupDirectory;
+    final bool canOpen = dir.isNotEmpty;
 
     return shadSettingsList([
       shadSettingsCard([
@@ -142,7 +142,7 @@ class BackupSettingState extends State<BackupSetting> {
           context,
           icon: LucideIcons.folderOpen,
           title: 'Location'.tr(),
-          value: path.isEmpty ? '—' : path,
+          value: dir.isEmpty ? '—' : dir,
           onTap: canOpen ? () => _openBackupDirectory() : () {},
         ),
         shadNavigationTile(
@@ -225,16 +225,22 @@ class BackupSettingState extends State<BackupSetting> {
     }
     // 手动备份必须真正落盘，绕过 isBackupOn/isBackupNeeded 开关：
     // 否则首次成功后备 isBackupNeeded 置 false，「再次点击立即备份」会静默跳过。
-    final success = await ScheduledTask.forceBackup();
+    final manualFileName = SafeNotesConfig.manualBackupFileName;
+    final success = await ScheduledTask.forceBackup(
+        fileName: manualFileName,
+      );
     if (!mounted) return;
     if (success) {
+      final dir = await ScheduledTask.resolveBackupDirectory();
+      if (!mounted) return;
+      final actualPath = dir.isEmpty ? '' : p.join(dir, manualFileName);
       showSnackBarMessage(
         context,
         'Backup written to: {path}'.tr(
-          namedArgs: {'path': validWorkingBackupFullyQualifiedPath},
+          namedArgs: {'path': actualPath},
         ),
       );
-      Log.backup.i('手动备份成功: $validWorkingBackupFullyQualifiedPath');
+      Log.backup.i('手动备份成功: $actualPath');
     } else {
       final err = ScheduledTask.lastBackupError ?? 'Unknown error';
       showErrorToast(
@@ -292,18 +298,39 @@ Future<void> startExportNotes(BuildContext context) async {
 ///
 /// - 桌面（Windows/Linux/macOS）：launchUrl(file://) 用系统文件管理器打开目录
 /// - iOS：shareddocuments:// 跳转到应用 Documents
-/// - Android：尽力而为（file:// 受限于系统安全策略，失败仅提示路径）
+/// - Android：先尝试 file:// URI，再试 SAF content:// URI，失败则显示路径
 Future<void> openBackupDirectory(String directory, BuildContext context) async {
   try {
     if (isIOS) {
       await launchUrl(Uri.parse('shareddocuments://$directory'));
       return;
     }
+    // Android / 桌面：优先尝试 file:// URI
     final uri = Uri.directory(directory);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (context.mounted) {
-      showErrorToast(context, 'Could not open folder'.tr());
+      return;
+    }
+    // Android：尝试 SAF DocumentsProvider URI
+    if (isAndroid) {
+      try {
+        final encoded = directory.replaceAll('/', '%2F');
+        final safUri = Uri.parse(
+          'content://com.android.externalstorage.documents/tree/primary%3A$encoded',
+        );
+        if (await canLaunchUrl(safUri)) {
+          await launchUrl(safUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      } catch (_) {
+        // SAF URI 失败，静默降级
+      }
+    }
+    // 全失败：显示路径让用户手动导航
+    if (context.mounted) {
+      showSnackBarMessage(context, 'Backup folder: {path}'.tr(
+        namedArgs: {'path': directory},
+      ));
     }
   } catch (e, st) {
     Log.backup.e('打开备份目录失败: $directory', error: e, stackTrace: st);

@@ -118,16 +118,14 @@ Widget shadNavigationTile(
                 child: Text(
                   value,
                   textAlign: TextAlign.end,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: ShadTheme.of(
                     context,
-                  ).textTheme.muted.copyWith(fontSize: 13),
+                  ).textTheme.muted.copyWith(fontSize: 12),
                 ),
               ),
             ),
           ),
-        const SizedBox(width: 4),
+          const SizedBox(width: 4),
         Icon(
           LucideIcons.chevronRight,
           size: 18,
@@ -268,11 +266,9 @@ Widget shadInfoTile(
             child: Text(
               value,
               textAlign: TextAlign.end,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: ShadTheme.of(
                 context,
-              ).textTheme.muted.copyWith(fontSize: 13),
+              ).textTheme.muted.copyWith(fontSize: 12),
             ),
           ),
         ),

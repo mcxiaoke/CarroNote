@@ -14,44 +14,36 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-/// 全局 type scale（P1-1）：统一字号/字重语义档，替代散落的手写 TextStyle。
+/// 全局 type scale（P1-1）：四档语义字号，替代散落的手写 TextStyle。
 ///
 /// 使用方式：
-/// - 需要跟随主题色/字体族时 `AppText.cardTitle.copyWith(color: ..., fontFamily: ...)`；
+/// - 需要跟随主题色/字体族时 `AppText.title.copyWith(color: ..., fontFamily: ...)`；
 /// - 颜色保持默认（null）时自动继承上层 DefaultTextStyle。
 class AppText {
   AppText._();
 
   // ---- 全局语义档 ----
 
-  /// 主标题（页面标题 / 卡片标题 20）
+  /// 大标题（页面标题 / 对话框标题 / 笔记标题 20）
   static const TextStyle title = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.bold,
     height: 1.2,
   );
 
-  /// 次级标题（紧凑卡片 18）
-  static const TextStyle titleCompact = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.bold,
-    height: 1.2,
-  );
-
-  /// 正文（卡片摘要 16；编辑器正文 14 可在此基础上 copyWith 收敛，属 P1-19）
+  /// 正文（笔记正文 / 卡片标题 / 按钮文字 16）
   static const TextStyle body = TextStyle(
     fontSize: 16,
     height: 1.2,
   );
 
-  /// 时间戳 / 小标签（13 w600）
-  static const TextStyle caption = TextStyle(
-    fontSize: 13,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
+  /// 小号正文（对话框正文 / 编辑器正文 / 描述文字 14）
+  static const TextStyle bodySmall = TextStyle(
+    fontSize: 14,
+    height: 1.4,
   );
 
-  /// 说明文字（12）
+  /// 说明文字（时间戳 / 标签 / 辅助信息 12）
   static const TextStyle label = TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w500,

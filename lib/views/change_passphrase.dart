@@ -127,7 +127,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
               child: Text(
                 pageTitleName,
                 style: dialogHeadTextStyle.copyWith(
-                  fontSize: 22,
+                  fontSize: 20,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),

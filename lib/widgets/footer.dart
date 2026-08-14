@@ -36,7 +36,7 @@ Widget debugBadge(BuildContext context) {
       'DEBUG',
       style: TextStyle(
         color: Colors.white,
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1,
       ),
