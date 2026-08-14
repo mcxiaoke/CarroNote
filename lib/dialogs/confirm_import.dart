@@ -11,14 +11,12 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
-import 'dart:ui';
-
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
@@ -36,88 +34,52 @@ class ImportConfirm extends StatefulWidget {
   ImportConfirmState createState() => ImportConfirmState();
 }
 
+/// 导入数量确认。P2-2：已迁移至 ShadDialog，去除 BackdropFilter。
 class ImportConfirmState extends State<ImportConfirm> {
   @override
   Widget build(BuildContext context) {
-    const double paddingAllAround = 20.0;
-    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
-    const double dialogRadius = 12.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(dialogRadius),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(paddingAllAround),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [_title(), _body(paddingAllAround), _buildButtons()],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _title() {
-    final String title = 'Confirm Import!'.tr();
-    const double topSpacing = 10.0;
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(top: topSpacing), //, right: 100),
-        child: Text(title, style: dialogHeadTextStyle),
-      ),
-    );
-  }
-
-  Widget _body(double padding) {
     final String cautionMessage =
         'Do you want to import {noOfNotesInImport} new notes?'.tr(
           namedArgs: {'noOfNotesInImport': widget.importCount.toString()},
         );
-    const double topSpacing = 15.0;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: EdgeInsets.only(top: topSpacing, bottom: padding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(cautionMessage, style: dialogBodyTextStyle),
-            if (widget.notice != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  widget.notice!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+    return ShadDialog(
+      constraints: kAppDialogConstraints,
+      title: Text('Confirm Import!'.tr()),
+      actions: [
+        shadDialogActionBar(
+          actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            ShadDialogAction(
+              label: 'Confirm'.tr(),
+              primary: true,
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildButtons() {
-    return shadDialogActionBar(
-      actions: [
-        ShadDialogAction(
-          label: 'Cancel'.tr(),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-        ShadDialogAction(
-          label: 'Confirm'.tr(),
-          primary: true,
-          onPressed: () => Navigator.of(context).pop(true),
-        ),
       ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(cautionMessage, style: dialogBodyTextStyle),
+          if (widget.notice != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                widget.notice!,
+                // P1-22：错误色统一走 shad destructive。
+                style: TextStyle(
+                  color: ShadTheme.of(context).colorScheme.destructive,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

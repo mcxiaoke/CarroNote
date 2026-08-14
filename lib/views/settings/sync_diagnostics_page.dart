@@ -149,14 +149,14 @@ class _StatusTab extends StatelessWidget {
             _KV(
               'Error Message'.tr(),
               snapshot.errorMessage!,
-              color: Colors.red,
+              color: _semDanger(context),
             ),
         ]),
         _buildSection(context, 'Backend Config'.tr(), [
           _KV(
             'Sync Master Switch'.tr(),
             snapshot.syncEnabled ? 'On'.tr() : 'Off'.tr(),
-            color: snapshot.syncEnabled ? null : Colors.orange,
+            color: snapshot.syncEnabled ? null : _semWarning(context),
           ),
           _KV('Type'.tr(), snapshot.backendDisplayName),
           _KV('Runtime Type'.tr(), snapshot.backendRuntimeType ?? 'N/A'),
@@ -229,7 +229,7 @@ class _StatusTab extends StatelessWidget {
             width: 120,
             child: Text(
               kv.key,
-              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              style: TextStyle(color: _semNeutral(context), fontSize: 13),
             ),
           ),
           Expanded(
@@ -284,7 +284,7 @@ class _SyncResultTab extends StatelessWidget {
           context,
           'Success'.tr(),
           snapshot.lastResultSuccess!.toString(),
-          color: snapshot.lastResultSuccess! ? Colors.green : Colors.red,
+          color: snapshot.lastResultSuccess! ? _semSuccess(context) : _semDanger(context),
         ),
         _buildKVRow(
           context,
@@ -300,7 +300,7 @@ class _SyncResultTab extends StatelessWidget {
           'Requires Relogin'.tr(),
           snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
           color: (snapshot.lastResultRequiresRelogin ?? false)
-              ? Colors.red
+              ? _semDanger(context)
               : null,
         ),
         if (snapshot.lastResultErrorMessage != null) ...[
@@ -313,12 +313,12 @@ class _SyncResultTab extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.1),
+              color: _semDanger(context).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: SelectableText(
               snapshot.lastResultErrorMessage!,
-              style: const TextStyle(fontSize: 13, color: Colors.red),
+              style: TextStyle(fontSize: 13, color: _semDanger(context)),
             ),
           ),
         ],
@@ -339,7 +339,7 @@ class _SyncResultTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 1),
               child: SelectableText(
                 uuid,
-                style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                style: TextStyle(fontSize: 12, color: _semWarning(context)),
               ),
             ),
           ),
@@ -357,37 +357,37 @@ class _SyncResultTab extends StatelessWidget {
         'Upload'.tr(),
         snapshot.lastResultUploaded ?? 0,
         Icons.upload,
-        Colors.blue,
+        _semInfo(context),
       ),
       (
         'Download'.tr(),
         snapshot.lastResultDownloaded ?? 0,
         Icons.download,
-        Colors.green,
+        _semSuccess(context),
       ),
       (
         'Delete'.tr(),
         snapshot.lastResultDeleted ?? 0,
         Icons.delete,
-        Colors.red,
+        _semDanger(context),
       ),
       (
         'Conflicts'.tr(),
         snapshot.lastResultConflicts ?? 0,
         Icons.warning,
-        Colors.orange,
+        _semWarning(context),
       ),
       (
         'Migrated'.tr(),
         snapshot.lastResultMigrated ?? 0,
         Icons.swap_horiz,
-        Colors.purple,
+        _semInfo(context),
       ),
       (
         'Skipped'.tr(),
         snapshot.lastResultSkipped ?? 0,
         Icons.skip_next,
-        Colors.grey,
+        _semNeutral(context),
       ),
     ];
     // 用 LayoutBuilder + Wrap 取代固定 childAspectRatio 的 GridView：
@@ -463,7 +463,7 @@ class _SyncResultTab extends StatelessWidget {
             width: 120,
             child: Text(
               key,
-              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              style: TextStyle(color: _semNeutral(context), fontSize: 13),
             ),
           ),
           Expanded(
@@ -513,28 +513,28 @@ class _ActionsTab extends StatelessWidget {
     Color? color;
     IconData icon;
     if (isError) {
-      color = Colors.red;
+      color = _semDanger(context);
       icon = Icons.error_outline;
     } else if (isHeal) {
-      color = Colors.green;
+      color = _semSuccess(context);
       icon = Icons.healing;
     } else if (isConflict) {
-      color = Colors.orange;
+      color = _semWarning(context);
       icon = Icons.warning;
     } else if (action.type == 'upload') {
-      color = Colors.blue;
+      color = _semInfo(context);
       icon = Icons.upload;
     } else if (action.type == 'download') {
-      color = Colors.teal;
+      color = _semInfo(context);
       icon = Icons.download;
     } else if (action.type == 'delete') {
-      color = Colors.red[300];
+      color = _semDanger(context);
       icon = Icons.delete;
     } else if (action.type == 'migrate') {
-      color = Colors.purple;
+      color = _semInfo(context);
       icon = Icons.swap_horiz;
     } else {
-      color = Colors.grey;
+      color = _semNeutral(context);
       icon = Icons.info;
     }
 
@@ -581,21 +581,24 @@ class _ActionsTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (action.uuid.isNotEmpty)
-                      _buildDetail('UUID', action.uuid),
-                    if (action.hash != null) _buildDetail('Hash', action.hash!),
+                      _buildDetail(context, 'UUID', action.uuid),
+                    if (action.hash != null)
+                      _buildDetail(context, 'Hash', action.hash!),
                     if (action.message != null)
-                      _buildDetail('Message'.tr(), action.message!),
+                      _buildDetail(context, 'Message'.tr(), action.message!),
                     if (action.errorLabel != null)
                       _buildDetail(
+                        context,
                         'Error Type'.tr(),
                         action.errorLabel!,
-                        color: Colors.red,
+                        color: _semDanger(context),
                       ),
                     if (action.errorDisplay != null)
                       _buildDetail(
+                        context,
                         'Error Details'.tr(),
                         action.errorDisplay!,
-                        color: Colors.red,
+                        color: _semDanger(context),
                       ),
                   ],
                 ),
@@ -607,7 +610,12 @@ class _ActionsTab extends StatelessWidget {
     );
   }
 
-  Widget _buildDetail(String key, String value, {Color? color}) {
+  Widget _buildDetail(
+    BuildContext context,
+    String key,
+    String value, {
+    Color? color,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -617,7 +625,7 @@ class _ActionsTab extends StatelessWidget {
             width: 80,
             child: Text(
               key,
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              style: TextStyle(color: _semNeutral(context), fontSize: 12),
             ),
           ),
           Expanded(
@@ -712,7 +720,7 @@ class _LogsTabState extends State<_LogsTab> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: Border(
-              bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3)),
+              bottom: BorderSide(color: _semNeutral(context).withValues(alpha: 0.3)),
             ),
           ),
           child: Row(
@@ -829,7 +837,7 @@ class _LogsTabState extends State<_LogsTab> {
                 'total': '${_entries.length}',
               },
             ),
-            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 11, color: _semNeutral(context)),
           ),
         ),
         // 日志列表
@@ -851,7 +859,7 @@ class _LogsTabState extends State<_LogsTab> {
   }
 
   Widget _buildLogLine(AppLogEntry entry) {
-    final color = _levelColor(entry.level);
+    final color = _levelColor(context, entry.level);
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
       child: SelectableText(
@@ -866,20 +874,20 @@ class _LogsTabState extends State<_LogsTab> {
     );
   }
 
-  Color _levelColor(AppLogLevel level) {
+  Color _levelColor(BuildContext context, AppLogLevel level) {
     switch (level) {
       case AppLogLevel.trace:
-        return Colors.grey[600]!;
+        return _semNeutral(context);
       case AppLogLevel.debug:
-        return Colors.grey[500]!;
+        return _semNeutral(context);
       case AppLogLevel.info:
-        return Colors.blue[300]!;
+        return _semInfo(context);
       case AppLogLevel.warning:
-        return Colors.orange[400]!;
+        return _semWarning(context);
       case AppLogLevel.error:
-        return Colors.red[400]!;
+        return _semDanger(context);
       case AppLogLevel.fatal:
-        return Colors.red[700]!;
+        return _semDanger(context);
     }
   }
 
@@ -1003,7 +1011,7 @@ class _WebServerTabState extends State<_WebServerTab> {
         Text(
           'Start to view local logs in a PC browser in real time, no export needed.\nSuitable for mobile (where SD card export is limited).\n\nThe server is a global singleton; leaving this page does not stop it, only manual stop or app exit does.\n\nEndpoints:\n  /            → Real-time log viewer (WebSocket)\n  /logs        → Full log text (downloadable via curl)\n  /diagnostics → Diagnostics snapshot text'
               .tr(),
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 13, color: _semNeutral(context)),
         ),
         const SizedBox(height: 24),
         // 状态指示
@@ -1011,12 +1019,12 @@ class _WebServerTabState extends State<_WebServerTab> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: (isRunning ? Colors.green : Colors.grey).withValues(
+            color: (isRunning ? _semSuccess(context) : _semNeutral(context)).withValues(
               alpha: 0.1,
             ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: (isRunning ? Colors.green : Colors.grey).withValues(
+              color: (isRunning ? _semSuccess(context) : _semNeutral(context)).withValues(
                 alpha: 0.3,
               ),
             ),
@@ -1028,7 +1036,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                 children: [
                   Icon(
                     isRunning ? Icons.wifi : Icons.wifi_off,
-                    color: isRunning ? Colors.green : Colors.grey,
+                    color: isRunning ? _semSuccess(context) : _semNeutral(context),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -1041,7 +1049,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                         : 'Stopped'.tr(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: isRunning ? Colors.green : Colors.grey,
+                      color: isRunning ? _semSuccess(context) : _semNeutral(context),
                     ),
                   ),
                 ],
@@ -1075,19 +1083,19 @@ class _WebServerTabState extends State<_WebServerTab> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.orange.withValues(alpha: 0.1),
+            color: _semWarning(context).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+            border: Border.all(color: _semWarning(context).withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.warning, color: Colors.orange, size: 20),
+              Icon(Icons.warning, color: _semWarning(context), size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Security note: the server binds 0.0.0.0, so any device on the same LAN can access it. Logs do not contain sensitive information such as passwords/tokens. Currently in debug stage, the server starts automatically with the sync service; release builds will default to off.'
                       .tr(),
-                  style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                  style: TextStyle(fontSize: 12, color: _semWarning(context)),
                 ),
               ),
             ],
@@ -1097,6 +1105,28 @@ class _WebServerTabState extends State<_WebServerTab> {
     );
   }
 }
+
+// ──────────────────────────────────────────────
+// P2-7 语义色映射（替代硬编码 Material Colors.*，随主题明暗/seed 变化）
+// ──────────────────────────────────────────────
+
+/// 成功（原 green）→ 品牌主色
+Color _semSuccess(BuildContext context) => Theme.of(context).colorScheme.primary;
+
+/// 危险/失败（原 red）→ shad destructive
+Color _semDanger(BuildContext context) =>
+    ShadTheme.of(context).colorScheme.destructive;
+
+/// 警告（原 orange）→ M3 tertiary（随 seed 变化的中性强调色）
+Color _semWarning(BuildContext context) =>
+    Theme.of(context).colorScheme.tertiary;
+
+/// 信息/上传/下载/迁移（原 blue/teal/purple）→ secondary
+Color _semInfo(BuildContext context) => Theme.of(context).colorScheme.secondary;
+
+/// 中性/跳过（原 grey）→ onSurfaceVariant
+Color _semNeutral(BuildContext context) =>
+    Theme.of(context).colorScheme.onSurfaceVariant;
 
 // ──────────────────────────────────────────────
 // 辅助：复制到剪贴板

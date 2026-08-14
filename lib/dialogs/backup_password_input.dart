@@ -11,9 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
-import 'dart:ui';
-
 // Flutter imports:
 import 'package:flutter/material.dart';
 
@@ -31,6 +28,7 @@ import 'package:safenotes/widgets/shad_dialog.dart';
 /// 解密结果决定），仅收集用户输入。解密失败时由调用方带 [errorText] 重开
 /// 本弹框让用户重输。
 /// 返回：输入密码字符串（提交）；null（取消）。
+/// P2-2：已迁移至 ShadDialog，去除 BackdropFilter。
 class BackupPasswordInputDialog extends StatefulWidget {
   /// 上轮解密失败的提示（如「密码错误或文件损坏」），非空时展示
   final String? errorText;
@@ -54,74 +52,66 @@ class BackupPasswordInputDialogState extends State<BackupPasswordInputDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
-    const double radius = 12.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
+    return ShadDialog(
+      constraints: kAppDialogConstraints,
+      title: Text('Import Data is Encrypted'.tr()),
+      // gap 16：输入框与底部按钮拉开距离（默认 8 太近）。
+      gap: 16,
+      actions: [
+        shadDialogActionBar(
+          actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ShadDialogAction(
+              label: 'Submit'.tr(),
+              primary: true,
+              onPressed: _submit,
+            ),
+          ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Import Data is Encrypted'.tr(), style: dialogHeadTextStyle),
-              Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 10),
-                child: Text(
-                  'Enter the passphrase of the device that generated this file.',
-                  style: dialogBodyTextStyle,
-                ),
-              ),
-              if (widget.errorText != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    widget.errorText!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ShadInput(
-                controller: _controller,
-                autofocus: true,
-                obscureText: _hidden,
-                enableIMEPersonalizedLearning: false,
-                placeholder: Text('Encryption Phrase'.tr()),
-                padding: kInputPadding,
-                leading: const Icon(Icons.lock, size: kInputIconSize),
-                trailing: kInputIconButton(
-                  icon: Icon(
-                    _hidden ? Icons.visibility : Icons.visibility_off,
-                    size: kInputIconSize,
-                  ),
-                  onPressed: () => setState(() => _hidden = !_hidden),
-                ),
-                onSubmitted: (_) => _submit(),
-              ),
-              const SizedBox(height: 12),
-              shadDialogActionBar(
-                actions: [
-                  ShadDialogAction(
-                    label: 'Cancel'.tr(),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  ShadDialogAction(
-                    label: 'Submit'.tr(),
-                    primary: true,
-                    onPressed: _submit,
-                  ),
-                ],
-              ),
-            ],
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        // stretch：输入框撑满对话框内容宽，右边缘与底部按钮（右对齐）对齐。
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Enter the passphrase of the device that generated this file.',
+            style: dialogBodyTextStyle,
           ),
-        ),
+          if (widget.errorText != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                widget.errorText!,
+                // P1-22：错误色统一走 shad destructive。
+                style: TextStyle(
+                  color: ShadTheme.of(context).colorScheme.destructive,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          ShadInput(
+            controller: _controller,
+            autofocus: true,
+            obscureText: _hidden,
+            enableIMEPersonalizedLearning: false,
+            placeholder: Text('Encryption Phrase'.tr()),
+            padding: kInputPadding,
+            leading: const Icon(Icons.lock, size: kInputIconSize),
+            trailing: kInputIconButton(
+              icon: Icon(
+                _hidden ? Icons.visibility : Icons.visibility_off,
+                size: kInputIconSize,
+              ),
+              onPressed: () => setState(() => _hidden = !_hidden),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
       ),
     );
   }

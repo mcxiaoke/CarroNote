@@ -40,6 +40,8 @@
     "Security": "安全",
     "No Notes": "没有笔记",
     "New Note": "新建笔记",
+    "No notes match \"{query}\"": "没有符合 \"{query}\" 的笔记",
+    "Clear Search": "清空搜索",
     "Caution!": "注意!",
     "Sapphire": "天蓝色",
     "Ensemble": "剧团",

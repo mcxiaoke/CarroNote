@@ -77,6 +77,11 @@ class App extends StatelessWidget {
               localizationsDelegates: context.localizationDelegates,
               supportedLocales: context.supportedLocales,
               locale: context.locale,
+              // P2-3：ShadApp.custom 不自动包裹 ShadSonner（仅 ShadApp 默认构造
+              // 传 child 时才包）。用 MaterialApp.builder 把 ShadSonner 放在
+              // Navigator 之上：既能继承 MaterialApp 提供的 Directionality/
+              // Localizations，又让 ShadToast 覆盖所有路由页面。
+              builder: (context, child) => ShadSonner(child: child!),
               home: AuthWall(sessionStateStream: sessionStateStream),
             );
           },

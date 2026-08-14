@@ -184,9 +184,9 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
     final Widget content = SizedBox(
       // 宽度自适应：桌面固定，窄屏手机按屏宽收窄，避免横向溢出
       width: isDesktopPlatform
-          ? kDialogMaxWidthCompact
+          ? kDialogMaxWidthWide
           : math.min(
-              kDialogMaxWidthCompact,
+              kDialogMaxWidthWide,
               MediaQuery.of(context).size.width - 32,
             ),
       // 内容加滚动：避免小窗口/低分辨率下 Column 底部溢出
@@ -252,8 +252,9 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       );
     }
 
-    // 桌面端：居中弹框
+    // 桌面端：居中弹框（宽面板，与同步配置同 560 限宽）
     return ShadDialog(
+      constraints: const BoxConstraints(maxWidth: kDialogMaxWidthWide),
       title: Text('Export Backup'.tr()),
       // 关闭小屏断点下的按钮全宽覆盖（width: double.infinity），避免按钮
       // minWidth: Infinity 在内在测量时崩溃（BoxConstraints forces an

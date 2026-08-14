@@ -100,7 +100,12 @@ Widget errorState({
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 48, color: colorScheme.error),
+              // P1-22：错误色统一走 shad destructive。
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: ShadTheme.of(context).colorScheme.destructive,
+              ),
               const SizedBox(height: AppSpace.md),
               Text(
                 error,

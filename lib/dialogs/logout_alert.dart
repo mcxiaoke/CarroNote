@@ -13,13 +13,13 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:ui';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -33,6 +33,7 @@ class PreInactivityLogOff extends StatefulWidget {
   State<PreInactivityLogOff> createState() => _PreInactivityLogOffState();
 }
 
+/// 闲置倒计时登出。P2-2：已迁移至 ShadDialog，去除 BackdropFilter。
 class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
   // F-H10/F-H11 修复:倒计时计时器与 StreamController 从文件顶层移入 State,
   // 由 State 的生命周期管理,避免先前的全局 Timer 在对话框关闭后仍触发 pop
@@ -41,11 +42,29 @@ class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
   final int _timeoutSeconds = PreferencesStorage.preInactivityLogoutCounter;
   int _counter = 0;
   Timer? _timer;
+  // 缓存 NavigatorState：倒计时回调异步触发，若此时对话框已被登出导航移除
+  // （deactivated），再 Navigator.of(context) 会因查找已停用元素的祖先而崩溃。
+  // 这里在 didChangeDependencies 里保存引用，回调只用该引用。
+  NavigatorState? _navigator;
 
   @override
   void initState() {
     super.initState();
     _startTimer();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+  }
+
+  @override
+  void deactivate() {
+    // 对话框从路由树移除（如登出导航到登录页）时立即停止倒计时，
+    // 避免在 deactivated 状态下定时器仍触发 pop。
+    _timer?.cancel();
+    super.deactivate();
   }
 
   @override
@@ -66,59 +85,35 @@ class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
       }
       if (_counter == 0 && mounted) {
         // 倒计时结束,自动触发登出
-        Navigator.of(context).pop();
+        _navigator?.pop();
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    const double paddingAllAround = 20.0;
-    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
-    const double dialogRadius = 12.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(dialogRadius),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(paddingAllAround),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _title(),
-              _body(paddingAllAround),
-              _buildButtons(context),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _title() {
-    final String title = 'Logging Off'.tr();
-    const double topSpacing = 10.0;
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(top: topSpacing), //, right: 100),
-        child: Text(title, style: dialogHeadTextStyle),
-      ),
-    );
-  }
-
-  Widget _body(double padding) {
     final initialCounterValue = _timeoutSeconds.toString().padLeft(2, '0');
-    const double topSpacing = 15.0;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: EdgeInsets.only(top: topSpacing, bottom: padding),
+    return ShadDialog(
+      constraints: kAppDialogConstraints,
+      title: Text('Logging Off'.tr()),
+      actions: [
+        shadDialogActionBar(
+          actions: [
+            ShadDialogAction(
+              label: 'Cancel'.tr(),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+            ShadDialogAction(
+              label: 'Logout'.tr(),
+              destructive: true,
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+          ],
+        ),
+      ],
+      child: Align(
+        alignment: Alignment.centerLeft,
         child: StreamBuilder(
           stream: _controller.stream,
           builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
@@ -136,26 +131,10 @@ class _PreInactivityLogOffState extends State<PreInactivityLogOff> {
       ),
     );
   }
-
-  Widget _buildButtons(BuildContext context) {
-    return shadDialogActionBar(
-      actions: [
-        ShadDialogAction(
-          label: 'Cancel'.tr(),
-          onPressed: () => Navigator.of(context).pop(true),
-        ),
-        ShadDialogAction(
-          label: 'Logout'.tr(),
-          destructive: true,
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-      ],
-    );
-  }
 }
 
 Future<bool?> preInactivityLogOffAlert(BuildContext context) {
-  return showDialog(
+  return showAppDialog(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext context) {

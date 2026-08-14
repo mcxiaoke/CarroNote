@@ -31,6 +31,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
     // 容器统一使用 ShadDialog（shadcn 风格：圆角/边框/阴影/缩放动画），
     // 与回收站、清空全部等对话框保持一致。
     return ShadDialog(
+      constraints: kAppDialogConstraints,
       title: Text('Caution!'.tr()),
       actions: [
         shadDialogActionBar(

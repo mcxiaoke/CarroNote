@@ -11,20 +11,20 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
-import 'dart:ui';
-
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
+/// 通用信息框（单 OK 按钮）。P2-2：已迁移至 ShadDialog，去除 BackdropFilter。
 class GenericDialog extends StatelessWidget {
+  /// 保留调用方兼容；ShadDialog 无独立 icon 槽位，暂不渲染。
   final IconData icon;
   final String message;
 
@@ -32,47 +32,20 @@ class GenericDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // P1-14：圆角 10→12，与 ShadDialog（AppShape.cardRadius）一致。
-    const double dialogBordeRadious = 12.0;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(),
-      child: Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(dialogBordeRadious),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              //_buildIcon(context),
-              _body(context),
-              _buildButtons(context),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _body(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      child: Text(message, style: dialogBodyTextStyle),
-    );
-  }
-
-  Widget _buildButtons(BuildContext context) {
-    return shadDialogActionBar(
+    return ShadDialog(
+      constraints: kAppDialogConstraints,
       actions: [
-        ShadDialogAction(
-          label: 'OK'.tr(),
-          primary: true,
-          onPressed: () => Navigator.of(context).pop(),
+        shadDialogActionBar(
+          actions: [
+            ShadDialogAction(
+              label: 'OK'.tr(),
+              primary: true,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
         ),
       ],
+      child: Text(message, style: dialogBodyTextStyle),
     );
   }
 }
@@ -82,7 +55,7 @@ Future<void> showGenericDialog({
   required IconData icon,
   required String message,
 }) async {
-  return showDialog(
+  return showAppDialog(
     context: context,
     barrierDismissible: true,
     builder: (BuildContext context) {

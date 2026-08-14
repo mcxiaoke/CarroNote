@@ -67,8 +67,8 @@ class HomeSidebar extends StatelessWidget {
     final Color bg = colorScheme.surfaceContainerLow;
     final Color divider = colorScheme.outlineVariant;
     // 明暗 + 主题色统一入口：文案「切换主题」+ 调色板图标（与移动端 Drawer 一致）。
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final String themeText = isDark ? 'Light Mode'.tr() : 'Dark Mode'.tr();
+    // 修复：43d05ed 前此处曾显示「Light/Dark Mode」，用户要求保留「Switch Theme」。
+    final String themeText = 'Switch Theme'.tr();
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
       return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);

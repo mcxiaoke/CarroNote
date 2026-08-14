@@ -14,23 +14,29 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
-void showSnackBarMessage(BuildContext context, String? message) {
-  if (message != null) {
-    final double width = MediaQuery.of(context).size.width * 0.80;
+// Package imports:
+import 'package:shadcn_ui/shadcn_ui.dart';
 
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          width: width,
-          content: Text(message, textAlign: TextAlign.center),
-          elevation: 6.0,
-          duration: const Duration(milliseconds: 2000),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(5)),
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+/// 信息提示（P2-3）：统一走 ShadSonner/ShadToast。
+///
+/// 桌面端宽度由 ShadSonner 自动约束（≥md 断点 maxWidth 420）；
+/// 信息类 3 秒，错误类 6 秒（[showErrorToast]）。
+void showSnackBarMessage(BuildContext context, String? message) {
+  if (message == null) return;
+  ShadSonner.maybeOf(context)?.show(
+    ShadToast(
+      title: Text(message, textAlign: TextAlign.center),
+      duration: const Duration(seconds: 3),
+    ),
+  );
+}
+
+/// 错误提示：destructive 变体 + 6 秒，用于同步失败等关键场景。
+void showErrorToast(BuildContext context, String message) {
+  ShadSonner.maybeOf(context)?.show(
+    ShadToast.destructive(
+      title: Text(message, textAlign: TextAlign.center),
+      duration: const Duration(seconds: 6),
+    ),
+  );
 }

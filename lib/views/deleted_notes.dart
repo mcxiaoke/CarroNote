@@ -19,6 +19,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 import 'package:safenotes/widgets/states.dart';
@@ -112,14 +113,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 触发自动同步（如果已启用）
     SyncService.instance.autoSync();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Restored: "{title}"'.tr(
-              namedArgs: {'title': _truncateTitle(note.title)},
-            ),
-          ),
-        ),
+      // P2-3：信息提示走 ShadToast。
+      showSnackBarMessage(
+        context,
+        'Restored: "{title}"'.tr(namedArgs: {'title': _truncateTitle(note.title)}),
       );
       _refresh();
     }
@@ -132,13 +129,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
     SyncService.instance.autoSync();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Permanently deleted: "{title}"'.tr(
-              namedArgs: {'title': _truncateTitle(note.title)},
-            ),
-          ),
+      // P2-3：信息提示走 ShadToast。
+      showErrorToast(
+        context,
+        'Permanently deleted: "{title}"'.tr(
+          namedArgs: {'title': _truncateTitle(note.title)},
         ),
       );
       _refresh();
@@ -151,9 +146,10 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   void _confirmClearAll() {
     Log.ui.i('用户请求清空回收站, 待确认条数=${_deletedNotes.length}');
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => ShadDialog(
+        constraints: kAppDialogConstraints,
         title: Text('Clear All Deleted Notes'.tr()),
         actions: [
           shadDialogActionBar(
@@ -196,13 +192,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
     SyncService.instance.autoSync();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Cleared {count} notes'.tr(
-              namedArgs: {'count': '${_deletedNotes.length}'},
-            ),
-          ),
+      // P2-3：信息提示走 ShadToast。
+      showErrorToast(
+        context,
+        'Cleared {count} notes'.tr(
+          namedArgs: {'count': '${_deletedNotes.length}'},
         ),
       );
       _refresh();
@@ -340,7 +334,10 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
     required VoidCallback onTap,
     bool destructive = false,
   }) {
-    final color = destructive ? Colors.red : null;
+    // P1-22：错误色统一走 shad destructive。
+    final color = destructive
+        ? ShadTheme.of(context).colorScheme.destructive
+        : null;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -359,9 +356,10 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
 
   void _confirmPermanentDelete(BuildContext context) {
     final note = widget.note;
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => ShadDialog(
+        constraints: kAppDialogConstraints,
         title: Text('Permanently Delete'.tr()),
         actions: [
           shadDialogActionBar(

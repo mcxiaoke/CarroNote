@@ -12,6 +12,8 @@
 */
 
 // Flutter imports:
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 // Project imports:
@@ -22,16 +24,42 @@ class NotesColor extends ChangeNotifier {
   // 0 = 不变，1 = 纯白；0.4 在保留主题色相差异的同时明显提亮。
   static const double _lightenAmount = 0.4;
 
-  static Color getNoteColor({required int notIndex}) {
-    var lightColors =
+  /// 未启用彩色笔记时，品牌色叠加在 surfaceContainerLow 上的比例（P1-13）：
+  /// 替代写死 `0xFFA7BEAE`，让"无主题"卡片跟随当前 seed 色（如 Honey 黄系），
+  /// 且与页面背景（scaffoldBackground ≈ surfaceContainerLow）拉开对比。
+  static const double _brandTintAmount = 0.14;
+
+  static Color getNoteColor({
+    required int notIndex,
+    BuildContext? context,
+  }) {
+    final lightColors =
         allNotesColorTheme[PreferencesStorage.colorfulNotesColorIndex]
             .colorList;
-    final base = PreferencesStorage.isColorful
+    final isColorful = PreferencesStorage.isColorful;
+    final base = isColorful
         ? lightColors[notIndex % lightColors.length]
-        : const Color(0xFFA7BEAE);
+        : _neutralCardColor(context);
     // 仅浅色模式提亮；暗黑模式保持原色不变，避免浅色卡片在深色背景上刺眼/违和。
     if (PreferencesStorage.isThemeDark) return base;
-    return Color.lerp(base, Colors.white, _lightenAmount) ?? base;
+    // 关闭彩色时底色已是浅品牌色（不透明），再提亮 40% 会与背景融为一体。
+    return isColorful
+        ? (Color.lerp(base, Colors.white, _lightenAmount) ?? base)
+        : base;
+  }
+
+  /// 关闭彩色时的卡片底色：surfaceContainerHighest 上叠加 14% 品牌主色。
+  ///
+  /// 注意：页面背景（scaffoldBackgroundColor）就是 surfaceContainerLow，
+  /// 若卡片也基于 surfaceContainerLow，会与背景融为一体（Android 上几乎不可见）。
+  /// 用高一档的 surfaceContainerHighest，保证卡片与背景有明确区分、且带品牌色相。
+  static Color _neutralCardColor(BuildContext? context) {
+    if (context == null) return const Color(0xFFA7BEAE); // 兜底（无 context 时）
+    final scheme = Theme.of(context).colorScheme;
+    return Color.alphaBlend(
+      scheme.primary.withValues(alpha: _brandTintAmount),
+      scheme.surfaceContainerHighest,
+    );
   }
 
   void toggleColor() {
@@ -40,8 +68,19 @@ class NotesColor extends ChangeNotifier {
   }
 }
 
+/// 按 WCAG 对比度反推字体色（P1-12）：不再用手调阈值 `0.179`，
+/// 选黑/白中对比度更高者（数学上对任意背景色 ≥ ~4.55:1）。
 Color getFontColorForBackground(Color background) {
-  return (background.computeLuminance() > 0.179) ? Colors.black : Colors.white;
+  final blackContrast = contrastRatio(Colors.black, background);
+  final whiteContrast = contrastRatio(Colors.white, background);
+  return blackContrast >= whiteContrast ? Colors.black : Colors.white;
+}
+
+/// WCAG 相对对比度：(L1+0.05)/(L2+0.05)。测试与外部复用。
+double contrastRatio(Color a, Color b) {
+  final l1 = a.computeLuminance();
+  final l2 = b.computeLuminance();
+  return (math.max(l1, l2) + 0.05) / (math.min(l1, l2) + 0.05);
 }
 
 class NotesColorTheme {

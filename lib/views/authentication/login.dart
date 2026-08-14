@@ -364,7 +364,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       final phrase = passPhraseController.text;
       await _login(phrase);
     } else {
-      showSnackBarMessage(context, snackMsgWrongEncryptionPhrase);
+      showErrorToast(context, snackMsgWrongEncryptionPhrase);
     }
   }
 
@@ -414,7 +414,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误,不扣尝试次数
           if (mounted) {
-            showSnackBarMessage(
+            showErrorToast(
               context,
               'Unable to verify password (network unavailable). Check your connection and try again.'
                   .tr(),
@@ -498,7 +498,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // （build 只读 stream），并在此清空输入框、隐藏键盘、禁用输入。
       _startLockoutTimer();
       if (mounted) {
-        showSnackBarMessage(context, numberOfAttemptExceeded);
+        showErrorToast(context, numberOfAttemptExceeded);
       }
     } else {
       final wrongPhraseMsg =
@@ -506,7 +506,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             namedArgs: {'noOfAllowedAttempts': _noOfAllowedAttempts.toString()},
           );
       if (mounted) {
-        showSnackBarMessage(context, wrongPhraseMsg);
+        showErrorToast(context, wrongPhraseMsg);
       }
     }
   }
@@ -635,9 +635,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///   - 明确告知数据不可恢复
   ///   - 执行后删除 db 文件 + keyring 元数据,重启走首次设置流程
   void _showForgotPassphraseDialog() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (dialogContext) => ShadDialog(
+        constraints: kAppDialogConstraints,
         title: Text('Forgot Passphrase'.tr()),
         actions: [
           shadDialogActionBar(
@@ -686,9 +687,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   /// 二次确认清空本地数据
   void _confirmResetLocalData() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (dialogContext) => ShadDialog(
+        constraints: kAppDialogConstraints,
         title: Text('Confirm Reset'.tr()),
         actions: [
           shadDialogActionBar(
@@ -748,7 +750,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
     } on Exception catch (e) {
       if (mounted) {
-        showSnackBarMessage(
+        showErrorToast(
           context,
           'Reset failed: {error}'.tr(namedArgs: {'error': '$e'}),
         );

@@ -315,7 +315,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // keyring 为 null 说明未登录或状态异常,中止
         Log.auth.e('改密码中止：Keyring 未初始化（未登录或状态异常）');
         if (mounted) {
-          showSnackBarMessage(
+          showErrorToast(
             context,
             'Keyring not initialized. Please log in again.'.tr(),
           );
@@ -331,14 +331,14 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 旧密码错误(简化方案:keyring 是唯一凭证,失败必须中止)
         Log.auth.w('改密码中止：旧密码错误');
         if (mounted) {
-          showSnackBarMessage(context, wrongOldPassMsg);
+          showErrorToast(context, wrongOldPassMsg);
         }
         return;
       } on Exception catch (e, st) {
         // 其他异常(简化方案:失败必须中止)
         Log.auth.e('改密码中止：校验旧密码时发生异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(
+          showErrorToast(
             context,
             'Failed to verify old passphrase: {error}'.tr(
               namedArgs: {'error': '$e'},
@@ -377,7 +377,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         // 改密码失败(简化方案:失败必须中止,不再静默吞掉)
         Log.auth.e('改密码失败：持久化新 keyring 时异常', error: e, stackTrace: st);
         if (mounted) {
-          showSnackBarMessage(
+          showErrorToast(
             context,
             'Failed to change passphrase: {error}'.tr(
               namedArgs: {'error': '$e'},
@@ -495,11 +495,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     required String confirmText,
     required String cancelText,
   }) async {
-    return await showDialog<bool>(
+    return await showAppDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (BuildContext dialogContext) {
             return ShadDialog(
+              constraints: kAppDialogConstraints,
               title: Text(title),
               actions: [
                 shadDialogActionBar(

@@ -45,9 +45,9 @@ const EdgeInsets kInputPadding = EdgeInsets.symmetric(
   vertical: 12,
 );
 
-/// 桌面端窄表单/对话框最大宽度：登录、设置/修改口令、导出备份等单列居中内容，
-/// 避免在宽窗口上被拉满。
-const double kDialogMaxWidthCompact = 420.0;
+/// 桌面端窄表单/对话框最大宽度：登录、设置/修改口令等单列居中内容，
+/// 避免在宽窗口上被拉满。历史值 420 已统一为 440（与 kDialogMaxWidth 一致）。
+const double kDialogMaxWidthCompact = 440.0;
 
 /// 桌面端对话框最大宽度：导入备份等简单对话框。
 const double kDialogMaxWidth = 440.0;

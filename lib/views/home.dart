@@ -39,6 +39,7 @@ import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/route_observer.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/add_edit_note.dart';
@@ -180,14 +181,11 @@ class HomePageState extends State<HomePage> with RouteAware {
       // 的笔记时，非致命提示用户，这些笔记会在后续同步中重试。
       final failed = state.lastResult!.failedNoteUuids;
       if (failed.isNotEmpty && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '{count} notes failed to sync due to key mismatch and will be retried on the next sync'
-                  .tr(namedArgs: {'count': '${failed.length}'}),
-            ),
-            duration: const Duration(seconds: 4),
-          ),
+        // P2-3：错误提示走 ShadToast（destructive + 6s）。
+        showErrorToast(
+          context,
+          '{count} notes failed to sync due to key mismatch and will be retried on the next sync'
+              .tr(namedArgs: {'count': '${failed.length}'}),
         );
       }
     }
@@ -197,7 +195,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     if (state.lastResult?.requiresRelogin != true) return;
 
     _passwordChangedDialogShown = true;
-    showDialog(
+    showAppDialog(
       context: context,
       // 强制：不可点击遮罩关闭，用户必须处理"重新登录"
       barrierDismissible: false,
@@ -205,6 +203,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         // 强制：不可用系统返回键关闭
         canPop: false,
         child: ShadDialog(
+          constraints: kAppDialogConstraints,
           title: Text('Password Changed on Another Device'.tr()),
           actions: [
             shadDialogActionBar(
@@ -266,12 +265,10 @@ class HomePageState extends State<HomePage> with RouteAware {
         setState(() {
           allnotes = notes = <SafeNote>[];
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to load notes: {error}'.tr(namedArgs: {'error': '$e'}),
-            ),
-          ),
+        // P2-3：错误提示走 ShadToast（destructive + 6s）。
+        showErrorToast(
+          context,
+          'Failed to load notes: {error}'.tr(namedArgs: {'error': '$e'}),
         );
       }
     } finally {
@@ -396,7 +393,10 @@ class HomePageState extends State<HomePage> with RouteAware {
               ? const _RotatingSyncIcon()
               : Icon(
                   _syncIconData(state.status),
-                  color: state.status == SyncStatus.error ? Colors.red : null,
+                  // P1-22：错误色统一走 shad destructive。
+                  color: state.status == SyncStatus.error
+                      ? ShadTheme.of(context).colorScheme.destructive
+                      : null,
                 ),
           tooltip: _syncTooltip(state.status),
           onPressed: () async {
@@ -507,12 +507,21 @@ class HomePageState extends State<HomePage> with RouteAware {
     return Expanded(
       child: !isLoading
           ? notes.isEmpty
-                ? emptyState(
-                    icon: Icons.note_alt_outlined,
-                    text: noNotes,
-                    cta: 'New Note'.tr(),
-                    onCta: _openAddNote,
-                  )
+                // P3-15：搜索无结果与空库区分，避免用户以为笔记被删。
+                ? query.isNotEmpty
+                      ? emptyState(
+                          icon: Icons.search_off,
+                          text: 'No notes match "{query}"'
+                              .tr(namedArgs: {'query': query}),
+                          cta: 'Clear Search'.tr(),
+                          onCta: () => _searchNote(''),
+                        )
+                      : emptyState(
+                          icon: Icons.note_alt_outlined,
+                          text: noNotes,
+                          cta: 'New Note'.tr(),
+                          onCta: _openAddNote,
+                        )
                 : (isGridView ? _buildNotes() : _buildNotesTile())
           : loadingState(),
     );
@@ -637,7 +646,8 @@ class HomePageState extends State<HomePage> with RouteAware {
     required bool grid,
   }) {
     // 卡片背景色：与 NoteTileWidget/NoteCardWidget 内部取色保持一致
-    final Color cardColor = NotesColor.getNoteColor(notIndex: index);
+    final Color cardColor =
+        NotesColor.getNoteColor(notIndex: index, context: context);
     return OpenContainer(
       tappable: false,
       // P1-11：时长走 AppMotion.pageTransition（保持 250ms：动画期间编辑页

@@ -142,10 +142,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   }
 
   Future<UnsavedAction?> _showUnsavedDialog() {
-    return showDialog<UnsavedAction>(
+    return showAppDialog<UnsavedAction>(
       context: context,
       builder: (BuildContext ctx) {
         return ShadDialog(
+          constraints: kAppDialogConstraints,
           title: Text('Unsaved changes'.tr()),
           actions: [
             shadDialogActionBar(
@@ -210,7 +211,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           '用户点击删除笔记(编辑页), 弹出确认对话框 '
           'uuid=${widget.note!.uuid}',
         );
-        await showDialog(
+        await showAppDialog(
           context: context,
           barrierDismissible: true,
           builder: (BuildContext contextChild) {

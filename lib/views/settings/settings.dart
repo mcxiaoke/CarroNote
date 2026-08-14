@@ -159,8 +159,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
-          icon: LucideIcons.moon,
-          title: 'Dark Mode'.tr(),
+          icon: LucideIcons.palette,
+          title: 'Switch Theme'.tr(),
           value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
           onTap: () {
             showThemeBottomSheet(context);
@@ -261,8 +261,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
-          icon: LucideIcons.logOut,
-          title: 'Logout'.tr(),
+          icon: LucideIcons.lock,
+          title: 'Lock'.tr(),
           destructive: true,
           onTap: () async {
             // 顺序与 main.dart 超时退出 logout() 保持一致：

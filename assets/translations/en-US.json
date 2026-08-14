@@ -40,6 +40,8 @@
     "Security": "Security",
     "No Notes": "No Notes",
     "New Note": "New Note",
+    "No notes match \"{query}\"": "No notes match \"{query}\"",
+    "Clear Search": "Clear Search",
     "Caution!": "Caution!",
     "Sapphire": "Sapphire",
     "Ensemble": "Ensemble",

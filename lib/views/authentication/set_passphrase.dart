@@ -350,7 +350,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         );
       } else {
         Log.auth.w('设置密码失败：两次输入的密码不一致');
-        showSnackBarMessage(context, 'Passphrase mismatch!'.tr());
+        showErrorToast(context, 'Passphrase mismatch!'.tr());
       }
     } else {
       Log.auth.w('设置密码中止：密码表单校验未通过(长度不足/强度过低/不匹配)');
@@ -377,7 +377,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       // 路由异常场景：已有 keyring 却走到设置页，拒绝覆盖以防数据丢失
       Log.crypto.e('拒绝创建新 Keyring：检测到已存在的加密元数据(应走登录流程)');
       if (mounted) {
-        showSnackBarMessage(
+        showErrorToast(
           context,
           'Encrypted data detected. Please go back and log in.'.tr(),
         );
@@ -398,7 +398,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         '(耗时 ${swKeyring.elapsedMilliseconds}ms)',
       );
       if (mounted) {
-        showSnackBarMessage(
+        showErrorToast(
           context,
           'Encryption initialization failed: {error}'.tr(
             namedArgs: {'error': result.error ?? 'Unknown error'.tr()},
@@ -425,7 +425,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         Log.sync.i('同步后端初始化成功');
       }
       if (!backendResult.success && mounted) {
-        showSnackBarMessage(
+        showErrorToast(
           context,
           'Sync initialization failed: {error}'.tr(
             namedArgs: {'error': backendResult.error ?? 'Unknown error'.tr()},

@@ -33,6 +33,7 @@ import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/widgets/shad_dialog.dart';
 
 class FileHandler {
   /// 备份导出数据源：笔记 JSON 数组（明文/加密两条路径共用，内容零差异）
@@ -213,7 +214,7 @@ class FileHandler {
     while (true) {
       // TODO: refactor without using BuildContexts across async gap
       final String? entered = context.mounted
-          ? await showDialog<String>(
+          ? await showAppDialog<String>(
               context: context,
               barrierDismissible: false,
               builder: (_) => BackupPasswordInputDialog(errorText: errorText),
@@ -239,7 +240,7 @@ class FileHandler {
     int totalNotes, {
     String? notice,
   }) async {
-    return await showDialog(
+    return await showAppDialog(
           context: context,
           barrierDismissible: false,
           builder: (_) =>

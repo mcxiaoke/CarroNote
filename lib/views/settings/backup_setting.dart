@@ -208,7 +208,7 @@ class BackupSettingState extends State<BackupSetting> {
     } catch (e, st) {
       Log.backup.e('选择备份目录失败', error: e, stackTrace: st);
       if (!mounted) return;
-      showSnackBarMessage(context, 'Failed to select folder'.tr());
+      showErrorToast(context, 'Failed to select folder'.tr());
     }
   }
 
@@ -219,7 +219,7 @@ class BackupSettingState extends State<BackupSetting> {
       final granted = await handleBackupPermissionAndLocation();
       if (!granted) {
         if (!mounted) return;
-        showSnackBarMessage(context, 'Storage permission required!'.tr());
+        showErrorToast(context, 'Storage permission required!'.tr());
         return;
       }
     }
@@ -237,7 +237,7 @@ class BackupSettingState extends State<BackupSetting> {
       Log.backup.i('手动备份成功: $validWorkingBackupFullyQualifiedPath');
     } else {
       final err = ScheduledTask.lastBackupError ?? 'Unknown error';
-      showSnackBarMessage(
+      showErrorToast(
         context,
         'Backup failed: {err}'.tr(namedArgs: {'err': err}),
       );
@@ -262,7 +262,7 @@ Future<void> startExportNotes(BuildContext context) async {
     if (options.encrypted) {
       final password = options.password;
       if (password == null || password.isEmpty) {
-        showSnackBarMessage(context, 'Export requires a password!'.tr());
+        showErrorToast(context, 'Export requires a password!'.tr());
         return;
       }
       content = await FileHandler.encryptedOutputBackupContent(
@@ -284,7 +284,7 @@ Future<void> startExportNotes(BuildContext context) async {
   } catch (e, st) {
     if (!context.mounted) return;
     Log.backup.e('导出失败', error: e, stackTrace: st);
-    showSnackBarMessage(context, "Failed to export file!".tr());
+    showErrorToast(context, "Failed to export file!".tr());
   }
 }
 
@@ -303,12 +303,12 @@ Future<void> openBackupDirectory(String directory, BuildContext context) async {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (context.mounted) {
-      showSnackBarMessage(context, 'Could not open folder'.tr());
+      showErrorToast(context, 'Could not open folder'.tr());
     }
   } catch (e, st) {
     Log.backup.e('打开备份目录失败: $directory', error: e, stackTrace: st);
     if (context.mounted) {
-      showSnackBarMessage(context, 'Could not open folder'.tr());
+      showErrorToast(context, 'Could not open folder'.tr());
     }
   }
 }

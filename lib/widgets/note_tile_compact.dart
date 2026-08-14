@@ -15,21 +15,14 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:core/core.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/utils/notes_color.dart';
-import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/utils/spacing.dart';
-import 'package:safenotes/utils/string_utils.dart';
-import 'package:safenotes/utils/text_direction_util.dart';
-import 'package:safenotes/utils/text_styles.dart';
-import 'package:safenotes/utils/time_utils.dart';
+import 'package:safenotes/widgets/note_card_body.dart';
 
+/// 列表视图笔记卡（紧凑模式）：AutoSizeText 单块 + 时间。
+///
+/// P1-15：内容统一由 [NoteCardBody] 渲染，本类只负责参数透传。
 class NoteTileWidgetCompact extends StatelessWidget {
   final SafeNote note;
   final int index;
@@ -42,48 +35,6 @@ class NoteTileWidgetCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Pick colors from the accent colors based on index
-    final color = NotesColor.getNoteColor(notIndex: index);
-    final fontColor = getFontColorForBackground(color);
-    final previewText = note.title == ' ' ? note.abstractText : note.title;
-    final time = noteTimeLabel(
-      // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间。
-      time: PreferencesStorage.isSortByModified
-          ? note.modifiedTime
-          : note.createdTime,
-      localeString: context.locale.toString(),
-      isRelative: PreferencesStorage.isRelativeTime,
-    );
-
-    return ShadCard(
-      backgroundColor: color,
-      padding: AppSpace.cardPadding,
-      radius: BorderRadius.circular(AppShape.cardRadius),
-      border: ShadBorder.none,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AutoSizeText(
-            sanitize(previewText),
-            textDirection: getTextDirecton(previewText),
-            style: AppText.titleCompact.copyWith(
-              color: fontColor,
-              fontFamily: uiFontFamily,
-              fontFamilyFallback: uiFontFamilyFallback,
-            ),
-            minFontSize: 15,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: AppSpace.xs),
-          Text(
-            time,
-            textDirection: getTextDirecton(time),
-            style: AppText.caption.copyWith(color: fontColor),
-          ),
-        ],
-      ),
-    );
+    return NoteCardBody(note: note, index: index, isCompact: true);
   }
 }
