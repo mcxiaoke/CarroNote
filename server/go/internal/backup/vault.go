@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"safenotes-server/internal/storage"
+	"wsns/internal/storage"
 )
 
 type ObservableVault struct {

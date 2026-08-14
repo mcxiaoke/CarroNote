@@ -1,3 +1,3 @@
-module safenotes-server
+module wsns
 
 go 1.24

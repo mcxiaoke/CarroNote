@@ -76,8 +76,8 @@
 ```
 server/go/
 ├── main.go                          # 入口（极简：解析配置 → 创建 Server → Run）
-├── dev.json                         # 开发配置（debug 日志 → ./temp/safeserver-debug.log）
-├── go.mod                           # module safenotes-server, go 1.21+
+├── dev.json                         # 开发配置（debug 日志 → ./temp/wsns-debug.log）
+├── go.mod                           # module wsns, go 1.21+
 └── internal/
     ├── config/
     │   └── config.go                # 配置（flag + JSON 文件，命令行优先级最高）
@@ -467,7 +467,7 @@ Go `server/go/dev.config.json`:
   "writeTimeout": "60s",
   "idleTimeout": "120s",
   "logLevel": "debug",
-  "logFile": "./temp/safeserver-debug.log",
+  "logFile": "./temp/wsns-debug.log",
   "logJSON": false
 }
 ```
@@ -499,12 +499,12 @@ node server/nodejs/server.js --config server/nodejs/dev.config.json
 
 ### 6.5 部署：systemd 服务
 
-生产环境部署用 systemd 管理进程，见 [server/deploy/safeserver.service](../server/deploy/safeserver.service)。
+生产环境部署用 systemd 管理进程，见 [server/deploy/wsns.service](../server/deploy/wsns.service)。
 
 快速部署（Linux）：
 ```bash
 # 1. 构建二进制
-cd /opt/safenotes/server/go && go build -o /usr/local/bin/safeserver .
+cd /opt/safenotes/server/go && go build -o /usr/local/bin/wsns .
 
 # 2. 创建专用用户和数据目录
 sudo useradd -r -s /usr/sbin/nologin safenotes
@@ -512,20 +512,45 @@ sudo mkdir -p /var/lib/safenotes
 sudo chown safenotes:safenotes /var/lib/safenotes
 
 # 3. 安装 systemd 服务
-sudo cp server/deploy/safeserver.service /etc/systemd/system/
+sudo cp server/deploy/wsns.service /etc/systemd/system/
 # 编辑 token 和路径
-sudo $EDITOR /etc/systemd/system/safeserver.service
+sudo $EDITOR /etc/systemd/system/wsns.service
 
 # 4. 启用并启动
 sudo systemctl daemon-reload
-sudo systemctl enable safeserver
-sudo systemctl start safeserver
+sudo systemctl enable wsns
+sudo systemctl start wsns
 
 # 5. 查看日志
-sudo journalctl -u safeserver -f
+sudo journalctl -u wsns -f
 ```
 
 systemd 服务文件包含安全加固：专用用户运行、`ProtectSystem=strict`、`MemoryMax=256M`、`LimitNOFILE=4096` 等。
+
+### 6.6 一键安装包（推荐）
+
+开发机执行 `server/deploy/package.sh` 会交叉编译 linux/amd64 并打包为
+`server/dist/wsns-linux-amd64.zip`（内含 `wsns` 二进制、`wsns.service`、`config.json`、
+`install.sh`）。上传到目标服务器后解压，一键完成安装：
+
+```bash
+# 开发机
+bash server/deploy/package.sh
+scp server/dist/wsns-linux-amd64.zip user@<server>:/tmp/
+
+# 目标服务器（root）
+sudo apt-get install -y unzip          # 若未安装
+unzip /tmp/wsns-linux-amd64.zip -d /tmp/wsns && cd /tmp/wsns
+sudo ./install.sh                       # 自动生成强 Token 并启用/启动服务
+# 指定 Token：WSNS_TOKEN=xxx sudo ./install.sh
+# 仅安装不启动：sudo ./install.sh --no-start
+```
+
+`install.sh` 会把二进制装到 `/usr/local/bin/wsns`、服务装到
+`/etc/systemd/system/wsns.service`、配置（含 Token）装到 `/etc/safenotes/config.json`，
+并创建专用用户 `wsns`（`safenotes`）、数据目录 `/var/lib/safenotes` 与备份目录
+`/var/backups/wsns`，最后打印各文件路径与生成的 Token。
+
 
 ---
 

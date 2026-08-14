@@ -525,7 +525,7 @@ func copyFile(src, dst string) error {
 package backup
 
 import (
-    "safenotes-server/internal/storage"
+    "wsns/internal/storage"
     "sync"
     "time"
 )

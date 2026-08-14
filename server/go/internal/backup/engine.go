@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"safenotes-server/internal/config"
+	"wsns/internal/config"
 )
 
 // Engine 备份引擎

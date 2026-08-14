@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strings"
 
-	"safenotes-server/internal/storage"
+	"wsns/internal/storage"
 )
 
 // isPayloadTooLarge 检测错误是否源自 http.MaxBytesReader 请求体超限，

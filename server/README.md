@@ -13,7 +13,7 @@ server/
 │   ├── main.go                 # 入口
 │   ├── dev.config.json         # 开发配置示例（完整字段）
 │   ├── dev.json                # 开发配置（仅日志，精简版）
-│   ├── go.mod                  # module safenotes-server
+│   ├── go.mod                  # module wsns
 │   └── internal/
 │       ├── config/config.go    # 配置（flag + JSON 文件）
 │       ├── auth/auth.go        # 认证 + 速率限制（LRU 防护）
@@ -44,7 +44,7 @@ server/
 │           ├── storage.js      # Vault/Storage 基类 + DefaultVaultID
 │           └── fs.js           # 文件系统实现
 └── deploy/
-    └── safeserver.service      # systemd 服务单元文件
+    └── wsns.service            # systemd 服务单元文件
 ```
 
 ## 快速启动
@@ -58,7 +58,7 @@ go run ./server/go
 # 自定义参数
 go run ./server/go -addr :9000 -data /tmp/safeserver-data -token my-secret-token
 
-# 用开发配置（debug 日志 → ./temp/safeserver-debug.log）
+# 用开发配置（debug 日志 → ./temp/wsns-debug.log）
 cd server/go && go run . -config dev.config.json
 ```
 
@@ -79,7 +79,7 @@ node server/nodejs/server.js --config server/nodejs/dev.config.json
 
 交叉编译由 `server/build.go` 统一驱动（单一事实来源），`justfile` 与 `Makefile` 都委托给它，因此在 Windows 开发机、Linux/macOS CI runner 上行为一致，且不会污染全局 `go env`。
 
-默认矩阵：**linux/windows × amd64/arm64**（4 个静态二进制，`CGO_ENABLED=0`），产物输出到 `server/dist/go/safeserver-<os>-<arch>[.exe]`。
+默认矩阵：**linux/windows × amd64/arm64**（4 个静态二进制，`CGO_ENABLED=0`），产物输出到 `server/dist/go/wsns-<os>-<arch>[.exe]`。
 
 ```bash
 # 三种等价入口，任选其一（均在 server/ 目录下运行）
@@ -158,7 +158,7 @@ flutter test
 | 存储层抽象 | Storage + Vault 接口，支持切换后端 |
 | 多 vault 预留 | `NewVault(vaultID)` 接口，默认用 `DefaultVaultID`（"vault-default"） |
 | 备份（Go 版） | Tier 1 manifest 快照 + blob 副本池 + Tier 2 zip/tar.gz 归档，配置见 [server-backup-design.md](../docs/server-backup-design.md) |
-| 部署 | systemd 服务单元文件（含安全加固），见 [deploy/safeserver.service](deploy/safeserver.service) |
+| 部署 | systemd 服务单元文件（含安全加固），见 [deploy/wsns.service](deploy/wsns.service) |
 
 ## 自行实现新 server
 

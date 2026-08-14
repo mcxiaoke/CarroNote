@@ -1,7 +1,7 @@
 # SafeServer 测试环境清理脚本
 #
 # 清理内容：
-#   1. 残留 server 进程（safeserver.exe / safenotes-server.exe / node server.js 测试目录）
+#   1. 残留 server 进程（wsns.exe / safeserver.exe / safenotes-server.exe / node server.js 测试目录）
 #   2. 占用测试端口的进程
 #   3. 临时数据目录（$env:TEMP\safenotes-test, $env:TEMP\sn-test-*）
 #   4. 项目 temp/ 下的 server 日志文件（safeserver-*.log, sn-server-*.log）
@@ -51,14 +51,16 @@ if (-not $SkipProcessKill) {
     Write-Step 'Step 1: Killing residual server processes...'
 
     # 匹配模式覆盖历史所有命名：
-    #   - safeserver.exe           → 当前测试构建的 Go 二进制名
-    #   - safenotes-server.exe     → 旧版 `go run` 自动生成的二进制名
+    #   - wsns.exe                 → 当前测试构建的 Go 二进制名
+    #   - safeserver.exe           → 旧版二进制名（历史兼容）
+    #   - safenotes-server.exe     → 旧版 `go run` 自动生成的二进制名（历史兼容）
     #   - safenotes-test           → 当前测试数据目录特征（kTestRoot）
     #   - sn-test-                 → 旧测试数据目录特征
     #   - sn-node-debug            → 手动调试 Node server 的日志特征
     #   - server\.js.*safenotes    → Node server 跑当前测试目录
     #   - server\.js.*sn-test      → Node server 跑旧测试目录
     $patterns = @(
+        'wsns\.exe',
         'safeserver\.exe',
         'safenotes-server\.exe',
         'safenotes-test',
@@ -145,6 +147,7 @@ if (-not $SkipFileCleanup) {
     Write-Step 'Step 4: Cleaning server log files in project temp/...'
     $repoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
     $logPatterns = @(
+        "$repoRoot\temp\wsns-*.log",
         "$repoRoot\temp\safeserver-*.log",
         "$repoRoot\temp\sn-server-*.log"
     )

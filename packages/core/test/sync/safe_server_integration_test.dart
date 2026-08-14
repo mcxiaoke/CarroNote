@@ -8,7 +8,7 @@
 //   5. 每个测试前清理 server 数据目录；tearDownAll 停 server + 调用 PS 清理脚本
 //
 // 清理脚本（test/scripts/test-cleanup.ps1）负责：
-//   - 杀残留 server 进程（safeserver.exe / safenotes-server.exe / node server.js）
+//   - 杀残留 server 进程（wsns.exe / safeserver.exe / safenotes-server.exe / node server.js）
 //   - 杀占用测试端口的进程
 //   - 清理临时数据目录（$TEMP\safenotes-test, $TEMP\sn-test-*）
 //   - 清理项目 temp/ 下的 server 日志文件
@@ -204,7 +204,7 @@ Future<void> runCleanupScript({
 /// 生成 Go server 配置文件（JSON）
 ///
 /// Go server 通过 `-config <path>` 加载，包含所有运行参数。
-/// 这样启动命令只需要 `safeserver.exe -config config.json`，整洁易调试。
+/// 这样启动命令只需要 `wsns.exe -config config.json`，整洁易调试。
 Future<String> generateGoConfig({
   required int port,
   required String dataDir,
@@ -288,7 +288,7 @@ Future<bool> setupTestInfra({required bool useGo}) async {
 Future<String?> buildGoBinary() async {
   final repoRoot = Directory.current.path;
   final goSrcDir = '$repoRoot\\server\\go';
-  final binPath = '$kTestRoot\\safeserver.exe';
+  final binPath = '$kTestRoot\\wsns.exe';
 
   // 如果环境变量指定了二进制，直接用
   final envBin = Platform.environment['SN_GO_BIN'];

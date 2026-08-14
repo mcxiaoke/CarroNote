@@ -19,7 +19,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"safenotes-server/internal/auth"
+	"wsns/internal/auth"
 )
 
 // contextKey 是 context.Value 的键类型，避免与其他包冲突

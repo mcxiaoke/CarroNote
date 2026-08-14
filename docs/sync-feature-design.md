@@ -828,10 +828,10 @@ litenotes 的 Go 服务端（[server/go/](file:///C:/Home/Projects/litenotes/ser
 
 ### 12.2 部署
 
-- 编译：`cd server/go && go build -o syncserver`
+- 编译：`cd server/go && go build -o wsns`
 - 配置：`config.json`（参见 [config.example.json](file:///C:/Home/Projects/litenotes/server/go/config.example.json)）
-- 运行：`./syncserver -config config.json`
-- systemd 服务：参考 `syncserver.service.example`
+- 运行：`./wsns -config config.json`
+- systemd 服务：参考 `wsns.service.example`
 
 ### 12.3 鉴权
 

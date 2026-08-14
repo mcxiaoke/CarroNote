@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"safenotes-server/internal/config"
-	"safenotes-server/internal/storage"
+	"wsns/internal/config"
+	"wsns/internal/storage"
 )
 
 // newObservableVault 创建真实 fsVault + ObservableVault 包装（engine 的 vaultDir 与 inner 一致）。

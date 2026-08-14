@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"safenotes-server/internal/config"
-	"safenotes-server/internal/storage"
+	"wsns/internal/config"
+	"wsns/internal/storage"
 )
 
 // newTestVault 创建一个真实的文件系统 vault（vault-default）并返回根目录、vault 句柄、engine。

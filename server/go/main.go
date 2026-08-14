@@ -34,8 +34,8 @@ package main
 import (
 	"log"
 
-	"safenotes-server/internal/config"
-	"safenotes-server/internal/server"
+	"wsns/internal/config"
+	"wsns/internal/server"
 )
 
 func main() {

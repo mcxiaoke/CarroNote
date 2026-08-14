@@ -1,17 +1,17 @@
-# SafeServer systemd 服务单元文件
+# WSNS (SafeNotes Sync Server) systemd 服务单元文件
 #
 # 安装方法：
 #   1. 构建二进制（Go server）：
 #        cd /opt/safenotes/server/go
-#        go build -o /usr/local/bin/safeserver .
+#        go build -o /usr/local/bin/wsns .
 #      或复制 Node.js 脚本：
 #        cp -r /opt/safenotes/server/nodejs /opt/safenotes-server
 #
 #   2. 复制本文件到 systemd 目录：
-#        sudo cp safeserver.service /etc/systemd/system/
+#        sudo cp wsns.service /etc/systemd/system/
 #
 #   3. 编辑配置（至少改 token 和 dataDir）：
-#        sudo $EDITOR /etc/systemd/system/safeserver.service
+#        sudo $EDITOR /etc/systemd/system/wsns.service
 #
 #   4. 创建数据目录（如果配置的 dataDir 不存在）：
 #        sudo mkdir -p /var/lib/safenotes
@@ -22,12 +22,12 @@
 #
 #   6. 启用并启动：
 #        sudo systemctl daemon-reload
-#        sudo systemctl enable safeserver
-#        sudo systemctl start safeserver
+#        sudo systemctl enable wsns
+#        sudo systemctl start wsns
 #
 #   7. 查看状态和日志：
-#        sudo systemctl status safeserver
-#        sudo journalctl -u safeserver -f
+#        sudo systemctl status wsns
+#        sudo journalctl -u wsns -f
 #
 # 如果用 Node.js server，把 ExecStart 改为：
 #   ExecStart=/usr/bin/node /opt/safenotes-server/server.js --port 4080 --data /var/lib/safenotes --token YOUR_TOKEN
@@ -45,13 +45,9 @@ Type=simple
 User=safenotes
 Group=safenotes
 
-# 二进制路径和数据目录
-ExecStart=/usr/local/bin/safeserver \
-    -addr :4080 \
-    -data /var/lib/safenotes \
-    -token change-me-to-a-strong-token \
-    -rate-limit 10
-# 如用配置文件：ExecStart=/usr/local/bin/safeserver -config /etc/safenotes/config.json
+# 二进制路径和配置（配置含 Token / 数据目录 / 备份等）
+ExecStart=/usr/local/bin/wsns -config /etc/safenotes/config.json
+# 如用命令行参数：ExecStart=/usr/local/bin/wsns -addr :4080 -data /var/lib/safenotes -token <TOKEN> -rate-limit 10
 
 # 工作目录
 WorkingDirectory=/var/lib/safenotes
@@ -69,12 +65,12 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/safenotes
+ReadWritePaths=/var/lib/safenotes /var/backups/wsns
 
 # 日志
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=safeserver
+SyslogIdentifier=wsns
 
 [Install]
 WantedBy=multi-user.target

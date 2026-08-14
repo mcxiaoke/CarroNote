@@ -96,7 +96,7 @@ func buildOne(goDir, outDir, target string) error {
 	if goos == "windows" {
 		ext = ".exe"
 	}
-	outPath := filepath.Join(outDir, fmt.Sprintf("safeserver-%s-%s%s", goos, goarch, ext))
+	outPath := filepath.Join(outDir, fmt.Sprintf("wsns-%s-%s%s", goos, goarch, ext))
 
 	fmt.Printf("  -> %s/%s\n", goos, goarch)
 	cmd := exec.Command("go", "build", "-trimpath", "-o", outPath, ".")

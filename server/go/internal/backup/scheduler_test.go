@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"safenotes-server/internal/config"
+	"wsns/internal/config"
 )
 
 // TestSchedulerTickerRuns 验证 runTicker 周期性调用回调，ctx 取消后退出。

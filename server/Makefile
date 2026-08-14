@@ -13,7 +13,7 @@
 
 GO      ?= go
 DIST    := dist/go
-BIN     := safeserver
+BIN     := wsns
 
 .PHONY: default build multi dist test vet analyze ci clean help
 default: help
@@ -22,7 +22,7 @@ default: help
 build:
 	$(GO) run build.go -targets host
 
-## multi: 构建全部目标平台 (输出 dist/go/safeserver-<os>-<arch>[.exe])
+## multi: 构建全部目标平台 (输出 dist/go/wsns-<os>-<arch>[.exe])
 multi:
 	$(GO) run build.go
 

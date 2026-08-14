@@ -1,0 +1,29 @@
+{
+  "addr": ":4080",
+  "dataDir": "/var/lib/safenotes",
+  "token": "__WSNS_TOKEN__",
+  "rateLimit": 10,
+  "maxBodyBytes": 67108864,
+  "readTimeout": "60s",
+  "writeTimeout": "60s",
+  "idleTimeout": "120s",
+  "behindProxy": false,
+  "logLevel": "info",
+  "logFile": "",
+  "logJSON": false,
+  "backup": {
+    "enabled": true,
+    "scheduleInterval": "6h",
+    "autoOnWrite": true,
+    "writeDebounceMs": 5000,
+    "maxSnapshots": 100,
+    "retentionDays": 180,
+    "archive": {
+      "enabled": true,
+      "interval": "24h",
+      "path": "/var/backups/wsns",
+      "format": "zip",
+      "maxArchives": 30
+    }
+  }
+}

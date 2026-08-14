@@ -26,10 +26,10 @@ import (
 	"syscall"
 	"time"
 
-	"safenotes-server/internal/auth"
-	"safenotes-server/internal/backup"
-	"safenotes-server/internal/config"
-	"safenotes-server/internal/storage"
+	"wsns/internal/auth"
+	"wsns/internal/backup"
+	"wsns/internal/config"
+	"wsns/internal/storage"
 )
 
 // Server 是 SafeServer HTTP 服务
