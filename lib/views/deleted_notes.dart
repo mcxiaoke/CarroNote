@@ -18,10 +18,14 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
+import 'package:safenotes/utils/time_utils.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/states.dart';
 
@@ -225,89 +229,92 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
     final note = widget.note;
     final deletedTime = DateTime.fromMillisecondsSinceEpoch(note.updatedAt);
-    final timeStr =
-        '${deletedTime.month}/${deletedTime.day} '
-        '${deletedTime.hour}:${deletedTime.minute.toString().padLeft(2, '0')}';
+    // 删除时间展示与主界面列表一致（相对/绝对跟随设置）。
+    final String timeStr = noteTimeLabel(
+      time: deletedTime,
+      localeString: context.locale.toString(),
+      isRelative: PreferencesStorage.isRelativeTime,
+    );
+
+    // 回收站不启用彩色笔记：底色沿用主界面「未开启彩色笔记」时的卡片底色
+    // （surfaceContainerHighest 叠加 14% 品牌主色），视觉上与主界面列表一致。
+    final Color backgroundColor = NotesColor.neutralCardColor(context);
+    // 字体色按背景对比度计算，与主界面列表（NoteCardBody）一致。
+    final Color fontColor = getFontColorForBackground(backgroundColor);
 
     return ShadCard(
-      // 回收站卡片与主界面卡片保持同色：未启用彩色笔记时，主界面卡片底色
-      // 是「surfaceContainerHighest 叠加 14% 品牌主色」（NotesColor.neutralCardColor），
-      // 这里复用同一来源，视觉上与主页一致且跟随主题色计算。
-      backgroundColor: NotesColor.neutralCardColor(context),
-      border: ShadBorder.all(color: theme.colorScheme.border, width: 1),
-      radius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Icon(Icons.delete_outline, color: Colors.grey),
+      backgroundColor: backgroundColor,
+      border: ShadBorder.none,
+      radius: BorderRadius.circular(AppShape.cardRadius),
+      // 与主界面卡片一致：关闭默认 lg 阴影，扁平化。
+      shadows: const [],
+      padding: AppSpace.cardPadding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.title.isEmpty ? '(Untitled)'.tr() : note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.title.copyWith(
+                    color: fontColor,
+                    // 保留删除线，标识已删除状态。
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xs),
+                Text(
+                  'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
+                  style: AppText.caption.copyWith(color: fontColor),
+                ),
+                const SizedBox(height: AppSpace.sm),
+                Text(
+                  note.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body.copyWith(color: fontColor),
+                ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    note.title.isEmpty ? '(Untitled)'.tr() : note.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                    ),
-                  ),
-                  Text(
-                    note.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(width: AppSpace.xs),
+          ShadPopover(
+            controller: _menuController,
+            child: ShadIconButton.raw(
+              variant: ShadButtonVariant.ghost,
+              icon: Icon(Icons.more_vert, color: fontColor),
+              onPressed: () => _menuController.toggle(),
             ),
-            const SizedBox(width: 4),
-            ShadPopover(
-              controller: _menuController,
-              child: ShadIconButton.raw(
-                variant: ShadButtonVariant.ghost,
-                icon: const Icon(Icons.more_vert),
-                onPressed: () => _menuController.toggle(),
-              ),
-              popover: (context) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _menuRow(
-                    icon: Icons.restore,
-                    label: 'Restore'.tr(),
-                    onTap: () {
-                      _menuController.hide();
-                      widget.onRestore();
-                    },
-                  ),
-                  _menuRow(
-                    icon: Icons.delete_forever,
-                    label: 'Permanently Delete'.tr(),
-                    destructive: true,
-                    onTap: () {
-                      _menuController.hide();
-                      _confirmPermanentDelete(context);
-                    },
-                  ),
-                ],
-              ),
+            popover: (context) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _menuRow(
+                  icon: Icons.restore,
+                  label: 'Restore'.tr(),
+                  onTap: () {
+                    _menuController.hide();
+                    widget.onRestore();
+                  },
+                ),
+                _menuRow(
+                  icon: Icons.delete_forever,
+                  label: 'Permanently Delete'.tr(),
+                  destructive: true,
+                  onTap: () {
+                    _menuController.hide();
+                    _confirmPermanentDelete(context);
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
       // 注意：刻意不绑定 onTap —— 点击整条 item 直接恢复容易误操作，
       // 恢复动作只保留在右上角更多菜单（Restore）中。
