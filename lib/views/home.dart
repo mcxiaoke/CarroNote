@@ -516,7 +516,16 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _addANewNoteButton(BuildContext context) {
-    return FloatingActionButton(
+    // 原 FloatingActionButton 替换为 ShadButton：56×56 圆形悬浮，保持新建入口外观。
+    return ShadButton(
+      width: 56,
+      height: 56,
+      padding: EdgeInsets.zero,
+      decoration: ShadDecoration(
+        border: ShadBorder.all(
+          radius: const BorderRadius.all(Radius.circular(28)),
+        ),
+      ),
       child: const Icon(Icons.add),
       onPressed: () async {
         Log.ui.i('界面切换: 主界面 → 新建笔记(/addnote)');

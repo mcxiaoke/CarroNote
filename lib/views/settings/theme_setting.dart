@@ -28,18 +28,24 @@ import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 void showThemeBottomSheet(BuildContext context) {
-  showModalBottomSheet(
+  showShadSheet(
     context: context,
-    // 背景色不在此固定：若取打开时的旧主题色，切明暗时弹层背景会停在原色。
-    // 改为内容根 Material 跟随当前主题动态着色（见 ThemeBottomSheet.build）。
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    // 桌面端弹窗宽度跟随内容居中，避免在宽窗口上被拉成一条横带。
-    constraints: const BoxConstraints(maxWidth: kDialogMaxWidthWide),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    side: ShadSheetSide.bottom,
+    builder: (context) => ShadSheet(
+      // 内容自绘（ThemeBottomSheet 自带背景/抓手/圆角），关闭 ShadDialog
+      // 默认的 padding 与边框装饰，避免双层留白。
+      padding: EdgeInsets.zero,
+      backgroundColor: Colors.transparent,
+      border: Border.all(color: Colors.transparent),
+      radius: const BorderRadius.vertical(top: Radius.circular(16)),
+      // 桌面端弹窗宽度跟随内容居中，避免在宽窗口上被拉成一条横带。
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: kDialogMaxWidthWide),
+          child: const ThemeBottomSheet(),
+        ),
+      ),
     ),
-    builder: (context) => const ThemeBottomSheet(),
   );
 }
 

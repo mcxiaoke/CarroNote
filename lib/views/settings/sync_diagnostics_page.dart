@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/src/logger/log_webserver.dart';
@@ -44,40 +45,14 @@ class SyncDiagnosticsPage extends StatefulWidget {
   State<SyncDiagnosticsPage> createState() => _SyncDiagnosticsPageState();
 }
 
-class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 5, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    // 注意：Web 服务器为全局单例，离开页面不停止
-    // 只有用户手动停止或应用退出（SyncService.dispose）才关闭
-    super.dispose();
-  }
+class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
+  String _selectedTab = 'status';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Debug Panel'.tr(), style: appBarTitle),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: [
-            Tab(text: 'Status'.tr()),
-            Tab(text: 'Sync Results'.tr()),
-            Tab(text: 'Actions'.tr()),
-            Tab(text: 'Logs'.tr()),
-            Tab(text: 'Web Server'.tr()),
-          ],
-        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -86,14 +61,45 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _StatusTab(),
-          _SyncResultTab(),
-          _ActionsTab(),
-          _LogsTab(),
-          _WebServerTab(onUpdate: () => setState(() {})),
+      body: ShadTabs<String>(
+        value: _selectedTab,
+        onChanged: (value) => setState(() => _selectedTab = value),
+        scrollable: true,
+        gap: 8,
+        // 与原 TabBarView 一致：非激活 tab 不常驻构建（避免日志 tab 在
+        // Offstage 未布局时提前 initState 触发未就绪的滚动，导致崩溃）。
+        maintainState: false,
+        tabs: [
+          ShadTab<String>(
+            value: 'status',
+            expandContent: true,
+            content: _StatusTab(),
+            child: Text('Status'.tr()),
+          ),
+          ShadTab<String>(
+            value: 'sync',
+            expandContent: true,
+            content: _SyncResultTab(),
+            child: Text('Sync Results'.tr()),
+          ),
+          ShadTab<String>(
+            value: 'actions',
+            expandContent: true,
+            content: _ActionsTab(),
+            child: Text('Actions'.tr()),
+          ),
+          ShadTab<String>(
+            value: 'logs',
+            expandContent: true,
+            content: _LogsTab(),
+            child: Text('Logs'.tr()),
+          ),
+          ShadTab<String>(
+            value: 'web',
+            expandContent: true,
+            content: _WebServerTab(onUpdate: () => setState(() {})),
+            child: Text('Web Server'.tr()),
+          ),
         ],
       ),
     );
@@ -186,9 +192,10 @@ class _StatusTab extends StatelessWidget {
           _KV('Memory Buffer Entries'.tr(), snapshot.logBufferCount.toString()),
         ]),
         const SizedBox(height: 16),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.download),
-          label: Text('Export Diagnostics + Logs'.tr()),
+        ShadButton.raw(
+          variant: ShadButtonVariant.outline,
+          leading: const Icon(Icons.download),
+          child: Text('Export Diagnostics + Logs'.tr()),
           onPressed: () => _exportLogs(context),
         ),
       ],
@@ -531,48 +538,71 @@ class _ActionsTab extends StatelessWidget {
       icon = Icons.info;
     }
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ExpansionTile(
-        leading: Icon(icon, color: color),
-        title: Text(
-          action.type,
-          style: TextStyle(fontWeight: FontWeight.bold, color: color),
-        ),
-        subtitle: Text(
-          action.uuid.isNotEmpty
-              ? 'uuid: ${action.uuid}'
-              : action.message ?? '',
-          style: const TextStyle(fontSize: 12),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (action.uuid.isNotEmpty) _buildDetail('UUID', action.uuid),
-                if (action.hash != null) _buildDetail('Hash', action.hash!),
-                if (action.message != null)
-                  _buildDetail('Message'.tr(), action.message!),
-                if (action.errorLabel != null)
-                  _buildDetail(
-                    'Error Type'.tr(),
-                    action.errorLabel!,
-                    color: Colors.red,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ShadCard(
+        padding: EdgeInsets.zero,
+        child: ShadAccordion<String>(
+          children: [
+            ShadAccordionItem<String>(
+              value: action.uuid,
+              separator: const SizedBox.shrink(),
+              title: Row(
+                children: [
+                  Icon(icon, color: color),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          action.type,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                        Text(
+                          action.uuid.isNotEmpty
+                              ? 'uuid: ${action.uuid}'
+                              : action.message ?? '',
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                if (action.errorDisplay != null)
-                  _buildDetail(
-                    'Error Details'.tr(),
-                    action.errorDisplay!,
-                    color: Colors.red,
-                  ),
-              ],
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (action.uuid.isNotEmpty)
+                      _buildDetail('UUID', action.uuid),
+                    if (action.hash != null) _buildDetail('Hash', action.hash!),
+                    if (action.message != null)
+                      _buildDetail('Message'.tr(), action.message!),
+                    if (action.errorLabel != null)
+                      _buildDetail(
+                        'Error Type'.tr(),
+                        action.errorLabel!,
+                        color: Colors.red,
+                      ),
+                    if (action.errorDisplay != null)
+                      _buildDetail(
+                        'Error Details'.tr(),
+                        action.errorDisplay!,
+                        color: Colors.red,
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -615,6 +645,7 @@ class _LogsTabState extends State<_LogsTab> {
   final List<AppLogEntry> _entries = [];
   StreamSubscription<AppLogEntry>? _sub;
   final ScrollController _scrollController = ScrollController();
+  final ShadPopoverController _levelFilterController = ShadPopoverController();
   bool _autoScroll = true;
 
   // 级别过滤
@@ -644,7 +675,10 @@ class _LogsTabState extends State<_LogsTab> {
         });
         if (_autoScroll) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scrollController.hasClients) {
+            // hasContentDimensions：滚动视图完成首次布局后才有内容尺寸；
+            // 未布局（如 Offstage）时 maxScrollExtent 为 null，直接跳过。
+            if (_scrollController.hasClients &&
+                _scrollController.position.hasContentDimensions) {
               _scrollController.jumpTo(
                 _scrollController.position.maxScrollExtent,
               );
@@ -659,6 +693,7 @@ class _LogsTabState extends State<_LogsTab> {
   void dispose() {
     _sub?.cancel();
     _scrollController.dispose();
+    _levelFilterController.dispose();
     super.dispose();
   }
 
@@ -683,32 +718,46 @@ class _LogsTabState extends State<_LogsTab> {
           child: Row(
             children: [
               // 级别过滤按钮
-              PopupMenuButton<AppLogLevel>(
-                icon: const Icon(Icons.filter_list, size: 20),
-                tooltip: 'Level Filter'.tr(),
-                onSelected: (level) {
-                  setState(() {
-                    _levelFilter[level] = !(_levelFilter[level] ?? true);
-                  });
-                },
-                itemBuilder: (context) => AppLogLevel.values.map((level) {
-                  final enabled = _levelFilter[level] ?? true;
-                  return PopupMenuItem(
-                    value: level,
-                    child: Row(
-                      children: [
-                        Icon(
-                          enabled
-                              ? Icons.check_box
-                              : Icons.check_box_outline_blank,
-                          size: 18,
+              ShadPopover(
+                controller: _levelFilterController,
+                child: Tooltip(
+                  message: 'Level Filter'.tr(),
+                  child: ShadIconButton.raw(
+                    variant: ShadButtonVariant.ghost,
+                    icon: const Icon(Icons.filter_list, size: 20),
+                    onPressed: () => _levelFilterController.toggle(),
+                  ),
+                ),
+                popover: (context) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final level in AppLogLevel.values)
+                      InkWell(
+                        onTap: () => setState(() {
+                          _levelFilter[level] = !(_levelFilter[level] ?? true);
+                        }),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                (_levelFilter[level] ?? true)
+                                    ? Icons.check_box
+                                    : Icons.check_box_outline_blank,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(_levelName(level)),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(_levelName(level)),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                      ),
+                  ],
+                ),
               ),
               // 自动滚动
               IconButton(
@@ -1010,16 +1059,16 @@ class _WebServerTabState extends State<_WebServerTab> {
         ),
         const SizedBox(height: 16),
         // 启动/停止按钮
-        FilledButton.icon(
+        ShadButton(
           onPressed: _isStarting ? null : _toggleServer,
-          icon: _isStarting
+          leading: _isStarting
               ? const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Icon(isRunning ? Icons.stop : Icons.play_arrow),
-          label: Text(isRunning ? 'Stop'.tr() : 'Start'.tr()),
+          child: Text(isRunning ? 'Stop'.tr() : 'Start'.tr()),
         ),
         const SizedBox(height: 16),
         // 安全提示

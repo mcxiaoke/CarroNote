@@ -220,7 +220,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 }
 
 /// 单条已删除笔记的列表项
-class _DeletedNoteTile extends StatelessWidget {
+class _DeletedNoteTile extends StatefulWidget {
   final SafeNote note;
   final VoidCallback onRestore;
   final VoidCallback onPermanentDelete;
@@ -232,8 +232,22 @@ class _DeletedNoteTile extends StatelessWidget {
   });
 
   @override
+  State<_DeletedNoteTile> createState() => _DeletedNoteTileState();
+}
+
+class _DeletedNoteTileState extends State<_DeletedNoteTile> {
+  final ShadPopoverController _menuController = ShadPopoverController();
+
+  @override
+  void dispose() {
+    _menuController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final note = widget.note;
     final deletedTime = DateTime.fromMillisecondsSinceEpoch(note.updatedAt);
     final timeStr =
         '${deletedTime.month}/${deletedTime.day} '
@@ -245,71 +259,106 @@ class _DeletedNoteTile extends StatelessWidget {
       backgroundColor: theme.colorScheme.muted,
       border: ShadBorder.all(color: theme.colorScheme.border, width: 1),
       radius: BorderRadius.circular(12),
-      child: ListTile(
-        leading: const Icon(Icons.delete_outline, color: Colors.grey),
-        title: Text(
-          note.title.isEmpty ? '(Untitled)'.tr() : note.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(decoration: TextDecoration.lineThrough),
-        ),
-        subtitle: Column(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              note.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(Icons.delete_outline, color: Colors.grey),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    note.title.isEmpty ? '(Untitled)'.tr() : note.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                  Text(
+                    note.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Deleted at {time}'.tr(namedArgs: {'time': timeStr}),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            ShadPopover(
+              controller: _menuController,
+              child: ShadIconButton.raw(
+                variant: ShadButtonVariant.ghost,
+                icon: const Icon(Icons.more_vert),
+                onPressed: () => _menuController.toggle(),
+              ),
+              popover: (context) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _menuRow(
+                    icon: Icons.restore,
+                    label: 'Restore'.tr(),
+                    onTap: () {
+                      _menuController.hide();
+                      widget.onRestore();
+                    },
+                  ),
+                  _menuRow(
+                    icon: Icons.delete_forever,
+                    label: 'Permanently Delete'.tr(),
+                    destructive: true,
+                    onTap: () {
+                      _menuController.hide();
+                      _confirmPermanentDelete(context);
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-        trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert),
-          onSelected: (value) {
-            switch (value) {
-              case 'restore':
-                onRestore();
-                break;
-              case 'delete':
-                _confirmPermanentDelete(context);
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'restore',
-              child: ListTile(
-                leading: Icon(Icons.restore),
-                title: Text('Restore'.tr()),
-                dense: true,
-              ),
-            ),
-            PopupMenuItem(
-              value: 'delete',
-              child: ListTile(
-                leading: Icon(Icons.delete_forever, color: Colors.red),
-                title: Text(
-                  'Permanently Delete'.tr(),
-                  style: TextStyle(color: Colors.red),
-                ),
-                dense: true,
-              ),
-            ),
+      ),
+      // 注意：刻意不绑定 onTap —— 点击整条 item 直接恢复容易误操作，
+      // 恢复动作只保留在右上角更多菜单（Restore）中。
+    );
+  }
+
+  Widget _menuRow({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool destructive = false,
+  }) {
+    final color = destructive ? Colors.red : null;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 10),
+            Text(label, style: TextStyle(color: color)),
           ],
         ),
-        // 注意：刻意不绑定 onTap —— 点击整条 item 直接恢复容易误操作，
-        // 恢复动作只保留在右上角更多菜单（Restore）中。
       ),
     );
   }
 
   void _confirmPermanentDelete(BuildContext context) {
+    final note = widget.note;
     showDialog(
       context: context,
       builder: (context) => ShadDialog(
@@ -326,7 +375,7 @@ class _DeletedNoteTile extends StatelessWidget {
                 destructive: true,
                 onPressed: () {
                   Navigator.pop(context);
-                  onPermanentDelete();
+                  widget.onPermanentDelete();
                 },
               ),
             ],

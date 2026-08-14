@@ -609,7 +609,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
     return Container(
       alignment: Alignment.centerRight,
-      child: TextButton(
+      child: ShadButton.raw(
+        variant: ShadButtonVariant.link,
+        padding: EdgeInsets.zero,
         child: Text(
           cantRecoverPassphraseMsg,
           style: TextStyle(fontSize: fontSize),
