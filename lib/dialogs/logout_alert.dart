@@ -1,7 +1,10 @@
 // 闲置倒计时登出对话框。
 //
 // 按钮事件语义与 showAppConfirm 相反（这里 cancel→true 留页，confirm→false 登出），
-// 因此不直接复用 showAppConfirm，自己包一个 ShadDialog。
+// 因此不直接复用 showAppConfirm，自己包一个系统 M3 AlertDialog。
+//
+// 与 lib/widgets/app_dialogs.dart 保持一致：系统 showDialog + AlertDialog +
+// TextButton/FilledButton，宽屏最小 400 / 最大 560，窄屏系统自动收窄。
 
 // Dart imports:
 import 'dart:async';
@@ -11,18 +14,23 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
+
+/// 与 [app_dialogs.dart] 的 [_kAlertConstraints] 保持一致：
+/// 宽屏最小 400、最大 560（M3 AlertDialog 默认最大宽度）。
+const BoxConstraints _kLogOffConstraints = BoxConstraints(
+  minWidth: 400,
+  maxWidth: 560,
+);
 
 /// 闲置倒计时登出对话框：
 ///   - 返回 true = 用户取消倒计时（留在当前页）
 ///   - 返回 false = 倒计时结束自动登出 / 用户主动登出
 ///   - 返回 null = 对话框被异常关闭
 Future<bool?> preInactivityLogOffAlert(BuildContext context) {
-  return showAppDialog<bool>(
+  return showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (_) => const _LogOffDialog(),
@@ -69,27 +77,31 @@ class _LogOffDialogState extends State<_LogOffDialog> {
   @override
   Widget build(BuildContext context) {
     final cd = _counter.toString().padLeft(2, '0');
-    return ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
       title: Text('Logging Off'.tr()),
-      description: Text(
+      content: Text(
         'There was no user activity for quite a while. '
                 'You will be logged off unless you cancel within {countDownTime} seconds.'
             .tr(namedArgs: {'countDownTime': ' 00:$cd'}),
       ),
       actions: [
         // 取消 → 留页（返回 true）
-        ShadButton.outline(
+        TextButton(
           onPressed: () => _navigator?.pop(true),
           child: Text('Cancel'.tr()),
         ),
-        // 退出 → 登出（返回 false）
-        ShadButton.destructive(
+        // 退出 → 登出（返回 false），危险操作走 error 色
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+          ),
           onPressed: () => _navigator?.pop(false),
           child: Text('Logout'.tr()),
         ),
       ],
+      constraints: _kLogOffConstraints,
     );
   }
 }

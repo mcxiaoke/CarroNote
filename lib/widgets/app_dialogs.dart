@@ -1,4 +1,12 @@
-// 统一对话框模板：标准 ShadDialog.alert 的薄封装。
+// 统一对话框模板：基于 Flutter 系统 M3 AlertDialog 实现。
+//
+// 背景：shadcn_ui 的 ShadDialog 在移动端 title 上方会留大片空白
+// （shadcn flutter 布局 bug），因此标准 alert 模板全部改用系统 M3
+// AlertDialog：
+//   - 布局 / 间距 / 圆角 / 动画由 Material 3 规范保证，移动端不再出现
+//     标题上方大片空白；
+//   - 窄屏自动收窄（insetPadding + actions OverflowBar 自动竖排），
+//     宽屏最小宽度 400、最大宽度 M3 默认 560（见 [_kAlertConstraints]）。
 //
 // 用法（一行调用，对齐 shadcn 官方 alert 用法）：
 //   if (await showAppConfirm(context,
@@ -7,22 +15,38 @@
 //     confirmLabel: 'Select file'.tr(),
 //   )) { ... }
 //
-// 设计原则：**完全对齐 shadcn 官方标准用法，零自定义**。
-//   - 用 ShadDialog.alert 的 title / description / actions 三槽位
-//   - title = Text(...)，description = Text(...)，actions = [ShadButton...]
-//   - 图标、等宽按钮、自定义标题行等一律去掉
-//   - 按钮布局交给官方 Flex（桌面横排右对齐、移动竖排全宽）
+// 接口与旧版完全一致（函数签名 / 返回值不变），仅内部实现从 ShadDialog
+// 换成系统 AlertDialog。自定义复杂对话框（导出面板、登出倒计时等）不受影响。
 
 // Flutter imports:
 import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
+
+/// 标准 alert 对话框约束：宽屏下最小宽度 400，最大宽度用 M3 默认（560）。
+/// （AlertDialog 默认 minWidth 280 / maxWidth 560；这里把 minWidth 提到 400，
+/// 宽屏上对话框不再过窄，内容多的对话框可自然伸展到 560。）
+const BoxConstraints _kAlertConstraints = BoxConstraints(
+  minWidth: 400,
+  maxWidth: 560,
+);
+
+/// 打开 M3 AlertDialog 的通用入口（系统 showDialog）。
+Future<T?> _showM3Dialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  return showDialog<T>(
+    context: context,
+    barrierDismissible: barrierDismissible,
+    builder: builder,
+  );
+}
 
 // ────────────────────────────────────────────────
 // 高阶 API：5 类标准对话框
@@ -40,13 +64,11 @@ Future<bool?> showAppConfirm(
   String? cancelLabel,
   String? notice,
 }) {
-  return showAppDialog<bool>(
+  return _showM3Dialog<bool>(
     context: context,
-    builder: (ctx) => ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
+    builder: (ctx) => AlertDialog(
       title: Text(title),
-      description: notice == null
+      content: notice == null
           ? Text(message)
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -57,22 +79,23 @@ Future<bool?> showAppConfirm(
                 Text(
                   notice,
                   style: TextStyle(
-                    color: ShadTheme.of(ctx).colorScheme.destructive,
+                    color: Theme.of(ctx).colorScheme.error,
                     fontSize: 12,
                   ),
                 ),
               ],
             ),
       actions: [
-        ShadButton.outline(
+        TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
           child: Text(cancelLabel ?? 'Cancel'.tr()),
         ),
-        ShadButton(
+        FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(confirmLabel ?? 'OK'.tr()),
         ),
       ],
+      constraints: _kAlertConstraints,
     ),
   );
 }
@@ -87,24 +110,30 @@ Future<bool?> showAppDestructive(
   String? confirmLabel,
   String? cancelLabel,
 }) {
-  return showAppDialog<bool>(
+  return _showM3Dialog<bool>(
     context: context,
-    builder: (ctx) => ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
-      title: Text(title),
-      description: Text(message),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text(cancelLabel ?? 'Cancel'.tr()),
-        ),
-        ShadButton.destructive(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text(confirmLabel ?? 'Delete'.tr()),
-        ),
-      ],
-    ),
+    builder: (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
+      return AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(cancelLabel ?? 'Cancel'.tr()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(confirmLabel ?? 'Delete'.tr()),
+          ),
+        ],
+        constraints: _kAlertConstraints,
+      );
+    },
   );
 }
 
@@ -116,20 +145,19 @@ Future<void> showAppInfo(
   required String title,
   required String message,
   String? okLabel,
-}) {
-  return showAppDialog(
+}) async {
+  await _showM3Dialog<void>(
     context: context,
-    builder: (ctx) => ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
+    builder: (ctx) => AlertDialog(
       title: title.isEmpty ? null : Text(title),
-      description: Text(message),
+      content: Text(message),
       actions: [
-        ShadButton(
+        FilledButton(
           onPressed: () => Navigator.of(ctx).pop(),
           child: Text(okLabel ?? 'OK'.tr()),
         ),
       ],
+      constraints: _kAlertConstraints,
     ),
   );
 }
@@ -148,7 +176,7 @@ Future<String?> showAppPassword(
   String? errorText,
   bool obscureByDefault = true,
 }) {
-  return showAppDialog<String>(
+  return _showM3Dialog<String>(
     context: context,
     builder: (ctx) => _PasswordDialog(
       title: title,
@@ -165,8 +193,8 @@ Future<String?> showAppPassword(
 /// 三选项对话框：典型场景是「未保存的更改 → 保存 / 放弃 / 取消」。
 ///
 /// 返回 `AppThreeWayResult.cancel | discard | confirm`。
-/// 按钮：取消=outline（最轻），放弃=outline+destructive 文字（中），
-/// 确认=primary（最重）。
+/// 按钮：取消=TextButton（最轻），放弃=TextButton+error 文字（中），
+/// 确认=FilledButton（最重）。
 Future<AppThreeWayResult?> showAppThreeWay(
   BuildContext context, {
   required String title,
@@ -175,34 +203,33 @@ Future<AppThreeWayResult?> showAppThreeWay(
   required String discardLabel,
   String? cancelLabel,
 }) {
-  return showAppDialog<AppThreeWayResult>(
+  return _showM3Dialog<AppThreeWayResult>(
     context: context,
     builder: (ctx) {
-      final theme = ShadTheme.of(ctx);
-      return ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
+      final scheme = Theme.of(ctx).colorScheme;
+      return AlertDialog(
         title: Text(title),
-        description: Text(message),
+        content: Text(message),
         actions: [
-          ShadButton.outline(
+          TextButton(
             onPressed: () =>
                 Navigator.of(ctx).pop(AppThreeWayResult.cancel),
             child: Text(cancelLabel ?? 'Cancel'.tr()),
           ),
-          // 放弃：outline + destructive 文字色（有边框可见，权重介于取消与保存之间）
-          ShadButton.outline(
-            foregroundColor: theme.colorScheme.destructive,
+          // 放弃：TextButton + error 文字色（有可见文字，权重介于取消与保存之间）
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: scheme.error),
             onPressed: () =>
                 Navigator.of(ctx).pop(AppThreeWayResult.discard),
             child: Text(discardLabel),
           ),
-          ShadButton(
+          FilledButton(
             onPressed: () =>
                 Navigator.of(ctx).pop(AppThreeWayResult.confirm),
             child: Text(confirmLabel),
           ),
         ],
+        constraints: _kAlertConstraints,
       );
     },
   );
@@ -253,12 +280,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return ShadDialog.alert(
-      scrollable: false,
-      padding: EdgeInsets.zero,
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
       title: Text(widget.title),
-      description: Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -267,41 +292,40 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             const SizedBox(height: 8),
             Text(
               widget.errorText!,
-              style: TextStyle(
-                color: theme.colorScheme.destructive,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: scheme.error, fontSize: 13),
             ),
           ],
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            obscureText: _hidden,
+            decoration: InputDecoration(
+              labelText: widget.placeholder ?? 'Passphrase'.tr(),
+              prefixIcon: const Icon(Icons.lock, size: kInputIconSize),
+              suffixIcon: kInputIconButton(
+                icon: Icon(
+                  _hidden ? Icons.visibility : Icons.visibility_off,
+                  size: kInputIconSize,
+                ),
+                onPressed: () => setState(() => _hidden = !_hidden),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
         ],
       ),
       actions: [
-        ShadButton.outline(
+        TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(widget.cancelLabel ?? 'Cancel'.tr()),
         ),
-        ShadButton(
+        FilledButton(
           onPressed: _submit,
           child: Text(widget.confirmLabel ?? 'Submit'.tr()),
         ),
       ],
-      child: ShadInput(
-        controller: _ctrl,
-        autofocus: true,
-        obscureText: _hidden,
-        enableIMEPersonalizedLearning: false,
-        placeholder: Text(widget.placeholder ?? 'Passphrase'.tr()),
-        padding: kInputPadding,
-        leading: const Icon(Icons.lock, size: kInputIconSize),
-        trailing: kInputIconButton(
-          icon: Icon(
-            _hidden ? Icons.visibility : Icons.visibility_off,
-            size: kInputIconSize,
-          ),
-          onPressed: () => setState(() => _hidden = !_hidden),
-        ),
-        onSubmitted: (_) => _submit(),
-      ),
+      constraints: _kAlertConstraints,
     );
   }
 }

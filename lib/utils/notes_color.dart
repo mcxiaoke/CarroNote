@@ -62,6 +62,12 @@ class NotesColor extends ChangeNotifier {
     );
   }
 
+  /// 未启用彩色笔记时的卡片底色（公开入口，供回收站等非笔记列表复用）。
+  ///
+  /// 与主界面卡片未选择彩色时的颜色完全一致，跟随当前主题 seed 色计算。
+  static Color neutralCardColor(BuildContext context) =>
+      _neutralCardColor(context);
+
   void toggleColor() {
     PreferencesStorage.setIsColorful(!PreferencesStorage.isColorful);
     notifyListeners();

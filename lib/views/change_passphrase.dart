@@ -29,6 +29,7 @@ import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 class ChangePassphrase extends StatefulWidget {
@@ -303,6 +304,19 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     if (isFormValid) {
       // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
       final navigator = Navigator.of(context);
+
+      // 二次确认：表单校验通过后弹确认框，避免用户误触「确认」按钮直接改密码
+      final confirmed = await showAppConfirm(
+        context,
+        title: 'Change Passphrase'.tr(),
+        message: 'Are you sure you want to change your passphrase?'.tr(),
+        confirmLabel: 'Confirm'.tr(),
+        cancelLabel: 'Cancel'.tr(),
+      );
+      if (confirmed != true) {
+        Log.auth.i('改密码中止：用户未确认二次确认框');
+        return;
+      }
 
       final oldPassword = _oldPassphraseController.text;
       final newPassword = _newConfirmPassphraseController.text;

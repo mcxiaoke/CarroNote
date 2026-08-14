@@ -19,6 +19,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
@@ -232,9 +233,10 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
         '${deletedTime.hour}:${deletedTime.minute.toString().padLeft(2, '0')}';
 
     return ShadCard(
-      // 回收站卡片与页面背景区分：主题色板中 background == card（ShadSlate），
-      // 直接包 Card 会让卡片与背景"融在一起"，故改用 muted 底色 + 边框勾勒。
-      backgroundColor: theme.colorScheme.muted,
+      // 回收站卡片与主界面卡片保持同色：未启用彩色笔记时，主界面卡片底色
+      // 是「surfaceContainerHighest 叠加 14% 品牌主色」（NotesColor.neutralCardColor），
+      // 这里复用同一来源，视觉上与主页一致且跟随主题色计算。
+      backgroundColor: NotesColor.neutralCardColor(context),
       border: ShadBorder.all(color: theme.colorScheme.border, width: 1),
       radius: BorderRadius.circular(12),
       child: Padding(
