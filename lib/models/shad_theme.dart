@@ -1,7 +1,7 @@
 // 将 shadcn_ui 的 ShadTheme 对接到 Safenotes 的动态品牌色（seed 色库）。
 //
-// 只作用于 ShadXxx 组件；旧 Material 页面仍由 FlexColorScheme 生成的 ThemeData 主题化。
-// 两套设计系统通过 ShadApp.custom 并存，互不干扰。
+// 只作用于 ShadXxx 组件；旧 Material 页面仍由 M3 ColorScheme.fromSeed 生成的 ThemeData 主题化。
+// 两套设计系统通过 ShadApp 并存，互不干扰。
 //
 // 品牌色由 ThemeProvider.seedColor 动态传入：FCS 与 Shad 必须同步换色，
 // 否则会出现「按钮是新色、列表卡片是旧色」的割裂。

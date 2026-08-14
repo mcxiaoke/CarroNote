@@ -764,7 +764,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     if (_supportState == _BiometricState.unsupported) {
       showGenericDialog(
         context: context,
-        icon: Icons.error_outline,
         message:
             "No biometrics found. Go to your device settings to enroll your biometric."
                 .tr(),
@@ -772,7 +771,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     } else if (forcePassphraseInput) {
       showGenericDialog(
         context: context,
-        icon: Icons.info_outline,
         message:
             "Still remember your passphrase? Use passphrase to login this time."
                 .tr(),

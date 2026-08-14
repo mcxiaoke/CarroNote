@@ -10,14 +10,15 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
 
-/// 统一弹窗约束：固定宽度 440（min=max，窄屏自动收窄到可用宽度）、最小高度 160。
+/// 统一弹窗约束：固定宽度 440（min=max，窄屏自动收窄到可用宽度）。
 ///
 /// minWidth=maxWidth=440 让短内容的对话框（删除/永久删除等）不再缩到文字那么窄；
 /// 在窄屏上 ConstrainedBox 会把 440 clamp 到「屏幕宽 − 两侧 margin」，不会溢出。
+/// 不再设 minHeight：让高度完全自适应内容（设 minHeight 会导致短对话框底部
+/// 出现大段空白，actions 贴底但离内容很远）。
 const BoxConstraints kAppDialogConstraints = BoxConstraints(
   minWidth: kDialogMaxWidth,
   maxWidth: kDialogMaxWidth,
-  minHeight: 160,
 );
 
 /// 统一弹窗展示入口，替代「Flutter showDialog 包 ShadDialog」。

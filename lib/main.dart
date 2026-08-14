@@ -390,7 +390,6 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     if (showLogoutMsg) {
       showGenericDialog(
         context: context,
-        icon: Icons.info_outline,
         message:
             "You were logged out due to extended inactivity. This is to protect your privacy."
                 .tr(),

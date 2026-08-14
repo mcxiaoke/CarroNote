@@ -55,36 +55,28 @@ class App extends StatelessWidget {
         // 动态品牌色：seed 来自 ThemeProvider，换色时 notifyListeners 触发全局重建。
         final seed = themeProvider.seedColor;
 
-        // ShadApp.custom 同时提供 ShadTheme(给 ShadXxx 组件) 与内部 MaterialApp
-        // (给现有 Material 页面，沿用 FlexColorScheme 主题)。两套设计系统并存，
-        // 旧页面零改动即可继续工作，新页面逐步采用 Shad 组件。
-        return ShadApp.custom(
+        // 改用 ShadApp 默认构造（替代 ShadApp.custom + 内嵌 MaterialApp）：
+        // 由 ShadApp 直接提供 ShadTheme 与内部 WidgetsApp，Material 主题
+        // 通过 materialThemeBuilder 保持 AppThemes（M3 ColorScheme.fromSeed）配置。
+        return ShadApp(
           themeMode: themeProvider.themeMode,
           theme: ShadThemes.build(seed, Brightness.light),
           darkTheme: ShadThemes.build(seed, Brightness.dark),
-          appBuilder: (context) {
-            return MaterialApp(
-              debugShowCheckedModeBanner: false,
-              navigatorKey: navigatorKey,
-              navigatorObservers: [routeObserver],
-              initialRoute: '/',
-              onGenerateRoute: RouteGenerator.generateRoute,
-              title: SafeNotesConfig.appName,
-              themeMode: themeProvider.themeMode,
-              theme: AppThemes.light(seed),
-              darkTheme: AppThemes.dark(seed),
-              scrollBehavior: const AppScrollBehavior(),
-              localizationsDelegates: context.localizationDelegates,
-              supportedLocales: context.supportedLocales,
-              locale: context.locale,
-              // P2-3：ShadApp.custom 不自动包裹 ShadSonner（仅 ShadApp 默认构造
-              // 传 child 时才包）。用 MaterialApp.builder 把 ShadSonner 放在
-              // Navigator 之上：既能继承 MaterialApp 提供的 Directionality/
-              // Localizations，又让 ShadToast 覆盖所有路由页面。
-              builder: (context, child) => ShadSonner(child: child!),
-              home: AuthWall(sessionStateStream: sessionStateStream),
-            );
-          },
+          // Material 主题仍走 AppThemes（M3 ColorScheme.fromSeed 色板），brightness 由 ShadApp 传入
+          materialThemeBuilder: (context, mTheme) =>
+              AppThemes.build(seed, mTheme.brightness),
+          navigatorKey: navigatorKey,
+          navigatorObservers: [routeObserver],
+          initialRoute: '/',
+          onGenerateRoute: RouteGenerator.generateRoute,
+          title: SafeNotesConfig.appName,
+          scrollBehavior: const AppScrollBehavior(),
+          localizationsDelegates: context.localizationDelegates,
+          supportedLocales: context.supportedLocales,
+          locale: context.locale,
+          // ShadSonner 放到 Navigator 之上（同原 MaterialApp.builder 的用途）
+          builder: (context, child) => ShadSonner(child: child!),
+          home: AuthWall(sessionStateStream: sessionStateStream),
         );
       },
     );

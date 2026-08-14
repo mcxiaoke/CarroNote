@@ -31,11 +31,10 @@ import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/url_launcher.dart';
+import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_widget.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
 
-/// 未保存退出弹框的三种选择。
-enum UnsavedAction { save, discard, cancel }
+/// 未保存退出弹框的三种选择：保存 / 放弃 / 取消。
 
 class AddEditNotePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -121,10 +120,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       return;
     }
     // 存在未保存改动：让用户选择 保存 / 放弃 / 取消。
-    final UnsavedAction? action = await _showUnsavedDialog();
+    final AppThreeWayResult? action = await _showUnsavedDialog();
     if (!mounted) return;
-    if (action == null || action == UnsavedAction.cancel) return; // 留在本页
-    if (action == UnsavedAction.save) {
+    if (action == null || action == AppThreeWayResult.cancel) return; // 留在本页
+    if (action == AppThreeWayResult.confirm) {
       Log.note.i('退出编辑页前用户选择保存: uuid=${widget.note?.uuid ?? "(新建)"}');
       await NoteEditorState().addOrUpdateNote();
     }
@@ -141,35 +140,14 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<UnsavedAction?> _showUnsavedDialog() {
-    return showAppDialog<UnsavedAction>(
-      context: context,
-      builder: (BuildContext ctx) {
-        return ShadDialog(
-          constraints: kAppDialogConstraints,
-          title: Text('Unsaved changes'.tr()),
-          actions: [
-            shadDialogActionBar(
-              actions: [
-                ShadDialogAction(
-                  label: 'Cancel'.tr(),
-                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.cancel),
-                ),
-                ShadDialogAction(
-                  label: 'Discard'.tr(),
-                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.discard),
-                ),
-                ShadDialogAction(
-                  label: 'Save'.tr(),
-                  primary: true,
-                  onPressed: () => Navigator.of(ctx).pop(UnsavedAction.save),
-                ),
-              ],
-            ),
-          ],
-          child: Text('You have unsaved changes. Save before leaving?'.tr()),
-        );
-      },
+  Future<AppThreeWayResult?> _showUnsavedDialog() {
+    return showAppThreeWay(
+      context,
+      title: 'Unsaved changes'.tr(),
+      message: 'You have unsaved changes. Save before leaving?'.tr(),
+      confirmLabel: 'Save'.tr(),
+      discardLabel: 'Discard'.tr(),
+      cancelLabel: 'Cancel'.tr(),
     );
   }
 
@@ -211,27 +189,20 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           '用户点击删除笔记(编辑页), 弹出确认对话框 '
           'uuid=${widget.note!.uuid}',
         );
-        await showAppDialog(
+        await showDeleteConfirmation(
           context: context,
-          barrierDismissible: true,
-          builder: (BuildContext contextChild) {
-            return DeleteConfirmationDialog(
-              callback: () async {
-                // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
-                setState(() => _isDeleting = true);
-                final childNavigator = Navigator.of(contextChild);
-                Log.note.i(
-                  '用户确认删除笔记(移入回收站): '
-                  'uuid=${widget.note!.uuid} id=${widget.note!.id}',
-                );
-                await NotesDatabase.instance.softDelete(widget.note!.id!);
-                // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
-                Log.sync.d('笔记软删除后触发自动同步');
-                SyncService.instance.autoSync();
-                childNavigator.pop();
-                await _closePage();
-              },
+          onConfirm: () async {
+            // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
+            setState(() => _isDeleting = true);
+            Log.note.i(
+              '用户确认删除笔记(移入回收站): '
+              'uuid=${widget.note!.uuid} id=${widget.note!.id}',
             );
+            await NotesDatabase.instance.softDelete(widget.note!.id!);
+            // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
+            Log.sync.d('笔记软删除后触发自动同步');
+            SyncService.instance.autoSync();
+            await _closePage();
           },
         );
       },

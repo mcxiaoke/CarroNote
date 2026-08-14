@@ -21,7 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
+import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/states.dart';
 
 // Package 瀵煎叆
@@ -146,38 +146,22 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   void _confirmClearAll() {
     Log.ui.i('用户请求清空回收站, 待确认条数=${_deletedNotes.length}');
-    showAppDialog(
-      context: context,
-      builder: (context) => ShadDialog(
-        constraints: kAppDialogConstraints,
-        title: Text('Clear All Deleted Notes'.tr()),
-        actions: [
-          shadDialogActionBar(
-            actions: [
-              ShadDialogAction(
-                label: 'Cancel'.tr(),
-                onPressed: () {
-                  Log.ui.i('用户取消清空回收站');
-                  Navigator.pop(context);
-                },
-              ),
-              ShadDialogAction(
-                label: 'Permanently Delete'.tr(),
-                destructive: true,
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await _clearAll();
-                },
-              ),
-            ],
-          ),
-        ],
-        child: Text(
+    showAppDestructive(
+      context,
+      title: 'Clear All Deleted Notes'.tr(),
+      message:
           'This will permanently delete {count} notes. This action cannot be undone.\n\nNote: tombstones in the remote manifest remain; these notes may be re-synced from remote on the next sync.\nTo truly clean remote tombstones, wait for the "expired tombstone cleanup" feature.'
               .tr(namedArgs: {'count': '${_deletedNotes.length}'}),
-        ),
-      ),
-    );
+      confirmLabel: 'Permanently Delete'.tr(),
+      cancelLabel: 'Cancel'.tr(),
+    ).then((ok) {
+      if (ok == true) {
+        Log.ui.i('用户确认清空回收站');
+        _clearAll();
+      } else {
+        Log.ui.i('用户取消清空回收站');
+      }
+    });
   }
 
   Future<void> _clearAll() async {
@@ -356,37 +340,18 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
 
   void _confirmPermanentDelete(BuildContext context) {
     final note = widget.note;
-    showAppDialog(
-      context: context,
-      builder: (context) => ShadDialog(
-        constraints: kAppDialogConstraints,
-        title: Text('Permanently Delete'.tr()),
-        actions: [
-          shadDialogActionBar(
-            actions: [
-              ShadDialogAction(
-                label: 'Cancel'.tr(),
-                onPressed: () => Navigator.pop(context),
-              ),
-              ShadDialogAction(
-                label: 'Permanently Delete'.tr(),
-                destructive: true,
-                onPressed: () {
-                  Navigator.pop(context);
-                  widget.onPermanentDelete();
-                },
-              ),
-            ],
-          ),
-        ],
-        child: Text(
-          'Permanently delete "{title}"? This cannot be undone.'.tr(
-            namedArgs: {
-              'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title,
-            },
-          ),
-        ),
+    showAppDestructive(
+      context,
+      title: 'Permanently Delete'.tr(),
+      message: 'Permanently delete "{title}"? This cannot be undone.'.tr(
+        namedArgs: {
+          'title': note.title.isEmpty ? '(Untitled)'.tr() : note.title,
+        },
       ),
-    );
+      confirmLabel: 'Permanently Delete'.tr(),
+      cancelLabel: 'Cancel'.tr(),
+    ).then((ok) {
+      if (ok == true) widget.onPermanentDelete();
+    });
   }
 }

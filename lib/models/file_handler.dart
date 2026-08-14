@@ -33,7 +33,6 @@ import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/widgets/shad_dialog.dart';
 
 class FileHandler {
   /// 备份导出数据源：笔记 JSON 数组（明文/加密两条路径共用，内容零差异）
@@ -212,14 +211,13 @@ class FileHandler {
     // 2) 弹输入框，解密失败带错误提示重开
     String? errorText;
     while (true) {
-      // TODO: refactor without using BuildContexts across async gap
-      final String? entered = context.mounted
-          ? await showAppDialog<String>(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => BackupPasswordInputDialog(errorText: errorText),
-            )
-          : null;
+      if (!context.mounted) {
+        return (records: const [], cancelled: true);
+      }
+      final String? entered = await showBackupPasswordDialog(
+        context: context,
+        errorText: errorText,
+      );
       if (entered == null) {
         return (records: const [], cancelled: true);
       }
@@ -240,13 +238,12 @@ class FileHandler {
     int totalNotes, {
     String? notice,
   }) async {
-    return await showAppDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) =>
-              ImportConfirm(importCount: totalNotes, notice: notice),
-        ) ??
-        false;
+    final result = await showImportConfirmDialog(
+      context: context,
+      importCount: totalNotes,
+      notice: notice,
+    );
+    return result ?? false;
   }
 
   /// 平台默认备份目录（导出面板未选路径时的回退落盘位置）
