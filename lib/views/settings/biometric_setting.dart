@@ -23,6 +23,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -49,13 +50,10 @@ class _BiometricSettingState extends State<BiometricSetting> {
       final ok = await _verifyBiometric();
       if (!ok) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Biometric verification failed. Biometric login was not enabled.'
-                    .tr(),
-              ),
-            ),
+          showSnackBarMessage(
+            context,
+            'Biometric verification failed. Biometric login was not enabled.'
+                .tr(),
           );
         }
         setState(() {});

@@ -19,6 +19,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -202,15 +203,11 @@ class _DevModeTapLogoState extends State<_DevModeTapLogo> {
     final wasActive = DevMode.isActive;
     final changed = await DevMode.enable();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          changed
-              ? 'Developer mode enabled'.tr()
-              : 'Already in developer mode'.tr(),
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    showSnackBarMessage(
+      context,
+      changed
+          ? 'Developer mode enabled'.tr()
+          : 'Already in developer mode'.tr(),
     );
     if (!wasActive) {
       Log.settings.i('关于页连点 ${DevMode.tapThreshold} 次开启 dev 模式');

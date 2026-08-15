@@ -90,13 +90,19 @@ class ColorPalletState extends State<ColorPallet> {
   ///
   /// 整体紧凑，配合顶部常驻预览，滚动后仍能看到当前配色。
   Widget _grid(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: isDesktopPlatform ? 3 : 2,
+    // 按可用宽度决定列数：宽屏（桌面/平板）3 列，窄屏 2 列。
+    final columns = MediaQuery.sizeOf(context).width >= 600 ? 3 : 2;
+    // 用固定高度 mainAxisExtent 而非 childAspectRatio，避免窗口缩窄时
+    // 格子高度随宽度变小导致卡片内容溢出。
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 2.0,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        mainAxisExtent: 88,
+      ),
       children: [for (var i = 0; i < items.length; i++) _themeCard(context, i)],
     );
   }

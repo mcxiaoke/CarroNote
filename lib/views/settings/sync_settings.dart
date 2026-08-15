@@ -22,6 +22,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/settings/sync_backend_config_page.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -392,10 +393,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     return true;
   }
 
+  /// 提示消息统一走 ShadSonner（见 [showSnackBarMessage]）。
+  ///
+  /// 不能直接 `ScaffoldMessenger.of(context)`：应用基于 ShadApp(WidgetsApp)
+  /// 构建，路由子树内没有 ScaffoldMessenger（旧 MaterialApp 迁移时丢失），
+  /// 直接 of() 会在「同步开关/配置变更」等异步回调里抛未捕获异常。
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showSnackBarMessage(context, message);
   }
 }

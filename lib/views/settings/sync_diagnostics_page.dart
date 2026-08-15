@@ -30,6 +30,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 
 // Flutter 导入
@@ -1176,7 +1177,5 @@ Color _semNeutral(BuildContext context) =>
 
 void _copyToClipboard(BuildContext context, String text, String message) {
   Clipboard.setData(ClipboardData(text: text));
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-  );
+  showSnackBarMessage(context, message);
 }
