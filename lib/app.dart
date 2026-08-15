@@ -25,11 +25,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
+import 'package:safenotes/data/note_repository.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/routes/route_generator.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/app_scroll_behavior.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/route_observer.dart';
@@ -54,6 +56,13 @@ class App extends StatelessWidget {
           create: (_) => SessionProvider(
             vaultInitialized: AppBootState.vaultInitialized,
           ),
+        ),
+        // P4: 注入 Repository 接口（向下兼容，现有代码仍直接访问 NotesDatabase.instance 等）
+        ChangeNotifierProvider<NotesRepository>.value(
+          value: NotesDatabaseRepository(),
+        ),
+        ChangeNotifierProvider<SyncRepository>.value(
+          value: SyncServiceRepository(),
         ),
       ],
       builder: (context, _) {

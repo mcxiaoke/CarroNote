@@ -7,6 +7,7 @@
 //   - EasyLocalization + TestAssetLoader（翻译加载）
 //   - ShadApp.custom 包装（ShadTheme + Material 双主题）
 //   - MediaQuery(viewInsets: EdgeInsets.zero) 消除键盘动画导致的 pumpAndSettle 卡死
+//   - 默认 SessionProvider + FakeNotesRepository + FakeSyncRepository
 //   - 可选的 Provider 列表注入（通过 overrides 参数）
 //
 // 用法：
@@ -27,8 +28,11 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
+import 'package:safenotes/data/note_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/models/shad_theme.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/notes_color.dart';
 
 import 'asset_loader.dart';
@@ -44,12 +48,15 @@ const Color kHarnessThemeSeed = Color(0xFF0F3460);
 ///   - MediaQuery(viewInsets: EdgeInsets.zero) 消除键盘滚动动画
 ///   - ChangeNotifierProvider<ThemeProvider>
 ///   - ChangeNotifierProvider<NotesColor>
+///   - ChangeNotifierProvider<SessionProvider> (vaultInitialized: null)
+///   - ChangeNotifierProvider<NotesRepository> (FakeNotesRepository)
+///   - ChangeNotifierProvider<SyncRepository> (FakeSyncRepository)
 ///
 /// [overrides] 可覆盖或追加 Provider，替换默认的 Provider 或新增依赖。
 /// 注意：传入的 overrides 元素应为 Provider&lt;T&gt; 等 SingleChildWidget 实例。
 ///
-/// 注意：此函数不包含数据库/同步/安全存储等测试替身，调用方需通过 overrides
-/// 自行注入所需依赖（各 Phase 逐步添加）。
+/// 注意：FakeNotesRepository 和 FakeSyncRepository 是内存实现，不依赖数据库或网络。
+/// 如需真实数据库，请在 overrides 中注入 NotesDatabaseRepository 等实现。
 Widget withProviders(
   Widget child, {
   List<dynamic> overrides = const [],
@@ -75,6 +82,15 @@ Widget withProviders(
             ),
             ChangeNotifierProvider<NotesColor>(
               create: (_) => NotesColor(),
+            ),
+            ChangeNotifierProvider<SessionProvider>(
+              create: (_) => SessionProvider(),
+            ),
+            ChangeNotifierProvider<NotesRepository>(
+              create: (_) => FakeNotesRepository(),
+            ),
+            ChangeNotifierProvider<SyncRepository>(
+              create: (_) => FakeSyncRepository(),
             ),
             ...overrides,
           ],
