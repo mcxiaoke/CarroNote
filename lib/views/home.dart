@@ -43,7 +43,6 @@ import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/add_edit_note.dart';
-import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/drawer.dart';
 import 'package:safenotes/widgets/home_navigation_rail.dart';
 import 'package:safenotes/widgets/note_card.dart';
@@ -347,11 +346,8 @@ class HomePageState extends State<HomePage> with RouteAware {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   HomeSidebar(
-                    onThemeCallback: _navTheme,
                     onSettingsCallback: _navSettings,
                     onDeletedNotesCallback: _navDeletedNotes,
-                    onSyncSettingsCallback: _navSyncSettings,
-                    onAboutCallback: _navAbout,
                     onLockCallback: _navLock,
                   ),
                   Expanded(child: _homeBody()),
@@ -515,8 +511,9 @@ class HomePageState extends State<HomePage> with RouteAware {
                 ? query.isNotEmpty
                       ? emptyState(
                           icon: Icons.search_off,
-                          text: 'No notes match "{query}"'
-                              .tr(namedArgs: {'query': query}),
+                          text: 'No notes match "{query}"'.tr(
+                            namedArgs: {'query': query},
+                          ),
                           cta: 'Clear Search'.tr(),
                           onCta: () => _searchNote(''),
                         )
@@ -571,8 +568,13 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   /// 移动端 Drawer：复用统一的导航回调（_nav*），并在每个会离开主页的入口前
   /// 先 pop 抽屉（与改动前行为一致）。桌面 Rail 模式不需要 pop，直接调 _nav*。
+  ///
+  /// Notes 项：抽屉本身常驻主页，点击即关闭抽屉回到全部笔记（等价「返回主页」）。
   Widget _buildDrawer(BuildContext context) {
     return HomeDrawer(
+      onNotesCallback: () {
+        Navigator.of(context).pop();
+      },
       onSettingsCallback: () {
         Navigator.of(context).pop();
         _navSettings();
@@ -581,14 +583,6 @@ class HomePageState extends State<HomePage> with RouteAware {
         Navigator.of(context).pop();
         _navDeletedNotes();
       },
-      onSyncSettingsCallback: () {
-        Navigator.of(context).pop();
-        _navSyncSettings();
-      },
-      onAboutCallback: () {
-        Navigator.of(context).pop();
-        _navAbout();
-      },
       onLockCallback: () {
         _navLock();
       },
@@ -596,10 +590,6 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   // ---- 桌面 Rail 与移动 Drawer 共用的导航动作（不带 pop，pop 由 Drawer 负责） ----
-
-  void _navTheme() {
-    showThemeBottomSheet(context);
-  }
 
   Future<void> _navSettings() async {
     Log.ui.i('界面切换: 主界面 → 设置(/settings)');
@@ -623,16 +613,6 @@ class HomePageState extends State<HomePage> with RouteAware {
     }
   }
 
-  Future<void> _navSyncSettings() async {
-    Log.ui.i('界面切换: 主界面 → 同步设置(/syncSettings)');
-    await Navigator.pushNamed(context, '/syncSettings');
-  }
-
-  Future<void> _navAbout() async {
-    Log.ui.i('界面切换: 主界面 → 关于(/about)');
-    await Navigator.pushNamed(context, '/about');
-  }
-
   /// 锁定：清空内存中的密钥与会话、跳回登录页（本地数据原样保留）。
   /// 与抽屉/侧栏的"锁定"入口一致；行为即原「退出登录」（本应用登出不清本地库）。
   Future<void> _navLock() async {
@@ -654,8 +634,10 @@ class HomePageState extends State<HomePage> with RouteAware {
     // indexOf 返回其在全量列表中的位置，颜色始终与排序顺序挂钩。
     final int stableIndex = allnotes.indexOf(note);
     final int colorIndex = stableIndex >= 0 ? stableIndex : index; // 兜底
-    final Color cardColor =
-        NotesColor.getNoteColor(notIndex: colorIndex, context: context);
+    final Color cardColor = NotesColor.getNoteColor(
+      notIndex: colorIndex,
+      context: context,
+    );
     return OpenContainer(
       tappable: false,
       // P1-11：时长走 AppMotion.pageTransition（保持 250ms：动画期间编辑页

@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
 /// 桌面端常驻侧边栏（Sidebar），对应移动端 Drawer 的同一组入口。
@@ -36,21 +37,19 @@ import 'package:safenotes/widgets/shad_nav_items.dart';
 /// 断点策略（Material Design 3 / Flutter 官方桌面模板）：
 /// - Compact (< 600px)：用 Drawer（见 lib/widgets/drawer.dart）
 /// - Medium (600–1023px) / Expanded (≥ 1024px)：用本 Sidebar 常驻左侧
+///
+/// IA 重构（docs/settings-sidebar-ia-design-20260815.md）后侧栏只放「位置导航」：
+/// Recently Deleted / Settings / Lock；动作（切换主题）与 Settings 子页
+/// （同步）及低频信息页（关于）统一收敛进 Settings 页。
 class HomeSidebar extends StatelessWidget {
-  final VoidCallback onThemeCallback;
   final VoidCallback onSettingsCallback;
   final VoidCallback onDeletedNotesCallback;
-  final VoidCallback onSyncSettingsCallback;
-  final VoidCallback onAboutCallback;
   final VoidCallback onLockCallback;
 
   const HomeSidebar({
     super.key,
-    required this.onThemeCallback,
     required this.onSettingsCallback,
     required this.onDeletedNotesCallback,
-    required this.onSyncSettingsCallback,
-    required this.onAboutCallback,
     required this.onLockCallback,
   });
 
@@ -66,9 +65,6 @@ class HomeSidebar extends StatelessWidget {
     final Color fg = colorScheme.onSurface;
     final Color bg = colorScheme.surfaceContainerLow;
     final Color divider = colorScheme.outlineVariant;
-    // 明暗 + 主题色统一入口：文案「切换主题」+ 调色板图标（与移动端 Drawer 一致）。
-    // 修复：43d05ed 前此处曾显示「Light/Dark Mode」，用户要求保留「Switch Theme」。
-    final String themeText = 'Switch Theme'.tr();
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
       return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);
@@ -114,37 +110,23 @@ class HomeSidebar extends StatelessWidget {
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  sideItem(Icons.palette_outlined, themeText, onThemeCallback),
-                  sideItem(
-                    Icons.settings_outlined,
-                    'Settings'.tr(),
-                    onSettingsCallback,
-                  ),
                   sideItem(
                     Icons.delete_outline,
                     'Recently Deleted'.tr(),
                     onDeletedNotesCallback,
                   ),
                   sideItem(
-                    Icons.cloud_sync_outlined,
-                    'Sync Settings'.tr(),
-                    onSyncSettingsCallback,
+                    Icons.settings_outlined,
+                    'Settings'.tr(),
+                    onSettingsCallback,
                   ),
-                  sideItem(Icons.info_outline, 'About'.tr(), onAboutCallback),
+                  // 锁定：紧跟在设置之下，不置底、无分割线（与移动端 Drawer 一致）
+                  sideItem(Icons.lock_outline, 'Lock'.tr(), onLockCallback),
                 ],
               ),
             ),
-            Divider(color: divider, height: 1),
-            // 底部：锁定（清内嵌密钥跳回登录页，与移动端 Drawer 行为一致）
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-              child: shadNavMenuItem(
-                context,
-                icon: Icons.lock_outline,
-                label: 'Lock'.tr(),
-                onTap: onLockCallback,
-              ),
-            ),
+            // 底部版本号 / 构建信息 / DEBUG 徽标（分多行小字，置底）
+            footer(context),
           ],
         ),
       ),

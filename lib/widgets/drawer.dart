@@ -24,21 +24,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/views/settings/theme_setting.dart';
+import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
 class HomeDrawer extends StatefulWidget {
   final VoidCallback onSettingsCallback;
-  final VoidCallback onSyncSettingsCallback;
-  final VoidCallback onAboutCallback;
+  final VoidCallback onNotesCallback;
   final VoidCallback onLockCallback;
   final VoidCallback? onDeletedNotesCallback;
 
   const HomeDrawer({
     super.key,
     required this.onSettingsCallback,
-    required this.onSyncSettingsCallback,
-    required this.onAboutCallback,
+    required this.onNotesCallback,
     required this.onLockCallback,
     this.onDeletedNotesCallback,
   });
@@ -57,14 +55,11 @@ class HomeDrawerState extends State<HomeDrawer> {
     final height = MediaQuery.of(context).size.height;
     final topHeadPadding = height * 0.07;
     final bottomHeadPadding = height * 0.01;
-    final double dividerSpacing = height * 0.01;
     const double itemSpacing = 1;
 
-    final String switchThemeText = 'Switch Theme'.tr();
+    final String notesText = 'Notes'.tr();
     final String settings = 'Settings'.tr();
     final String deletedNotesText = 'Recently Deleted'.tr();
-    final String syncSettingsText = 'Sync Settings'.tr();
-    final String aboutText = 'About'.tr();
     final String lockText = 'Lock'.tr();
 
     return OrientationBuilder(
@@ -75,60 +70,54 @@ class HomeDrawerState extends State<HomeDrawer> {
             bottomRight: Radius.circular(drawerRadius),
           ),
           child: Drawer(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: drawerPaddingHorizontal,
-              ),
-              child: Column(
-                children: <Widget>[
-                  _drawerHeader(
-                    topPadding: topHeadPadding,
-                    orientation: orientation,
-                  ),
-                  _divide(topPadding: bottomHeadPadding),
-                  _buildMenuItem(
-                    topPadding: height * 0.005,
-                    text: switchThemeText,
-                    icon: Icons.palette_outlined,
-                    onClicked: () {
-                      Navigator.of(context).pop();
-                      showThemeBottomSheet(context);
-                    },
-                  ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: settings,
-                    icon: Icons.settings_outlined,
-                    onClicked: widget.onSettingsCallback,
-                  ),
-                  if (widget.onDeletedNotesCallback != null)
-                    _buildMenuItem(
-                      topPadding: itemSpacing,
-                      text: deletedNotesText,
-                      icon: Icons.delete_outline,
-                      onClicked: widget.onDeletedNotesCallback!,
+            child: Column(
+              children: [
+                // 可滚动导航区：内容超出时滚动，锁定紧跟在设置之下（无分割线）
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: drawerPaddingHorizontal,
                     ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: syncSettingsText,
-                    icon: Icons.cloud_sync_outlined,
-                    onClicked: widget.onSyncSettingsCallback,
+                    child: Column(
+                      children: <Widget>[
+                        _drawerHeader(
+                          topPadding: topHeadPadding,
+                          orientation: orientation,
+                        ),
+                        _divide(topPadding: bottomHeadPadding),
+                        _buildMenuItem(
+                          topPadding: height * 0.005,
+                          text: notesText,
+                          icon: Icons.note_alt_outlined,
+                          onClicked: widget.onNotesCallback,
+                        ),
+                        if (widget.onDeletedNotesCallback != null)
+                          _buildMenuItem(
+                            topPadding: itemSpacing,
+                            text: deletedNotesText,
+                            icon: Icons.delete_outline,
+                            onClicked: widget.onDeletedNotesCallback!,
+                          ),
+                        _buildMenuItem(
+                          topPadding: itemSpacing,
+                          text: settings,
+                          icon: Icons.settings_outlined,
+                          onClicked: widget.onSettingsCallback,
+                        ),
+                        // 锁定：与上方其它项目一致，无分割线、不置底
+                        _buildMenuItem(
+                          topPadding: itemSpacing,
+                          text: lockText,
+                          icon: Icons.lock_outline,
+                          onClicked: widget.onLockCallback,
+                        ),
+                      ],
+                    ),
                   ),
-                  _buildMenuItem(
-                    topPadding: itemSpacing,
-                    text: aboutText,
-                    icon: Icons.info_outline,
-                    onClicked: widget.onAboutCallback,
-                  ),
-                  _divide(topPadding: dividerSpacing),
-                  _buildMenuItem(
-                    topPadding: dividerSpacing,
-                    text: lockText,
-                    icon: Icons.lock_outline,
-                    onClicked: widget.onLockCallback,
-                  ),
-                ],
-              ),
+                ),
+                // 底部版本号 / 构建信息 / DEBUG 徽标（分多行小字，置底不随内容滚动）
+                footer(context),
+              ],
             ),
           ),
         );

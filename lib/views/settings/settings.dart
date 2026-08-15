@@ -16,7 +16,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Package imports:
-import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
@@ -25,16 +24,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
-import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/app_theme.dart';
-import 'package:safenotes/models/session.dart';
+import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/utils/dev_mode.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
-import 'package:safenotes/widgets/footer.dart' show debugBadge;
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -59,66 +55,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 各设置分区：分区标题 + 卡片（内含若干 tile，行间用分隔线）。
+  ///
+  /// 分组信息架构（IA 重构，见 docs/settings-sidebar-ia-design-20260815.md）：
+  /// 按「使用频率 × 重要性」降序排列为 6 组：
+  /// 外观（Appearance）→ 数据（Data）→ 安全（Security）→ 账户（Account）
+  /// → 通用（General）→ 关于（About）。
   List<Widget> _settingsGroups(BuildContext context) {
     final groups = <Widget>[
-      shadSectionTitle(context, 'General'.tr()),
+      shadSectionTitle(context, 'Appearance'.tr()),
       shadSettingsCard([
+        // 主题/配色在前（视觉类最高频）
         shadNavigationTile(
           context,
-          icon: LucideIcons.cloudUpload,
-          title: 'Backup'.tr(),
-          value: PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/backup');
+          icon: LucideIcons.moon,
+          title: 'Dark mode'.tr(),
+          value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
+          onTap: () {
+            showThemeBottomSheet(context);
             setState(() {});
           },
         ),
         shadNavigationTile(
           context,
-          icon: LucideIcons.fileOutput,
-          title: 'Export Backup'.tr(),
+          icon: LucideIcons.paintbrush,
+          title: 'Theme color'.tr(),
+          value: _currentThemeColorName(context),
           onTap: () async {
-            await startExportNotes(context);
+            await Navigator.pushNamed(context, '/themeColorSettings');
             setState(() {});
           },
         ),
         shadNavigationTile(
           context,
-          icon: LucideIcons.download,
-          title: 'Import Backup'.tr(),
+          icon: LucideIcons.brush,
+          title: 'Notes Color'.tr(),
+          value: !PreferencesStorage.isColorful ? 'Off'.tr() : 'On'.tr(),
           onTap: () async {
-            await showImportDialog(context);
-          },
-        ),
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.languages,
-          title: 'Language'.tr(),
-          value: SafeNotesConfig.mapLocaleName[context.locale.toString()]!,
-          subtitle: context.locale.toString() != 'en_US'
-              ? 'Language'.tr()
-              : null,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/chooseLanguageSettings');
+            await Navigator.pushNamed(context, '/chooseColorSettings');
             setState(() {});
           },
         ),
-      ]),
-      shadSectionTitle(context, 'Sync'.tr()),
-      shadSettingsCard([
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.cloud,
-          title: 'Sync Settings'.tr(),
-          value: _syncStatusValue(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/syncSettings');
-            setState(() {});
-          },
-        ),
-      ]),
-      shadSectionTitle(context, 'Style'.tr()),
-      shadSettingsCard([
+        // 排版（紧凑/Markdown）居中
         shadSwitchTile(
           context,
           icon: LucideIcons.shrink,
@@ -129,6 +106,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             setState(() {});
           },
         ),
+        shadSwitchTile(
+          context,
+          icon: LucideIcons.type,
+          title: 'Markdown'.tr(),
+          description:
+              'Format note preview with Markdown. Off shows plain text.'.tr(),
+          value: PreferencesStorage.isMarkdownEnabled,
+          onChanged: (v) {
+            PreferencesStorage.setIsMarkdownEnabled(v);
+            setState(() {});
+          },
+        ),
+        // 时间与排序（信息呈现方式）靠后
         shadSwitchTile(
           context,
           icon: LucideIcons.clock,
@@ -157,47 +147,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             setState(() {});
           },
         ),
+      ]),
+      shadSectionTitle(context, 'Data'.tr()),
+      shadSettingsCard([
         shadNavigationTile(
           context,
-          icon: LucideIcons.palette,
-          title: 'Switch Theme'.tr(),
-          value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
-          onTap: () {
-            showThemeBottomSheet(context);
-            setState(() {});
-          },
-        ),
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.rotateCw,
-          title: 'Auto Rotate'.tr(),
-          description: 'Close and open app for change to take effect'.tr(),
-          value: PreferencesStorage.isAutoRotate,
-          onChanged: (v) {
-            PreferencesStorage.setIsAutoRotate(v);
-            setState(() {});
-          },
-        ),
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.palette,
-          title: 'Notes Color'.tr(),
-          value: !PreferencesStorage.isColorful ? 'Off'.tr() : 'On'.tr(),
+          icon: LucideIcons.cloud,
+          title: 'Sync Settings'.tr(),
+          value: _syncStatusValue(),
           onTap: () async {
-            await Navigator.pushNamed(context, '/chooseColorSettings');
+            await Navigator.pushNamed(context, '/syncSettings');
             setState(() {});
           },
         ),
-        shadSwitchTile(
+        shadNavigationTile(
           context,
-          icon: LucideIcons.type,
-          title: 'Markdown'.tr(),
-          description:
-              'Format note preview with Markdown. Off shows plain text.'.tr(),
-          value: PreferencesStorage.isMarkdownEnabled,
-          onChanged: (v) {
-            PreferencesStorage.setIsMarkdownEnabled(v);
+          icon: LucideIcons.cloudUpload,
+          title: 'Backup'.tr(),
+          value: PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/backup');
             setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.fileOutput,
+          title: 'Export Backup'.tr(),
+          onTap: () async {
+            await startExportNotes(context);
+            setState(() {});
+          },
+        ),
+        shadNavigationTile(
+          context,
+          icon: LucideIcons.download,
+          title: 'Import Backup'.tr(),
+          onTap: () async {
+            await showImportDialog(context);
           },
         ),
       ]),
@@ -259,62 +246,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
             await Navigator.pushNamed(context, '/changepassphrase');
           },
         ),
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.lock,
-          title: 'Lock'.tr(),
-          destructive: true,
-          onTap: () async {
-            // 顺序与 main.dart 超时退出 logout() 保持一致：
-            // 1. 先停会话监听；2. 导航离开（不 await）；
-            // 3. 导航落地、HomePage 卸载后再清敏感状态。
-            widget.sessionStateStream.add(SessionState.stopListening);
-
-            if (context.mounted) {
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/login',
-                (Route<dynamic> route) => false,
-                arguments: SessionArguments(
-                  sessionStream: widget.sessionStateStream,
-                  isKeyboardFocused: false,
-                ),
-              );
-            }
-
-            await Session.logout();
-          },
-        ),
       ]),
-      shadSectionTitle(context, 'Miscellaneous'.tr()),
+      shadSectionTitle(context, 'General'.tr()),
       shadSettingsCard([
         shadNavigationTile(
           context,
-          icon: LucideIcons.code,
-          title: 'Source Code'.tr(),
-          onTap: () => _launch(SafeNotesConfig.githubUrl),
+          icon: LucideIcons.languages,
+          title: 'Language'.tr(),
+          value: SafeNotesConfig.mapLocaleName[context.locale.toString()]!,
+          subtitle: context.locale.toString() != 'en_US'
+              ? 'Language'.tr()
+              : null,
+          onTap: () async {
+            await Navigator.pushNamed(context, '/chooseLanguageSettings');
+            setState(() {});
+          },
         ),
+        // Auto Rotate 为纯移动端选项，桌面/Web 隐藏该行（IA 方案 §3.3）
+        if (!isDesktopPlatform)
+          shadSwitchTile(
+            context,
+            icon: LucideIcons.rotateCw,
+            title: 'Auto Rotate'.tr(),
+            description: 'Close and open app for change to take effect'.tr(),
+            value: PreferencesStorage.isAutoRotate,
+            onChanged: (v) {
+              PreferencesStorage.setIsAutoRotate(v);
+              setState(() {});
+            },
+          ),
+        // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
         shadNavigationTile(
           context,
-          icon: LucideIcons.fileText,
-          title: 'Open Source license'.tr(),
-          onTap: () => _launch(SafeNotesConfig.openSourceLicense),
+          icon: LucideIcons.info,
+          title: 'About'.tr(),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/about');
+            setState(() {});
+          },
         ),
       ]),
-      const SizedBox(height: 12),
-      // 版本号等版权信息：独立于设置项的最底部小字（非可点击 item）
-      const _VersionFooter(),
     ];
 
     return groups;
   }
 
-  Future<void> _launch(String url) async {
-    try {
-      await launchUrlExternal(Uri.parse(url));
-    } catch (_) {
-      // 忽略无法打开的情况
-    }
+  /// 当前主题色的语言化显示名（中文用中文名，其他语言用英文名）。
+  String _currentThemeColorName(BuildContext context) {
+    final isZh = context.locale.languageCode == 'zh';
+    final seed = AppThemeSeeds.itemByIndex(
+      PreferencesStorage.themeGroupIndex,
+      PreferencesStorage.themeColorIndex,
+    );
+    return isZh ? seed.name : seed.nameEn;
   }
 
   String inactivityTimeoutValue() {
@@ -330,84 +314,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();
     return SyncConfig.backendDisplayName;
-  }
-}
-
-/// 底部小字：版本号与构建日期·githash 合并为一行居中显示。
-/// dev 模式（含 debug 构建）时在版本信息上方额外显示醒目 DEBUG 徽标。
-///
-/// 隐藏入口：在版本号区域连续点击 [DevMode.tapThreshold] 次（5 次）即可开启
-/// dev 模式（非 debug 构建专属；debug 构建恒为 dev 模式，点击无附加效果）。
-/// 开启后与 debug build 行为一致：恢复调试面板入口、日志 Web 服务器、全量日志。
-class _VersionFooter extends StatefulWidget {
-  const _VersionFooter();
-
-  @override
-  State<_VersionFooter> createState() => _VersionFooterState();
-}
-
-class _VersionFooterState extends State<_VersionFooter> {
-  int _tapCount = 0;
-  DateTime? _lastTap;
-
-  /// 连点计数：两次点击间隔超过 3 秒则重置，避免误触累计。
-  void _handleTap() {
-    final now = DateTime.now();
-    if (_lastTap != null && now.difference(_lastTap!).inSeconds > 3) {
-      _tapCount = 0;
-    }
-    _lastTap = now;
-    _tapCount++;
-    if (_tapCount >= DevMode.tapThreshold) {
-      _tapCount = 0;
-      _enableDevMode();
-    }
-  }
-
-  Future<void> _enableDevMode() async {
-    final wasActive = DevMode.isActive;
-    final changed = await DevMode.enable();
-    if (!mounted) return;
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          changed
-              ? 'Developer mode enabled'.tr()
-              : 'Already in developer mode'.tr(),
-        ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    if (!wasActive) {
-      Log.settings.i('设置页连点 ${DevMode.tapThreshold} 次开启 dev 模式');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-      child: Center(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _handleTap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              debugBadge(context),
-              const SizedBox(height: 8),
-              Text(
-                'Version ${SafeNotesConfig.appVersion} · '
-                '${BuildInfo.buildDateReadable} · ${BuildInfo.gitHashShort}',
-                style: theme.textTheme.muted.copyWith(fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
