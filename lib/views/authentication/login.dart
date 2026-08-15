@@ -291,6 +291,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _inputField() {
     return ShadInputFormField(
+      key: const Key('passphraseInput'),
       enabled: !_isLocked,
       enableIMEPersonalizedLearning: false,
       controller: passPhraseController,
@@ -337,6 +338,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final String loginText = _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
     return ShadButton(
+      key: const Key('loginButton'),
       width: double.infinity,
       enabled: !(_isLocked || _isLoggingIn),
       onPressed: (_isLocked || _isLoggingIn) ? null : () => _loginController(),

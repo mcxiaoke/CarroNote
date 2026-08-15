@@ -329,11 +329,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.info,
-          title: 'About'.tr(),
-          onTap: () => Navigator.pushNamed(context, '/about'),
+        KeyedSubtree(
+          key: const Key('aboutTile'),
+          child: shadNavigationTile(
+            context,
+            icon: LucideIcons.info,
+            title: 'About'.tr(),
+            onTap: () => Navigator.pushNamed(context, '/about'),
+          ),
         ),
       ]),
     ];

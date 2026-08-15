@@ -281,6 +281,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   Widget _buildLoginButton() {
     // 防重入：PBKDF2 派生期间禁用按钮
     return ShadButton(
+      key: const Key('setupConfirmButton'),
       width: double.infinity,
       onPressed: _isSettingUp ? null : _loginController,
       child: Text(_isSettingUp ? 'Processing...'.tr() : 'Confirm'.tr()),
