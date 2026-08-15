@@ -121,7 +121,9 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
       // P2-3：信息提示走 ShadToast。
       showSnackBarMessage(
         context,
-        'Restored: "{title}"'.tr(namedArgs: {'title': _truncateTitle(note.title)}),
+        'Restored: "{title}"'.tr(
+          namedArgs: {'title': _truncateTitle(note.title)},
+        ),
       );
       _refresh();
     }
@@ -174,19 +176,16 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     final total = _deletedNotes.length;
     // 批量不可恢复删除：起止都必须留痕（条数 + 耗时）
     Log.note.w('开始清空回收站(不可恢复): 共 $total 条');
-    for (final note in _deletedNotes) {
-      await NotesDatabase.instance.hardDelete(note.id!);
-    }
-    Log.note.w('清空回收站完成: 已永久删除 $total 条, 耗时 ${sw.elapsedMilliseconds}ms');
+    // 单事务批量硬删除（删行 + purged 列表原子写入），替代逐条 hardDelete 的 N 次事务
+    final deleted = await NotesDatabase.instance.hardDeleteAllDeleted();
+    Log.note.w('清空回收站完成: 已永久删除 $deleted 条, 耗时 ${sw.elapsedMilliseconds}ms');
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
     SyncService.instance.autoSync();
     if (mounted) {
       // P2-3：信息提示走 ShadToast。
       showErrorToast(
         context,
-        'Cleared {count} notes'.tr(
-          namedArgs: {'count': '${_deletedNotes.length}'},
-        ),
+        'Cleared {count} notes'.tr(namedArgs: {'count': '$deleted'}),
       );
       _refresh();
     }

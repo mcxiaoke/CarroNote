@@ -60,6 +60,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   bool _previewMode = true;
   // 正在执行删除：避免 PopScope 在删除后自动保存把已删笔记重新写回。
   bool _isDeleting = false;
+  // 正在执行保存：防止保存期间连点/退出拦截重复触发 addOrUpdateNote 产生重复笔记。
+  bool _isSaving = false;
   // 已确认关闭（保存/放弃/删除），用于让 PopScope 放行 pop，避免退出弹框死循环。
   bool _allowClose = false;
 
@@ -120,6 +122,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       if (mounted) Navigator.of(context).pop();
       return;
     }
+    // 保存进行中：不弹未保存框（避免重复触发保存），等保存流程自行关页。
+    if (_isSaving) return;
     // 存在未保存改动：让用户选择 保存 / 放弃 / 取消。
     final AppThreeWayResult? action = await _showUnsavedDialog();
     if (!mounted) return;
@@ -250,18 +254,23 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     final bool isFormValid = title.isNotEmpty || description.isNotEmpty;
 
     // AppBar 内用图标按钮（与预览/删除图标风格一致），不再用文字按钮。
+    // 保存进行中禁用，防止连点重复触发 addOrUpdateNote。
     return IconButton(
       tooltip: 'Save'.tr(),
       icon: const Icon(LucideIcons.save),
-      onPressed: isFormValid ? onSaveCallback : null,
+      onPressed: (isFormValid && !_isSaving) ? onSaveCallback : null,
     );
   }
 
   Future<void> onSaveCallback() async {
+    // 防重入：保存中忽略重复提交
+    if (_isSaving) return;
+
     Log.note.i(
       '用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
       'len=${title.length}+${description.length}',
     );
+    setState(() => _isSaving = true);
     try {
       await NoteEditorState()
           .addOrUpdateNote(); // this will also set NoteEditorState.setSaveAttempted = true
@@ -274,6 +283,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           'Failed to save note: {error}'.tr(namedArgs: {'error': '$e'}),
         );
       }
+    } finally {
+      // 复位防重入（成功路径 pop 后页面已销毁，跳过 setState）
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 

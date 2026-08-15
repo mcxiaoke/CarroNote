@@ -79,8 +79,12 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20,
-        fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback),
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        fontSize: 20,
+        fontFamily: uiFontFamily,
+        fontFamilyFallback: uiFontFamilyFallback,
+      ),
       placeholder: Text(titleHint),
       // 防御主题层 minHeight:48 抬高：编辑器标题/正文保持按内容（行高）紧凑布局
       constraints: const BoxConstraints(minHeight: 0),
@@ -115,8 +119,11 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
-      style: TextStyle(fontSize: 16,
-        fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback),
+      style: TextStyle(
+        fontSize: 16,
+        fontFamily: uiFontFamily,
+        fontFamilyFallback: uiFontFamilyFallback,
+      ),
       placeholder: Text(hintDescription),
       // 防御主题层 minHeight:48 抬高（同标题框）
       constraints: const BoxConstraints(minHeight: 0),

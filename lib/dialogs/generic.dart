@@ -12,9 +12,5 @@ Future<void> showGenericDialog({
   required BuildContext context,
   required String message,
 }) {
-  return showAppInfo(
-    context,
-    title: '',
-    message: message,
-  );
+  return showAppInfo(context, title: '', message: message);
 }

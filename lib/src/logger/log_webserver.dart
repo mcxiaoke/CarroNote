@@ -523,7 +523,7 @@ class LogWebServer {
   /// 下载本地数据库文件（.db 二进制）
   Future<void> _serveDownloadDb(HttpRequest request) async {
     try {
-      final path = await NotesDatabase.instance.dbFilePath;
+      final path = await NotesDatabase.instance.dbFilePath();
       if (!await File(path).exists()) {
         await _sendJson(request, {'error': '数据库文件不存在'});
         return;

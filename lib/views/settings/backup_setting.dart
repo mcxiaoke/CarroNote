@@ -226,9 +226,7 @@ class BackupSettingState extends State<BackupSetting> {
     // 手动备份必须真正落盘，绕过 isBackupOn/isBackupNeeded 开关：
     // 否则首次成功后备 isBackupNeeded 置 false，「再次点击立即备份」会静默跳过。
     final manualFileName = SafeNotesConfig.manualBackupFileName;
-    final success = await ScheduledTask.forceBackup(
-        fileName: manualFileName,
-      );
+    final success = await ScheduledTask.forceBackup(fileName: manualFileName);
     if (!mounted) return;
     if (success) {
       final dir = await ScheduledTask.resolveBackupDirectory();
@@ -236,9 +234,7 @@ class BackupSettingState extends State<BackupSetting> {
       final actualPath = dir.isEmpty ? '' : p.join(dir, manualFileName);
       showSnackBarMessage(
         context,
-        'Backup written to: {path}'.tr(
-          namedArgs: {'path': actualPath},
-        ),
+        'Backup written to: {path}'.tr(namedArgs: {'path': actualPath}),
       );
       Log.backup.i('手动备份成功: $actualPath');
     } else {
@@ -328,9 +324,10 @@ Future<void> openBackupDirectory(String directory, BuildContext context) async {
     }
     // 全失败：显示路径让用户手动导航
     if (context.mounted) {
-      showSnackBarMessage(context, 'Backup folder: {path}'.tr(
-        namedArgs: {'path': directory},
-      ));
+      showSnackBarMessage(
+        context,
+        'Backup folder: {path}'.tr(namedArgs: {'path': directory}),
+      );
     }
   } catch (e, st) {
     Log.backup.e('打开备份目录失败: $directory', error: e, stackTrace: st);

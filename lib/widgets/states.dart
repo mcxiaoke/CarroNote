@@ -46,15 +46,12 @@ Widget emptyState({
                 text,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
               if (cta != null && onCta != null) ...[
                 const SizedBox(height: AppSpace.lg),
-                ShadButton.outline(
-                  onPressed: onCta,
-                  child: Text(cta),
-                ),
+                ShadButton.outline(onPressed: onCta, child: Text(cta)),
               ],
             ],
           ),
@@ -87,10 +84,7 @@ Widget loadingState({int count = 3}) {
 }
 
 /// 错误态：图标 + 错误信息 + 可选重试。
-Widget errorState({
-  required String error,
-  VoidCallback? onRetry,
-}) {
+Widget errorState({required String error, VoidCallback? onRetry}) {
   return Builder(
     builder: (context) {
       final colorScheme = Theme.of(context).colorScheme;
@@ -111,8 +105,8 @@ Widget errorState({
                 error,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
               if (onRetry != null) ...[
                 const SizedBox(height: AppSpace.lg),

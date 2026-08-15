@@ -212,20 +212,17 @@ Future<AppThreeWayResult?> showAppThreeWay(
         content: Text(message),
         actions: [
           TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(AppThreeWayResult.cancel),
+            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.cancel),
             child: Text(cancelLabel ?? 'Cancel'.tr()),
           ),
           // 放弃：TextButton + error 文字色（有可见文字，权重介于取消与保存之间）
           TextButton(
             style: TextButton.styleFrom(foregroundColor: scheme.error),
-            onPressed: () =>
-                Navigator.of(ctx).pop(AppThreeWayResult.discard),
+            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.discard),
             child: Text(discardLabel),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(AppThreeWayResult.confirm),
+            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.confirm),
             child: Text(confirmLabel),
           ),
         ],

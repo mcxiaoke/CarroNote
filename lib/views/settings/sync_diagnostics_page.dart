@@ -284,7 +284,9 @@ class _SyncResultTab extends StatelessWidget {
           context,
           'Success'.tr(),
           snapshot.lastResultSuccess!.toString(),
-          color: snapshot.lastResultSuccess! ? _semSuccess(context) : _semDanger(context),
+          color: snapshot.lastResultSuccess!
+              ? _semSuccess(context)
+              : _semDanger(context),
         ),
         _buildKVRow(
           context,
@@ -720,7 +722,9 @@ class _LogsTabState extends State<_LogsTab> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             border: Border(
-              bottom: BorderSide(color: _semNeutral(context).withValues(alpha: 0.3)),
+              bottom: BorderSide(
+                color: _semNeutral(context).withValues(alpha: 0.3),
+              ),
             ),
           ),
           child: Row(
@@ -1019,14 +1023,12 @@ class _WebServerTabState extends State<_WebServerTab> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: (isRunning ? _semSuccess(context) : _semNeutral(context)).withValues(
-              alpha: 0.1,
-            ),
+            color: (isRunning ? _semSuccess(context) : _semNeutral(context))
+                .withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: (isRunning ? _semSuccess(context) : _semNeutral(context)).withValues(
-                alpha: 0.3,
-              ),
+              color: (isRunning ? _semSuccess(context) : _semNeutral(context))
+                  .withValues(alpha: 0.3),
             ),
           ),
           child: Column(
@@ -1036,7 +1038,9 @@ class _WebServerTabState extends State<_WebServerTab> {
                 children: [
                   Icon(
                     isRunning ? Icons.wifi : Icons.wifi_off,
-                    color: isRunning ? _semSuccess(context) : _semNeutral(context),
+                    color: isRunning
+                        ? _semSuccess(context)
+                        : _semNeutral(context),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -1049,7 +1053,9 @@ class _WebServerTabState extends State<_WebServerTab> {
                         : 'Stopped'.tr(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: isRunning ? _semSuccess(context) : _semNeutral(context),
+                      color: isRunning
+                          ? _semSuccess(context)
+                          : _semNeutral(context),
                     ),
                   ),
                 ],
@@ -1085,7 +1091,9 @@ class _WebServerTabState extends State<_WebServerTab> {
           decoration: BoxDecoration(
             color: _semWarning(context).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _semWarning(context).withValues(alpha: 0.3)),
+            border: Border.all(
+              color: _semWarning(context).withValues(alpha: 0.3),
+            ),
           ),
           child: Row(
             children: [
@@ -1111,7 +1119,8 @@ class _WebServerTabState extends State<_WebServerTab> {
 // ──────────────────────────────────────────────
 
 /// 成功（原 green）→ 品牌主色
-Color _semSuccess(BuildContext context) => Theme.of(context).colorScheme.primary;
+Color _semSuccess(BuildContext context) =>
+    Theme.of(context).colorScheme.primary;
 
 /// 危险/失败（原 red）→ shad destructive
 Color _semDanger(BuildContext context) =>

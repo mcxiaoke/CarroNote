@@ -339,9 +339,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     }
   }
 
-  Future<void> onTimeOutDo({
-    required BuildContext context,
-  }) async {
+  Future<void> onTimeOutDo({required BuildContext context}) async {
     // 简化方案:会话超时直接登出，不再弹「超时锁定」倒计时框，也不弹退出提示框。
     // execute only if user is already logged
     // no need to logout and redirect to authwall if user is not loggedIN
@@ -354,9 +352,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     // User is already on authpage
   }
 
-  Future<void> logout({
-    required BuildContext context,
-  }) async {
+  Future<void> logout({required BuildContext context}) async {
     _navigator?.pushNamedAndRemoveUntil(
       '/authwall',
       (Route<dynamic> route) => false,

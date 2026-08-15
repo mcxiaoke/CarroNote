@@ -38,8 +38,8 @@ const String kChaosRootRel = 'temp/chaos';
 /// 当前真实流程数据集（Android 模拟器 + Windows 应用交互产生）：
 /// 初始密码 safe-a-2026 → 改密 safe-a-2026aaa → safe-a-2026bbb（**当前密码放首位**）。
 const List<String> kRealVaultPasswords = [
-  'safe-a-2026bbb',
-  'hello.123',
+  'hello.1111',
+  'hello.2222',
   'hello.1234',
 ];
 

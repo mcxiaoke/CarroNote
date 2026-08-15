@@ -125,7 +125,7 @@ Widget shadNavigationTile(
               ),
             ),
           ),
-          const SizedBox(width: 4),
+        const SizedBox(width: 4),
         Icon(
           LucideIcons.chevronRight,
           size: 18,

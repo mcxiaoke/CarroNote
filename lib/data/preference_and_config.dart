@@ -581,8 +581,7 @@ class SafeNotesConfig {
       'https://github.com/mcxiaoke/SecureNotes/issues';
   static const String _openSourceLicense =
       'https://github.com/mcxiaoke/SecureNotes/blob/main/files/LICENSE';
-  static const String _playStorUrl =
-      'https://github.com/mcxiaoke/SecureNotes';
+  static const String _playStorUrl = 'https://github.com/mcxiaoke/SecureNotes';
 
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),

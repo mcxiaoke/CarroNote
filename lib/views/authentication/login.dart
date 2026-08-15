@@ -39,6 +39,7 @@ import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/vault_backup.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
@@ -67,12 +68,16 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   bool forcePassphraseInput = isPassphraseRememberChallenge();
 
   //ClassicLogin:
-  GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final passPhraseController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool? _isKeyboardFocused;
   bool _isHidden = true;
   bool _isLocked = false;
+
+  // 评审 #15（反向移植自 change_passphrase）：记录上次 viewInsets，
+  // 只在键盘从无到有出现时才触发滚动，避免每次 build 重复执行滚动动画
+  double _lastViewInset = 0;
 
   // 简化方案:登录验证改为 async(keyring 解密 1-2 秒),需要防重入
   // _isLoggingIn=true 期间禁用登录按钮,避免 PBKDF2 期间连点触发并发验证
@@ -149,8 +154,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    scrollToBottomIfOnScreenKeyboard();
+    // viewInsetsOf 只订阅 viewInsets 细分依赖，重建范围比 MediaQuery.of 小
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    // 只在键盘从无到有出现时才触发滚动，避免每次 build（setState 等）重复滚动
+    if (bottom > 0 && _lastViewInset == 0) {
+      scrollToBottomIfOnScreenKeyboard();
+    }
+    _lastViewInset = bottom;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -188,7 +198,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   void scrollToBottomIfOnScreenKeyboard() {
     try {
-      if (MediaQuery.of(context).viewInsets.bottom > 0) {
+      if (MediaQuery.viewInsetsOf(context).bottom > 0) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           // P1-11：500ms → AppMotion.slow。
@@ -518,7 +528,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       setState(() {
         _isLocked = false;
         _isKeyboardFocused = true;
-        _formKey = GlobalKey<FormState>();
+        // 重置表单校验错误提示即可，无需重建 GlobalKey
+        // （重建会强制整棵 Form 子树重建并丢失输入框状态）
+        _formKey.currentState?.reset();
         // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
         _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
       });
@@ -668,9 +680,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             ),
             const SizedBox(height: 16),
             Text(
-              'If you have a backup, you can reset the local data and re-import '
-                      'the backup after setting a new passphrase. This action cannot be '
-                      'undone.'
+              'Before resetting, an encrypted snapshot of your local data will '
+                      'be saved automatically to the app backups folder. If you '
+                      'remember the passphrase later, the snapshot can be '
+                      'recovered manually. This action cannot be undone.'
                   .tr(),
               style: TextStyle(
                 color: ShadTheme.of(context).colorScheme.destructive,
@@ -721,13 +734,42 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///
   /// 流程:
   ///   1. 关闭数据库连接
-  ///   2. 删除 db 文件(包含 notes + sync_meta)
-  ///   3. 清除 PreferencesStorage 中的 keyring 相关 key
-  ///   4. 重启应用(走首次设置流程)
+  ///   2. 备份数据库文件 + 偏好快照到应用 backups/ 目录（安全网）
+  ///   3. 删除 db 文件(包含 notes + sync_meta)
+  ///   4. 清除 PreferencesStorage 中的 keyring 相关 key
+  ///   5. 重启应用(走首次设置流程)
+  ///
+  /// 备份失败时中止重置：绝不允许「备份未完成但数据已删除」。
   Future<void> _performLocalDataReset() async {
     Log.auth.i('执行本地数据重置（清空 keyring 与 notes 数据库）');
     try {
       await NotesDatabase.instance.close();
+
+      // 安全网：删除前把加密数据库 + 偏好快照保存到 backups/ 目录。
+      // 若用户之后想起密码，快照仍可手动恢复。
+      try {
+        final backupDir = await backupVaultBeforeReset();
+        if (mounted) {
+          showSnackBarMessage(
+            context,
+            'Reset backup saved to: {path}'.tr(
+              namedArgs: {'path': backupDir.path},
+            ),
+          );
+        }
+      } on Exception catch (e, st) {
+        Log.auth.e('重置前备份失败，中止重置（原数据保留未删除）', error: e, stackTrace: st);
+        if (mounted) {
+          showErrorToast(
+            context,
+            'Reset aborted: backup failed: {error}'.tr(
+              namedArgs: {'error': '$e'},
+            ),
+          );
+        }
+        return;
+      }
+
       await NotesDatabase.instance.deleteDbFile();
 
       // 清除 keyring 相关 SharedPreferences key

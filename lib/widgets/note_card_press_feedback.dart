@@ -48,13 +48,10 @@ class _NoteCardPressFeedbackState extends State<NoteCardPressFeedback> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double overlayAlpha = _pressed
-        ? 0.10
-        : (_hovered
-            ? 0.05
-            : 0.0);
-    final overlayColor = (isDark ? Colors.white : Colors.black)
-        .withValues(alpha: overlayAlpha);
+    final double overlayAlpha = _pressed ? 0.10 : (_hovered ? 0.05 : 0.0);
+    final overlayColor = (isDark ? Colors.white : Colors.black).withValues(
+      alpha: overlayAlpha,
+    );
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,

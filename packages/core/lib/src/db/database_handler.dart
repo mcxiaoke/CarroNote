@@ -204,9 +204,6 @@ class NotesDatabase {
     }).toList();
   }
 
-  /// 当前数据库文件路径（供下载端点使用）。
-  Future<String> get dbFilePath async => (await database).path;
-
   static bool _isSafeIdentifier(String s) =>
       s.isNotEmpty && RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(s);
 
@@ -1065,6 +1062,47 @@ class NotesDatabase {
     return deleted;
   }
 
+  /// 批量硬删除所有软删除笔记（回收站「清空」用）
+  ///
+  /// 与 UI 层逐条调用 [hardDelete] 相比：读 uuid → 批量删行 → 批量追加
+  /// purged 列表，全部在**单个事务**内完成，避免 N 次事务往返与
+  /// 「删到一半崩溃留下中间状态」。返回删除的行数。
+  Future<int> hardDeleteAllDeleted() async {
+    final db = await instance.database;
+
+    var deleted = 0;
+    final removedIds = <int>[];
+    await db.transaction((txn) async {
+      final maps = await txn.query(
+        tableNotes,
+        columns: [NoteFields.id, NoteFields.uuid],
+        where: '${NoteFields.deleted} = 1',
+      );
+      if (maps.isEmpty) return;
+      for (final row in maps) {
+        removedIds.add(row[NoteFields.id] as int);
+      }
+      deleted = await txn.delete(
+        tableNotes,
+        where: '${NoteFields.deleted} = ?',
+        whereArgs: [1],
+      );
+      // 删行 + 写 purged 列表同一事务（B4：防止墓碑从远端复活）
+      for (final row in maps) {
+        await _addPurgedUuidInTxn(txn, row[NoteFields.uuid] as String);
+      }
+    });
+
+    if (deleted > 0) {
+      for (final id in removedIds) {
+        _removeCacheEntry(id: id); // 笔记已删除：从缓存移除
+      }
+      // 不可恢复的破坏性操作，必须留痕
+      Log.note.w('批量永久删除笔记（回收站清空，不可恢复）rows=$deleted');
+    }
+    return deleted;
+  }
+
   /// 事务版：添加待清理的 uuid 到 meta 表（供 hardDelete* 在同一事务内调用，B4）
   Future<void> _addPurgedUuidInTxn(Transaction txn, String uuid) async {
     final maps = await txn.query(
@@ -1625,6 +1663,16 @@ class NotesDatabase {
       _database = null;
     }
     _invalidateCache(); // 关闭数据库连接后丢弃解密缓存
+  }
+
+  /// 返回当前数据库文件的绝对路径（不打开连接）
+  ///
+  /// 供重置（忘记密码逃生通道）前做文件级快照备份使用。
+  /// 路径解析优先级与 [deleteDbFile] 一致：dbPathOverride / factory.getDatabasesPath。
+  Future<String> dbFilePath() async {
+    final factory = dbFactoryOverride ?? databaseFactory;
+    final dbPath = dbPathOverride ?? await factory.getDatabasesPath();
+    return join(dbPath, 'safenotes_sync.db');
   }
 
   /// 删除 db 文件（忘记密码逃生通道使用）

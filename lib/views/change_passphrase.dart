@@ -54,6 +54,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   // 评审 #15：记录上次 viewInsets，避免 build() 里每次都触发滚动动画
   double _lastViewInset = 0;
 
+  // 改密码防重入：流程含 PBKDF2 派生、备份、网络 ping、密钥轮换等异步步骤，
+  // 期间连点会并发触发密钥轮换，必须禁用按钮（与 login._isLoggingIn 同模式）
+  bool _isChanging = false;
+
   @override
   void dispose() {
     // F-H11 修复：补齐 TextEditingController 与 ScrollController 的 dispose
@@ -164,7 +168,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     final String inputHintOld = 'Current Passphrase'.tr();
 
     // 简化方案:validator 只做长度检查
-    // 旧密码正确性在 _finalSublmitChange 里通过 keyring.changePassword 内部验证
+    // 旧密码正确性在 _finalSubmitChange 里通过 keyring.changePassword 内部验证
     // (keyring.changePassword 会用旧密码派生 MK 解 dataKey,失败抛 WrongPasswordException)
     return ShadInputFormField(
       enableIMEPersonalizedLearning: false,
@@ -251,7 +255,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
       textInputAction: TextInputAction.done,
-      onEditingComplete: _finalSublmitChange,
+      onEditingComplete: _finalSubmitChange,
       validator: (password) => password != _newPassphraseController.text
           ? passPhraseMismatchMsg
           : null,
@@ -279,32 +283,40 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   Widget _buildButtons(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 25, bottom: 20),
+      // 改密码防重入：流程期间禁用按钮，避免并发触发密钥轮换
       child: ShadButton(
         width: double.infinity,
         leading: const Icon(LucideIcons.key, size: 20),
-        onPressed: _finalSublmitChange,
-        child: Text('Confirm'.tr()),
+        onPressed: _isChanging ? null : _finalSubmitChange,
+        child: Text(_isChanging ? 'Processing...'.tr() : 'Confirm'.tr()),
       ),
     );
   }
 
-  void _finalSublmitChange() async {
+  void _finalSubmitChange() async {
     Log.auth.i('用户发起修改密码请求');
     final startedAt = DateTime.now();
     final form = formKey.currentState!;
     final String passChangedSnackMsg = 'Passphrase changed!'.tr();
     final String wrongOldPassMsg = 'Wrong passphrase!'.tr();
 
+    // 防重入：改密流程进行中（含确认框/备份/ping/密钥轮换）时忽略重复提交
+    if (_isChanging) return;
+
     // 注意：validate() 有副作用（刷新错误提示），只能调用一次
     final isFormValid = form.validate();
     if (!isFormValid) {
       // 表单校验未过（新密码太短/太弱/两次不一致），不进入变更流程
       Log.auth.w('改密码中止：新密码表单校验未通过');
+      return;
     }
-    if (isFormValid) {
-      // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
-      final navigator = Navigator.of(context);
 
+    // 在任何 async gap 前捕获 navigator，避免 use_build_context_synchronously 警告
+    final navigator = Navigator.of(context);
+
+    // 防重入：进入异步流程（二次确认/验证/备份/轮换/同步）前置位
+    setState(() => _isChanging = true);
+    try {
       // 二次确认：表单校验通过后弹确认框，避免用户误触「确认」按钮直接改密码
       final confirmed = await showAppConfirm(
         context,
@@ -431,6 +443,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       if (!mounted) return;
       showSnackBarMessage(context, passChangedSnackMsg);
       navigator.pop();
+    } finally {
+      // 复位防重入（成功路径 pop 后页面已销毁，跳过 setState）
+      if (mounted) setState(() => _isChanging = false);
     }
   }
 

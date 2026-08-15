@@ -61,6 +61,14 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   bool _isHiddenFirst = true;
   bool _isHiddenConfirm = true;
 
+  // 防重入：初始化含 PBKDF2 派生（1-2 秒）与可选后端网络请求，
+  // 期间连点会并发触发 initKeyringFromPassword（与 login._isLoggingIn 同模式）
+  bool _isSettingUp = false;
+
+  // 评审 #15（反向移植自 change_passphrase）：记录上次 viewInsets，
+  // 只在键盘从无到有出现时才触发滚动，避免每次 build 重复执行滚动动画
+  double _lastViewInset = 0;
+
   @override
   void initState() {
     super.initState();
@@ -81,8 +89,13 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    scrollToBottomIfOnScreenKeyboard();
+    // viewInsetsOf 只订阅 viewInsets 细分依赖，重建范围比 MediaQuery.of 小
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    // 只在键盘从无到有出现时才触发滚动，避免每次 build（setState 等）重复滚动
+    if (bottom > 0 && _lastViewInset == 0) {
+      scrollToBottomIfOnScreenKeyboard();
+    }
+    _lastViewInset = bottom;
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -169,7 +182,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   void scrollToBottomIfOnScreenKeyboard() {
-    if (MediaQuery.of(context).viewInsets.bottom > 0) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         // P1-11：500ms → AppMotion.slow。
@@ -263,10 +276,11 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   Widget _buildLoginButton() {
+    // 防重入：PBKDF2 派生期间禁用按钮
     return ShadButton(
       width: double.infinity,
-      onPressed: () => _loginController(),
-      child: Text('Confirm'.tr()),
+      onPressed: _isSettingUp ? null : _loginController,
+      child: Text(_isSettingUp ? 'Processing...'.tr() : 'Confirm'.tr()),
     );
   }
 
@@ -288,6 +302,9 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   }
 
   void _loginController() async {
+    // 防重入：初始化流程进行中时忽略重复提交（按钮/键盘完成键共用入口）
+    if (_isSettingUp) return;
+
     final form = _formKey.currentState!;
     final sw = Stopwatch()..start();
     Log.auth.i('用户提交首次密码设置请求');
@@ -316,37 +333,44 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // 改为 _initKeyring 成功后调 Session.onPasswordSet（仅 PhraseHandler +
         // biometric 副作用）。PhraseHandler.getPass 为空会导致 biometric 存空
         // 字符串 → 指纹登录必失败（评审 hy3/mmm3 A1）。
-        final ok = await _initKeyring(enteredPassphrase);
-        if (!ok) {
-          Log.auth.w('设置密码中止：Keyring 初始化失败, 停留在设置密码页');
-          return;
+        // 防重入：进入异步初始化流程（PBKDF2 + 可选后端）前置位
+        setState(() => _isSettingUp = true);
+        try {
+          final ok = await _initKeyring(enteredPassphrase);
+          if (!ok) {
+            Log.auth.w('设置密码中止：Keyring 初始化失败, 停留在设置密码页');
+            return;
+          }
+          if (!mounted) {
+            Log.auth.w('设置密码中止：页面已卸载, 不再继续导航');
+            return;
+          }
+          Session.onPasswordSet(enteredPassphrase);
+
+          // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
+          // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
+          // 会误走"输入两次密码"的设置页而不是登录页。
+          AppBootState.vaultInitialized = true;
+          Log.auth.i('设置密码步骤 4/4：保险库初始化标记已刷新 (vaultInitialized=true)');
+
+          // 评审 #14 修复：此处才提示成功——keyring 初始化与所有副作用都成功，
+          // 不会再有"误报成功"。
+          showSnackBarMessage(context, 'Passphrase set!'.tr());
+          // start listening for session inactivity on successful login
+          widget.sessionStream.add(SessionState.startListening);
+
+          TextInput.finishAutofillContext();
+          Log.auth.i('首次密码设置完成, 总耗时 ${sw.elapsedMilliseconds}ms');
+          Log.ui.i('界面切换: 设置密码页 → 主界面(/home)');
+          await Navigator.pushReplacementNamed(
+            context,
+            '/home',
+            arguments: widget.sessionStream,
+          );
+        } finally {
+          // 复位防重入（成功路径导航后页面已销毁，跳过 setState）
+          if (mounted) setState(() => _isSettingUp = false);
         }
-        if (!mounted) {
-          Log.auth.w('设置密码中止：页面已卸载, 不再继续导航');
-          return;
-        }
-        Session.onPasswordSet(enteredPassphrase);
-
-        // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
-        // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
-        // 会误走"输入两次密码"的设置页而不是登录页。
-        AppBootState.vaultInitialized = true;
-        Log.auth.i('设置密码步骤 4/4：保险库初始化标记已刷新 (vaultInitialized=true)');
-
-        // 评审 #14 修复：此处才提示成功——keyring 初始化与所有副作用都成功，
-        // 不会再有"误报成功"。
-        showSnackBarMessage(context, 'Passphrase set!'.tr());
-        // start listening for session inactivity on successful login
-        widget.sessionStream.add(SessionState.startListening);
-
-        TextInput.finishAutofillContext();
-        Log.auth.i('首次密码设置完成, 总耗时 ${sw.elapsedMilliseconds}ms');
-        Log.ui.i('界面切换: 设置密码页 → 主界面(/home)');
-        await Navigator.pushReplacementNamed(
-          context,
-          '/home',
-          arguments: widget.sessionStream,
-        );
       } else {
         Log.auth.w('设置密码失败：两次输入的密码不一致');
         showErrorToast(context, 'Passphrase mismatch!'.tr());

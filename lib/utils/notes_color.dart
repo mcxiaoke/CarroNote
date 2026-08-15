@@ -30,10 +30,7 @@ class NotesColor extends ChangeNotifier {
   /// 且与页面背景（scaffoldBackground ≈ surfaceContainerLow）拉开对比。
   static const double _brandTintAmount = 0.14;
 
-  static Color getNoteColor({
-    required int notIndex,
-    BuildContext? context,
-  }) {
+  static Color getNoteColor({required int notIndex, BuildContext? context}) {
     final lightColors =
         allNotesColorTheme[PreferencesStorage.colorfulNotesColorIndex]
             .colorList;

@@ -55,7 +55,10 @@ class NoteCardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 取色与字体色：与外壳 ShadCard backgroundColor 保持一致（纯计算，重复调用无副作用）。
-    final Color color = NotesColor.getNoteColor(notIndex: index, context: context);
+    final Color color = NotesColor.getNoteColor(
+      notIndex: index,
+      context: context,
+    );
     final Color fontColor = getFontColorForBackground(color);
 
     // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间，
@@ -77,7 +80,9 @@ class NoteCardBody extends StatelessWidget {
       // 在卡片底部内侧形成一条明显的灰色阴影边，看起来像一条"线"。
       // 设计令牌基调是扁平（去掉 BackdropFilter/去除双系统阴影），故关阴影。
       shadows: const [],
-      child: isCompact ? _buildCompact(fontColor, time) : _buildFull(fontColor, time),
+      child: isCompact
+          ? _buildCompact(fontColor, time)
+          : _buildFull(fontColor, time),
     );
   }
 
@@ -90,7 +95,8 @@ class NoteCardBody extends StatelessWidget {
         Text(
           sanitize(note.title),
           textDirection: getTextDirecton(note.title),
-          style: AppText.body.copyWith(fontWeight: FontWeight.bold,
+          style: AppText.body.copyWith(
+            fontWeight: FontWeight.bold,
             color: fontColor,
             fontFamily: uiFontFamily,
             fontFamilyFallback: uiFontFamilyFallback,
@@ -126,7 +132,8 @@ class NoteCardBody extends StatelessWidget {
         AutoSizeText(
           sanitize(previewText),
           textDirection: getTextDirecton(previewText),
-          style: AppText.body.copyWith(fontWeight: FontWeight.bold,
+          style: AppText.body.copyWith(
+            fontWeight: FontWeight.bold,
             color: fontColor,
             fontFamily: uiFontFamily,
             fontFamilyFallback: uiFontFamilyFallback,
