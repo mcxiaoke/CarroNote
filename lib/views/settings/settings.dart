@@ -305,8 +305,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // 取值走 PreferencesStorage 的统一来源。
     final index = PreferencesStorage.inactivityTimeoutIndex;
     final seconds = PreferencesStorage.kInactivityTimeoutChoicesSeconds[index];
-    if (seconds < 60) return '$seconds sec';
-    return '${seconds ~/ 60} min';
+    if (seconds < 60) {
+      return '{seconds} sec'.tr(namedArgs: {'seconds': '$seconds'});
+    }
+    return '{minutes} min'.tr(namedArgs: {'minutes': '${seconds ~/ 60}'});
   }
 
   /// 同步状态显示值（三态）。

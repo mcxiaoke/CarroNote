@@ -14,6 +14,9 @@
 // Flutter imports:
 import 'package:flutter/material.dart';
 
+// Package imports:
+import 'package:shadcn_ui/shadcn_ui.dart';
+
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
@@ -29,7 +32,8 @@ Widget debugBadge(BuildContext context) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
     decoration: BoxDecoration(
-      color: const Color(0xFFD32F2F),
+      // P1-22：错误/危险色统一走 shad destructive（替代硬编码 0xFFD32F2F）。
+      color: ShadTheme.of(context).colorScheme.destructive,
       borderRadius: BorderRadius.circular(10),
     ),
     child: const Text(

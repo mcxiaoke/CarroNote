@@ -1019,7 +1019,7 @@ class SyncEngine {
         // 本机持有该笔记的明文（同 uuid 且 hash 一致，或同内容孪生）→ 用当前
         // 密钥重新上传，恢复远端缺失的 blob；本机也无明文才标记跳过。
         // 注意：只有当 local.contentHash == item.hash 才用本机明文，防止并发编辑
-        // 导��� upload 错误内容（与 P0-4 的 canHealLocal 对齐）。
+        // 导致 upload 错误内容（与 P0-4 的 canHealLocal 对齐）。
         final local = await database.readNoteByUuid(uuid);
         final canHealLocal =
             local != null && !local.deleted && local.contentHash == item.hash;

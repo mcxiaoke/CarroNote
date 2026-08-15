@@ -172,7 +172,10 @@ class HomeDrawerState extends State<HomeDrawer> {
                 child: SizedBox(
                   width: logoHightWidth,
                   height: logoHightWidth,
-                  child: Image.asset(logoPath),
+                  child: Image.asset(
+                    logoPath,
+                    semanticLabel: SafeNotesConfig.appName,
+                  ),
                 ),
               ),
               Expanded(

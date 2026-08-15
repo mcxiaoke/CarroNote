@@ -423,5 +423,10 @@
     "Backend configuration is incomplete": "后端配置不完整",
     "No sync backend type selected": "未选择同步后端类型",
     "Configuration incomplete; please fill in required fields": "配置不完整，请填写必填项",
-    " (failed)": "(失败)"
+    " (failed)": "(失败)",
+    "Retry": "重试",
+    "{seconds} sec": "{seconds} 秒",
+    "{minutes} min": "{minutes} 分钟",
+    "Show less": "收起",
+    "Show all ({count})": "全部显示（{count}）"
 }

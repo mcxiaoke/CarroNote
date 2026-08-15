@@ -225,7 +225,10 @@ class _DevModeTapLogoState extends State<_DevModeTapLogo> {
       child: SizedBox(
         width: 96,
         height: 96,
-        child: Image.asset(SafeNotesConfig.appLogoPath),
+        child: Image.asset(
+          SafeNotesConfig.appLogoPath,
+          semanticLabel: SafeNotesConfig.appName,
+        ),
       ),
     );
   }

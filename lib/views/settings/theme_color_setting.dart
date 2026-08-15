@@ -186,12 +186,17 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: theme.textTheme.small),
+          // P3-19：Current/Preview 标题从 small 提级到正文+加粗，避免过弱。
+          Text(
+            title,
+            style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              height: 48,
+              // P3-19：色条 48 过矮，抬高到 72 提升预览占比。
+              height: 72,
               width: double.infinity,
               color: previewColor,
             ),

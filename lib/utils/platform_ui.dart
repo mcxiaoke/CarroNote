@@ -23,7 +23,10 @@ import 'package:flutter/material.dart';
 ///
 /// 让桌面端（尤其是 Windows）使用系统原生无衬线字体，而非打包的衬线字体，
 /// 这是"像原生"的最关键单点。移动端返回 null，沿用系统默认（Roboto / SF）。
+/// Web 下恒返回 null（P1-8）：Web 走浏览器默认无衬线字体，
+/// 否则会按 UA 误返回 'Segoe UI' 等桌面字体名（Web 并不保证安装该字体）。
 String? get uiFontFamily {
+  if (kIsWeb) return null;
   switch (defaultTargetPlatform) {
     case TargetPlatform.windows:
       return 'Segoe UI';
@@ -42,7 +45,9 @@ String? get uiFontFamily {
 ///
 /// Segoe UI / .AppleSystemUIFont 不含中日韩字形，必须显式回退到系统中文字体，
 /// 否则中文会回退到与拉丁文不同的字体族，造成中英混排不一致。
+/// Web 下与 [uiFontFamily] 一致返回空（浏览器自带中文字体回退）。
 List<String> get uiFontFamilyFallback {
+  if (kIsWeb) return const [];
   switch (defaultTargetPlatform) {
     case TargetPlatform.windows:
       return const ['Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC'];

@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 
 // Package imports:
+import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
@@ -112,7 +113,7 @@ Widget errorState({required String error, VoidCallback? onRetry}) {
                 const SizedBox(height: AppSpace.lg),
                 ShadButton.outline(
                   onPressed: onRetry,
-                  child: const Text('Retry'),
+                  child: Text('Retry'.tr()),
                 ),
               ],
             ],

@@ -26,6 +26,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -79,9 +80,8 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 20,
+      // P1-19：编辑器标题走 AppText.title（20 bold），保留平台字体族。
+      style: AppText.title.copyWith(
         fontFamily: uiFontFamily,
         fontFamilyFallback: uiFontFamilyFallback,
       ),
@@ -119,8 +119,8 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
-      style: TextStyle(
-        fontSize: 16,
+      // 编辑器正文保持 16（AppText.body），编辑态为纯文本、不套 Markdown 排版。
+      style: AppText.body.copyWith(
         fontFamily: uiFontFamily,
         fontFamilyFallback: uiFontFamilyFallback,
       ),

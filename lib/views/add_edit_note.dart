@@ -31,6 +31,7 @@ import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_widget.dart';
@@ -221,7 +222,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         children: [
           SelectableText(
             title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            // P1-19：预览标题走 AppText.title（20 bold），与编辑器标题一致。
+            style: AppText.title,
           ),
           const SizedBox(height: 10),
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
@@ -229,9 +231,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
             MarkdownBody(
               data: description,
               selectable: true,
-              styleSheet: MarkdownStyleSheet.fromTheme(
-                Theme.of(context),
-              ).copyWith(p: const TextStyle(fontSize: 16)),
+              styleSheet: _markdownStyleSheet(context),
               // 隐私：不加载任何网络/本地图片，避免泄露 IP / 元数据
               imageBuilder: (uri, _, _) => const SizedBox.shrink(),
               onTapLink: (text, href, _) {
@@ -244,8 +244,51 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               },
             )
           else
-            SelectableText(description, style: const TextStyle(fontSize: 16)),
+            // 预览纯文本与编辑态一致（16），不套 Markdown 排版。
+            SelectableText(description, style: AppText.body),
         ],
+      ),
+    );
+  }
+
+  /// Markdown 预览样式：正文 16（与编辑态一致），标题 h1-h6 逐级递减的多级
+  /// 字号（24→20→18→17→16→16），blockquote / code 显式设样式，避免落到
+  /// Material 默认排印与 shad 风格脱节。Markdown 预览与纯文本编辑态不同，
+  /// 是唯一带多级标题排版的视图。
+  MarkdownStyleSheet _markdownStyleSheet(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final base = MarkdownStyleSheet.fromTheme(theme);
+    // 行内代码沿用主题已有配色，仅统一为等宽 + 小一号，避免硬编码颜色在
+    // 亮/暗模式下对比度失衡。
+    final baseCode = base.code ?? AppText.body;
+    const mono = 'monospace';
+    return base.copyWith(
+      p: AppText.body,
+      // 标题层级：h1=24 起逐级递减，h5/h6 不小于正文（16），仅用字重/颜色区分。
+      h1: AppText.body.copyWith(fontSize: 24, fontWeight: FontWeight.w700),
+      h2: AppText.body.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
+      h3: AppText.body.copyWith(fontSize: 18, fontWeight: FontWeight.w700),
+      h4: AppText.body.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
+      h5: AppText.body.copyWith(fontWeight: FontWeight.w700),
+      h6: AppText.body.copyWith(
+        fontWeight: FontWeight.w600,
+        color: cs.onSurfaceVariant,
+      ),
+      // 引用块：左竖线 + 斜体弱化，shad 风格。
+      blockquote: AppText.body.copyWith(
+        fontStyle: FontStyle.italic,
+        color: cs.onSurfaceVariant,
+      ),
+      blockquoteDecoration: BoxDecoration(
+        border: Border(left: BorderSide(color: cs.outlineVariant, width: 3)),
+      ),
+      // 行内代码 / 代码块：等宽字体，代码块加弱背景 + 圆角。
+      code: baseCode.copyWith(fontFamily: mono, fontSize: 14),
+      codeblockPadding: const EdgeInsets.all(10),
+      codeblockDecoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
       ),
     );
   }

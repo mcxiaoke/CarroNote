@@ -262,7 +262,17 @@ class _KV {
 // Tab 2: 同步结果
 // ──────────────────────────────────────────────
 
-class _SyncResultTab extends StatelessWidget {
+class _SyncResultTab extends StatefulWidget {
+  @override
+  State<_SyncResultTab> createState() => _SyncResultTabState();
+}
+
+class _SyncResultTabState extends State<_SyncResultTab> {
+  /// 失败 UUID 折叠展示（P3-20）：默认只显示前 5 条，可展开/收起，
+  /// 避免同步失败条数很多时诊断页被长列表淹没。
+  static const int _collapsedUuidCount = 5;
+  bool _showAllUuids = false;
+
   @override
   Widget build(BuildContext context) {
     final snapshot = SyncService.instance.getDiagnosticsSnapshot();
@@ -336,18 +346,41 @@ class _SyncResultTab extends StatelessWidget {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 4),
-          ...snapshot.lastResultFailedNoteUuids!.map(
-            (uuid) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1),
-              child: SelectableText(
-                uuid,
-                style: TextStyle(fontSize: 12, color: _semWarning(context)),
+          ..._failedUuidRows(context, snapshot.lastResultFailedNoteUuids!),
+          if (snapshot.lastResultFailedNoteUuids!.length > _collapsedUuidCount)
+            TextButton(
+              onPressed: () => setState(() => _showAllUuids = !_showAllUuids),
+              child: Text(
+                _showAllUuids
+                    ? 'Show less'.tr()
+                    : 'Show all ({count})'.tr(
+                        namedArgs: {
+                          'count':
+                              '${snapshot.lastResultFailedNoteUuids!.length}',
+                        },
+                      ),
               ),
             ),
-          ),
         ],
       ],
     );
+  }
+
+  /// 失败 UUID 行列表：折叠时只取前 [_collapsedUuidCount] 条。
+  List<Widget> _failedUuidRows(BuildContext context, List<String> uuids) {
+    final shown = _showAllUuids
+        ? uuids
+        : uuids.take(_collapsedUuidCount).toList();
+    return [
+      for (final uuid in shown)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: SelectableText(
+            uuid,
+            style: TextStyle(fontSize: 12, color: _semWarning(context)),
+          ),
+        ),
+    ];
   }
 
   Widget _buildStatGrid(

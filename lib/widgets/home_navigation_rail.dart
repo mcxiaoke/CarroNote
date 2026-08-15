@@ -84,7 +84,10 @@ class HomeSidebar extends StatelessWidget {
                   SizedBox(
                     width: 32,
                     height: 32,
-                    child: Image.asset(SafeNotesConfig.appLogoPath),
+                    child: Image.asset(
+                      SafeNotesConfig.appLogoPath,
+                      semanticLabel: SafeNotesConfig.appName,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(

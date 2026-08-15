@@ -423,5 +423,10 @@
     "Backend configuration is incomplete": "Backend configuration is incomplete",
     "No sync backend type selected": "No sync backend type selected",
     "Configuration incomplete; please fill in required fields": "Configuration incomplete; please fill in required fields",
-    " (failed)": "(failed)"
+    " (failed)": "(failed)",
+    "Retry": "Retry",
+    "{seconds} sec": "{seconds} sec",
+    "{minutes} min": "{minutes} min",
+    "Show less": "Show less",
+    "Show all ({count})": "Show all ({count})"
 }

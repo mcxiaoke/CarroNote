@@ -1,13 +1,18 @@
 /*
- * 鏈€杩戝垹闄よ鍥? *
- * 鍔熻兘锛? *   - 鍒楀嚭鎵€鏈夎蒋鍒犻櫎锛堝纰戯級绗旇
- *   - 鏀寔鍗曟潯鎭㈠锛堟挙鍥炲纰戞爣璁帮級
- *   - 鏀寔鍗曟潯姘镐箙鍒犻櫎锛坔ardDelete锛屼笉鍙仮澶嶏級
- *   - 鏀寔娓呯┖鍏ㄩ儴锛堟壒閲?hardDelete锛? *
- * 鍚屾璇存槑锛? *   - 鎭㈠鎿嶄綔浼氭妸 deleted 鏀瑰洖 0 骞舵洿鏂?updatedAt锛岃Е鍙戝悓姝ヤ笂浼犺鐩栬繙绔纰? *   - 姘镐箙鍒犻櫎鍙槸浠庢湰鍦版暟鎹簱绉婚櫎琛岋紝杩滅 manifest 涓粛鏈夊纰? *     涓嬫鍚屾鏃?SyncEngine 浼氬彂鐜?浠呰繙绔湁"鈫?閲嶆柊鍐欏洖鏈湴澧撶
- *     鐪熸姘镐箙娓呯悊闇€瑕?杩滅杩囨湡澧撶娓呯悊"鏈哄埗锛堟殏鏈疄鐜帮紝鍙傝 sync_design锛? */
-
-// Flutter 瀵煎叆
+ * 最近删除视图
+ *
+ * 功能：
+ *   - 列出所有软删除（墓碑）笔记
+ *   - 支持单条恢复（撤回墓碑标记）
+ *   - 支持单条永久删除（hardDelete，不可恢复）
+ *   - 支持清空全部（批量 hardDelete）
+ *
+ * 同步说明：
+ *   - 恢复操作会把 deleted 改回 0 并更新 updatedAt，触发同步上传覆盖远端墓碑
+ *   - 永久删除只是从本地数据库移除行，远端 manifest 中仍有墓碑
+ *     下次同步时 SyncEngine 会发现“仅远端有”→ 重新写回本地墓碑
+ *     真正永久清理需要“远端过期墓碑清理”机制（暂未实现，参见 sync_design）
+ */
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -28,10 +33,6 @@ import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/states.dart';
-
-// Package 瀵煎叆
-
-// Project 瀵煎叆
 
 class DeletedNotesPage extends StatefulWidget {
   const DeletedNotesPage({super.key});
@@ -363,3 +364,4 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
     });
   }
 }
+

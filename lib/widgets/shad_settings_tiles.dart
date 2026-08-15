@@ -118,9 +118,9 @@ Widget shadNavigationTile(
                 child: Text(
                   value,
                   textAlign: TextAlign.end,
-                  style: ShadTheme.of(
-                    context,
-                  ).textTheme.muted.copyWith(fontSize: 12),
+                  // P3-1：value 提升到 muted 原生 14（不再缩小到 12），
+                  // 避免右值文字过弱看不清。
+                  style: ShadTheme.of(context).textTheme.muted,
                 ),
               ),
             ),
@@ -266,9 +266,8 @@ Widget shadInfoTile(
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: ShadTheme.of(
-                context,
-              ).textTheme.muted.copyWith(fontSize: 12),
+              // P3-1：value 提升到 muted 原生 14（不再缩小到 12）。
+              style: ShadTheme.of(context).textTheme.muted,
             ),
           ),
         ),
