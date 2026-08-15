@@ -224,10 +224,26 @@ Future<void> _loginIfNeeded(WidgetTester tester) async {
   await _waitFor(tester, () => _isHome(tester));
 }
 
-/// True when the home screen is showing (add-note FAB present, no login field).
-bool _isHome(WidgetTester tester) =>
-    tester.any(find.byIcon(Icons.add)) &&
-    !tester.any(find.byKey(const Key('passphraseInput')));
+/// True when the home screen is the current (top) route.
+///
+/// Detection is purely key-based (no [Icons.add] guesswork — the FAB uses
+/// [LucideIcons.plus]). Home is the base route, so it stays mounted underneath
+/// any pushed page (e.g. the note page opened via an OpenContainer, or the
+/// settings page via pushNamed). We therefore require the home root key to be
+/// present *and* every other top-level screen root key to be absent — that is
+/// what distinguishes "looking at home" from "home mounted underneath a pushed
+/// page".
+bool _isHome(WidgetTester tester) {
+  if (tester.any(find.byKey(const Key('passphraseInput')))) return false;
+  if (!tester.any(find.byKey(const Key('ui-home-screen')))) return false;
+  for (final other in const [
+    Key('ui-note-screen'),
+    Key('ui-settings-screen'),
+  ]) {
+    if (tester.any(find.byKey(other))) return false;
+  }
+  return true;
+}
 
 /// Pops the top-most route (pushed page, bottom sheet, or dialog) on the root
 /// navigator and lets the frame settle.

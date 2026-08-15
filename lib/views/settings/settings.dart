@@ -109,6 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Provider.of<ThemeProvider>(context);
 
     return Scaffold(
+      key: const Key('ui-settings-screen'),
       appBar: AppBar(title: Text('Settings'.tr(), style: appBarTitle)),
       body: shadSettingsList(_settingsGroups(context)),
     );

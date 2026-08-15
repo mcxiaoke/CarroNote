@@ -354,10 +354,10 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
           onChanged: (_) => setState(() {}),
           placeholder: Text('Encryption Phrase'.tr()),
           padding: kInputPadding,
-          leading: const Icon(Icons.lock, size: kInputIconSize),
+          leading: const Icon(LucideIcons.lock, size: kInputIconSize),
           trailing: kInputIconButton(
             icon: Icon(
-              _hidden ? Icons.visibility : Icons.visibility_off,
+              _hidden ? LucideIcons.eye : LucideIcons.eyeOff,
               size: kInputIconSize,
             ),
             onPressed: () => setState(() => _hidden = !_hidden),
@@ -371,7 +371,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
           onChanged: (_) => setState(() {}),
           placeholder: Text('Confirm password'.tr()),
           padding: kInputPadding,
-          leading: const Icon(Icons.lock_outline, size: kInputIconSize),
+          leading: const Icon(LucideIcons.lock, size: kInputIconSize),
         ),
         if (_passwordCtrl.text.isNotEmpty &&
             _passwordCtrl.text != _confirmCtrl.text)

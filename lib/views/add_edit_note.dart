@@ -94,6 +94,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Scaffold(
+          key: const Key('ui-note-screen'),
           resizeToAvoidBottomInset: false,
           appBar: AppBar(
             actions: [

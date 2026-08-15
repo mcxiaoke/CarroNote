@@ -1,6 +1,8 @@
 # 图标统一替换计划（Material Icons → Lucide Icons）
 
-> 备忘文档 · 创建日期：2026-08-15 · 状态：待执行
+> 备忘文档 · 创建日期：2026-08-15 · 状态：已完成（2026-08-15 执行）
+
+> 执行勘误：`LucideIcons` 实际由 `shadcn_ui` 再导出（其底层依赖 `lucide_icons_flutter 3.1.15`），并非 safenotes 的直接依赖。执行时统一用 `import 'package:shadcn_ui/shadcn_ui.dart';` 取得，未新增 `lucide_icons_flutter` 依赖。详见 `docs/CHANGES-20260815.md`。
 
 ## 1. 背景
 

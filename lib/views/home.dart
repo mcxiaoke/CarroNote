@@ -332,6 +332,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       onVerticalDragStart: dismissKeyboard,
       onVerticalDragDown: dismissKeyboard,
       child: Scaffold(
+        key: const Key('ui-home-screen'),
         drawer: isCompact ? _buildDrawer(context) : null,
         appBar: AppBar(
           title: Text('Safe Notes'.tr(), style: appBarTitle),
@@ -418,15 +419,15 @@ class HomePageState extends State<HomePage> with RouteAware {
   IconData _syncIconData(SyncStatus status) {
     switch (status) {
       case SyncStatus.uninitialized:
-        return Icons.cloud_off_outlined;
+        return LucideIcons.cloudOff;
       case SyncStatus.idle:
-        return Icons.cloud_outlined;
+        return LucideIcons.cloud;
       case SyncStatus.syncing:
-        return Icons.sync;
+        return LucideIcons.refreshCw;
       case SyncStatus.success:
-        return Icons.cloud_done_outlined;
+        return LucideIcons.cloudCheck;
       case SyncStatus.error:
-        return Icons.cloud_off_outlined;
+        return LucideIcons.cloudOff;
     }
   }
 
@@ -452,7 +453,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _diagnosticsButton() {
     if (!DevMode.isActive) return const SizedBox.shrink();
     return IconButton(
-      icon: const Icon(Icons.bug_report_outlined),
+      icon: const Icon(LucideIcons.bug),
       tooltip: 'Debug Panel'.tr(),
       onPressed: () async {
         Log.ui.i('界面切换: 主界面 → 调试面板(/diagnostics)');
@@ -465,8 +466,8 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _gridListView() {
     return IconButton(
       icon: !isGridView
-          ? const Icon(Icons.grid_view_outlined)
-          : const Icon(Icons.splitscreen_outlined),
+          ? const Icon(LucideIcons.layoutGrid)
+          : const Icon(LucideIcons.columns2),
       onPressed: () {
         setState(() {
           PreferencesStorage.setIsGridView(!isGridView);
@@ -478,7 +479,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   // Widget _DevSessionListner() {
   //   return IconButton(
-  //     icon: isListner ? Icon(Icons.toggle_on) : Icon(Icons.toggle_off),
+  //     icon: isListner ? Icon(LucideIcons.toggleRight) : Icon(LucideIcons.toggleLeft),
   //     onPressed: () {
   //       if (isListner == true)
   //         widget.sessionStateStream.add(SessionState.stopListening);
@@ -494,7 +495,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _shortNotes() {
     return IconButton(
-      icon: !isNewFirst ? Icon(Icons.arrow_upward) : Icon(Icons.arrow_downward),
+      icon: !isNewFirst ? Icon(LucideIcons.arrowUp) : Icon(LucideIcons.arrowDown),
       onPressed: () {
         setState(() {
           isNewFirst = !isNewFirst;
@@ -513,7 +514,7 @@ class HomePageState extends State<HomePage> with RouteAware {
                 // P3-15：搜索无结果与空库区分，避免用户以为笔记被删。
                 ? query.isNotEmpty
                       ? emptyState(
-                          icon: Icons.search_off,
+                          icon: LucideIcons.searchX,
                           text: 'No notes match "{query}"'.tr(
                             namedArgs: {'query': query},
                           ),
@@ -521,7 +522,7 @@ class HomePageState extends State<HomePage> with RouteAware {
                           onCta: () => _searchNote(''),
                         )
                       : emptyState(
-                          icon: Icons.note_alt_outlined,
+                          icon: LucideIcons.stickyNote,
                           text: noNotes,
                           cta: 'New Note'.tr(),
                           onCta: _openAddNote,
@@ -556,7 +557,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         ),
       ),
       onPressed: _openAddNote,
-      child: const Icon(Icons.add),
+      child: const Icon(LucideIcons.plus),
     );
   }
 
@@ -823,7 +824,7 @@ class _RotatingSyncIconState extends State<_RotatingSyncIcon>
   Widget build(BuildContext context) {
     return RotationTransition(
       turns: _controller,
-      child: const Icon(Icons.sync),
+      child: const Icon(LucideIcons.refreshCw),
     );
   }
 }

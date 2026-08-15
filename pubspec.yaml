@@ -25,7 +25,6 @@ dependencies:
   after_layout: ^1.2.0
   auto_size_text: ^3.0.0
   crypto: ^3.0.3
-  cupertino_icons: ^1.0.6
   device_info_plus: ^12.0.0
   easy_localization: ^3.0.8
   file_picker: ^11.0.2  # 12.x 仍为 beta，暂保持稳定版

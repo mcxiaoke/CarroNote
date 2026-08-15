@@ -97,7 +97,7 @@ Widget errorState({required String error, VoidCallback? onRetry}) {
             children: [
               // P1-22：错误色统一走 shad destructive。
               Icon(
-                Icons.error_outline,
+                LucideIcons.circleAlert,
                 size: 48,
                 color: ShadTheme.of(context).colorScheme.destructive,
               ),

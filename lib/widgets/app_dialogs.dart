@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
@@ -300,10 +301,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             obscureText: _hidden,
             decoration: InputDecoration(
               labelText: widget.placeholder ?? 'Passphrase'.tr(),
-              prefixIcon: const Icon(Icons.lock, size: kInputIconSize),
+              prefixIcon: const Icon(LucideIcons.lock, size: kInputIconSize),
               suffixIcon: kInputIconButton(
                 icon: Icon(
-                  _hidden ? Icons.visibility : Icons.visibility_off,
+                  _hidden ? LucideIcons.eye : LucideIcons.eyeOff,
                   size: kInputIconSize,
                 ),
                 onPressed: () => setState(() => _hidden = !_hidden),

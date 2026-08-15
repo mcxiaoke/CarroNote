@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -115,20 +116,20 @@ class HomeSidebar extends StatelessWidget {
                 shrinkWrap: true,
                 children: [
                   sideItem(
-                    Icons.delete_outline,
+                    LucideIcons.trash2,
                     'Recently Deleted'.tr(),
                     onDeletedNotesCallback,
                   ),
                   KeyedSubtree(
                     key: const Key('ui-home-nav-settings'),
                     child: sideItem(
-                      Icons.settings_outlined,
+                      LucideIcons.settings,
                       'Settings'.tr(),
                       onSettingsCallback,
                     ),
                   ),
                   // 锁定：紧跟在设置之下，不置底、无分割线（与移动端 Drawer 一致）
-                  sideItem(Icons.lock_outline, 'Lock'.tr(), onLockCallback),
+                  sideItem(LucideIcons.lock, 'Lock'.tr(), onLockCallback),
                 ],
               ),
             ),

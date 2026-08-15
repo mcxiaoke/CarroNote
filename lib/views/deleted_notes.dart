@@ -72,7 +72,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
         actions: [
           if (_deletedNotes.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.delete_sweep_outlined),
+              icon: const Icon(LucideIcons.trash2),
               tooltip: 'Clear All'.tr(),
               onPressed: _confirmClearAll,
             ),
@@ -89,7 +89,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     }
     if (_deletedNotes.isEmpty) {
       return emptyState(
-        icon: Icons.delete_outline,
+        icon: LucideIcons.trash2,
         text: 'No deleted notes'.tr(),
       );
     }
@@ -288,14 +288,14 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
             controller: _menuController,
             child: ShadIconButton.raw(
               variant: ShadButtonVariant.ghost,
-              icon: Icon(Icons.more_vert, color: fontColor),
+              icon: Icon(LucideIcons.moreVertical, color: fontColor),
               onPressed: () => _menuController.toggle(),
             ),
             popover: (context) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _menuRow(
-                  icon: Icons.restore,
+                  icon: LucideIcons.rotateCcw,
                   label: 'Restore'.tr(),
                   onTap: () {
                     _menuController.hide();
@@ -303,7 +303,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
                   },
                 ),
                 _menuRow(
-                  icon: Icons.delete_forever,
+                  icon: LucideIcons.trash2,
                   label: 'Permanently Delete'.tr(),
                   destructive: true,
                   onTap: () {

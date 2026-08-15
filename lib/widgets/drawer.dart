@@ -89,14 +89,14 @@ class HomeDrawerState extends State<HomeDrawer> {
                         _buildMenuItem(
                           topPadding: height * 0.005,
                           text: notesText,
-                          icon: Icons.note_alt_outlined,
+                          icon: LucideIcons.stickyNote,
                           onClicked: widget.onNotesCallback,
                         ),
                         if (widget.onDeletedNotesCallback != null)
                           _buildMenuItem(
                             topPadding: itemSpacing,
                             text: deletedNotesText,
-                            icon: Icons.delete_outline,
+                            icon: LucideIcons.trash2,
                             onClicked: widget.onDeletedNotesCallback!,
                           ),
                         KeyedSubtree(
@@ -104,7 +104,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                           child: _buildMenuItem(
                             topPadding: itemSpacing,
                             text: settings,
-                            icon: Icons.settings_outlined,
+                            icon: LucideIcons.settings,
                             onClicked: widget.onSettingsCallback,
                           ),
                         ),
@@ -112,7 +112,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                         _buildMenuItem(
                           topPadding: itemSpacing,
                           text: lockText,
-                          icon: Icons.lock_outline,
+                          icon: LucideIcons.lock,
                           onClicked: widget.onLockCallback,
                         ),
                       ],

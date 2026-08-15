@@ -57,7 +57,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
         title: Text('Debug Panel'.tr(), style: appBarTitle),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(LucideIcons.rotateCw),
             tooltip: 'Refresh'.tr(),
             onPressed: () => setState(() {}),
           ),
@@ -129,7 +129,7 @@ class _StatusTab extends StatelessWidget {
             Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 20),
+                  icon: const Icon(LucideIcons.copy, size: 20),
                   tooltip: 'Copy All'.tr(),
                   onPressed: () => _copyToClipboard(
                     context,
@@ -196,7 +196,7 @@ class _StatusTab extends StatelessWidget {
         const SizedBox(height: 16),
         ShadButton.raw(
           variant: ShadButtonVariant.outline,
-          leading: const Icon(Icons.download),
+          leading: const Icon(LucideIcons.download),
           child: Text('Export Diagnostics + Logs'.tr()),
           onPressed: () => _exportLogs(context),
         ),
@@ -402,37 +402,37 @@ class _SyncResultTabState extends State<_SyncResultTab> {
       (
         'Upload'.tr(),
         snapshot.lastResultUploaded ?? 0,
-        Icons.upload,
+        LucideIcons.upload,
         _semInfo(context),
       ),
       (
         'Download'.tr(),
         snapshot.lastResultDownloaded ?? 0,
-        Icons.download,
+        LucideIcons.download,
         _semSuccess(context),
       ),
       (
         'Delete'.tr(),
         snapshot.lastResultDeleted ?? 0,
-        Icons.delete,
+        LucideIcons.trash2,
         _semDanger(context),
       ),
       (
         'Conflicts'.tr(),
         snapshot.lastResultConflicts ?? 0,
-        Icons.warning,
+        LucideIcons.triangleAlert,
         _semWarning(context),
       ),
       (
         'Migrated'.tr(),
         snapshot.lastResultMigrated ?? 0,
-        Icons.swap_horiz,
+        LucideIcons.arrowLeftRight,
         _semInfo(context),
       ),
       (
         'Skipped'.tr(),
         snapshot.lastResultSkipped ?? 0,
-        Icons.skip_next,
+        LucideIcons.skipForward,
         _semNeutral(context),
       ),
     ];
@@ -566,28 +566,28 @@ class _ActionsTab extends StatelessWidget {
     IconData icon;
     if (isError) {
       color = _semDanger(context);
-      icon = Icons.error_outline;
+      icon = LucideIcons.circleAlert;
     } else if (isHeal) {
       color = _semSuccess(context);
-      icon = Icons.healing;
+      icon = LucideIcons.heartPulse;
     } else if (isConflict) {
       color = _semWarning(context);
-      icon = Icons.warning;
+      icon = LucideIcons.triangleAlert;
     } else if (action.type == 'upload') {
       color = _semInfo(context);
-      icon = Icons.upload;
+      icon = LucideIcons.upload;
     } else if (action.type == 'download') {
       color = _semInfo(context);
-      icon = Icons.download;
+      icon = LucideIcons.download;
     } else if (action.type == 'delete') {
       color = _semDanger(context);
-      icon = Icons.delete;
+      icon = LucideIcons.trash2;
     } else if (action.type == 'migrate') {
       color = _semInfo(context);
-      icon = Icons.swap_horiz;
+      icon = LucideIcons.arrowLeftRight;
     } else {
       color = _semNeutral(context);
-      icon = Icons.info;
+      icon = LucideIcons.info;
     }
 
     return Padding(
@@ -789,7 +789,7 @@ class _LogsTabState extends State<_LogsTab> {
                   message: 'Level Filter'.tr(),
                   child: ShadIconButton.raw(
                     variant: ShadButtonVariant.ghost,
-                    icon: const Icon(Icons.filter_list, size: 20),
+                    icon: const Icon(LucideIcons.listFilter, size: 20),
                     onPressed: () => _levelFilterController.toggle(),
                   ),
                 ),
@@ -811,8 +811,8 @@ class _LogsTabState extends State<_LogsTab> {
                             children: [
                               Icon(
                                 (_levelFilter[level] ?? true)
-                                    ? Icons.check_box
-                                    : Icons.check_box_outline_blank,
+                                    ? LucideIcons.squareCheck
+                                    : LucideIcons.square,
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
@@ -828,8 +828,8 @@ class _LogsTabState extends State<_LogsTab> {
               IconButton(
                 icon: Icon(
                   _autoScroll
-                      ? Icons.vertical_align_bottom
-                      : Icons.vertical_align_top,
+                      ? LucideIcons.alignEndVertical
+                      : LucideIcons.alignStartVertical,
                   size: 20,
                 ),
                 tooltip: _autoScroll
@@ -840,7 +840,7 @@ class _LogsTabState extends State<_LogsTab> {
               const Spacer(),
               // 复制
               IconButton(
-                icon: const Icon(Icons.copy, size: 20),
+                icon: const Icon(LucideIcons.copy, size: 20),
                 tooltip: 'Copy All Logs'.tr(),
                 onPressed: () {
                   final text = entries.map((e) => e.formattedLine).join('\n');
@@ -855,7 +855,7 @@ class _LogsTabState extends State<_LogsTab> {
               ),
               // 导出（复制诊断+日志）
               IconButton(
-                icon: const Icon(Icons.download, size: 20),
+                icon: const Icon(LucideIcons.download, size: 20),
                 tooltip: 'Export Diagnostics + Logs'.tr(),
                 onPressed: () async {
                   final text = await SyncService.instance.exportAllLogsAsText();
@@ -870,7 +870,7 @@ class _LogsTabState extends State<_LogsTab> {
               ),
               // 清空（仅清空内存缓冲，不影响文件）
               IconButton(
-                icon: const Icon(Icons.delete_sweep, size: 20),
+                icon: const Icon(LucideIcons.trash2, size: 20),
                 tooltip: 'Clear In-memory Logs'.tr(),
                 onPressed: () {
                   SyncService.instance.clearLogBuffer();
@@ -1096,7 +1096,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    isRunning ? Icons.wifi : Icons.wifi_off,
+                    isRunning ? LucideIcons.wifi : LucideIcons.wifiOff,
                     color: isRunning
                         ? _semSuccess(context)
                         : _semNeutral(context),
@@ -1140,7 +1140,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Icon(isRunning ? Icons.stop : Icons.play_arrow),
+              : Icon(isRunning ? LucideIcons.square : LucideIcons.play),
           child: Text(isRunning ? 'Stop'.tr() : 'Start'.tr()),
         ),
         const SizedBox(height: 16),
@@ -1156,7 +1156,7 @@ class _WebServerTabState extends State<_WebServerTab> {
           ),
           child: Row(
             children: [
-              Icon(Icons.warning, color: _semWarning(context), size: 20),
+              Icon(LucideIcons.triangleAlert, color: _semWarning(context), size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
