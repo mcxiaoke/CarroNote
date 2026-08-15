@@ -20,8 +20,10 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:provider/provider.dart';
 
 // Project imports:
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/views/authentication/login.dart';
 import 'package:safenotes/views/authentication/set_passphrase.dart';
 
@@ -30,6 +32,9 @@ import 'package:safenotes/views/authentication/set_passphrase.dart';
 /// 简化方案:AuthWall 不再读 passPhraseHash 判断路由,改用 Keyring.isInitialized。
 /// 为避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁,
 /// 在 main() 启动序列里一次性查询并缓存到此单例,AuthWall 直接读取。
+///
+/// 注意: P2 起已被 SessionProvider 替代，保留此 class 作临时兼容。
+/// 待 P3 全面迁移后删除。
 class AppBootState {
   /// null=未就绪(启动中), true=已有 keyring(走登录页), false=无 keyring(走设置密码页)
   static bool? vaultInitialized;
@@ -47,9 +52,11 @@ class AuthWall extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 简化方案:用 Keyring.isInitialized 判断路由(替代 passPhraseHash)
-    // AppBootState.vaultInitialized 在 main() 预初始化时填充
-    final bool initialized = AppBootState.vaultInitialized == true;
+    // P2: 优先使用 SessionProvider，回退到 AppBootState（兼容已有调用方）
+    final sessionProvider = context.read<SessionProvider?>();
+    final bool initialized = sessionProvider?.vaultInitialized == true
+        ? true
+        : AppBootState.vaultInitialized == true;
     Log.ui.i(
       '启动路由决策: vaultInitialized=${AppBootState.vaultInitialized} '
       '→ ${initialized ? "登录页(已有密钥环)" : "设置密码页(首次初始化保险库)"}',

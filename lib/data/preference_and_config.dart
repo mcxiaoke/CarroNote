@@ -19,8 +19,18 @@ import 'package:core/core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+// Project imports:
+import 'package:safenotes/data/preference_repository.dart';
+
 class PreferencesStorage {
   static SharedPreferences? _preferences;
+
+  /// PreferencesRepository 实例（P2 静态桥）。
+  ///
+  /// 当注入非 null 实例时，所有 getter/setter 将转发到该实例。
+  /// 测试通过 `FakePreferencesRepository` 注入，P3 逐步迁移全部调用方。
+  static PreferencesRepository? _instance; // ignore: unused_field — P3 迁移后启用
+  static set instance(PreferencesRepository? repo) => _instance = repo;
 
   // 简化方案:passPhraseHash 已移除(以 keyring 解密作为唯一凭证)
   // 保留 _keyPassPhraseHash 常量用于 init() 时清理旧版残留 key(评审 mmm3 B6)

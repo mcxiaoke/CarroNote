@@ -27,6 +27,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/utils/app_scroll_behavior.dart';
@@ -49,6 +50,11 @@ class App extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
         ChangeNotifierProvider<NotesColor>(create: (_) => NotesColor()),
+        ChangeNotifierProvider<SessionProvider>(
+          create: (_) => SessionProvider(
+            vaultInitialized: AppBootState.vaultInitialized,
+          ),
+        ),
       ],
       builder: (context, _) {
         final themeProvider = Provider.of<ThemeProvider>(context);
