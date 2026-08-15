@@ -546,6 +546,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _addANewNoteButton(BuildContext context) {
     // 原 FloatingActionButton 替换为 ShadButton：56×56 圆形悬浮，保持新建入口外观。
     return ShadButton(
+      key: const Key('ui-home-fab-newnote'),
       width: 56,
       height: 56,
       padding: EdgeInsets.zero,
@@ -675,13 +676,17 @@ class HomePageState extends State<HomePage> with RouteAware {
           );
           action();
         },
-        child: PreferencesStorage.isCompactPreview
-            ? (grid
-                  ? NoteCardWidgetCompact(note: note, index: colorIndex)
-                  : NoteTileWidgetCompact(note: note, index: colorIndex))
-            : (grid
-                  ? NoteCardWidget(note: note, index: colorIndex)
-                  : NoteTileWidget(note: note, index: colorIndex)),
+        // ui 前缀 key：集成测试按序号定位第 N 条笔记（如 ui-home-note-1 = 第 2 条）
+        child: KeyedSubtree(
+          key: Key('ui-home-note-$index'),
+          child: PreferencesStorage.isCompactPreview
+              ? (grid
+                    ? NoteCardWidgetCompact(note: note, index: colorIndex)
+                    : NoteTileWidgetCompact(note: note, index: colorIndex))
+              : (grid
+                    ? NoteCardWidget(note: note, index: colorIndex)
+                    : NoteTileWidget(note: note, index: colorIndex)),
+        ),
       ),
       openBuilder: (context, closeAction) => AddEditNotePage(
         sessionStateStream: widget.sessionStateStream,

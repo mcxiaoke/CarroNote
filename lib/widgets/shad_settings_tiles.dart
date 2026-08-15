@@ -67,8 +67,11 @@ List<Widget> _withDividers(List<Widget> tiles) {
 }
 
 /// 导航型设置项（点击进入子页 / 弹窗 / 外链）。
+///
+/// [key] 可选：用于集成测试按语义定位（如 `ui-setting-item-darkmode`）。
 Widget shadNavigationTile(
   BuildContext context, {
+  Key? key,
   required IconData icon,
   required String title,
   String? subtitle,
@@ -76,7 +79,7 @@ Widget shadNavigationTile(
   bool destructive = false,
   required void Function() onTap,
 }) {
-  return _TileSurface(
+  final Widget tile = _TileSurface(
     onTap: onTap,
     child: Row(
       children: [
@@ -134,6 +137,7 @@ Widget shadNavigationTile(
       ],
     ),
   );
+  return key == null ? tile : KeyedSubtree(key: key, child: tile);
 }
 
 /// 开关型设置项（整行可点击切换，右侧 [ShadSwitch]）。

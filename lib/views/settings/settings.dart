@@ -127,6 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // 主题/配色在前（视觉类最高频）
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-darkmode'),
           icon: LucideIcons.moon,
           title: 'Dark mode'.tr(),
           // 值由 ThemeProvider 通知驱动重建，这里直接读偏好即可。
@@ -135,6 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-themecolor'),
           icon: LucideIcons.paintbrush,
           title: 'Theme color'.tr(),
           value: _themeColorName,
@@ -145,6 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-notescolor'),
           icon: LucideIcons.brush,
           title: 'Notes Color'.tr(),
           value: _notesColorValue,
@@ -210,6 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-sync'),
           icon: LucideIcons.cloud,
           title: 'Sync Settings'.tr(),
           value: _syncStatusValue,
@@ -220,6 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-backup'),
           icon: LucideIcons.cloudUpload,
           title: 'Backup'.tr(),
           value: _backupValue,
@@ -230,12 +235,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-exportbackup'),
           icon: LucideIcons.fileOutput,
           title: 'Export Backup'.tr(),
           onTap: () => startExportNotes(context),
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-importbackup'),
           icon: LucideIcons.download,
           title: 'Import Backup'.tr(),
           onTap: () async {
@@ -247,6 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-biometric'),
           icon: LucideIcons.fingerprint,
           title: 'Biometric'.tr(),
           value: _biometricValue,
@@ -257,6 +265,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-inactivity'),
           icon: LucideIcons.smartphone,
           title: 'Logout on Inactivity'.tr(),
           value: _inactivityValue,
@@ -293,6 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-changepassphrase'),
           icon: LucideIcons.lock,
           title: 'Change Passphrase'.tr(),
           onTap: () async {
@@ -304,6 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
+          key: const Key('ui-setting-item-language'),
           icon: LucideIcons.languages,
           title: 'Language'.tr(),
           value: _languageValue,
@@ -329,14 +340,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
-        KeyedSubtree(
-          key: const Key('aboutTile'),
-          child: shadNavigationTile(
-            context,
-            icon: LucideIcons.info,
-            title: 'About'.tr(),
-            onTap: () => Navigator.pushNamed(context, '/about'),
-          ),
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-about'),
+          icon: LucideIcons.info,
+          title: 'About'.tr(),
+          onTap: () => Navigator.pushNamed(context, '/about'),
         ),
       ]),
     ];

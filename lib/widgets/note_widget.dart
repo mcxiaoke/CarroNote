@@ -74,6 +74,7 @@ class NoteFormWidget extends StatelessWidget {
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
 
     return ShadInputFormField(
+      key: const Key('ui-note-field-title'),
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: null,
@@ -111,6 +112,7 @@ class NoteFormWidget extends StatelessWidget {
     final bool enableIMEPLFlag = !PreferencesStorage.keyboardIncognito;
 
     return ShadInputFormField(
+      key: const Key('ui-note-field-body'),
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,

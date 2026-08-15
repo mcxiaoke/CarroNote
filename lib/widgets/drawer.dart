@@ -98,11 +98,14 @@ class HomeDrawerState extends State<HomeDrawer> {
                             icon: Icons.delete_outline,
                             onClicked: widget.onDeletedNotesCallback!,
                           ),
-                        _buildMenuItem(
-                          topPadding: itemSpacing,
-                          text: settings,
-                          icon: Icons.settings_outlined,
-                          onClicked: widget.onSettingsCallback,
+                        KeyedSubtree(
+                          key: const Key('ui-home-nav-settings'),
+                          child: _buildMenuItem(
+                            topPadding: itemSpacing,
+                            text: settings,
+                            icon: Icons.settings_outlined,
+                            onClicked: widget.onSettingsCallback,
+                          ),
                         ),
                         // 锁定：与上方其它项目一致，无分割线、不置底
                         _buildMenuItem(

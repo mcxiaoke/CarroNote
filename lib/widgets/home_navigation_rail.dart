@@ -118,10 +118,13 @@ class HomeSidebar extends StatelessWidget {
                     'Recently Deleted'.tr(),
                     onDeletedNotesCallback,
                   ),
-                  sideItem(
-                    Icons.settings_outlined,
-                    'Settings'.tr(),
-                    onSettingsCallback,
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-settings'),
+                    child: sideItem(
+                      Icons.settings_outlined,
+                      'Settings'.tr(),
+                      onSettingsCallback,
+                    ),
                   ),
                   // 锁定：紧跟在设置之下，不置底、无分割线（与移动端 Drawer 一致）
                   sideItem(Icons.lock_outline, 'Lock'.tr(), onLockCallback),

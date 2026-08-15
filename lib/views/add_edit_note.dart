@@ -179,6 +179,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   Widget _previewToggle() {
     final bool isPreview = _previewMode;
     return IconButton(
+      key: const Key('ui-note-button-preview'),
       tooltip: isPreview ? 'Edit'.tr() : 'Preview'.tr(),
       icon: Icon(isPreview ? LucideIcons.squarePen : LucideIcons.eye),
       onPressed: () => setState(() => _previewMode = !_previewMode),
@@ -299,6 +300,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     // AppBar 内用图标按钮（与预览/删除图标风格一致），不再用文字按钮。
     // 保存进行中禁用，防止连点重复触发 addOrUpdateNote。
     return IconButton(
+      key: const Key('ui-note-button-save'),
       tooltip: 'Save'.tr(),
       icon: const Icon(LucideIcons.save),
       onPressed: (isFormValid && !_isSaving) ? onSaveCallback : null,
