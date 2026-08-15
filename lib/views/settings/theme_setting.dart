@@ -87,7 +87,7 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(4),
                     color: theme.colorScheme.border,
                   ),
                 ),

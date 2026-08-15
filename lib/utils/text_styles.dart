@@ -44,3 +44,24 @@ class AppText {
     letterSpacing: 0.2,
   );
 }
+
+/// 纯字号刻度：仅统一「字号数字」来源，不附加字体/字重/字距等样式。
+///
+/// 供散落的 `fontSize: N` 硬编码引用（各处以 `copyWith(fontSize: ...)` 或
+/// 自带字重的方式保留原有样式），避免直接用 [AppText] 四档（其绑定
+/// fontWeight/letterSpacing）造成视觉漂移。
+class AppTextSize {
+  AppTextSize._();
+
+  /// 12（对应 [AppText.label] 的字号）
+  static const double s12 = 12;
+
+  /// 14（对应 [AppText.bodySmall] 的字号）
+  static const double s14 = 14;
+
+  /// 16（对应 [AppText.body] 的字号）
+  static const double s16 = 16;
+
+  /// 20（对应 [AppText.title] 的字号）
+  static const double s20 = 20;
+}

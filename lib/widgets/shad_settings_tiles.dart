@@ -12,6 +12,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/utils/spacing.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 /// 设置类页面的标准内容容器：统一内边距 + 桌面端限宽居中。
 ///
@@ -104,7 +105,7 @@ Widget shadNavigationTile(
                     subtitle,
                     style: ShadTheme.of(
                       context,
-                    ).textTheme.muted.copyWith(fontSize: 12),
+                    ).textTheme.muted.copyWith(fontSize: AppTextSize.s12),
                   ),
                 ),
             ],
@@ -167,7 +168,7 @@ Widget shadSwitchTile(
                     description,
                     style: ShadTheme.of(
                       context,
-                    ).textTheme.muted.copyWith(fontSize: 12),
+                    ).textTheme.muted.copyWith(fontSize: AppTextSize.s12),
                   ),
                 ),
             ],
@@ -219,7 +220,9 @@ Widget shadRadioTile(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     description,
-                    style: theme.textTheme.muted.copyWith(fontSize: 12),
+                    style: theme.textTheme.muted.copyWith(
+                      fontSize: AppTextSize.s12,
+                    ),
                   ),
                 ),
             ],
@@ -241,7 +244,7 @@ Widget shadInfoTile(
   required String value,
 }) {
   return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     child: Row(
       children: [
         _TileIcon(icon: icon),
@@ -258,7 +261,7 @@ Widget shadInfoTile(
                     description,
                     style: ShadTheme.of(
                       context,
-                    ).textTheme.muted.copyWith(fontSize: 12),
+                    ).textTheme.muted.copyWith(fontSize: AppTextSize.s12),
                   ),
                 ),
             ],
@@ -296,7 +299,7 @@ class _TileSurface extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: child,
         ),
       ),

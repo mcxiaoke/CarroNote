@@ -38,6 +38,7 @@ import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/vault_backup.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
@@ -182,7 +183,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                     _buildLoginWorkflow(context: context),
                     const Spacer(),
                     Padding(
-                      padding: const EdgeInsets.only(top: 5),
+                      padding: const EdgeInsets.only(top: 6),
                       child: footer(context),
                     ),
                   ],
@@ -278,7 +279,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
               ),
               style: TextStyle(
                 color: ShadTheme.of(context).colorScheme.destructive,
-                fontSize: 12,
+                fontSize: AppTextSize.s12,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -355,7 +356,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 10),
-          child: Text('OR'.tr(), style: const TextStyle(fontSize: 14)),
+          child: Text(
+            'OR'.tr(),
+            style: const TextStyle(fontSize: AppTextSize.s14),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 20),
@@ -622,7 +626,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final String cantRecoverPassphraseMsg = "Can't decrypt without phrase!"
         .tr();
     // 桌面端字太小（原固定 10），按屏宽自适应放大（桌面窗口可 resize）
-    final double fontSize = MediaQuery.of(context).size.width < 600 ? 12 : 14;
+    final double fontSize = MediaQuery.of(context).size.width < 600
+        ? AppTextSize.s12
+        : AppTextSize.s14;
 
     return Container(
       alignment: Alignment.centerRight,

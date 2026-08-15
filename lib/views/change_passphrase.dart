@@ -29,6 +29,7 @@ import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
@@ -114,7 +115,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
   Widget _buildPassphraseChangeWorkflow(BuildContext context) {
     final String pageTitleName = 'Change Passphrase'.tr();
-    const double paddingBetweenInputBox = 25.0;
+    const double paddingBetweenInputBox = 26.0;
 
     return Padding(
       padding: const EdgeInsets.all(20),
@@ -131,7 +132,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
               child: Text(
                 pageTitleName,
                 style: dialogHeadTextStyle.copyWith(
-                  fontSize: 20,
+                  fontSize: AppTextSize.s20,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
@@ -282,7 +283,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
   Widget _buildButtons(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 25, bottom: 20),
+      padding: const EdgeInsets.only(top: 26, bottom: 20),
       // 改密码防重入：流程期间禁用按钮，避免并发触发密钥轮换
       child: ShadButton(
         width: double.infinity,

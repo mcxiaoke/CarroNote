@@ -32,6 +32,7 @@ import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 // Flutter 导入
 
@@ -230,13 +231,16 @@ class _StatusTab extends StatelessWidget {
             width: 120,
             child: Text(
               kv.key,
-              style: TextStyle(color: _semNeutral(context), fontSize: 12),
+              style: TextStyle(
+                color: _semNeutral(context),
+                fontSize: AppTextSize.s12,
+              ),
             ),
           ),
           Expanded(
             child: SelectableText(
               kv.value,
-              style: TextStyle(fontSize: 12, color: kv.color),
+              style: TextStyle(fontSize: AppTextSize.s12, color: kv.color),
             ),
           ),
         ],
@@ -331,7 +335,10 @@ class _SyncResultTabState extends State<_SyncResultTab> {
             ),
             child: SelectableText(
               snapshot.lastResultErrorMessage!,
-              style: TextStyle(fontSize: 12, color: _semDanger(context)),
+              style: TextStyle(
+                fontSize: AppTextSize.s12,
+                color: _semDanger(context),
+              ),
             ),
           ),
         ],
@@ -375,10 +382,13 @@ class _SyncResultTabState extends State<_SyncResultTab> {
     return [
       for (final uuid in shown)
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 1),
+          padding: const EdgeInsets.symmetric(vertical: 2),
           child: SelectableText(
             uuid,
-            style: TextStyle(fontSize: 12, color: _semWarning(context)),
+            style: TextStyle(
+              fontSize: AppTextSize.s12,
+              color: _semWarning(context),
+            ),
           ),
         ),
     ];
@@ -461,7 +471,10 @@ class _SyncResultTabState extends State<_SyncResultTab> {
                         const SizedBox(width: 4),
                         Text(
                           label,
-                          style: TextStyle(fontSize: 12, color: color),
+                          style: TextStyle(
+                            fontSize: AppTextSize.s12,
+                            color: color,
+                          ),
                         ),
                       ],
                     ),
@@ -469,7 +482,7 @@ class _SyncResultTabState extends State<_SyncResultTab> {
                     Text(
                       '$count',
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: AppTextSize.s20,
                         fontWeight: FontWeight.bold,
                         color: color,
                       ),
@@ -499,13 +512,16 @@ class _SyncResultTabState extends State<_SyncResultTab> {
             width: 120,
             child: Text(
               key,
-              style: TextStyle(color: _semNeutral(context), fontSize: 12),
+              style: TextStyle(
+                color: _semNeutral(context),
+                fontSize: AppTextSize.s12,
+              ),
             ),
           ),
           Expanded(
             child: SelectableText(
               value,
-              style: TextStyle(fontSize: 12, color: color),
+              style: TextStyle(fontSize: AppTextSize.s12, color: color),
             ),
           ),
         ],
@@ -602,7 +618,7 @@ class _ActionsTab extends StatelessWidget {
                           action.uuid.isNotEmpty
                               ? 'uuid: ${action.uuid}'
                               : action.message ?? '',
-                          style: const TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: AppTextSize.s12),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -661,13 +677,16 @@ class _ActionsTab extends StatelessWidget {
             width: 80,
             child: Text(
               key,
-              style: TextStyle(color: _semNeutral(context), fontSize: 12),
+              style: TextStyle(
+                color: _semNeutral(context),
+                fontSize: AppTextSize.s12,
+              ),
             ),
           ),
           Expanded(
             child: SelectableText(
               value,
-              style: TextStyle(fontSize: 12, color: color),
+              style: TextStyle(fontSize: AppTextSize.s12, color: color),
             ),
           ),
         ],
@@ -875,7 +894,10 @@ class _LogsTabState extends State<_LogsTab> {
                 'total': '${_entries.length}',
               },
             ),
-            style: TextStyle(fontSize: 12, color: _semNeutral(context)),
+            style: TextStyle(
+              fontSize: AppTextSize.s12,
+              color: _semNeutral(context),
+            ),
           ),
         ),
         // 日志列表
@@ -899,11 +921,11 @@ class _LogsTabState extends State<_LogsTab> {
   Widget _buildLogLine(AppLogEntry entry) {
     final color = _levelColor(context, entry.level);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
       child: SelectableText(
         entry.formattedLine,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: AppTextSize.s12,
           fontFamily: 'Consolas',
           color: color,
           height: 1.4,
@@ -1049,7 +1071,10 @@ class _WebServerTabState extends State<_WebServerTab> {
         Text(
           'Start to view local logs in a PC browser in real time, no export needed.\nSuitable for mobile (where SD card export is limited).\n\nThe server is a global singleton; leaving this page does not stop it, only manual stop or app exit does.\n\nEndpoints:\n  /            → Real-time log viewer (WebSocket)\n  /logs        → Full log text (downloadable via curl)\n  /diagnostics → Diagnostics snapshot text'
               .tr(),
-          style: TextStyle(fontSize: 12, color: _semNeutral(context)),
+          style: TextStyle(
+            fontSize: AppTextSize.s12,
+            color: _semNeutral(context),
+          ),
         ),
         const SizedBox(height: 24),
         // 状态指示
@@ -1099,7 +1124,7 @@ class _WebServerTabState extends State<_WebServerTab> {
                 SelectableText(
                   _statusText,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppTextSize.s12),
                 ),
               ],
             ],
@@ -1137,7 +1162,10 @@ class _WebServerTabState extends State<_WebServerTab> {
                 child: Text(
                   'Security note: the server binds 0.0.0.0, so any device on the same LAN can access it. Logs do not contain sensitive information such as passwords/tokens. Currently in debug stage, the server starts automatically with the sync service; release builds will default to off.'
                       .tr(),
-                  style: TextStyle(fontSize: 12, color: _semWarning(context)),
+                  style: TextStyle(
+                    fontSize: AppTextSize.s12,
+                    color: _semWarning(context),
+                  ),
                 ),
               ),
             ],

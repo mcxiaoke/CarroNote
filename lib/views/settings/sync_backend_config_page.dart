@@ -32,6 +32,7 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 // Package 导入
 
@@ -245,7 +246,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
             onTap: _testing ? null : () => setState(() => _type = type),
             borderRadius: BorderRadius.circular(6),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
               child: Row(
                 // 图标与（可能两行的）文字整体居中对齐，避免单选圆点偏上。
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -259,7 +260,9 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
                         Text(_typeTitle(type), style: theme.textTheme.p),
                         Text(
                           _typeSubtitle(type),
-                          style: theme.textTheme.muted.copyWith(fontSize: 12),
+                          style: theme.textTheme.muted.copyWith(
+                            fontSize: AppTextSize.s12,
+                          ),
                         ),
                       ],
                     ),
@@ -445,7 +448,9 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
     padding: const EdgeInsets.only(top: 4),
     child: Text(
       text,
-      style: ShadTheme.of(context).textTheme.muted.copyWith(fontSize: 12),
+      style: ShadTheme.of(
+        context,
+      ).textTheme.muted.copyWith(fontSize: AppTextSize.s12),
     ),
   );
 
@@ -607,7 +612,10 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           Expanded(
             child: Text(
               message,
-              style: theme.textTheme.muted.copyWith(fontSize: 12, color: color),
+              style: theme.textTheme.muted.copyWith(
+                fontSize: AppTextSize.s12,
+                color: color,
+              ),
             ),
           ),
         ],

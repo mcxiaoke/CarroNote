@@ -25,6 +25,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 /// 主题颜色选择页：6 组 × 16 色的分组色库。
@@ -285,7 +286,7 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
                     child: Text(
                       AppThemeSeeds.displayName(item, isZh: _isZh),
                       style: theme.textTheme.p.copyWith(
-                        fontSize: 12,
+                        fontSize: AppTextSize.s12,
                         fontWeight: selected ? FontWeight.w600 : null,
                         color: selected ? theme.colorScheme.primary : null,
                       ),

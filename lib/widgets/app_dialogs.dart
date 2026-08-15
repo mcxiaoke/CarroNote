@@ -26,6 +26,7 @@ import 'package:easy_localization/easy_localization.dart';
 
 // Project imports:
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 /// 标准 alert 对话框约束：宽屏下最小宽度 400，最大宽度用 M3 默认（560）。
 /// （AlertDialog 默认 minWidth 280 / maxWidth 560；这里把 minWidth 提到 400，
@@ -80,7 +81,7 @@ Future<bool?> showAppConfirm(
                   notice,
                   style: TextStyle(
                     color: Theme.of(ctx).colorScheme.error,
-                    fontSize: 12,
+                    fontSize: AppTextSize.s12,
                   ),
                 ),
               ],
@@ -289,7 +290,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             const SizedBox(height: 8),
             Text(
               widget.errorText!,
-              style: TextStyle(color: scheme.error, fontSize: 12),
+              style: TextStyle(color: scheme.error, fontSize: AppTextSize.s12),
             ),
           ],
           const SizedBox(height: 16),

@@ -31,6 +31,7 @@ import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/storage_permission.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/time_utils.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -165,12 +166,15 @@ class BackupSettingState extends State<BackupSetting> {
 
   Widget _encryptedBadge() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       child: Row(
         children: [
           const Icon(LucideIcons.lock, size: 15, color: Colors.green),
           const SizedBox(width: 6),
-          Text('Backup encrypted'.tr(), style: const TextStyle(fontSize: 12)),
+          Text(
+            'Backup encrypted'.tr(),
+            style: const TextStyle(fontSize: AppTextSize.s12),
+          ),
         ],
       ),
     );

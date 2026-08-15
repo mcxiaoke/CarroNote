@@ -22,8 +22,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/notes_color.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 class ColorPallet extends StatefulWidget {
@@ -142,7 +142,7 @@ class ColorPalletState extends State<ColorPallet> {
                     child: Text(
                       items[i].prefix,
                       style: theme.textTheme.p.copyWith(
-                        fontSize: 12,
+                        fontSize: AppTextSize.s12,
                         fontWeight: selected ? FontWeight.w600 : null,
                         color: selected ? theme.colorScheme.primary : null,
                       ),

@@ -24,6 +24,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
@@ -50,12 +51,12 @@ class HomeDrawerState extends State<HomeDrawer> {
   Widget build(BuildContext context) {
     Provider.of<ThemeProvider>(context);
 
-    const drawerPaddingHorizontal = 15.0;
-    const double drawerRadius = 15.0;
+    const drawerPaddingHorizontal = 16.0;
+    const double drawerRadius = 16.0;
     final height = MediaQuery.of(context).size.height;
     final topHeadPadding = height * 0.07;
     final bottomHeadPadding = height * 0.01;
-    const double itemSpacing = 1;
+    const double itemSpacing = 2;
 
     final String notesText = 'Notes'.tr();
     final String settings = 'Settings'.tr();
@@ -157,8 +158,8 @@ class HomeDrawerState extends State<HomeDrawer> {
     final appSlogan = SafeNotesConfig.appSlogan;
     final double logoHightWidth = width * 0.25;
     // final double logoHightWidth = 75.0;
-    const double appNameFontSize = 20;
-    const double appSloganFontSize = 12;
+    const double appNameFontSize = AppTextSize.s20;
+    const double appSloganFontSize = AppTextSize.s12;
     const double logoNameGap = 10.0;
 
     return Padding(
@@ -166,7 +167,7 @@ class HomeDrawerState extends State<HomeDrawer> {
       child: InkWell(
         onTap: () {},
         child: Container(
-          padding: (const EdgeInsets.symmetric(vertical: 5)),
+          padding: (const EdgeInsets.symmetric(vertical: 6)),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -200,7 +201,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
+                        padding: const EdgeInsets.only(bottom: 6),
                         child: AutoSizeText(
                           appSlogan.tr(),
                           maxLines: 1,

@@ -28,6 +28,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
 /// 导出面板返回的选项（docs/backup-encryption-design-20260810.md §6）
@@ -330,7 +331,10 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: theme.textTheme.p),
-            Text(subtitle, style: theme.textTheme.muted.copyWith(fontSize: 12)),
+            Text(
+              subtitle,
+              style: theme.textTheme.muted.copyWith(fontSize: AppTextSize.s12),
+            ),
           ],
         ),
       ),
@@ -377,7 +381,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
               'Passwords do not match'.tr(),
               style: TextStyle(
                 color: ShadTheme.of(context).colorScheme.destructive,
-                fontSize: 12,
+                fontSize: AppTextSize.s12,
               ),
             ),
           ),
@@ -391,7 +395,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
               'safe place.'
           .tr(),
       style: TextStyle(
-        fontSize: 12,
+        fontSize: AppTextSize.s12,
         color: ShadTheme.of(context).colorScheme.destructive,
       ),
     );

@@ -21,6 +21,7 @@ import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -35,9 +36,9 @@ class AboutPage extends StatelessWidget {
       appBar: AppBar(title: Text('About'.tr(), style: appBarTitle)),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: 720),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -51,7 +52,7 @@ class AboutPage extends StatelessWidget {
                     fontFamily: uiFontFamily,
                     fontFamilyFallback: uiFontFamilyFallback,
                     fontWeight: FontWeight.bold,
-                    fontSize: 20,
+                    fontSize: AppTextSize.s20,
                   ),
                 ),
                 const SizedBox(height: 6),

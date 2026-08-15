@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_nav_items.dart';
 
@@ -100,7 +101,7 @@ class HomeSidebar extends StatelessWidget {
                         fontFamily: uiFontFamily,
                         fontFamilyFallback: uiFontFamilyFallback,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: AppTextSize.s16,
                       ),
                     ),
                   ),

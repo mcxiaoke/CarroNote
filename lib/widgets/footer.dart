@@ -21,6 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';
+import 'package:safenotes/utils/text_styles.dart';
 
 /// dev 模式的醒目徽标（非 dev 模式不渲染）。
 ///
@@ -30,7 +31,7 @@ import 'package:safenotes/utils/dev_mode.dart';
 Widget debugBadge(BuildContext context) {
   if (!DevMode.isActive) return const SizedBox.shrink();
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     decoration: BoxDecoration(
       // P1-22：错误/危险色统一走 shad destructive（替代硬编码 0xFFD32F2F）。
       color: ShadTheme.of(context).colorScheme.destructive,
@@ -40,7 +41,7 @@ Widget debugBadge(BuildContext context) {
       'DEBUG',
       style: TextStyle(
         color: Colors.white,
-        fontSize: 12,
+        fontSize: AppTextSize.s12,
         fontWeight: FontWeight.bold,
         letterSpacing: 1,
       ),
@@ -49,7 +50,7 @@ Widget debugBadge(BuildContext context) {
 }
 
 Widget footer(BuildContext context) {
-  const double fontSize = 12;
+  const double fontSize = AppTextSize.s12;
   // 统一用主题 onSurfaceVariant，亮暗自动适配（不再硬编码 #afb8ba/#8e989c）。
   final Color color = Theme.of(context).colorScheme.onSurfaceVariant;
   final TextStyle style = TextStyle(color: color, fontSize: fontSize);

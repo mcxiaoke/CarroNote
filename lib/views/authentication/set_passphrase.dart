@@ -118,7 +118,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
                     _buildPassphraseSetWorkflow(context),
                     const Spacer(),
                     Padding(
-                      padding: const EdgeInsets.only(top: 5),
+                      padding: const EdgeInsets.only(top: 6),
                       child: footer(context),
                     ),
                   ],
