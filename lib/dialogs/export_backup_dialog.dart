@@ -194,13 +194,12 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
   @override
   Widget build(BuildContext context) {
     final Widget content = SizedBox(
-      // 宽度自适应：桌面固定，窄屏手机按屏宽收窄，避免横向溢出
-      width: isDesktopPlatform
-          ? kDialogMaxWidthWide
-          : math.min(
-              kDialogMaxWidthWide,
-              MediaQuery.of(context).size.width - 32,
-            ),
+      // 宽度自适应：桌面固定、移动占满屏宽；统一按屏宽收窄，
+      // 桌面窗口 resize 到更窄时同样收窄，避免横向溢出
+      width: math.min(
+        kDialogMaxWidthWide,
+        MediaQuery.of(context).size.width - 32,
+      ),
       // 内容加滚动：避免小窗口/低分辨率下 Column 底部溢出
       child: SingleChildScrollView(
         child: Column(

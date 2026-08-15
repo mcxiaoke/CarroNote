@@ -24,7 +24,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -35,7 +34,8 @@ import 'package:safenotes/widgets/shad_settings_tiles.dart';
 /// - 点击色块只是**本地预览**（顶部大色条跟随变化），不立即生效；
 /// - 底部「Apply theme」按钮点击后才真正写入 `ThemeProvider`（全局换肤 + 持久化）；
 /// - 分组切换用 shadcn 的 [ShadTabs]（泛型 int）；色块为圆角矩形卡片
-///   （参照笔记颜色页 ColorPallet），桌面/移动统一 4 列、16 色 = 4 行。
+///   （参照笔记颜色页 ColorPallet），列数随可用宽度自适应（宽屏 4 列、
+///   移动 3 列、窄窗口 2 列），16 色 = 最多 4 行。
 class ThemeColorPicker extends StatefulWidget {
   const ThemeColorPicker({super.key});
 
@@ -196,7 +196,7 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
             borderRadius: BorderRadius.circular(12),
             child: Container(
               // P3-19：色条 48 过矮，抬高到 72 提升预览占比。
-              height: 72,
+              height: 56,
               width: double.infinity,
               color: previewColor,
             ),
@@ -206,23 +206,35 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
     );
   }
 
-  /// 当前组颜色网格：列数自适应（宽屏 4 列、移动 3 列），圆角矩形卡片。
+  /// 当前组颜色网格：列数随可用宽度自适应（2~4 列），圆角矩形卡片。
   ///
   /// 用 [mainAxisExtent] 固定卡片高度（而非 childAspectRatio 按宽度推导），
   /// 保证任何屏宽下色块+名称行都不溢出；高度紧贴内容避免底部大留白。
   Widget _grid(BuildContext context, int g) {
     final group = AppThemeSeeds.groupByIndex(g);
-    return GridView.count(
-      crossAxisCount: isDesktopPlatform ? 4 : 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      // 内容高度：padding 10*2 + 色块 30 + 间距 8 + 名称行 ~17 ≈ 75。
-      mainAxisExtent: 84,
-      children: [
-        for (var i = 0; i < group.colors.length; i++) _colorCard(context, g, i),
-      ],
+    // 列数随可用宽度自适应（桌面窗口可 resize，不按平台写死）：
+    // 目标列宽 ~110，最小 2 列、最大 4 列（组内 16 色 → 最多 4 行）。
+    // 移动屏宽 ~390 → 3 列，宽屏 → 4 列，窄窗口 → 2 列。
+    return LayoutBuilder(
+      builder: (_, constraints) {
+        final crossAxisCount = (constraints.maxWidth / 110)
+            .floor()
+            .clamp(2, 4)
+            .toInt();
+        return GridView.count(
+          crossAxisCount: crossAxisCount,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          // 内容高度：padding 10*2 + 色块 30 + 间距 8 + 名称行 ~17 ≈ 75。
+          mainAxisExtent: 84,
+          children: [
+            for (var i = 0; i < group.colors.length; i++)
+              _colorCard(context, g, i),
+          ],
+        );
+      },
     );
   }
 

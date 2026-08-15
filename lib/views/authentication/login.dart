@@ -35,7 +35,6 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -622,8 +621,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   Widget _buildForgotPassphrase() {
     final String cantRecoverPassphraseMsg = "Can't decrypt without phrase!"
         .tr();
-    // 桌面端字太小（原固定 10），按平台放大
-    final double fontSize = isDesktopPlatform ? 14 : 12;
+    // 桌面端字太小（原固定 10），按屏宽自适应放大（桌面窗口可 resize）
+    final double fontSize = MediaQuery.of(context).size.width < 600 ? 12 : 14;
 
     return Container(
       alignment: Alignment.centerRight,
