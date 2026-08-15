@@ -43,9 +43,69 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  // 开关类偏好本地缓存：切换时 setState 只更新对应字段，避免用空 setState
+  // 强制整页重建（原 17 处 `setState((){})` 空刷新模式，见 db 审查 P1-7）。
+  late bool _isCompactPreview;
+  late bool _isMarkdownEnabled;
+  late bool _isRelativeTime;
+  late bool _isSortByModified;
+  late bool _isFlagSecure;
+  late bool _keyboardIncognito;
+  late bool _isAutoRotate;
+
+  // 导航子页返回后需要刷新的展示值（value 列读 PreferencesStorage）。
+  late String _themeColorName;
+  late String _notesColorValue;
+  late String _syncStatusValue;
+  late String _backupValue;
+  late String _biometricValue;
+  late String _inactivityValue;
+  late String _languageValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSwitchValues();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 展示值依赖 context.locale（easy_localization），需在依赖就绪后读取；
+    // 语言切换等依赖变化时再次刷新（无需 setState，紧随其后的 build 会读到新值）。
+    _loadDisplayValues();
+  }
+
+  /// 一次性从 PreferencesStorage 读入全部开关值（初始化用）。
+  void _loadSwitchValues() {
+    _isCompactPreview = PreferencesStorage.isCompactPreview;
+    _isMarkdownEnabled = PreferencesStorage.isMarkdownEnabled;
+    _isRelativeTime = PreferencesStorage.isRelativeTime;
+    _isSortByModified = PreferencesStorage.isSortByModified;
+    _isFlagSecure = PreferencesStorage.isFlagSecure;
+    _keyboardIncognito = PreferencesStorage.keyboardIncognito;
+    _isAutoRotate = PreferencesStorage.isAutoRotate;
+  }
+
+  /// 读取展示值（value 列）；导航返回后调用以反映子页改动。
+  void _loadDisplayValues() {
+    _themeColorName = _currentThemeColorName(context);
+    _notesColorValue = PreferencesStorage.isColorful ? 'On'.tr() : 'Off'.tr();
+    _syncStatusValue = _syncStatusValueString();
+    _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
+    _biometricValue = PreferencesStorage.isBiometricAuthEnabled
+        ? 'On'.tr()
+        : 'Off'.tr();
+    _inactivityValue = inactivityTimeoutValue();
+    _languageValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
+  }
+
+  /// 导航返回后刷新展示值（非空 setState）。
+  void _refreshDisplayValues() => setState(_loadDisplayValues);
+
   @override
   Widget build(BuildContext context) {
-    // 主题切换时重建本页
+    // 主题切换时重建本页（Dark mode 弹层走 ThemeProvider 通知，无需手动 setState）
     Provider.of<ThemeProvider>(context);
 
     return Scaffold(
@@ -69,30 +129,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.moon,
           title: 'Dark mode'.tr(),
+          // 值由 ThemeProvider 通知驱动重建，这里直接读偏好即可。
           value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
-          onTap: () {
-            showThemeBottomSheet(context);
-            setState(() {});
-          },
+          onTap: () => showThemeBottomSheet(context),
         ),
         shadNavigationTile(
           context,
           icon: LucideIcons.paintbrush,
           title: 'Theme color'.tr(),
-          value: _currentThemeColorName(context),
+          value: _themeColorName,
           onTap: () async {
             await Navigator.pushNamed(context, '/themeColorSettings');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         shadNavigationTile(
           context,
           icon: LucideIcons.brush,
           title: 'Notes Color'.tr(),
-          value: !PreferencesStorage.isColorful ? 'Off'.tr() : 'On'.tr(),
+          value: _notesColorValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/chooseColorSettings');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         // 排版（紧凑/Markdown）居中
@@ -100,10 +158,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.shrink,
           title: 'Compact Notes'.tr(),
-          value: PreferencesStorage.isCompactPreview,
+          value: _isCompactPreview,
           onChanged: (v) {
             PreferencesStorage.setIsCompactPreview(v);
-            setState(() {});
+            setState(() => _isCompactPreview = v);
           },
         ),
         shadSwitchTile(
@@ -112,10 +170,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: 'Markdown'.tr(),
           description:
               'Format note preview with Markdown. Off shows plain text.'.tr(),
-          value: PreferencesStorage.isMarkdownEnabled,
+          value: _isMarkdownEnabled,
           onChanged: (v) {
             PreferencesStorage.setIsMarkdownEnabled(v);
-            setState(() {});
+            setState(() => _isMarkdownEnabled = v);
           },
         ),
         // 时间与排序（信息呈现方式）靠后
@@ -127,10 +185,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Show note timestamps as relative (e.g. 5 minutes ago). '
                       'Off shows absolute dates.'
                   .tr(),
-          value: PreferencesStorage.isRelativeTime,
+          value: _isRelativeTime,
           onChanged: (v) {
             PreferencesStorage.setIsRelativeTime(v);
-            setState(() {});
+            setState(() => _isRelativeTime = v);
           },
         ),
         shadSwitchTile(
@@ -141,10 +199,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Sort notes by last modified time. '
                       'Off sorts by creation time.'
                   .tr(),
-          value: PreferencesStorage.isSortByModified,
+          value: _isSortByModified,
           onChanged: (v) {
             PreferencesStorage.setIsSortByModified(v);
-            setState(() {});
+            setState(() => _isSortByModified = v);
           },
         ),
       ]),
@@ -154,30 +212,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.cloud,
           title: 'Sync Settings'.tr(),
-          value: _syncStatusValue(),
+          value: _syncStatusValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/syncSettings');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         shadNavigationTile(
           context,
           icon: LucideIcons.cloudUpload,
           title: 'Backup'.tr(),
-          value: PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr(),
+          value: _backupValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/backup');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         shadNavigationTile(
           context,
           icon: LucideIcons.fileOutput,
           title: 'Export Backup'.tr(),
-          onTap: () async {
-            await startExportNotes(context);
-            setState(() {});
-          },
+          onTap: () => startExportNotes(context),
         ),
         shadNavigationTile(
           context,
@@ -194,22 +249,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.fingerprint,
           title: 'Biometric'.tr(),
-          value: PreferencesStorage.isBiometricAuthEnabled
-              ? 'On'.tr()
-              : 'Off'.tr(),
+          value: _biometricValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/biometricSetting');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         shadNavigationTile(
           context,
           icon: LucideIcons.smartphone,
           title: 'Logout on Inactivity'.tr(),
-          value: inactivityTimeoutValue(),
+          value: _inactivityValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/inactivityTimerSettings');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         shadSwitchTile(
@@ -222,20 +275,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'appearing in screenshots or from being viewed on '
                       'non-secure displays.'
                   .tr(),
-          value: PreferencesStorage.isFlagSecure,
+          value: _isFlagSecure,
           onChanged: (v) {
             PreferencesStorage.setIsFlagSecure(v);
-            setState(() {});
+            setState(() => _isFlagSecure = v);
           },
         ),
         shadSwitchTile(
           context,
           icon: LucideIcons.eyeOff,
           title: 'Incognito Keyboard'.tr(),
-          value: PreferencesStorage.keyboardIncognito,
+          value: _keyboardIncognito,
           onChanged: (v) {
             PreferencesStorage.setKeyboardIncognito(v);
-            setState(() {});
+            setState(() => _keyboardIncognito = v);
           },
         ),
         shadNavigationTile(
@@ -253,13 +306,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.languages,
           title: 'Language'.tr(),
-          value: SafeNotesConfig.mapLocaleName[context.locale.toString()]!,
+          value: _languageValue,
           subtitle: context.locale.toString() != 'en_US'
               ? 'Language'.tr()
               : null,
           onTap: () async {
             await Navigator.pushNamed(context, '/chooseLanguageSettings');
-            setState(() {});
+            _refreshDisplayValues();
           },
         ),
         // Auto Rotate 为纯移动端选项，桌面/Web 隐藏该行（IA 方案 §3.3）
@@ -269,10 +322,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: LucideIcons.rotateCw,
             title: 'Auto Rotate'.tr(),
             description: 'Close and open app for change to take effect'.tr(),
-            value: PreferencesStorage.isAutoRotate,
+            value: _isAutoRotate,
             onChanged: (v) {
               PreferencesStorage.setIsAutoRotate(v);
-              setState(() {});
+              setState(() => _isAutoRotate = v);
             },
           ),
         // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
@@ -280,10 +333,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
           icon: LucideIcons.info,
           title: 'About'.tr(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/about');
-            setState(() {});
-          },
+          onTap: () => Navigator.pushNamed(context, '/about'),
         ),
       ]),
     ];
@@ -312,7 +362,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 同步状态显示值（三态）。
-  String _syncStatusValue() {
+  String _syncStatusValueString() {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();
     return SyncConfig.backendDisplayName;

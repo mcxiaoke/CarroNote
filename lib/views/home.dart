@@ -78,6 +78,11 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 覆盖手动同步、autoSync、改密码后推送等所有同步路径。
   StreamSubscription<SyncServiceState>? _syncStateSub;
 
+  /// 最近一次同步状态：由 [_onSyncStateChanged] 维护（合并了原 listen +
+  /// StreamBuilder 的双通道监听，见 db 审查"状态管理碎片化"），
+  /// AppBar 同步状态按钮直接读本字段驱动图标。
+  SyncServiceState? _lastSyncState;
+
   /// 每个 HomePage 生命周期只弹一次，避免 autoSync 反复触发弹窗轰炸
   bool _passwordChangedDialogShown = false;
 
@@ -96,6 +101,8 @@ class HomePageState extends State<HomePage> with RouteAware {
     super.initState();
     Log.ui.i('进入主界面');
     refreshNotes();
+    // 订阅前先取当前状态，保证 AppBar 按钮在首个事件到来前就有正确图标。
+    _lastSyncState = SyncService.instance.state;
     _syncStateSub = SyncService.instance.stateStream.listen(
       _onSyncStateChanged,
     );
@@ -169,6 +176,8 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 仅提供"重新登录"），符合设计定案「选项 B：失败 + 强制重登录」。
   void _onSyncStateChanged(SyncServiceState state) {
     if (!mounted) return;
+    // 更新 AppBar 同步状态图标（合并 StreamBuilder 职责）。
+    setState(() => _lastSyncState = state);
 
     // Bug B 修复：同步完成（成功或失败且已有结果）后刷新主页列表，
     // 让后台/手动同步拉取到的远端笔记立即显示，无需重启或返回设置页。
@@ -382,32 +391,26 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _syncStatusButton() {
     if (!SyncConfig.isSyncReady) return const SizedBox.shrink();
 
-    return StreamBuilder<SyncServiceState>(
-      stream: SyncService.instance.stateStream,
-      initialData: SyncService.instance.state,
-      builder: (context, snapshot) {
-        final state = snapshot.data ?? SyncService.instance.state;
-        final isSyncing = state.isSyncing;
-        return IconButton(
-          icon: isSyncing
-              ? const _RotatingSyncIcon()
-              : Icon(
-                  _syncIconData(state.status),
-                  // P1-22：错误色统一走 shad destructive。
-                  color: state.status == SyncStatus.error
-                      ? ShadTheme.of(context).colorScheme.destructive
-                      : null,
-                ),
-          tooltip: _syncTooltip(state.status),
-          onPressed: () async {
-            Log.ui.i(
-              '界面切换: 主界面 → 同步设置(/syncSettings), '
-              '当前同步状态=${state.status.name}',
-            );
-            await Navigator.pushNamed(context, '/syncSettings');
-            if (mounted) refreshNotes();
-          },
+    final state = _lastSyncState ?? SyncService.instance.state;
+    final isSyncing = state.isSyncing;
+    return IconButton(
+      icon: isSyncing
+          ? const _RotatingSyncIcon()
+          : Icon(
+              _syncIconData(state.status),
+              // P1-22：错误色统一走 shad destructive。
+              color: state.status == SyncStatus.error
+                  ? ShadTheme.of(context).colorScheme.destructive
+                  : null,
+            ),
+      tooltip: _syncTooltip(state.status),
+      onPressed: () async {
+        Log.ui.i(
+          '界面切换: 主界面 → 同步设置(/syncSettings), '
+          '当前同步状态=${state.status.name}',
         );
+        await Navigator.pushNamed(context, '/syncSettings');
+        if (mounted) refreshNotes();
       },
     );
   }

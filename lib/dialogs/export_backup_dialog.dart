@@ -87,6 +87,10 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
   final TextEditingController _passwordCtrl = TextEditingController();
   final TextEditingController _confirmCtrl = TextEditingController();
 
+  /// 格式单选的控制器：手动提供 [ShadProvider]，用 Column 布局让每个
+  /// [ShadRadio] 撑满卡片宽度（原生 ShadRadioGroup 的 Wrap 不撑满）。
+  late final ShadRadioController<bool> _formatCtrl;
+
   /// 平台默认备份目录（异步加载后展示「默认位置」）
   String? _defaultDir;
 
@@ -103,10 +107,18 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
     // （此前把 PhraseHandler.getPass 静默填进密码框，导出的加密备份实际
     // 用了 app 登录密码，属于隐私隐患）。密码框留空，用户输入后才可导出。
     _loadDefaultDir();
+    _formatCtrl = ShadRadioController<bool>(value: _encrypted)
+      ..addListener(_onFormatChanged);
+  }
+
+  void _onFormatChanged() {
+    setState(() => _encrypted = _formatCtrl.value ?? true);
   }
 
   @override
   void dispose() {
+    _formatCtrl.removeListener(_onFormatChanged);
+    _formatCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
@@ -273,92 +285,54 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
         const SizedBox(height: 6),
         ShadCard(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Column(
-            children: [
-              _formatTile(
-                value: true,
-                title: 'Encrypted (.snbak) (Recommended)'.tr(),
-                subtitle: 'Encrypted with a password, safe to store or share.'
-                    .tr(),
-              ),
-              _formatTile(
-                value: false,
-                title: 'Plain text (.json)'.tr(),
-                subtitle: 'Not encrypted; anyone with the file can read it.'
-                    .tr(),
-              ),
-            ],
+          child: ShadProvider(
+            data: _formatCtrl as ShadRadioController<dynamic>,
+            child: Column(
+              children: [
+                _formatRadio(
+                  value: true,
+                  title: 'Encrypted (.snbak) (Recommended)'.tr(),
+                  subtitle: 'Encrypted with a password, safe to store or share.'
+                      .tr(),
+                ),
+                _formatRadio(
+                  value: false,
+                  title: 'Plain text (.json)'.tr(),
+                  subtitle: 'Not encrypted; anyone with the file can read it.'
+                      .tr(),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  /// 单个格式选项行：圆点与两行文字整体垂直居中，
-  /// 复刻 shadcn 单选视觉但避免原生 ShadRadio 圆点偏上的对齐问题。
-  Widget _formatTile({
+  /// 单个格式选项：原生 [ShadRadio]（圆点 + 两行文字垂直居中）。
+  ///
+  /// ShadRadio 默认 `radioPadding` 顶部 +1，视觉上圆点略高，显式归零让
+  /// 圆点与文字严格垂直居中（替代旧的自绘圆点方案）。
+  ///
+  /// 外层 [SizedBox] 撑满卡片宽度：这里用的是 [Column] 而非 ShadRadioGroup
+  /// 的 Wrap，因此 `double.infinity` 可安全使用。
+  Widget _formatRadio({
     required bool value,
     required String title,
     required String subtitle,
   }) {
     final theme = ShadTheme.of(context);
-    final selected = _encrypted == value;
-    return GestureDetector(
-      onTap: () => setState(() => _encrypted = value),
-      child: Container(
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _formatIndicator(selected),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.p),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.muted.copyWith(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 复刻 shadcn 单选圆点（选中填充主色、未选中描边），仅作视觉展示，
-  /// 点击由外层 GestureDetector 处理。
-  Widget _formatIndicator(bool selected) {
-    final theme = ShadTheme.of(context);
-    final ShadDecoration decoration =
-        theme.radioTheme.decoration ?? const ShadDecoration();
-    final Color color = theme.colorScheme.primary;
-    return ShadDecorator(
-      decoration: decoration,
-      child: SizedBox.square(
-        dimension: 16,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 100),
-          child: selected
-              ? Align(
-                  child: SizedBox.square(
-                    dimension: 10,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: color,
-                      ),
-                    ),
-                  ),
-                )
-              : const SizedBox(),
+    return SizedBox(
+      width: double.infinity,
+      child: ShadRadio<bool>(
+        value: value,
+        radioPadding: EdgeInsets.zero,
+        label: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: theme.textTheme.p),
+            Text(subtitle, style: theme.textTheme.muted.copyWith(fontSize: 12)),
+          ],
         ),
       ),
     );
