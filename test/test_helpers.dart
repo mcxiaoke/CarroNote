@@ -16,7 +16,6 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 
 // Flutter imports:
@@ -53,6 +52,8 @@ import 'package:cryptography/cryptography.dart'
         SecretBox,
         SecretBoxAuthenticationError,
         SecretKey;
+
+import 'support/asset_loader.dart';
 // DartCryptography 未从公开 API 导出，测试代码可直接引用 src/ 实现。
 
 /// 测试用「无 isolate」加密实现。
@@ -276,44 +277,7 @@ Uint8List _randomBytes(int length) {
   return Uint8List.fromList(List<int>.generate(length, (_) => r.nextInt(256)));
 }
 
-/// 测试用翻译加载器。
-///
-/// 背景：flutter test 的资源 bundle 不含项目翻译文件，需要自行加载。
-/// 原先直接用 `dart:io` 的 `File.readAsString` 从磁盘读取，但在本机测试沙箱里
-/// 该调用会**永久挂起**（文件 I/O 被阻断，且会冻结事件循环，连超时定时器都无法触发），
-/// 导致 EasyLocalization 的 LocalizationsResolver 永远不就绪 → 整个 App 被渲染成
-/// `SizedBox.shrink()` → AuthWall 从未构建 → 所有 `find.text` 断言失败。
-///
-/// 改用 `rootBundle.loadString`：它走 Flutter 的 asset bundle（pubspec 已声明
-/// `assets/translations/`），在 flutter test 下可正常加载，且不会触发被阻断的
-/// dart:io 文件 I/O。en-US.json 的键与英文值一致（如 "Login"→"Login"），缺失的键
-/// `.tr()` 会回退到键本身，因此测试断言的英文文本与加载真实翻译后渲染的文本一致。
-/// 若加载仍失败，退化为空表（.tr() 返回 key），保证 UI 仍能渲染、可被驱动。
-///
-/// 记忆化（按 locale 缓存 Future）：首个 EasyLocalization 实例卸载后，本机沙箱里
-/// 第二次调用 `rootBundle.loadString` 会再次挂起（事件循环被冻结），表现为后续
-/// `pumpApp` 永远渲染不出 App。同一进程内翻译不会变化，故每个 locale 只加载一次，
-/// 既规避二次挂起，又提升确定性、减少重复 I/O。
-class _TestAssetLoader extends AssetLoader {
-  static final Map<String, Future<Map<String, dynamic>?>> _cache = {};
-
-  @override
-  Future<Map<String, dynamic>?> load(String path, Locale locale) async {
-    final code = locale.countryCode == null
-        ? locale.languageCode
-        : '${locale.languageCode}-${locale.countryCode}';
-    final cacheKey = '$path/$code';
-    return _cache.putIfAbsent(cacheKey, () async {
-      try {
-        final raw = await rootBundle.loadString('$cacheKey.json');
-        return jsonDecode(raw) as Map<String, dynamic>;
-      } on Object {
-        // 退化：返回空表，.tr() 直接返回 key（英文），不影响 UI 渲染与驱动。
-        return <String, dynamic>{};
-      }
-    });
-  }
-}
+// _TestAssetLoader 已迁移到 support/asset_loader.dart 作为 TestAssetLoader
 
 /// flutter_secure_storage 的内存实现，避免 MissingPluginException。
 const _secureChannel = MethodChannel(
@@ -380,6 +344,11 @@ Future<void> initTestEnv() async {
   // 集成测试关闭日志 HTTP 服务器：其 HttpServer idle timeout 会在 FakeAsync 下
   // 留下永远 pending 的周期性 Timer（见 log_webserver.dart 的 enableWebServer 注释）。
   LogWebServer.enableWebServer = false;
+  // 测试环境置空 core 的日志注入点：测试不写日志文件，也不依赖 dev 模式判断。
+  // 生产环境由 main.dart 注入（见 lib/main.dart），测试环境显式置空避免
+  // 污染跨用例状态（debug 模式下 isDevModeActive 恒为 true，无需注入）。
+  logDirResolverOverride = null;
+  devModeProvider = null;
   // 屏蔽 easy_localization 在 flutter test 下的翻译缺失等 warning 日志。
   // 注意：flutter test 不执行 main()，必须在测试初始化阶段、ensureInitialized()
   // 之前设置静态 logger（构造 EasyLocalization 不会重置该静态实例）。
@@ -466,7 +435,7 @@ Future<void> pumpApp(WidgetTester tester) async {
       supportedLocales: const [Locale('en', 'US'), Locale('zh', 'CN')],
       fallbackLocale: const Locale('en', 'US'),
       startLocale: const Locale('en', 'US'),
-      assetLoader: _TestAssetLoader(),
+      assetLoader: TestAssetLoader(),
       child: App(
         sessionStateStream: StreamController<SessionState>(),
         navigatorKey: GlobalKey<NavigatorState>(),
@@ -513,7 +482,7 @@ Widget wrapScreen(Widget screen) {
     supportedLocales: const [Locale('en', 'US'), Locale('zh', 'CN')],
     fallbackLocale: const Locale('en', 'US'),
     startLocale: const Locale('en', 'US'),
-    assetLoader: _TestAssetLoader(),
+    assetLoader: TestAssetLoader(),
     child: MultiProvider(
       providers: [
         ChangeNotifierProvider<ThemeProvider>.value(value: testThemeProvider),

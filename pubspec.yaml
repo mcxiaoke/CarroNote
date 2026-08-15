@@ -79,6 +79,7 @@ dev_dependencies:
   import_sorter: ^4.6.0
   dependency_validator: ^5.0.5
   flutter_lints: ^6.0.0
+  mocktail: ^1.0.5
 
 
 flutter_native_splash:

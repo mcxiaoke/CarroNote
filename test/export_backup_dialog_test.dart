@@ -3,12 +3,8 @@
 // 覆盖：加密/明文二选一、密码确认、空/不一致密码按钮禁用、
 //       明文模式隐藏密码框、提交返回 ExportOptions。
 
-// Dart imports:
-import 'dart:convert';
-
 // Flutter imports:
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
@@ -20,32 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'test_helpers.dart';
-
-/// widget 测试的 asset bundle 并不提供项目翻译文件，这里改用 rootBundle.loadString
-/// 读取（走 Flutter asset bundle，而非 dart:io 文件 I/O）。本机 flutter test 沙箱里
-/// dart:io 的 File.readAsString 会永久挂起（事件循环被冻结），导致
-/// EasyLocalization 永远不就绪、App 渲染不出。rootBundle 在 flutter test 下可正常加载。
-/// 按 [语言-国家, 语言, en-US] 顺序回退；任一候选加载失败则退化返回空表（.tr() 返回 key）。
-class _TestAssetLoader extends AssetLoader {
-  @override
-  Future<Map<String, dynamic>?> load(String path, Locale locale) async {
-    final candidates = <String>[
-      if (locale.countryCode != null && locale.countryCode!.isNotEmpty)
-        '${locale.languageCode}-${locale.countryCode}',
-      locale.languageCode,
-      'en-US',
-    ];
-    for (final code in candidates) {
-      try {
-        final raw = await rootBundle.loadString('$path/$code.json');
-        return jsonDecode(raw) as Map<String, dynamic>;
-      } on Object {
-        // 该候选不存在，尝试下一个
-      }
-    }
-    return <String, dynamic>{};
-  }
-}
+import 'support/asset_loader.dart';
 
 void main() {
   setUpAll(() async {
@@ -62,7 +33,7 @@ void main() {
       supportedLocales: const [Locale('en', 'US'), Locale('zh', 'CN')],
       fallbackLocale: const Locale('en', 'US'),
       startLocale: const Locale('en', 'US'),
-      assetLoader: _TestAssetLoader(),
+      assetLoader: TestAssetLoader(),
       // shadcn 迁移后导出面板用 ShadInput / ShadRadio / ShadTheme.of()，
       // 必须包 ShadApp.custom 提供 ShadTheme，否则 ShadTheme.of() 抛异常导致
       // 对话框内容无法渲染（原测试只包了 MaterialApp，对应旧 MD3 版本）。
