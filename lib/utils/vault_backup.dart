@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 // Project imports:
+import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 
 /// 保留的重置前快照份数（超出删除最旧）
@@ -34,9 +35,10 @@ const int maxKeptBackups = 5;
 /// （Windows=`%APPDATA%\<app>`，macOS=`~/Library/Application Support/<app>`，
 /// 移动端=应用沙箱数据目录），不随 db 目录（移动端在 databases/ 子目录）漂移。
 ///
+/// [dbAdmin] 可选数据库管理端口，提供时使用其 dbFilePath 替代 NotesDatabase.instance。
 /// 返回创建的备份目录；失败抛异常，调用方应中止重置。
-Future<Directory> backupVaultBeforeReset() async {
-  final dbPath = await NotesDatabase.instance.dbFilePath();
+Future<Directory> backupVaultBeforeReset({NotesDbAdminPort? dbAdmin}) async {
+  final dbPath = await (dbAdmin ?? NotesDbAdminAdapter()).dbFilePath();
   final dbFile = File(dbPath);
   if (!await dbFile.exists()) {
     throw Exception('database file not found: $dbPath');

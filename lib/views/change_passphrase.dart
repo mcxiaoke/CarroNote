@@ -19,11 +19,13 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/models/session.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/data/note_repository.dart';
+import 'package:safenotes/models/session_provider.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -337,7 +339,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       // 简化方案:旧密码验证前置(评审 kk27c P3)
       // 用 keyring.verifyPassword 只验证不持久化,避免先做备份/同步再发现旧密码错
       // 验证通过后再做 _preChangeCheck(备份/同步/ping),最后调 keyring.changePassword 持久化
-      final keyring = SyncService.instance.keyring;
+      final keyring = context.read<SyncRepository>().keyring;
       if (keyring == null) {
         // keyring 为 null 说明未登录或状态异常,中止
         Log.auth.e('改密码中止：Keyring 未初始化（未登录或状态异常）');
@@ -416,21 +418,20 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 更新 SyncService 中的 Keyring(重建 SyncEngine 使用新 encryptedDataKey)
       Log.auth.d('改密码步骤 4/5：刷新 SyncService 的 keyring 与同步引擎');
-      await SyncService.instance.updateKeyring(
+      await context.read<SyncRepository>().updateKeyring(
         keyring: newKeyring,
-        database: NotesDatabase.instance,
       );
 
       // 简化方案(评审 hy3/mmm3 A2):改密码成功后必须更新 PhraseHandler + biometric
       // 否则 biometric secure storage 保留旧密码 → 指纹登录用旧密码解 keyring 失败
-      Session.onPasswordSet(newPassword);
+      context.read<SessionProvider>().onPasswordSet(newPassword);
 
       // 改密码后立即同步:把新 encryptedDataKey 推送到远端
       // 避免他端在本地推送前拉到旧 encryptedDataKey,触发不必要的 dataKey 迁移逻辑
       // 同步失败不阻断改密码流程(本地密码已变更成功),仅提示用户
       try {
         Log.auth.d('改密码步骤 5/5：推送新密钥到远端');
-        await SyncService.instance.sync();
+        await context.read<SyncRepository>().sync();
         Log.auth.i('改密码步骤 5/5：新密钥已推送到远端');
       } on Exception catch (e) {
         // 同步失败:本地 encryptedDataKey 已更新,下次 sync 会自动推送
@@ -477,8 +478,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     }
 
     // 2. 若启用同步：强制 sync + 检查 clean + ping 服务器
-    final backend = SyncService.instance.backend;
-    final keyring = SyncService.instance.keyring;
+    final backend = context.read<SyncRepository>().backend;
+    final keyring = context.read<SyncRepository>().keyring;
     if (keyring != null && backend != null) {
       // 2a. ping 服务器确认在线
       final online = await backend.ping();
@@ -496,9 +497,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 2b. 强制同步一次，把本地未推送的变更先推到远端
       if (online) {
-        await SyncService.instance.sync();
+        await context.read<SyncRepository>().sync();
         // 2c. 检查本地是否 clean（同步后仍可能有 blob missing 等情况）
-        final unsynced = await NotesDatabase.instance.readUnsyncedNotes();
+        final unsynced = await context.read<NotesRepository>().readUnsyncedNotes();
         if (unsynced.isNotEmpty && mounted) {
           final proceed = await _showWarningDialog(
             title: 'Unsynchronized Notes Remain'.tr(),

@@ -23,6 +23,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
@@ -78,22 +79,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 一次性从 PreferencesStorage 读入全部开关值（初始化用）。
   void _loadSwitchValues() {
-    _isCompactPreview = PreferencesStorage.isCompactPreview;
-    _isMarkdownEnabled = PreferencesStorage.isMarkdownEnabled;
-    _isRelativeTime = PreferencesStorage.isRelativeTime;
-    _isSortByModified = PreferencesStorage.isSortByModified;
-    _isFlagSecure = PreferencesStorage.isFlagSecure;
-    _keyboardIncognito = PreferencesStorage.keyboardIncognito;
-    _isAutoRotate = PreferencesStorage.isAutoRotate;
+    _isCompactPreview = context.read<PreferencesRepository>().isCompactPreview;
+    _isMarkdownEnabled = context.read<PreferencesRepository>().isMarkdownEnabled;
+    _isRelativeTime = context.read<PreferencesRepository>().isRelativeTime;
+    _isSortByModified = context.read<PreferencesRepository>().isSortByModified;
+    _isFlagSecure = context.read<PreferencesRepository>().isFlagSecure;
+    _keyboardIncognito = context.read<PreferencesRepository>().keyboardIncognito;
+    _isAutoRotate = context.read<PreferencesRepository>().isAutoRotate;
   }
 
   /// 读取展示值（value 列）；导航返回后调用以反映子页改动。
   void _loadDisplayValues() {
     _themeColorName = _currentThemeColorName(context);
-    _notesColorValue = PreferencesStorage.isColorful ? 'On'.tr() : 'Off'.tr();
+    _notesColorValue = context.read<PreferencesRepository>().isColorful ? 'On'.tr() : 'Off'.tr();
     _syncStatusValue = _syncStatusValueString();
-    _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
-    _biometricValue = PreferencesStorage.isBiometricAuthEnabled
+    _backupValue = context.read<PreferencesRepository>().isBackupOn ? 'On'.tr() : 'Off'.tr();
+    _biometricValue = context.read<PreferencesRepository>().isBiometricAuthEnabled
         ? 'On'.tr()
         : 'Off'.tr();
     _inactivityValue = inactivityTimeoutValue();
@@ -132,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: LucideIcons.moon,
           title: 'Dark mode'.tr(),
           // 值由 ThemeProvider 通知驱动重建，这里直接读偏好即可。
-          value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
+          value: !context.read<PreferencesRepository>().isThemeDark ? 'Off'.tr() : 'On'.tr(),
           onTap: () => showThemeBottomSheet(context),
         ),
         shadNavigationTile(
@@ -164,7 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: 'Compact Notes'.tr(),
           value: _isCompactPreview,
           onChanged: (v) {
-            PreferencesStorage.setIsCompactPreview(v);
+            context.read<PreferencesRepository>().setIsCompactPreview(v);
             setState(() => _isCompactPreview = v);
           },
         ),
@@ -176,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Format note preview with Markdown. Off shows plain text.'.tr(),
           value: _isMarkdownEnabled,
           onChanged: (v) {
-            PreferencesStorage.setIsMarkdownEnabled(v);
+            context.read<PreferencesRepository>().setIsMarkdownEnabled(v);
             setState(() => _isMarkdownEnabled = v);
           },
         ),
@@ -191,7 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   .tr(),
           value: _isRelativeTime,
           onChanged: (v) {
-            PreferencesStorage.setIsRelativeTime(v);
+            context.read<PreferencesRepository>().setIsRelativeTime(v);
             setState(() => _isRelativeTime = v);
           },
         ),
@@ -205,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   .tr(),
           value: _isSortByModified,
           onChanged: (v) {
-            PreferencesStorage.setIsSortByModified(v);
+            context.read<PreferencesRepository>().setIsSortByModified(v);
             setState(() => _isSortByModified = v);
           },
         ),
@@ -287,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   .tr(),
           value: _isFlagSecure,
           onChanged: (v) {
-            PreferencesStorage.setIsFlagSecure(v);
+            context.read<PreferencesRepository>().setIsFlagSecure(v);
             setState(() => _isFlagSecure = v);
           },
         ),
@@ -297,7 +298,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: 'Incognito Keyboard'.tr(),
           value: _keyboardIncognito,
           onChanged: (v) {
-            PreferencesStorage.setKeyboardIncognito(v);
+            context.read<PreferencesRepository>().setKeyboardIncognito(v);
             setState(() => _keyboardIncognito = v);
           },
         ),
@@ -336,7 +337,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             description: 'Close and open app for change to take effect'.tr(),
             value: _isAutoRotate,
             onChanged: (v) {
-              PreferencesStorage.setIsAutoRotate(v);
+              context.read<PreferencesRepository>().setIsAutoRotate(v);
               setState(() => _isAutoRotate = v);
             },
           ),
@@ -358,16 +359,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _currentThemeColorName(BuildContext context) {
     final isZh = context.locale.languageCode == 'zh';
     final seed = AppThemeSeeds.itemByIndex(
-      PreferencesStorage.themeGroupIndex,
-      PreferencesStorage.themeColorIndex,
+      context.read<PreferencesRepository>().themeGroupIndex,
+      context.read<PreferencesRepository>().themeColorIndex,
     );
     return isZh ? seed.name : seed.nameEn;
   }
 
   String inactivityTimeoutValue() {
-    // 取值走 PreferencesStorage 的统一来源。
-    final index = PreferencesStorage.inactivityTimeoutIndex;
-    final seconds = PreferencesStorage.kInactivityTimeoutChoicesSeconds[index];
+    // 取值走 PreferencesRepository 的统一来源（inactivityTimeout 已换算为秒）。
+    final seconds = context.read<PreferencesRepository>().inactivityTimeout;
     if (seconds < 60) {
       return '{seconds} sec'.tr(namedArgs: {'seconds': '$seconds'});
     }

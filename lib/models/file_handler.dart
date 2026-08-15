@@ -27,6 +27,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 // Project imports:
+import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_password_input.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
@@ -39,9 +40,14 @@ class FileHandler {
   ///
   /// 见 docs/backup-encryption-design-20260810.md §6：明文/加密仅是「是否
   /// 加密」之差，导出内容完全一致。
-  static Future<List<Map<String, dynamic>>> loadRecordsForExport() async {
+  ///
+  /// [dbAdmin] 可选数据库管理端口，提供时使用其 exportAll 替代 NotesDatabase.instance。
+  static Future<List<Map<String, dynamic>>> loadRecordsForExport({
+    NotesDbAdminPort? dbAdmin,
+  }) async {
     // exportAll 返回已解密笔记的 JSON 数组字符串（含 uuid/时间戳等全字段，§4.1）
-    final String record = await NotesDatabase.instance.exportAll();
+    final db = dbAdmin ?? NotesDbAdminAdapter();
+    final String record = await db.exportAll();
     final decoded = jsonDecode(record);
     if (decoded is! List) {
       throw const FormatException('导出数据解析失败：顶层不是数组');

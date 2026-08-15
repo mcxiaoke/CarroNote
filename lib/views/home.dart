@@ -28,11 +28,14 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/note_repository.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/motion.dart';
@@ -68,8 +71,8 @@ class HomePageState extends State<HomePage> with RouteAware {
   late List<SafeNote> allnotes;
   bool isLoading = false;
   String query = '';
-  bool isNewFirst = PreferencesStorage.isNewFirst;
-  bool isGridView = PreferencesStorage.isGridView;
+  late bool isNewFirst;
+  late bool isGridView;
   bool _routeSubscribed = false;
 
   /// B4 修复：监听同步状态流，消费 SyncResult.requiresRelogin。
@@ -100,10 +103,14 @@ class HomePageState extends State<HomePage> with RouteAware {
   void initState() {
     super.initState();
     Log.ui.i('进入主界面');
+    final prefs = context.read<PreferencesRepository>();
+    isNewFirst = prefs.isNewFirst;
+    isGridView = prefs.isGridView;
     refreshNotes();
     // 订阅前先取当前状态，保证 AppBar 按钮在首个事件到来前就有正确图标。
-    _lastSyncState = SyncService.instance.state;
-    _syncStateSub = SyncService.instance.stateStream.listen(
+    final syncRepo = context.read<SyncRepository>();
+    _lastSyncState = syncRepo.state;
+    _syncStateSub = syncRepo.stateStream.listen(
       _onSyncStateChanged,
     );
     // 需求：日志 Web 服务器随主界面启动（全平台：移动端 + 桌面端），
@@ -258,7 +265,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       );
     }
 
-    await Session.logout();
+    await context.read<SessionProvider>().logout();
   }
 
   Future<void> refreshNotes() async {
@@ -293,15 +300,17 @@ class HomePageState extends State<HomePage> with RouteAware {
   Future<void> _sortAndStoreNotes() async {
     // storing copy of notes in allnotes so that it does not change while doing search
     // 默认按修改时间排序（新→旧），可在设置中改为创建时间
-    final sortByModified = PreferencesStorage.isSortByModified;
+    final prefs = context.read<PreferencesRepository>();
+    final notesRepo = context.read<NotesRepository>();
+    final sortByModified = prefs.isSortByModified;
     DateTime keyOf(SafeNote n) =>
         sortByModified ? n.modifiedTime : n.createdTime;
     List<SafeNote> tmpNotes;
     if (isNewFirst) {
-      tmpNotes = await NotesDatabase.instance.readAllNotes()
+      tmpNotes = await notesRepo.readAllNotes()
         ..sort((a, b) => keyOf(b).compareTo(keyOf(a)));
     } else {
-      tmpNotes = await NotesDatabase.instance.readAllNotes()
+      tmpNotes = await notesRepo.readAllNotes()
         ..sort((a, b) => keyOf(a).compareTo(keyOf(b)));
     }
     setState(() {
@@ -392,7 +401,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget _syncStatusButton() {
     if (!SyncConfig.isSyncReady) return const SizedBox.shrink();
 
-    final state = _lastSyncState ?? SyncService.instance.state;
+    final state = _lastSyncState ?? context.read<SyncRepository>().state;
     final isSyncing = state.isSyncing;
     return IconButton(
       icon: isSyncing
@@ -470,7 +479,7 @@ class HomePageState extends State<HomePage> with RouteAware {
           : const Icon(LucideIcons.columns2),
       onPressed: () {
         setState(() {
-          PreferencesStorage.setIsGridView(!isGridView);
+          context.read<PreferencesRepository>().setIsGridView(!isGridView);
           isGridView = !isGridView;
         });
       },
@@ -605,7 +614,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     );
     // 设置页内退出登录时 '/settings' 被 removeUntil 移除，dataKey 已清，
     // 必须跳过 refresh，否则 readAllNotes 抛 DataKeyNotSetException。
-    if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+    if (mounted && context.read<NotesRepository>().isEncryptionEnabled) {
       refreshNotes();
     }
   }
@@ -613,7 +622,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   Future<void> _navDeletedNotes() async {
     Log.ui.i('界面切换: 主界面 → 回收站(/deletedNotes)');
     await Navigator.pushNamed(context, '/deletedNotes');
-    if (mounted && NotesDatabase.instance.isEncryptionEnabled) {
+    if (mounted && context.read<NotesRepository>().isEncryptionEnabled) {
       refreshNotes();
     }
   }
@@ -680,7 +689,7 @@ class HomePageState extends State<HomePage> with RouteAware {
         // ui 前缀 key：集成测试按序号定位第 N 条笔记（如 ui-home-note-1 = 第 2 条）
         child: KeyedSubtree(
           key: Key('ui-home-note-$index'),
-          child: PreferencesStorage.isCompactPreview
+          child: context.read<PreferencesRepository>().isCompactPreview
               ? (grid
                     ? NoteCardWidgetCompact(note: note, index: colorIndex)
                     : NoteTileWidgetCompact(note: note, index: colorIndex))

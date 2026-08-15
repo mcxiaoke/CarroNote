@@ -28,14 +28,20 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
+import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/note_repository.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/models/shad_theme.dart';
+import 'package:safenotes/platform/ports.dart';
 import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/notes_color.dart';
 
 import 'asset_loader.dart';
+import 'fake_repositories.dart';
+import 'fakes.dart';
+import 'platform_fakes.dart';
 
 /// 单屏测试使用的固定主题 seed（与 App 默认一致：独立默认色·深海蓝）。
 const Color kHarnessThemeSeed = Color(0xFF0F3460);
@@ -51,6 +57,7 @@ const Color kHarnessThemeSeed = Color(0xFF0F3460);
 ///   - ChangeNotifierProvider<SessionProvider> (vaultInitialized: null)
 ///   - ChangeNotifierProvider<NotesRepository> (FakeNotesRepository)
 ///   - ChangeNotifierProvider<SyncRepository> (FakeSyncRepository)
+///   - Provider<NotesDbAdminPort> (FakeNotesDbAdminPort)
 ///
 /// [overrides] 可覆盖或追加 Provider，替换默认的 Provider 或新增依赖。
 /// 注意：传入的 overrides 元素应为 Provider&lt;T&gt; 等 SingleChildWidget 实例。
@@ -60,6 +67,7 @@ const Color kHarnessThemeSeed = Color(0xFF0F3460);
 Widget withProviders(
   Widget child, {
   List<dynamic> overrides = const [],
+  PreferencesRepository? preferences,
   Color themeSeed = kHarnessThemeSeed,
   ThemeMode themeMode = ThemeMode.light,
 }) {
@@ -75,26 +83,48 @@ Widget withProviders(
         themeMode: themeMode,
         theme: ShadThemes.build(themeSeed, Brightness.light),
         darkTheme: ShadThemes.build(themeSeed, Brightness.dark),
-        appBuilder: (context) => MultiProvider(
-          providers: [
-            ChangeNotifierProvider<ThemeProvider>(
-              create: (_) => ThemeProvider(),
-            ),
-            ChangeNotifierProvider<NotesColor>(
-              create: (_) => NotesColor(),
-            ),
-            ChangeNotifierProvider<SessionProvider>(
-              create: (_) => SessionProvider(),
-            ),
-            ChangeNotifierProvider<NotesRepository>(
-              create: (_) => FakeNotesRepository(),
-            ),
-            ChangeNotifierProvider<SyncRepository>(
-              create: (_) => FakeSyncRepository(),
-            ),
-            ...overrides,
-          ],
-          child: child,
+        appBuilder: (context) => MaterialApp(
+          home: MultiProvider(
+            providers: [
+              ChangeNotifierProvider<NotesColor>(create: (_) => NotesColor()),
+              ChangeNotifierProvider<PreferencesRepository>(
+                create: (_) => preferences ?? FakePreferencesRepository(),
+              ),
+              ChangeNotifierProvider<ThemeProvider>(
+                create: (context) => ThemeProvider(
+                  prefs: context.read<PreferencesRepository>(),
+                ),
+              ),
+              ChangeNotifierProvider<NotesRepository>(
+                create: (_) => FakeNotesRepository(),
+              ),
+              ChangeNotifierProvider<SyncRepository>(
+                create: (_) => FakeSyncRepository(),
+              ),
+              Provider<NotesDbAdminPort>(
+                create: (_) => FakeNotesDbAdminPort(),
+              ),
+              // §4.6 平台 port 测试替身
+              Provider<SecureStoragePort>(create: (_) => FakeSecureStorage()),
+              Provider<BiometricPort>(create: (_) => FakeBiometric()),
+              Provider<DeviceInfoPort>(create: (_) => FakeDeviceInfo()),
+              Provider<PermissionPort>(create: (_) => FakePermission()),
+              Provider<AppDirsPort>(create: (_) => FakeAppDirs()),
+              Provider<FilePickerPort>(create: (_) => FakeFilePicker()),
+              Provider<UrlLauncherPort>(create: (_) => FakeUrlLauncher()),
+              Provider<MediaScannerPort>(create: (_) => FakeMediaScanner()),
+              ChangeNotifierProvider<SessionProvider>(
+                create: (context) => SessionProvider(
+                  notesRepo: context.read<NotesRepository>(),
+                  syncRepo: context.read<SyncRepository>(),
+                  prefsRepo: context.read<PreferencesRepository>(),
+                  biometric: context.read<BiometricPort>(),
+                ),
+              ),
+              ...overrides,
+            ],
+            child: child,
+          ),
         ),
       ),
     ),

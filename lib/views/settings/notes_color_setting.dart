@@ -20,7 +20,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
@@ -34,8 +34,16 @@ class ColorPallet extends StatefulWidget {
 }
 
 class ColorPalletState extends State<ColorPallet> {
-  var _selectedIndex = PreferencesStorage.colorfulNotesColorIndex;
+  late int _selectedIndex;
   final items = allNotesColorTheme;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = context
+        .read<PreferencesRepository>()
+        .colorfulNotesColorIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +56,7 @@ class ColorPalletState extends State<ColorPallet> {
             icon: LucideIcons.palette,
             title: 'Colorful Notes'.tr(),
             description: 'Choose the note color theme from below'.tr(),
-            value: PreferencesStorage.isColorful,
+            value: context.read<PreferencesRepository>().isColorful,
             onChanged: (_) {
               // 颜色开关走 Provider，主界面卡片配色需要立即刷新。
               Provider.of<NotesColor>(context, listen: false).toggleColor();
@@ -117,7 +125,7 @@ class ColorPalletState extends State<ColorPallet> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
-          PreferencesStorage.setColorfulNotesColorIndex(i);
+          context.read<PreferencesRepository>().setColorfulNotesColorIndex(i);
           setState(() => _selectedIndex = i);
         },
         child: Container(

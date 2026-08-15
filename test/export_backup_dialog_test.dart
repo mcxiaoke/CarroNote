@@ -15,8 +15,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Project imports:
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/shad_theme.dart';
-import 'test_helpers.dart';
 import 'support/asset_loader.dart';
+
+const Color kTestThemeSeed = Color(0xFF0F3460);
 
 void main() {
   setUpAll(() async {
@@ -50,6 +51,11 @@ void main() {
     WidgetTester tester,
     void Function(ExportOptions?) onResult,
   ) async {
+    // 对话框内容较长（格式选择 + 密码框 + 底部 Export 按钮），默认 800×600
+    // 视口下 Export 按钮落到屏幕边缘外，tap 会命中失败。调高视口保证可见。
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       wrapForTest(
         Scaffold(
@@ -78,8 +84,9 @@ void main() {
     // 默认加密：两个密码输入框（密码 + 确认）+ 一个只读位置展示框，
     // 共 3 个 ShadInput（位置框是 ShadInputFormField，属 ShadInput 子类）。
     expect(find.byType(ShadInput), findsNWidgets(3));
-    // 此时密码为空，导出按钮应禁用（点按不弹回）
-    await tester.tap(find.text('Export'));
+    // 此时密码为空，导出按钮应禁用（点按不弹回）。
+    // 禁用按钮不响应命中，关闭命中警告。
+    await tester.tap(find.text('Export'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.text('Export Backup'), findsOneWidget);
   });
@@ -93,7 +100,8 @@ void main() {
     await tester.enterText(find.byType(ShadInput).at(1), 'pass-2');
     await tester.pump();
     expect(find.text('Passwords do not match'), findsOneWidget);
-    await tester.tap(find.text('Export'));
+    // 密码不一致时按钮禁用，禁用按钮不响应命中，关闭命中警告。
+    await tester.tap(find.text('Export'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.text('Export Backup'), findsOneWidget);
 

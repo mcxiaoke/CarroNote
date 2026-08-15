@@ -12,6 +12,10 @@
 //   3. 断言"不变量"而非精确终态（随机时序下终态不可预测）。
 //   4. 维护逻辑真值模型（LogicalModel），并区分基线（真实 118 数据）与混沌操作。
 
+// 单用例最长 30 分钟，标记 slow 供 CI 用 `dart test --exclude-tags slow` 排除。
+@Tags(['slow'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';

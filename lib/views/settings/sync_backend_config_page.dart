@@ -24,11 +24,12 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -632,7 +633,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
       _resultError = null;
     });
 
-    final result = await SyncService.instance.testBackendConfig(draft);
+    final result = await context.read<SyncRepository>().testBackendConfig(draft);
 
     if (!mounted) return;
     setState(() {

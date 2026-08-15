@@ -22,15 +22,16 @@ import 'package:flutter/services.dart';
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
-import 'package:safenotes/models/session.dart';
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/snack_message.dart';
@@ -334,7 +335,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
         // 新密码时 Keyring.unlockLocal 用新密码解旧 encryptedDataKey 失败。
         //
         // 简化方案：不再调 Session.setOrChangePassphrase（已删 hash 写入），
-        // 改为 _initKeyring 成功后调 Session.onPasswordSet（仅 PhraseHandler +
+        // 改为 _initKeyring 成功后调 SessionProvider.onPasswordSet（仅 PhraseHandler +
         // biometric 副作用）。PhraseHandler.getPass 为空会导致 biometric 存空
         // 字符串 → 指纹登录必失败（评审 hy3/mmm3 A1）。
         // 防重入：进入异步初始化流程（PBKDF2 + 可选后端）前置位
@@ -349,7 +350,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
             Log.auth.w('设置密码中止：页面已卸载, 不再继续导航');
             return;
           }
-          Session.onPasswordSet(enteredPassphrase);
+          context.read<SessionProvider>().onPasswordSet(enteredPassphrase);
 
           // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
           // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
@@ -414,9 +415,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
     final swKeyring = Stopwatch()..start();
     Log.crypto.i('设置密码步骤 3/4：开始生成 dataKey 并派生主密钥 (PBKDF2)');
-    final result = await SyncService.instance.initKeyringFromPassword(
-      password: passphrase,
-      database: NotesDatabase.instance,
+    final result = await context.read<SyncRepository>().initKeyringFromPassword(
+      passphrase,
     );
 
     if (!result.success) {
@@ -443,9 +443,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
     await SyncConfig.init();
     if (SyncConfig.isSyncReady) {
       Log.sync.i('同步已启用, 开始初始化后端 (type=${SyncConfig.backendType})');
-      final backendResult = await SyncService.instance.initBackend(
-        database: NotesDatabase.instance,
-      );
+      final backendResult = await context.read<SyncRepository>().initBackend();
       if (!backendResult.success) {
         Log.sync.w('同步后端初始化失败: ${backendResult.error ?? "未知错误"} (不阻断进入主界面)');
       } else {

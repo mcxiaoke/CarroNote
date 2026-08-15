@@ -22,18 +22,22 @@ import 'package:flutter/services.dart';
 import 'package:after_layout/after_layout.dart';
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
+import 'package:safenotes/data/db_admin_port.dart';
+import 'package:safenotes/data/note_repository.dart';
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/dialogs/generic.dart';
-import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/models/session_provider.dart';
+import 'package:safenotes/platform/ports.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
@@ -60,12 +64,10 @@ class EncryptionPhraseLoginPage extends StatefulWidget {
 
 class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     with AfterLayoutMixin<EncryptionPhraseLoginPage> {
-  // BiometricAuth:
-  final LocalAuthentication auth = LocalAuthentication();
   _BiometricState _supportState = _BiometricState.unknown;
 
   // Does the user still remember their passphrase?
-  bool forcePassphraseInput = isPassphraseRememberChallenge();
+  late bool forcePassphraseInput;
 
   //ClassicLogin:
   final _formKey = GlobalKey<FormState>();
@@ -85,12 +87,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   // 简化方案:限流计数从 validator(sync)迁移到 _login 失败分支(async)
   // 原本 validator 里 hash 比对失败时递减,现在 validator 只做长度检查
-  int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
+  late int _noOfAllowedAttempts;
 
   // F-H09 修复:锁定倒计时状态从文件顶层移入 State,随 widget 生命周期创建/释放
   // 修复前这些是顶层全局变量 + 顶层 Timer,无法在路由销毁时取消,可能泄漏 Timer
   // 并持续向已释放的 StreamController 发事件(在 widget 销毁后 setState 报错)
-  final int _lockoutTime = PreferencesStorage.bruteforceLockOutTime;
+  late final int _lockoutTime;
   int _counter = 0;
   Timer? _timer;
   final StreamController<String> _controller =
@@ -118,8 +120,14 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     super.initState();
     _isKeyboardFocused = widget.isKeyboardFocused ?? true;
 
+    final prefs = context.read<PreferencesRepository>();
+    _noOfAllowedAttempts = prefs.noOfLogginAttemptAllowed;
+    _lockoutTime = prefs.bruteforceLockOutTime;
+    forcePassphraseInput = isPassphraseRememberChallenge(prefs);
+
     // BiometricAuth:
-    auth.isDeviceSupported().then((bool isSupported) {
+    final biometric = context.read<BiometricPort>();
+    biometric.isAvailable().then((bool isSupported) {
       // P-修复：设备支持检测是异步的，登录页可能在此期间被销毁
       // （如会话超时锁定触发登出并切换路由），未检查 mounted 直接
       // setState 会报 "setState() called after dispose()" 未捕获异常。
@@ -146,7 +154,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   @override
   Future<void> afterFirstLayout(BuildContext context) async {
-    if (PreferencesStorage.isBiometricAuthEnabled &&
+    if (context.read<PreferencesRepository>().isBiometricAuthEnabled &&
         (widget.isKeyboardFocused ?? true)) {
       await _authenticate();
     }
@@ -348,7 +356,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _buildBiometricAuthButton(BuildContext context) {
     // 设置里未启用生物识别时不显示该按钮（含「OR」分隔文字）。
-    if (!PreferencesStorage.isBiometricAuthEnabled) {
+    if (!context.read<PreferencesRepository>().isBiometricAuthEnabled) {
       return const SizedBox.shrink();
     }
     final bool enabled = !forcePassphraseInput && !_isLocked;
@@ -410,9 +418,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
       // 1. 本地 keyring 解锁(优先)
       if (isInitialized) {
-        final result = await SyncService.instance.initKeyringFromPassword(
-          password: passphrase,
-          database: database,
+        final result = await context.read<SyncRepository>().initKeyringFromPassword(
+          passphrase,
         );
         if (result.success) {
           await _onLoginSuccess(passphrase);
@@ -453,7 +460,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   /// 登录成功后的统一处理
   Future<void> _onLoginSuccess(String passphrase) async {
-    Session.login(passphrase);
+    context.read<SessionProvider>().login(passphrase);
     Log.auth.i('登录成功：进入主界面（密码登录）');
 
     // BUG 修复：登录成功即 keyring 已解锁，同步刷新 AuthWall 启动缓存，
@@ -462,7 +469,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
     // re-enable biometric auth
     if (forcePassphraseInput) {
-      PreferencesStorage.incrementBiometricAttemptAllTimeCount();
+      context.read<PreferencesRepository>().incrementBiometricAttemptAllTimeCount();
     }
 
     // start listening for session inactivity on successful login
@@ -477,7 +484,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // 改为后台初始化：成功后再触发首次同步；失败仅记日志，由主界面
       // 同步状态 UI 展示"后端未就绪"，用户可正常使用本地笔记。
       unawaited(
-        SyncService.instance.initBackend(database: NotesDatabase.instance).then(
+        context.read<SyncRepository>().initBackend().then(
           (backendResult) {
             if (!backendResult.success) {
               Log.sync.w(
@@ -486,7 +493,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
               );
             } else {
               // 登录后执行一次初始同步,拉取远端最新数据
-              SyncService.instance.autoSync();
+              context.read<SyncRepository>().autoSync();
             }
           },
         ),
@@ -540,7 +547,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         // （重建会强制整棵 Form 子树重建并丢失输入框状态）
         _formKey.currentState?.reset();
         // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
-        _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
+        _noOfAllowedAttempts = context.read<PreferencesRepository>().noOfLogginAttemptAllowed;
       });
     });
   }
@@ -555,7 +562,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ) async {
     final database = NotesDatabase.instance;
     // 创建后端实例(直接通过 SyncService 的公开工厂,避免污染单例状态)
-    final backend = SyncService.instance.createBackendForVerification();
+    final backend = context.read<SyncRepository>().createBackendForVerification();
     if (backend == null) return RemoteVerifyResult.unreachable;
     try {
       await backend.init();
@@ -604,8 +611,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         password: passphrase,
         database: database,
       );
-      NotesDatabase.instance.setDataKey(keyring.dataKey);
-      await SyncService.instance.cacheKeyringFromLogin(keyring);
+      context.read<NotesRepository>().setDataKey(keyring.dataKey);
+      await context.read<SyncRepository>().cacheKeyringFromLogin(keyring);
       return RemoteVerifyResult.verified;
     } on Exception catch (e, st) {
       // 网络故障、后端不可达、解析失败等 → unreachable(不扣次数)
@@ -753,12 +760,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   Future<void> _performLocalDataReset() async {
     Log.auth.i('执行本地数据重置（清空 keyring 与 notes 数据库）');
     try {
-      await NotesDatabase.instance.close();
+      final dbAdmin = context.read<NotesDbAdminPort>();
+      await dbAdmin.close();
 
       // 安全网：删除前把加密数据库 + 偏好快照保存到 backups/ 目录。
       // 若用户之后想起密码，快照仍可手动恢复。
       try {
-        final backupDir = await backupVaultBeforeReset();
+        final backupDir = await backupVaultBeforeReset(dbAdmin: dbAdmin);
         if (mounted) {
           showSnackBarMessage(
             context,
@@ -780,10 +788,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         return;
       }
 
-      await NotesDatabase.instance.deleteDbFile();
+      await dbAdmin.deleteDbFile();
 
       // 清除 keyring 相关 SharedPreferences key
-      await PreferencesStorage.clearVaultRelatedKeys();
+      await context.read<PreferencesRepository>().clearVaultRelatedKeys();
 
       // 重启应用:替换路由到 /authwall,会自动走 SetEncryptionPhrasePage
       if (mounted) {
@@ -826,17 +834,17 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                 .tr(),
       );
     } else {
-      PreferencesStorage.incrementBiometricAttemptAllTimeCount();
+      context.read<PreferencesRepository>().incrementBiometricAttemptAllTimeCount();
+      final biometric = context.read<BiometricPort>();
       try {
-        authenticated = await auth.authenticate(
-          localizedReason: 'Login using your biometric credential',
-          persistAcrossBackgrounding: true,
-        );
+        authenticated = await biometric.authenticate();
       } catch (e, st) {
         // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
         Log.auth.w('生物识别认证失败', error: e, stackTrace: st);
       }
-      if (authenticated) await _login(await BiometricAuth.authKey);
+      if (authenticated) {
+        await _login(await biometric.readCredential());
+      }
       if (authenticated) Log.auth.i('生物识别认证通过');
     }
     // _login 内部会 pushReplacement 跳转主界面并销毁本页，await 返回后可能已
@@ -846,19 +854,17 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     if (!mounted) return authenticated;
     setState(() {
       forcePassphraseInput =
-          PreferencesStorage.biometricAttemptAllTimeCount % 5 == 0;
+          context.read<PreferencesRepository>().biometricAttemptAllTimeCount % 5 == 0;
     });
     return authenticated;
   }
 }
 
-bool isPassphraseRememberChallenge() {
-  return PreferencesStorage.biometricAttemptAllTimeCount == 0
+bool isPassphraseRememberChallenge(PreferencesRepository prefs) {
+  final count = prefs.biometricAttemptAllTimeCount;
+  return count == 0
       ? false
-      : PreferencesStorage.biometricAttemptAllTimeCount %
-                PreferencesStorage
-                    .noOfLoginsBeforeNextPassphraseRememberChallenge ==
-            0;
+      : count % prefs.noOfLoginsBeforeNextPassphraseRememberChallenge == 0;
 }
 
 /// 远端验证三态结果(简化方案,评审 hy3 A7)

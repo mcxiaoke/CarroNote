@@ -19,11 +19,13 @@ import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
@@ -60,7 +62,7 @@ class BackupSettingState extends State<BackupSetting> {
   }
 
   Future<void> _refresh() async {
-    PreferencesStorage.reload();
+    context.read<PreferencesRepository>().reload();
 
     String path = await getBackupIndicativePath();
     final dir = path.isEmpty ? '' : File(path).parent.path;
@@ -68,7 +70,7 @@ class BackupSettingState extends State<BackupSetting> {
     setState(() {
       validWorkingBackupFullyQualifiedPath = path;
       validWorkingBackupDirectory = dir;
-      isBackupOn = PreferencesStorage.isBackupOn;
+      isBackupOn = context.read<PreferencesRepository>().isBackupOn;
       refreshUpdateTime();
     });
   }
@@ -88,7 +90,7 @@ class BackupSettingState extends State<BackupSetting> {
 
   void refreshUpdateTime() {
     Locale currentLocale = Localizations.localeOf(context);
-    String lastBackupTime = PreferencesStorage.lastBackupTime;
+    String lastBackupTime = context.read<PreferencesRepository>().lastBackupTime;
 
     lastBackupTime = lastBackupTime.isEmpty
         ? 'Never'.tr()
@@ -123,7 +125,7 @@ class BackupSettingState extends State<BackupSetting> {
                   .tr(),
           value: isBackupOn,
           onChanged: (value) async {
-            await PreferencesStorage.setIsBackupOn(value);
+            await context.read<PreferencesRepository>().setIsBackupOn(value);
             if (value == true) {
               await onBackupNow();
             }
@@ -203,7 +205,7 @@ class BackupSettingState extends State<BackupSetting> {
             : null,
       );
       if (dir != null && dir.isNotEmpty) {
-        await PreferencesStorage.setBackupDirectory(dir);
+        await context.read<PreferencesRepository>().setBackupDirectory(dir);
         Log.backup.i('用户选择备份目录: $dir');
         if (!mounted) return;
         showSnackBarMessage(context, 'Backup location updated'.tr());

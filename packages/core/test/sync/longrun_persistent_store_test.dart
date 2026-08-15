@@ -37,6 +37,10 @@
 //     注：测试以 orphanRetention=0 注入（_buildEngine），使「隔离→超期→purge」
 //     完整链路在每次 GC 实际执行——否则压缩时间下隔离项永不超期，purge 成为盲区。
 
+// 单用例最长 30 分钟，标记 slow 供 CI 用 `dart test --exclude-tags slow` 排除。
+@Tags(['slow'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -61,7 +65,7 @@ const String kSeedVaultRel = 'temp/safenotes-vault';
 
 /// 真实数据集的候选密码（最初始 safe-a-2026 → 改密 safe-a-2026aaa →
 /// safe-a-2026bbb，**当前密码放首位**）。
-const List<String> kSeedVaultPasswords = ['hello.1234', 'hello.123'];
+const List<String> kSeedVaultPasswords = ['hello.1111', 'hello.2222'];
 
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];

@@ -16,10 +16,12 @@ import 'package:flutter/material.dart';
 
 // Package imports:
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -31,7 +33,15 @@ class InactivityTimerSetting extends StatefulWidget {
 }
 
 class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
-  var _selectedIndex = PreferencesStorage.inactivityTimeoutIndex;
+  late int _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = context
+        .read<PreferencesRepository>()
+        .inactivityTimeoutIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,9 +58,9 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
             icon: LucideIcons.smartphone,
             title: 'Logout upon inactivity'.tr(),
             description: 'Close and open app for change to take effect'.tr(),
-            value: PreferencesStorage.isInactivityTimeoutOn,
+            value: context.read<PreferencesRepository>().isInactivityTimeoutOn,
             onChanged: (value) {
-              PreferencesStorage.setIsInactivityTimeoutOn(value);
+              context.read<PreferencesRepository>().setIsInactivityTimeoutOn(value);
               setState(() {});
             },
           ),
@@ -64,7 +74,7 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
               description: items[i].helper,
               selected: _selectedIndex == i,
               onTap: () {
-                PreferencesStorage.setInactivityTimeoutIndex(index: i);
+                context.read<PreferencesRepository>().setInactivityTimeoutIndex(index: i);
                 setState(() => _selectedIndex = i);
               },
             ),
@@ -107,7 +117,7 @@ List<Item> get _inactivityItems => PreferencesStorage
       // 缺省值索引标出「Default」提示（原实现里 3 分钟标记为 Default）
       return Item(
         prefix: prefix,
-        helper: index == PreferencesStorage.kDefaultInactivityTimeoutIndex
+        helper: index == kDefaultInactivityTimeoutIndex
             ? 'Default'.tr()
             : null,
       );

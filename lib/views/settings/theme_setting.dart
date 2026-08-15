@@ -21,7 +21,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -67,9 +67,9 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
 
     // 跟随系统时展示系统当前明暗，否则展示本地开关值。
     final darkModeSwitchValue =
-        PreferencesStorage.isSystemDarkLightSwitchEnabled
+        context.read<PreferencesRepository>().isSystemDarkLightSwitchEnabled
         ? isPlatformDark
-        : PreferencesStorage.isLocalDarkSwitchEnabled;
+        : context.read<PreferencesRepository>().isLocalDarkSwitchEnabled;
 
     return Material(
       color: theme.colorScheme.background,
@@ -111,8 +111,8 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                       listen: false,
                     ).setIsDarkMode(value);
 
-                    await PreferencesStorage.setLocalDarkSwitchEnabled(value);
-                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                    await context.read<PreferencesRepository>().setLocalDarkSwitchEnabled(value);
+                    await context.read<PreferencesRepository>().setSystemDarkLightSwitchEnabled(
                       false,
                     );
 
@@ -126,17 +126,17 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                   description:
                       "Use device's light or dark mode setting for the app."
                           .tr(),
-                  value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
+                  value: context.read<PreferencesRepository>().isSystemDarkLightSwitchEnabled,
                   onChanged: (value) async {
                     Provider.of<ThemeProvider>(
                       context,
                       listen: false,
                     ).setIsDarkMode(isPlatformDark);
 
-                    await PreferencesStorage.setLocalDarkSwitchEnabled(
+                    await context.read<PreferencesRepository>().setLocalDarkSwitchEnabled(
                       isPlatformDark,
                     );
-                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                    await context.read<PreferencesRepository>().setSystemDarkLightSwitchEnabled(
                       value,
                     );
 

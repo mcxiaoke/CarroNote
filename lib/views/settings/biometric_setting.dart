@@ -17,12 +17,13 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:local_auth/local_auth.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/data/preference_repository.dart';
+import 'package:safenotes/platform/ports.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -35,8 +36,6 @@ class BiometricSetting extends StatefulWidget {
 }
 
 class _BiometricSettingState extends State<BiometricSetting> {
-  final LocalAuthentication _auth = LocalAuthentication();
-
   /// 验证进行中标记：验证期间禁用开关，防止并发触发多次验证弹窗。
   bool _isVerifying = false;
 
@@ -46,6 +45,7 @@ class _BiometricSettingState extends State<BiometricSetting> {
   /// 凭据并打开开关；验证失败则保持关闭并提示用户（避免设备上生物识别本就
   /// 不可用/未录入时打开一个必然登录失败的开关）。
   Future<void> _onEnableToggle(bool value) async {
+    final biometric = context.read<BiometricPort>();
     if (value) {
       final ok = await _verifyBiometric();
       if (!ok) {
@@ -59,11 +59,11 @@ class _BiometricSettingState extends State<BiometricSetting> {
         setState(() {});
         return;
       }
-      await BiometricAuth.enable();
+      await biometric.saveCredential(PhraseHandler.getPass);
     } else {
-      await BiometricAuth.disable();
+      await biometric.clearCredential();
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   /// 执行一次生物识别验证，返回是否通过。
@@ -72,17 +72,14 @@ class _BiometricSettingState extends State<BiometricSetting> {
   /// 保证"启用时验证通过"与"登录时生物识别可用"行为一致。
   Future<bool> _verifyBiometric() async {
     setState(() => _isVerifying = true);
+    final biometric = context.read<BiometricPort>();
     try {
-      final supported = await _auth.isDeviceSupported();
-      final available = await _auth.canCheckBiometrics;
-      if (!supported || !available) {
+      final available = await biometric.isAvailable();
+      if (!available) {
         Log.auth.w('启用生物识别验证失败: 设备不支持或无已录入生物识别');
         return false;
       }
-      return await _auth.authenticate(
-        localizedReason: 'Verify your biometric to enable biometric login'.tr(),
-        persistAcrossBackgrounding: true,
-      );
+      return await biometric.authenticate();
     } on Object catch (e, st) {
       Log.auth.w('启用生物识别前的验证失败', error: e, stackTrace: st);
       return false;
@@ -104,7 +101,7 @@ class _BiometricSettingState extends State<BiometricSetting> {
             description:
                 "Users are advised to assess their threat perception before enabling biometric authentication. Don't enable this if you're storing state secrets! Visit FAQs for more information."
                     .tr(),
-            value: PreferencesStorage.isBiometricAuthEnabled,
+            value: context.read<PreferencesRepository>().isBiometricAuthEnabled,
             onChanged: (value) {
               if (_isVerifying) return;
               _onEnableToggle(value);

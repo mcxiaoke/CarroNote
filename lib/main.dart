@@ -25,6 +25,7 @@ import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Project imports:
@@ -34,6 +35,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
+import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
@@ -364,7 +366,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
 
     // save unsaved note if any
     await NoteEditorState().handleUngracefulNoteExit();
-    await Session.logout();
+    await context.read<SessionProvider>().logout();
   }
 }
 

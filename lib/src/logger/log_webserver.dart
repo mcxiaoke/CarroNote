@@ -55,6 +55,7 @@ import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 
 // Project imports:
+import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/platform_ui.dart';
@@ -76,6 +77,11 @@ class LogWebServer {
   /// 验证日志服务器本身（core 包已有独立测试覆盖其正确性），故可安全关闭，
   /// 既避免测试失败，也免去在测试沙箱里绑定真实 socket。
   static bool enableWebServer = true;
+
+  /// 数据库管理端口（可选注入，用于 DB inspector 端点）。
+  ///
+  /// 未设置时回退到 [NotesDatabase.instance]。
+  static NotesDbAdminPort? dbAdmin;
 
   LogWebServer._();
 
@@ -107,6 +113,9 @@ class LogWebServer {
 
   /// 是否正在运行
   bool get isRunning => _server != null;
+
+  /// 返回当前数据库管理端口（优先使用注入的实例，否则回退到 [NotesDatabase.instance]）。
+  NotesDbAdminPort get _dbAdmin => dbAdmin ?? NotesDbAdminAdapter();
 
   /// 本机局域网地址列表（供 UI 展示"用哪个地址访问"）
   Future<List<String>> localAddresses() async {
@@ -324,10 +333,7 @@ class LogWebServer {
       if (table != null && table.isNotEmpty) {
         final limit =
             int.tryParse(request.uri.queryParameters['limit'] ?? '100') ?? 100;
-        final rows = await NotesDatabase.instance.queryTableRows(
-          table,
-          limit: limit,
-        );
+        final rows = await _dbAdmin.queryTableRows(table, limit: limit);
         await _sendJson(request, {
           'table': table,
           'limit': limit,
@@ -335,7 +341,7 @@ class LogWebServer {
           'rows': rows,
         });
       } else {
-        final meta = await NotesDatabase.instance.inspectMetadata();
+        final meta = await _dbAdmin.inspectMetadata();
         await _sendJson(request, meta);
       }
     } on Object catch (e) {
@@ -523,7 +529,7 @@ class LogWebServer {
   /// 下载本地数据库文件（.db 二进制）
   Future<void> _serveDownloadDb(HttpRequest request) async {
     try {
-      final path = await NotesDatabase.instance.dbFilePath();
+      final path = await _dbAdmin.dbFilePath();
       if (!await File(path).exists()) {
         await _sendJson(request, {'error': '数据库文件不存在'});
         return;

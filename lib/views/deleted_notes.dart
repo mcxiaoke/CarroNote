@@ -20,11 +20,13 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/data/note_repository.dart';
+import 'package:safenotes/data/preference_repository.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
@@ -54,7 +56,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Future<void> _refresh() async {
     setState(() => _isLoading = true);
-    final notes = await NotesDatabase.instance.readDeletedNotes();
+    final notes = await context.read<NotesRepository>().readDeletedNotes();
     Log.ui.i('回收站列表已装载: ${notes.length} 条已删除笔记');
     if (mounted) {
       setState(() {
@@ -115,9 +117,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Future<void> _restoreNote(SafeNote note) async {
     Log.note.i('用户从回收站恢复笔记: uuid=${note.uuid} id=${note.id}');
-    await NotesDatabase.instance.restoreNote(note.id!);
+    final notesRepo = context.read<NotesRepository>();
+    final syncRepo = context.read<SyncRepository>();
+    await notesRepo.restoreNote(note.id!);
     // 触发自动同步（如果已启用）
-    SyncService.instance.autoSync();
+    syncRepo.autoSync();
     if (mounted) {
       // P2-3：信息提示走 ShadToast。
       showSnackBarMessage(
@@ -133,9 +137,11 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   Future<void> _permanentDelete(SafeNote note) async {
     // 不可恢复的破坏性操作，用 warning 级别突出显示
     Log.note.w('用户从回收站永久删除笔记(不可恢复): uuid=${note.uuid} id=${note.id}');
-    await NotesDatabase.instance.hardDelete(note.id!);
+    final notesRepo = context.read<NotesRepository>();
+    final syncRepo = context.read<SyncRepository>();
+    await notesRepo.hardDelete(note.id!);
     // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
-    SyncService.instance.autoSync();
+    syncRepo.autoSync();
     if (mounted) {
       // P2-3：信息提示走 ShadToast。
       showErrorToast(
@@ -178,10 +184,12 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 批量不可恢复删除：起止都必须留痕（条数 + 耗时）
     Log.note.w('开始清空回收站(不可恢复): 共 $total 条');
     // 单事务批量硬删除（删行 + purged 列表原子写入），替代逐条 hardDelete 的 N 次事务
-    final deleted = await NotesDatabase.instance.hardDeleteAllDeleted();
+    final notesRepo = context.read<NotesRepository>();
+    final syncRepo = context.read<SyncRepository>();
+    final deleted = await notesRepo.hardDeleteAllDeleted();
     Log.note.w('清空回收站完成: 已永久删除 $deleted 条, 耗时 ${sw.elapsedMilliseconds}ms');
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
-    SyncService.instance.autoSync();
+    syncRepo.autoSync();
     if (mounted) {
       // P2-3：信息提示走 ShadToast。
       showErrorToast(
@@ -235,7 +243,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
     final String timeStr = noteTimeLabel(
       time: deletedTime,
       localeString: context.locale.toString(),
-      isRelative: PreferencesStorage.isRelativeTime,
+      isRelative: context.read<PreferencesRepository>().isRelativeTime,
     );
 
     // 回收站不启用彩色笔记：底色沿用主界面「未开启彩色笔记」时的卡片底色

@@ -25,11 +25,12 @@ import 'package:flutter/services.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/src/logger/log_webserver.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
@@ -115,7 +116,7 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
 class _StatusTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final snapshot = SyncService.instance.getDiagnosticsSnapshot();
+    final snapshot = context.read<SyncRepository>().getDiagnosticsSnapshot();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -249,7 +250,7 @@ class _StatusTab extends StatelessWidget {
   }
 
   Future<void> _exportLogs(BuildContext context) async {
-    final text = await SyncService.instance.exportAllLogsAsText();
+    final text = await context.read<SyncRepository>().exportAllLogsAsText();
     if (context.mounted) {
       _copyToClipboard(context, text, 'Diagnostics + logs copied'.tr());
     }
@@ -280,7 +281,7 @@ class _SyncResultTabState extends State<_SyncResultTab> {
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = SyncService.instance.getDiagnosticsSnapshot();
+    final snapshot = context.read<SyncRepository>().getDiagnosticsSnapshot();
     final hasResult = snapshot.lastResultSuccess != null;
 
     if (!hasResult) {
@@ -537,7 +538,7 @@ class _SyncResultTabState extends State<_SyncResultTab> {
 class _ActionsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final snapshot = SyncService.instance.getDiagnosticsSnapshot();
+    final snapshot = context.read<SyncRepository>().getDiagnosticsSnapshot();
     // 过滤掉 skip 类型：skip 量大且无实际信息价值，
     // 只显示有意义的操作（上传/下载/删除/冲突/修复/失败/迁移）
     final allActions = snapshot.lastResultActions ?? [];
@@ -725,9 +726,9 @@ class _LogsTabState extends State<_LogsTab> {
   void initState() {
     super.initState();
     // 加载历史日志
-    _entries.addAll(SyncService.instance.getLogEntries());
+    _entries.addAll(context.read<SyncRepository>().getLogEntries());
     // 订阅实时日志
-    _sub = SyncService.instance.logStream.listen((entry) {
+    _sub = context.read<SyncRepository>().logStream.listen((entry) {
       if (mounted) {
         setState(() {
           _entries.add(entry);
@@ -858,7 +859,7 @@ class _LogsTabState extends State<_LogsTab> {
                 icon: const Icon(LucideIcons.download, size: 20),
                 tooltip: 'Export Diagnostics + Logs'.tr(),
                 onPressed: () async {
-                  final text = await SyncService.instance.exportAllLogsAsText();
+                  final text = await context.read<SyncRepository>().exportAllLogsAsText();
                   if (context.mounted) {
                     _copyToClipboard(
                       context,
@@ -873,7 +874,7 @@ class _LogsTabState extends State<_LogsTab> {
                 icon: const Icon(LucideIcons.trash2, size: 20),
                 tooltip: 'Clear In-memory Logs'.tr(),
                 onPressed: () {
-                  SyncService.instance.clearLogBuffer();
+                  context.read<SyncRepository>().clearLogBuffer();
                   setState(() {
                     _entries.clear();
                   });

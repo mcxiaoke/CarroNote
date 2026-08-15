@@ -25,11 +25,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/authwall.dart';
+import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/note_repository.dart';
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/session_provider.dart';
 import 'package:safenotes/models/shad_theme.dart';
+import 'package:safenotes/platform/ports.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/app_scroll_behavior.dart';
@@ -50,19 +53,47 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
         ChangeNotifierProvider<NotesColor>(create: (_) => NotesColor()),
-        ChangeNotifierProvider<SessionProvider>(
-          create: (_) => SessionProvider(
-            vaultInitialized: AppBootState.vaultInitialized,
-          ),
-        ),
         // P4: 注入 Repository 接口（向下兼容，现有代码仍直接访问 NotesDatabase.instance 等）
+        ChangeNotifierProvider<PreferencesRepository>(
+          create: (_) => SharedPreferencesPreferencesRepository(),
+        ),
+        // ThemeProvider 依赖 PreferencesRepository，需在其后创建。
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (context) =>
+              ThemeProvider(prefs: context.read<PreferencesRepository>()),
+        ),
         ChangeNotifierProvider<NotesRepository>.value(
           value: NotesDatabaseRepository(),
         ),
         ChangeNotifierProvider<SyncRepository>.value(
           value: SyncServiceRepository(),
+        ),
+        Provider<NotesDbAdminPort>.value(value: NotesDbAdminAdapter()),
+        // §4.6 平台 port 注入（真实 adapter）
+        Provider<SecureStoragePort>(
+          create: (_) => const FlutterSecureStorageAdapter(),
+        ),
+        Provider<BiometricPort>(create: (_) => const PlatformBiometricPort()),
+        Provider<DeviceInfoPort>(
+          create: (_) => const DeviceIdProviderAdapter(),
+        ),
+        Provider<PermissionPort>(
+          create: (_) => const PermissionHandlerAdapter(),
+        ),
+        Provider<AppDirsPort>(create: (_) => const PathProviderAdapter()),
+        Provider<FilePickerPort>(create: (_) => const FilePickerAdapter()),
+        Provider<UrlLauncherPort>(create: (_) => const UrlLauncherAdapter()),
+        Provider<MediaScannerPort>(create: (_) => const MediaScannerAdapter()),
+        // SessionProvider 依赖上述 repository/port，需在其后创建。
+        ChangeNotifierProvider<SessionProvider>(
+          create: (context) => SessionProvider(
+            notesRepo: context.read<NotesRepository>(),
+            syncRepo: context.read<SyncRepository>(),
+            prefsRepo: context.read<PreferencesRepository>(),
+            biometric: context.read<BiometricPort>(),
+            vaultInitialized: AppBootState.vaultInitialized,
+          ),
         ),
       ],
       builder: (context, _) {

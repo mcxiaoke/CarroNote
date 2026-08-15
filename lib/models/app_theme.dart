@@ -16,25 +16,29 @@
 import 'package:flutter/material.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/window_title_bar.dart';
 
 class ThemeProvider extends ChangeNotifier {
-  ThemeProvider() {
+  ThemeProvider({required PreferencesRepository prefs})
+      : _prefs = prefs,
+        themeMode = prefs.isThemeDark ? ThemeMode.dark : ThemeMode.light,
+        _groupIndex = prefs.themeGroupIndex,
+        _colorIndex = prefs.themeColorIndex {
     // 启动时把已保存的主题同步到 Windows 标题栏（非 Windows 平台无副作用）。
     syncWindowsTitleBar(isDarkMode);
   }
 
-  ThemeMode themeMode = PreferencesStorage.isThemeDark
-      ? ThemeMode.dark
-      : ThemeMode.light;
+  final PreferencesRepository _prefs;
+
+  ThemeMode themeMode;
 
   // 主题色（seed 色库）二维索引：组 + 组内颜色。
   // 默认 0 / 0 = 第一组（「通用」稳定默认组）第一个颜色。
-  int _groupIndex = PreferencesStorage.themeGroupIndex;
-  int _colorIndex = PreferencesStorage.themeColorIndex;
+  int _groupIndex;
+  int _colorIndex;
 
   int get groupIndex => _groupIndex;
 
@@ -47,7 +51,7 @@ class ThemeProvider extends ChangeNotifier {
 
   void setIsDarkMode(bool isDark) {
     themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
-    PreferencesStorage.setIsThemeDark(isDark);
+    _prefs.setIsThemeDark(isDark);
     syncWindowsTitleBar(isDark);
     notifyListeners();
   }
@@ -57,8 +61,8 @@ class ThemeProvider extends ChangeNotifier {
     if (groupIndex == _groupIndex && colorIndex == _colorIndex) return;
     _groupIndex = groupIndex;
     _colorIndex = colorIndex;
-    PreferencesStorage.setThemeGroupIndex(groupIndex);
-    PreferencesStorage.setThemeColorIndex(colorIndex);
+    _prefs.setThemeGroupIndex(groupIndex);
+    _prefs.setThemeColorIndex(colorIndex);
     notifyListeners();
   }
 }

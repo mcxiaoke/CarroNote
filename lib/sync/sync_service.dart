@@ -91,13 +91,24 @@ class SyncServiceState {
 
 /// 同步服务
 ///
-/// 单例模式，整个应用共享一个实例。
+/// 普通可构造类，整个应用共享一个进程级实例（[instance] 桥接）。
 /// 通过 [stateStream] 暴露状态变化，UI 层用 StreamBuilder 监听。
+///
+/// §4.3 去单例化：构造器已公开，可 `final service = SyncService()` 独立构造
+/// （测试替身/多实例场景）。[instance] 保留为进程级桥接，转发到 [defaultInstance]，
+/// 供尚未迁移到构造注入的既有调用点使用。
 class SyncService {
-  // 单例
-  static final SyncService instance = SyncService._();
+  /// 进程级默认实例（桥接：旧调用点 `SyncService.instance` 转发到此）。
+  static final SyncService defaultInstance = SyncService();
 
-  SyncService._();
+  /// 遗留桥接：`SyncService.instance` 转发到 [defaultInstance]。
+  ///
+  /// 保留一段时间以便既有 50+ 处调用点平滑迁移；新代码应通过构造注入
+  /// （Provider 中的 SyncRepository / SyncServicePort）获取实例。
+  static SyncService get instance => defaultInstance;
+
+  /// 公开构造器：可独立创建实例（§4.3 可构造实现）。
+  SyncService();
 
   // ──────────────────────────────────────────────
   // 依赖

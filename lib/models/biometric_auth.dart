@@ -62,6 +62,14 @@ class BiometricAuth {
 
   static Future<void> setAuthKey() async {
     final pass = PhraseHandler.getPass;
+    await savePassword(pass);
+  }
+
+  /// 写入指定密码的加密包裹（F-C01 包裹态）。
+  ///
+  /// [BiometricPort] 适配器通过此方法把「保存生物识别凭据」从静态类收敛到
+  /// 可注入端口（§4.6/§4.7）。
+  static Future<void> savePassword(String pass) async {
     if (pass.isEmpty) {
       // 空密码写入会导致后续指纹登录必然失败，属于异常状态需要 warning
       Log.auth.w('写入生物识别凭据时会话密码为空, 指纹登录可能失效');

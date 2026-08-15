@@ -146,14 +146,23 @@ abstract class PreferencesRepository extends ChangeNotifier {
 
   Map<String, Object?> dumpAll();
   Future<void> reload();
+
+  /// 清除 keyring 相关的 SharedPreferences key（忘记密码逃生通道使用）
+  Future<void> clearVaultRelatedKeys();
 }
 
 /// SharedPreferences 实现的 PreferencesRepository。
 class SharedPreferencesPreferencesRepository extends PreferencesRepository {
   SharedPreferences? _prefs;
 
-  SharedPreferencesPreferencesRepository() {
-    _init();
+  /// [prefs] 由装配点注入已加载的实例（避免构造期异步 getInstance 竞态，
+  /// 导致首次读取落到默认值）。未传入时退回自行异步加载。
+  SharedPreferencesPreferencesRepository({SharedPreferences? prefs}) {
+    if (prefs != null) {
+      _prefs = prefs;
+    } else {
+      _init();
+    }
   }
 
   Future<void> _init() async {
@@ -191,7 +200,22 @@ class SharedPreferencesPreferencesRepository extends PreferencesRepository {
   // ── 主题 ──
 
   @override
-  bool get isThemeDark => _getBool('isthemedark', false);
+  bool get isThemeDark {
+    // 与 PreferencesStorage.isThemeDark 语义一致：
+    // 1) 若开启「跟随系统深浅色」，直接返回系统亮度；
+    // 2) 否则优先返回显式设置的值（可能为 false）；
+    // 3) 未显式设置时回退到系统亮度（getBool 返回 null，不能简单用默认 false 兜底）。
+    final prefs = _prefs;
+    final isSystemDark =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+        Brightness.dark;
+    if (isSystemDarkLightSwitchEnabled) {
+      return isSystemDark;
+    }
+    final isDark = prefs?.getBool('isthemedark');
+    if (isDark != null) return isDark;
+    return isSystemDark;
+  }
 
   @override
   Future<void> setIsThemeDark(bool flag) async {
@@ -500,6 +524,11 @@ class SharedPreferencesPreferencesRepository extends PreferencesRepository {
   Future<void> reload() async {
     await _prefs?.reload();
   }
+
+  @override
+  Future<void> clearVaultRelatedKeys() async {
+    await _prefs?.remove('passphrasehash');
+  }
 }
 
 const List<int> kInactivityTimeoutChoicesSeconds = [
@@ -511,3 +540,6 @@ const List<int> kInactivityTimeoutChoicesSeconds = [
   600, // 10 分钟
   900, // 15 分钟
 ];
+
+/// 缺省索引：3 分钟（=180s），与 UI 中「3 minutes (Default)」一致。
+const int kDefaultInactivityTimeoutIndex = 3;

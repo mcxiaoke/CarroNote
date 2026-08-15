@@ -17,10 +17,12 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
 import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -140,7 +142,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   String _syncStatusText() {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'No backend configured'.tr();
-    final state = SyncService.instance.state;
+    final state = context.read<SyncRepository>().state;
     switch (state.status) {
       case SyncStatus.uninitialized:
         return 'Not initialized'.tr();
@@ -174,7 +176,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   String _lastSyncText() {
-    final state = SyncService.instance.state;
+    final state = context.read<SyncRepository>().state;
     if (state.lastSyncTime == null) {
       return 'Never synced'.tr();
     }
@@ -195,7 +197,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   String _vaultStatusText() {
-    return SyncService.instance.keyring != null
+    return context.read<SyncRepository>().keyring != null
         ? 'Unlocked'.tr()
         : 'Not initialized'.tr();
   }
@@ -227,9 +229,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
           namedArgs: {'error': result.error ?? 'Unknown error'.tr()},
         ),
       );
-    } else if (enabled && SyncService.instance.state.isInitialized) {
+    } else if (enabled && context.read<SyncRepository>().state.isInitialized) {
       // 刚启用就拉一次远端，行为与登录后一致
-      SyncService.instance.autoSync();
+      context.read<SyncRepository>().autoSync();
     }
   }
 
@@ -267,9 +269,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   /// F-H06：把当前 SyncConfig 应用到运行中的 SyncService
   Future<({bool success, String? error})> _applyConfigToService() async {
-    return SyncService.instance.applyConfigToService(
-      database: NotesDatabase.instance,
-    );
+    return context.read<SyncRepository>().applyConfigToService();
   }
 
   // ──────────────────────────────────────────────
@@ -282,21 +282,19 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     if (!_ensureSyncUsable()) return;
     // 如果同步服务未初始化，尝试用内存中 keyring 初始化后端
     // （登录时 keyring 已缓存，配置完后端即可直接初始化）
-    if (!SyncService.instance.state.isInitialized) {
-      if (SyncService.instance.keyring == null) {
+    if (!context.read<SyncRepository>().state.isInitialized) {
+      if (context.read<SyncRepository>().keyring == null) {
         _showMessage('Keyring not initialized. Please log in again.'.tr());
         return;
       }
-      final result = await SyncService.instance.initBackend(
-        database: NotesDatabase.instance,
-      );
+      final result = await context.read<SyncRepository>().initBackend();
       if (!result.success) {
         _showMessage(result.error ?? 'Backend initialization failed'.tr());
         return;
       }
     }
 
-    final result = await SyncService.instance.sync();
+    final result = await context.read<SyncRepository>().sync();
     if (mounted) {
       setState(() {});
       if (result != null && !result.success) {
@@ -326,14 +324,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     // 用户主动触发「修复同步数据」，重要人工动作
     Log.sync.i('用户触发修复同步数据（同步设置页）');
     if (!_ensureSyncUsable()) return;
-    if (!SyncService.instance.state.isInitialized) {
-      if (SyncService.instance.keyring == null) {
+    if (!context.read<SyncRepository>().state.isInitialized) {
+      if (context.read<SyncRepository>().keyring == null) {
         _showMessage('Keyring not initialized. Please log in again.'.tr());
         return;
       }
-      final result = await SyncService.instance.initBackend(
-        database: NotesDatabase.instance,
-      );
+      final result = await context.read<SyncRepository>().initBackend();
       if (!result.success) {
         _showMessage(result.error ?? 'Backend initialization failed'.tr());
         return;
@@ -341,7 +337,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     }
 
     _showMessage('Verifying and repairing remote data…'.tr());
-    final result = await SyncService.instance.repairRemote();
+    final result = await context.read<SyncRepository>().repairRemote();
 
     if (mounted) {
       setState(() {});

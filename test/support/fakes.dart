@@ -323,4 +323,7 @@ class FakePreferencesRepository extends PreferencesRepository {
 
   @override
   Future<void> reload() async {}
+
+  @override
+  Future<void> clearVaultRelatedKeys() async {}
 }

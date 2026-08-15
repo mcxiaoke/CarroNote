@@ -3,36 +3,38 @@
 // 设计原则：不硬编码具体的颜色名 / 色值（数据会变）。
 // 目标色全部从 AppThemeSeeds 动态获取，断言聚焦行为：
 //   - 进入页面选中当前已应用主题色（默认 0/0）
-//   - 点击色块只是本地预览，ThemeProvider 不更新
-//   - Apply 后才更新 ThemeProvider 并持久化
+//   - 点击色块只是本地预览，不更新全局/持久化
+//   - Apply 后才更新 ThemeProvider 并持久化（写入 FakePreferencesRepository）
 //   - Apply 后重进页面，对应 item 保持选中态
 //   - 切分组显示新组颜色
+//
+// 已迁移到 withProviders + FakePreferencesRepository：不再依赖
+// SharedPreferences.setMockInitialValues / initTestEnv / wrapScreen。
 
 // Flutter imports:
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/views/settings/theme_color_setting.dart';
-import 'test_helpers.dart';
+
+import 'support/fakes.dart';
+import 'support/harness.dart';
+
+const _titleBarChannel = MethodChannel('safenotes/window_title_bar');
 
 void main() {
-  setUpAll(() async {
-    await initTestEnv();
-  });
-
-  setUp(() async {
-    // 重置 mock 存储：避免前一个用例 Apply 写入的 index 污染下一个用例
-    // （PreferencesStorage.init 只是重读同一 mock 存储，不会自动清空）。
-    SharedPreferences.setMockInitialValues({});
-    await PreferencesStorage.init();
-    prepareProviders();
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    // ThemeProvider 构造时会同步 Windows 标题栏主题（fire-and-forget），
+    // 未 mock 该通道会抛 MissingPluginException。
+    TestWidgetsFlutterBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_titleBarChannel, (call) async => null);
   });
 
   /// 主题色页内容较长（分组 tab + 网格 + Apply 按钮），测试视口调高，
@@ -57,14 +59,23 @@ void main() {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(wrapScreen(const ThemeColorPicker()));
+    await tester.pumpWidget(withProviders(const ThemeColorPicker()));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull, reason: '3 列网格 + 固定高度在窄屏下不应溢出');
   });
 
   testWidgets('渲染全部分组 tab，进入页面选中当前已应用主题色', (WidgetTester tester) async {
     useTallViewport(tester);
-    await tester.pumpWidget(wrapScreen(const ThemeColorPicker()));
+    final fakePrefs = FakePreferencesRepository(
+      themeGroupIndex: 0,
+      themeColorIndex: 0,
+    );
+    await tester.pumpWidget(
+      withProviders(
+        const ThemeColorPicker(),
+        preferences: fakePrefs,
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 全部分组 tab 的名称（英文 locale 下用英文名）
@@ -76,10 +87,9 @@ void main() {
       );
     }
 
-    // 默认 0/0：Provider 与持久化一致，且当前主题色 == 数据第一项
-    expect(testThemeProvider.groupIndex, 0);
-    expect(testThemeProvider.colorIndex, 0);
-    expect(testThemeProvider.seedColor, AppThemeSeeds.colorByIndex(0, 0));
+    // 默认 0/0：持久化与当前主题色 == 数据第一项
+    expect(fakePrefs.themeGroupIndex, 0);
+    expect(fakePrefs.themeColorIndex, 0);
 
     // 进入页面应选中当前主题色（恰好 1 个选中勾）
     expect(countSelected(tester), 1, reason: '进入页面应选中当前已应用的主题色（0/0）');
@@ -91,11 +101,20 @@ void main() {
     expect(applyBtn.onPressed, isNull, reason: '未改动时 Apply 按钮应禁用');
   });
 
-  testWidgets('点击色块仅预览，不更新 ThemeProvider；点 Apply 才生效', (
+  testWidgets('点击色块仅预览，不更新持久化；点 Apply 才生效', (
     WidgetTester tester,
   ) async {
     useTallViewport(tester);
-    await tester.pumpWidget(wrapScreen(const ThemeColorPicker()));
+    final fakePrefs = FakePreferencesRepository(
+      themeGroupIndex: 0,
+      themeColorIndex: 0,
+    );
+    await tester.pumpWidget(
+      withProviders(
+        const ThemeColorPicker(),
+        preferences: fakePrefs,
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 组 0 的第 2 个颜色（i=1；不硬编码名字/色值，动态取）
@@ -105,37 +124,27 @@ void main() {
     await tester.tap(find.text(colorNameEn(0, targetIndex)));
     await tester.pumpAndSettle();
 
-    // 点击色块：Provider 不变（仅本地预览）
-    expect(testThemeProvider.colorIndex, 0, reason: '点击色块只是预览，不应立即更新 Provider');
-    expect(
-      testThemeProvider.seedColor,
-      AppThemeSeeds.colorByIndex(0, 0),
-      reason: '预览不应改变当前主题色',
-    );
+    // 点击色块：持久化不变（仅本地预览）
+    expect(fakePrefs.themeColorIndex, 0, reason: '点击色块只是预览，不应立即持久化');
 
     // 改动后 Apply 变为可用
     final applyFinder = find.widgetWithText(ShadButton, 'Apply theme');
     final applyBtn = tester.widget<ShadButton>(applyFinder);
     expect(applyBtn.onPressed, isNotNull, reason: '选择颜色后 Apply 按钮应可用');
 
-    // 点 Apply → 全局换肤 + 持久化，当前主题色 == 目标色
+    // 点 Apply → 持久化到 FakePreferencesRepository
     await tester.tap(find.text('Apply theme'));
     await tester.pumpAndSettle();
 
     expect(
-      testThemeProvider.colorIndex,
+      fakePrefs.themeColorIndex,
       targetIndex,
-      reason: 'Apply 后 colorIndex 应更新',
+      reason: 'Apply 后选择应持久化到偏好存储',
     );
     expect(
-      testThemeProvider.seedColor,
+      AppThemeSeeds.colorByIndex(0, fakePrefs.themeColorIndex),
       targetColor,
       reason: 'Apply 后当前主题色应等于所选颜色',
-    );
-    expect(
-      PreferencesStorage.themeColorIndex,
-      targetIndex,
-      reason: 'Apply 后选择应持久化到偏好设置',
     );
   });
 
@@ -143,23 +152,22 @@ void main() {
     useTallViewport(tester);
     // 预置持久化：组 1 的第 1 个颜色（动态取色，不依赖数据内容）
     const g = 1, c = 0;
-    final targetColor = AppThemeSeeds.colorByIndex(g, c);
-    PreferencesStorage.setThemeGroupIndex(g);
-    PreferencesStorage.setThemeColorIndex(c);
-    // 重建 Provider：让它在预置持久化之后读取（模拟「已应用后重进」）
-    prepareProviders();
+    final fakePrefs = FakePreferencesRepository(
+      themeGroupIndex: g,
+      themeColorIndex: c,
+    );
 
-    await tester.pumpWidget(wrapScreen(const ThemeColorPicker()));
+    await tester.pumpWidget(
+      withProviders(
+        const ThemeColorPicker(),
+        preferences: fakePrefs,
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 进入即选中已应用主题色
-    expect(testThemeProvider.groupIndex, g);
-    expect(testThemeProvider.colorIndex, c);
-    expect(
-      testThemeProvider.seedColor,
-      targetColor,
-      reason: '重进后当前主题色应保持已应用的色',
-    );
+    expect(fakePrefs.themeGroupIndex, g);
+    expect(fakePrefs.themeColorIndex, c);
     expect(countSelected(tester), 1, reason: '重进页面应选中已应用的主题色');
 
     // 无改动时 Apply 禁用
@@ -172,11 +180,17 @@ void main() {
     useTallViewport(tester);
     // 预置：当前已应用主题色在组 0 的第 2 个颜色（i=1），进入后应选中它
     const currentG = 0, currentC = 1;
-    PreferencesStorage.setThemeGroupIndex(currentG);
-    PreferencesStorage.setThemeColorIndex(currentC);
-    prepareProviders();
+    final fakePrefs = FakePreferencesRepository(
+      themeGroupIndex: currentG,
+      themeColorIndex: currentC,
+    );
 
-    await tester.pumpWidget(wrapScreen(const ThemeColorPicker()));
+    await tester.pumpWidget(
+      withProviders(
+        const ThemeColorPicker(),
+        preferences: fakePrefs,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(countSelected(tester), 1, reason: '进入页面应选中当前已应用主题色（组 0 / i=1）');
 
@@ -190,24 +204,18 @@ void main() {
     final applyBtn = tester.widget<ShadButton>(applyFinder);
     expect(applyBtn.onPressed, isNull, reason: '切组未选色时 Apply 按钮应禁用');
 
-    // 点击新组内的色块（仅预览）→ Apply → 全局更新并持久化
+    // 点击新组内的色块（仅预览）→ Apply → 持久化
     await tester.tap(find.text(colorNameEn(1, 0)));
     await tester.pumpAndSettle();
     expect(
-      testThemeProvider.groupIndex,
+      fakePrefs.themeGroupIndex,
       currentG,
       reason: '点击色块只是预览，groupIndex 不应提前变化',
     );
 
     await tester.tap(find.text('Apply theme'));
     await tester.pumpAndSettle();
-    expect(testThemeProvider.groupIndex, 1);
-    expect(testThemeProvider.colorIndex, 0);
-    expect(
-      testThemeProvider.seedColor,
-      AppThemeSeeds.colorByIndex(1, 0),
-      reason: 'Apply 后当前主题色应等于所选颜色',
-    );
-    expect(PreferencesStorage.themeGroupIndex, 1, reason: 'Apply 后选择应持久化到偏好设置');
+    expect(fakePrefs.themeGroupIndex, 1, reason: 'Apply 后选择应持久化到偏好存储');
+    expect(fakePrefs.themeColorIndex, 0, reason: 'Apply 后颜色索引应为新组第一个');
   });
 }

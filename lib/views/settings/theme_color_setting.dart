@@ -21,7 +21,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -68,8 +68,9 @@ class ThemeColorPickerState extends State<ThemeColorPicker> {
   void initState() {
     super.initState();
     // 与持久化/Provider 当前主题保持一致：重进页面看到的就是当前主题。
-    _groupIndex = PreferencesStorage.themeGroupIndex;
-    _colorIndex = PreferencesStorage.themeColorIndex;
+    final prefs = context.read<PreferencesRepository>();
+    _groupIndex = prefs.themeGroupIndex;
+    _colorIndex = prefs.themeColorIndex;
   }
 
   /// 切换分组：仅当当前已应用主题色就在新组时选中它（保持 Current 语义），

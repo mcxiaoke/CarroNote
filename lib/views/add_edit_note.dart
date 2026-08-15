@@ -22,13 +22,15 @@ import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/note_repository.dart';
+import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
-import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/sync/sync_repository.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
@@ -206,10 +208,12 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               '用户确认删除笔记(移入回收站): '
               'uuid=${widget.note!.uuid} id=${widget.note!.id}',
             );
-            await NotesDatabase.instance.softDelete(widget.note!.id!);
+            final notesRepo = context.read<NotesRepository>();
+            final syncRepo = context.read<SyncRepository>();
+            await notesRepo.softDelete(widget.note!.id!);
             // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
             Log.sync.d('笔记软删除后触发自动同步');
-            SyncService.instance.autoSync();
+            syncRepo.autoSync();
             await _closePage();
           },
         );
@@ -229,7 +233,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           ),
           const SizedBox(height: 10),
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
-          if (PreferencesStorage.isMarkdownEnabled)
+          if (context.read<PreferencesRepository>().isMarkdownEnabled)
             MarkdownBody(
               data: description,
               selectable: true,
