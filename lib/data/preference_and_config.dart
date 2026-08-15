@@ -551,10 +551,10 @@ class ImportPassPhraseHandler {
 }
 
 class SafeNotesConfig {
-  static const String _appVersion = '2.3.0';
-  static const int _appVersionCode = 10;
-  static const String _appName = 'Safe Notes';
-  static const String _appSlogan = 'Encrypted note manager!';
+  static const String _appVersion = '3.0.0';
+  static const int _appVersionCode = 30000;
+  static const String _appName = 'Secure Notes';
+  static const String _appSlogan = 'Encrypted Note App';
   static const String _appLogoPath = 'assets/images/splash_500.png';
   static const String _appLogoAsProfilePath = 'assets/images/splash.png';
   static const String _exportFileNamePrefix = 'safenotes_';
@@ -564,25 +564,25 @@ class SafeNotesConfig {
   static const String _exportFileNameExtension = '.json';
   static const String _encryptedExportFileNameExtension = '.snbak';
   static const String _backupExtension = '.snbak';
-  static const String _backupFileNamePrefix = 'safenotes_backup';
-  static const String _githubUrl = 'https://github.com/keshav-space/safenotes';
-  static const String _faqsUrl = 'https://safenotes.dev/faqs.html';
+  static const String _backupFileNamePrefix = 'secure_notes_backup';
+  static const String _githubUrl = 'https://github.com/mcxiaoke/SecureNotes';
+  static const String _faqsUrl = 'https://github.com/mcxiaoke/SecureNotes';
   static const String _iosBackupDirectoryIndicativePath =
-      '/On My iPhone/Safe Notes/';
+      '/On My iPhone/SecureNotes/';
   static const String _androidDownloadDirectory =
       '/storage/emulated/0/Download/';
   static const String _androidBackupDirectory =
-      '/storage/emulated/0/Download/Safe Notes/';
+      '/storage/emulated/0/Download/SecureNotes/';
   static const String _mailToForFeedback =
-      'mailto:contact@safenotes.dev?subject=Help and Feedback';
+      'https://github.com/mcxiaoke/SecureNotes/issues';
   static const String _sourceCodeUrl =
-      'https://github.com/keshav-space/safenotes';
+      'https://github.com/mcxiaoke/SecureNotes';
   static const String _bugReportUrl =
-      'mailto:contact@safenotes.dev?subject=Bug Report';
+      'https://github.com/mcxiaoke/SecureNotes/issues';
   static const String _openSourceLicense =
-      'https://github.com/keshav-space/safenotes/blob/main/LICENSE';
+      'https://github.com/mcxiaoke/SecureNotes/blob/main/files/LICENSE';
   static const String _playStorUrl =
-      'https://play.google.com/store/apps/details?id=com.mcxiaoke.snotes';
+      'https://github.com/mcxiaoke/SecureNotes';
 
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),

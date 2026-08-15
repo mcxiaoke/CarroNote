@@ -11,9 +11,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
+// Dart imports:
 import 'dart:math' as math;
 
+// Flutter imports:
 import 'package:flutter/material.dart';
 
 // Project imports:
