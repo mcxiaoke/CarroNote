@@ -4,7 +4,7 @@
 //
 // 如需修改色值 / 增删颜色，请编辑 theme_colors.json 后运行：
 //   dart run scripts/generate_theme_seeds.dart
-// 生成时间：2026-08-13T15:03:21.042960
+// 生成时间：2026-08-16T20:38:47.941842
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -58,22 +58,30 @@ class AppThemeSeeds {
       name: '通用',
       nameEn: 'Default',
       colors: [
+        ColorSeedItem(name: '橄榄绿', nameEn: 'Olive', color: Color(0xFF71864A)),
+        ColorSeedItem(name: '苔藓绿', nameEn: 'Moss', color: Color(0xFF5E7D4E)),
+        ColorSeedItem(
+          name: '森林绿',
+          nameEn: 'Forest Green',
+          color: Color(0xFF34785A),
+        ),
+        ColorSeedItem(name: '薄荷绿', nameEn: 'Mint', color: Color(0xFF2A9D8F)),
+        ColorSeedItem(name: '青绿', nameEn: 'Teal', color: Color(0xFF0F9D8A)),
+        ColorSeedItem(name: '翡翠绿', nameEn: 'Emerald', color: Color(0xFF059669)),
         ColorSeedItem(
           name: '午夜蓝',
           nameEn: 'Midnight Blue',
           color: Color(0xFF38598B),
         ),
         ColorSeedItem(name: '蓝色', nameEn: 'Blue', color: Color(0xFF2563EB)),
-        ColorSeedItem(name: '青绿', nameEn: 'Teal', color: Color(0xFF0F9D8A)),
-        ColorSeedItem(name: '翡翠绿', nameEn: 'Emerald', color: Color(0xFF059669)),
+        ColorSeedItem(name: '深青色', nameEn: 'Cyan', color: Color(0xFF0891B2)),
+        ColorSeedItem(name: '湖蓝', nameEn: 'Sky Blue', color: Color(0xFF0284C7)),
+        ColorSeedItem(name: '靛蓝', nameEn: 'Indigo', color: Color(0xFF4F46E5)),
         ColorSeedItem(name: '紫罗兰', nameEn: 'Violet', color: Color(0xFF7C3AED)),
         ColorSeedItem(name: '玫瑰红', nameEn: 'Rose', color: Color(0xFFE11D48)),
         ColorSeedItem(name: '珊瑚橙', nameEn: 'Coral', color: Color(0xFFE76F51)),
         ColorSeedItem(name: '琥珀橙', nameEn: 'Amber', color: Color(0xFFD97706)),
         ColorSeedItem(name: '金色', nameEn: 'Gold', color: Color(0xFFC58B16)),
-        ColorSeedItem(name: '深青色', nameEn: 'Cyan', color: Color(0xFF0891B2)),
-        ColorSeedItem(name: '湖蓝', nameEn: 'Sky Blue', color: Color(0xFF0284C7)),
-        ColorSeedItem(name: '靛蓝', nameEn: 'Indigo', color: Color(0xFF4F46E5)),
         ColorSeedItem(
           name: '薰衣草紫',
           nameEn: 'Lavender',
@@ -87,14 +95,6 @@ class AppThemeSeeds {
           color: Color(0xFFC2413A),
         ),
         ColorSeedItem(name: '蜜桃色', nameEn: 'Peach', color: Color(0xFFD97757)),
-        ColorSeedItem(name: '橄榄绿', nameEn: 'Olive', color: Color(0xFF71864A)),
-        ColorSeedItem(name: '苔藓绿', nameEn: 'Moss', color: Color(0xFF5E7D4E)),
-        ColorSeedItem(
-          name: '森林绿',
-          nameEn: 'Forest Green',
-          color: Color(0xFF34785A),
-        ),
-        ColorSeedItem(name: '薄荷绿', nameEn: 'Mint', color: Color(0xFF2A9D8F)),
         ColorSeedItem(name: '海军蓝', nameEn: 'Navy', color: Color(0xFF3B5B92)),
         ColorSeedItem(
           name: '石板蓝',
@@ -241,132 +241,6 @@ class AppThemeSeeds {
           name: '藕荷紫',
           nameEn: 'Lotus Purple',
           color: Color(0xFFD4B5D4),
-        ),
-      ],
-    ),
-    ColorSeedGroup(
-      name: '莫兰迪',
-      nameEn: 'Morandi',
-      colors: [
-        ColorSeedItem(
-          name: '灰玫瑰',
-          nameEn: 'Gray Rose',
-          color: Color(0xFFB08989),
-        ),
-        ColorSeedItem(
-          name: '灰粉色',
-          nameEn: 'Gray Pink',
-          color: Color(0xFFA68A8A),
-        ),
-        ColorSeedItem(
-          name: '暗玫瑰',
-          nameEn: 'Dusty Rose',
-          color: Color(0xFF9A6B6B),
-        ),
-        ColorSeedItem(
-          name: '豆沙紫',
-          nameEn: 'Bean Paste Purple',
-          color: Color(0xFF8A6B7A),
-        ),
-        ColorSeedItem(
-          name: '脏橘色',
-          nameEn: 'Dirty Orange',
-          color: Color(0xFFC08A6B),
-        ),
-        ColorSeedItem(
-          name: '陶土棕',
-          nameEn: 'Terracotta Brown',
-          color: Color(0xFF9A7A6B),
-        ),
-        ColorSeedItem(
-          name: '米灰棕',
-          nameEn: 'Beige Gray Brown',
-          color: Color(0xFFA69A82),
-        ),
-        ColorSeedItem(
-          name: '卡其灰',
-          nameEn: 'Khaki Gray',
-          color: Color(0xFF9A947A),
-        ),
-        ColorSeedItem(
-          name: '芥末黄',
-          nameEn: 'Mustard Yellow',
-          color: Color(0xFFC4A968),
-        ),
-        ColorSeedItem(
-          name: '灰黄色',
-          nameEn: 'Gray Yellow',
-          color: Color(0xFFB8A878),
-        ),
-        ColorSeedItem(
-          name: '暗金色',
-          nameEn: 'Dull Gold',
-          color: Color(0xFFA89868),
-        ),
-        ColorSeedItem(
-          name: '灰米色',
-          nameEn: 'Gray Beige',
-          color: Color(0xFFB5A98A),
-        ),
-        ColorSeedItem(
-          name: '橄榄绿',
-          nameEn: 'Olive Green',
-          color: Color(0xFF8A9A6B),
-        ),
-        ColorSeedItem(
-          name: '灰黄绿',
-          nameEn: 'Gray Yellow Green',
-          color: Color(0xFF8A9478),
-        ),
-        ColorSeedItem(
-          name: '枯草色',
-          nameEn: 'Withered Grass',
-          color: Color(0xFF9A946B),
-        ),
-        ColorSeedItem(
-          name: '灰苔色',
-          nameEn: 'Gray Moss',
-          color: Color(0xFF8A8A6B),
-        ),
-        ColorSeedItem(
-          name: '灰湖绿',
-          nameEn: 'Gray Lake Green',
-          color: Color(0xFF6B9A8A),
-        ),
-        ColorSeedItem(
-          name: '灰青色',
-          nameEn: 'Gray Cyan',
-          color: Color(0xFF7A9A94),
-        ),
-        ColorSeedItem(
-          name: '灰蓝绿',
-          nameEn: 'Gray Blue Green',
-          color: Color(0xFF6B8A82),
-        ),
-        ColorSeedItem(
-          name: '雾霾蓝',
-          nameEn: 'Haze Blue',
-          color: Color(0xFF6B8A9A),
-        ),
-        ColorSeedItem(
-          name: '灰靛蓝',
-          nameEn: 'Gray Indigo',
-          color: Color(0xFF6B7A9A),
-        ),
-        ColorSeedItem(
-          name: '灰蓝色',
-          nameEn: 'Gray Blue',
-          color: Color(0xFF7A8A9A),
-        ),
-        ColorSeedItem(
-          name: '灰紫色',
-          nameEn: 'Gray Purple',
-          color: Color(0xFF8A7A9A),
-        ),
-        ColorSeedItem(
-          name: '灰藕色',
-          nameEn: 'Gray Lotus',
-          color: Color(0xFF9A8A9A),
         ),
       ],
     ),

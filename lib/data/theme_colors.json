@@ -5,14 +5,24 @@
         "colors":
         [
             {
-                "name": "午夜蓝",
-                "nameEn": "Midnight Blue",
-                "color": "#38598B"
+                "name": "橄榄绿",
+                "nameEn": "Olive",
+                "color": "#71864A"
             },
             {
-                "name": "蓝色",
-                "nameEn": "Blue",
-                "color": "#2563EB"
+                "name": "苔藓绿",
+                "nameEn": "Moss",
+                "color": "#5E7D4E"
+            },
+            {
+                "name": "森林绿",
+                "nameEn": "Forest Green",
+                "color": "#34785A"
+            },
+            {
+                "name": "薄荷绿",
+                "nameEn": "Mint",
+                "color": "#2A9D8F"
             },
             {
                 "name": "青绿",
@@ -23,6 +33,31 @@
                 "name": "翡翠绿",
                 "nameEn": "Emerald",
                 "color": "#059669"
+            },
+            {
+                "name": "午夜蓝",
+                "nameEn": "Midnight Blue",
+                "color": "#38598B"
+            },
+            {
+                "name": "蓝色",
+                "nameEn": "Blue",
+                "color": "#2563EB"
+            },
+            {
+                "name": "深青色",
+                "nameEn": "Cyan",
+                "color": "#0891B2"
+            },
+            {
+                "name": "湖蓝",
+                "nameEn": "Sky Blue",
+                "color": "#0284C7"
+            },
+            {
+                "name": "靛蓝",
+                "nameEn": "Indigo",
+                "color": "#4F46E5"
             },
             {
                 "name": "紫罗兰",
@@ -50,21 +85,6 @@
                 "color": "#C58B16"
             },
             {
-                "name": "深青色",
-                "nameEn": "Cyan",
-                "color": "#0891B2"
-            },
-            {
-                "name": "湖蓝",
-                "nameEn": "Sky Blue",
-                "color": "#0284C7"
-            },
-            {
-                "name": "靛蓝",
-                "nameEn": "Indigo",
-                "color": "#4F46E5"
-            },
-            {
                 "name": "薰衣草紫",
                 "nameEn": "Lavender",
                 "color": "#8B5CF6"
@@ -88,26 +108,6 @@
                 "name": "蜜桃色",
                 "nameEn": "Peach",
                 "color": "#D97757"
-            },
-            {
-                "name": "橄榄绿",
-                "nameEn": "Olive",
-                "color": "#71864A"
-            },
-            {
-                "name": "苔藓绿",
-                "nameEn": "Moss",
-                "color": "#5E7D4E"
-            },
-            {
-                "name": "森林绿",
-                "nameEn": "Forest Green",
-                "color": "#34785A"
-            },
-            {
-                "name": "薄荷绿",
-                "nameEn": "Mint",
-                "color": "#2A9D8F"
             },
             {
                 "name": "海军蓝",
@@ -280,133 +280,6 @@
                 "name": "藕荷紫",
                 "nameEn": "Lotus Purple",
                 "color": "#D4B5D4"
-            }
-        ]
-    },
-    {
-        "name": "莫兰迪",
-        "nameEn": "Morandi",
-        "colors":
-        [
-            {
-                "name": "灰玫瑰",
-                "nameEn": "Gray Rose",
-                "color": "#B08989"
-            },
-            {
-                "name": "灰粉色",
-                "nameEn": "Gray Pink",
-                "color": "#A68A8A"
-            },
-            {
-                "name": "暗玫瑰",
-                "nameEn": "Dusty Rose",
-                "color": "#9A6B6B"
-            },
-            {
-                "name": "豆沙紫",
-                "nameEn": "Bean Paste Purple",
-                "color": "#8A6B7A"
-            },
-            {
-                "name": "脏橘色",
-                "nameEn": "Dirty Orange",
-                "color": "#C08A6B"
-            },
-            {
-                "name": "陶土棕",
-                "nameEn": "Terracotta Brown",
-                "color": "#9A7A6B"
-            },
-            {
-                "name": "米灰棕",
-                "nameEn": "Beige Gray Brown",
-                "color": "#A69A82"
-            },
-            {
-                "name": "卡其灰",
-                "nameEn": "Khaki Gray",
-                "color": "#9A947A"
-            },
-            {
-                "name": "芥末黄",
-                "nameEn": "Mustard Yellow",
-                "color": "#C4A968"
-            },
-            {
-                "name": "灰黄色",
-                "nameEn": "Gray Yellow",
-                "color": "#B8A878"
-            },
-            {
-                "name": "暗金色",
-                "nameEn": "Dull Gold",
-                "color": "#A89868"
-            },
-            {
-                "name": "灰米色",
-                "nameEn": "Gray Beige",
-                "color": "#B5A98A"
-            },
-            {
-                "name": "橄榄绿",
-                "nameEn": "Olive Green",
-                "color": "#8A9A6B"
-            },
-            {
-                "name": "灰黄绿",
-                "nameEn": "Gray Yellow Green",
-                "color": "#8A9478"
-            },
-            {
-                "name": "枯草色",
-                "nameEn": "Withered Grass",
-                "color": "#9A946B"
-            },
-            {
-                "name": "灰苔色",
-                "nameEn": "Gray Moss",
-                "color": "#8A8A6B"
-            },
-            {
-                "name": "灰湖绿",
-                "nameEn": "Gray Lake Green",
-                "color": "#6B9A8A"
-            },
-            {
-                "name": "灰青色",
-                "nameEn": "Gray Cyan",
-                "color": "#7A9A94"
-            },
-            {
-                "name": "灰蓝绿",
-                "nameEn": "Gray Blue Green",
-                "color": "#6B8A82"
-            },
-            {
-                "name": "雾霾蓝",
-                "nameEn": "Haze Blue",
-                "color": "#6B8A9A"
-            },
-            {
-                "name": "灰靛蓝",
-                "nameEn": "Gray Indigo",
-                "color": "#6B7A9A"
-            },
-            {
-                "name": "灰蓝色",
-                "nameEn": "Gray Blue",
-                "color": "#7A8A9A"
-            },
-            {
-                "name": "灰紫色",
-                "nameEn": "Gray Purple",
-                "color": "#8A7A9A"
-            },
-            {
-                "name": "灰藕色",
-                "nameEn": "Gray Lotus",
-                "color": "#9A8A9A"
             }
         ]
     },

@@ -556,7 +556,6 @@ class SafeNotesConfig {
   static const String _appName = 'Secure Notes';
   static const String _appSlogan = 'Encrypted Note App';
   static const String _appLogoPath = 'assets/images/splash_500.png';
-  static const String _appLogoAsProfilePath = 'assets/images/splash.png';
   static const String _exportFileNamePrefix = 'safenotes_';
   // 导入允许的扩展名：明文 .json + 加密 .snbak（见 docs/
   // backup-encryption-design-20260810.md §4，双扩展名均需文件选择器可识别）
@@ -621,7 +620,6 @@ class SafeNotesConfig {
   static String get appName => _appName;
   static String get appVersion => _appVersion;
   static int get appVersionCode => _appVersionCode;
-  static String get logoAsProfile => _appLogoAsProfilePath;
   static String get bugReportUrl => _bugReportUrl;
   static String get mailToForFeedback => _mailToForFeedback;
   static String get sourceCodeUrl => _sourceCodeUrl;

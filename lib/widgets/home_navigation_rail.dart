@@ -134,7 +134,11 @@ class HomeSidebar extends StatelessWidget {
                   // 锁定：紧跟在设置之下，不置底、无分割线（与移动端 Drawer 一致）
                   KeyedSubtree(
                     key: const Key('ui-home-nav-lock'),
-                    child: sideItem(LucideIcons.lock, 'Lock'.tr(), onLockCallback),
+                    child: sideItem(
+                      LucideIcons.lock,
+                      'Lock'.tr(),
+                      onLockCallback,
+                    ),
                   ),
                 ],
               ),

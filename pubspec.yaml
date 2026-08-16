@@ -82,33 +82,23 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 
-flutter_native_splash:
-  color: "#ECEFF4"
-  image: assets/images/splash_500.png
-  color_dark: "#2E3440"
-  image_dark: assets/images/splash_500.png
-
-  android_12:
-    color: "#ECEFF4"
-    icon_background_color: "#ECEFF4"
-    image: assets/images/splash_12.png
-    color_dark: "#2E3440"
-    icon_background_color_dark: "#2E3440"
-    image_dark: assets/images/splash_12.png
-
-  fullscreen: true
-
-
-
-flutter_launcher_icons:
-  android: true
-  image_path: "assets/images/icon.png"
-  min_sdk_android: 25
-  ios: true
-  remove_alpha_ios: true
-  image_path_ios: "assets/images/icon_no_alpha_ios.png"
-
-
+# ============================================================
+# 启动图标 / Splash 生成说明（源图：assets/images/icon.png）
+#   - icon.png: 1024x1024、已去背景透明的 App 图标
+#       由 icon_with_space.png 四周各裁 48px 得到
+#       （或 icon_with_space_ts.png 同法裁剪，即 PS 去背景版，效果等价）
+#   - splash_500.png / splash_12.png: 同样由 icon.png 生成
+#       （splash_12 带 Android 12 安全区留白：图标主体直径≈334，居中于 576 画布）
+# 根据 icon.png 生成全套资源的方法：
+#   1. flutter pub get
+#   2. dart run flutter_launcher_icons        # 生成 android/ios/web/windows 启动图标（含 Android 自适应图标）
+#   3. python scripts/gen_splash.py           # ⚠️ 换图标后务必先跑：用新 icon.png 重生成 splash_500/splash_12 源图
+#   4. dart run flutter_native_splash:create  # 把源图烤进 android/ios/web 的 splash
+#   注意：flutter_native_splash:create 只读取 splash_500.png / splash_12.png 作为输入源图，
+#         不会反向生成它们。若只跑 :create 而不先重生成这两个 PNG，splash 仍是旧图标。
+# 注意：Android 8+ 走 mipmap-anydpi-v26 自适应图标（adaptive_icon_background/foreground），
+#       务必保证该 XML 指向新资源，否则安装后图标不更新。
+# ============================================================
 
 # The following section is specific to Flutter.
 flutter:

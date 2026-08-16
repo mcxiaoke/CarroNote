@@ -113,9 +113,7 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                         listen: false,
                       ).setIsDarkMode(value);
 
-                      await PreferencesStorage.setLocalDarkSwitchEnabled(
-                        value,
-                      );
+                      await PreferencesStorage.setLocalDarkSwitchEnabled(value);
                       await PreferencesStorage.setSystemDarkLightSwitchEnabled(
                         false,
                       );

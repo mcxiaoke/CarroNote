@@ -1156,7 +1156,11 @@ class _WebServerTabState extends State<_WebServerTab> {
           ),
           child: Row(
             children: [
-              Icon(LucideIcons.triangleAlert, color: _semWarning(context), size: 20),
+              Icon(
+                LucideIcons.triangleAlert,
+                color: _semWarning(context),
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

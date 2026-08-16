@@ -1,0 +1,24 @@
+flutter_launcher_icons:
+  android: true
+  ios: false
+
+  # iOS / Windows / Web / Android legacy 共用直角母版
+  image_path: "assets/images/icon.png"
+  image_path_ios: "assets/images/icon.png"
+
+  # iOS 去掉 alpha（App Store 拒收透明）
+  remove_alpha_ios: true
+
+  # Android adaptive icon：背景取主色，前景透明主体居中 66%
+  adaptive_icon_background: "#9FBEA3"
+  adaptive_icon_foreground: "assets/images/icon-android-foreground.png"
+  adaptive_icon_foreground_inset: 16
+
+  min_sdk_android: 25
+
+  web:
+    generate: false
+    image_path: "assets/images/icon.png"
+  windows:
+    generate: true
+    image_path: "assets/images/icon.png"

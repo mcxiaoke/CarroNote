@@ -372,4 +372,3 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
     });
   }
 }
-
