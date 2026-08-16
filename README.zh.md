@@ -36,7 +36,7 @@ Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地�
 lib/                Flutter 客户端：UI、状态装配、平台注入（入口 lib/main.dart）
 packages/core/      纯 Dart 核心包：加密、SQLite 数据库、模型、SyncEngine（无 Flutter 依赖）
 bin/                纯 Dart CLI 客户端：无需 Flutter SDK 即可读写加密数据库
-server/             SafeServer 服务端参考实现（Go 与 Node.js，已被 .gitignore 排除）
+server/             SafeServer 服务端参考实现（Go 与 Node.js，已提交进仓库；仅 `data/`、`dist/` 运行时产物被 git 忽略）
 docs/               设计文档、协议规范与开发指南
 test/               App 侧与集成测试
 ```

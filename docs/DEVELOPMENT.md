@@ -55,17 +55,17 @@ The core logic (crypto / database / sync engine) lives in a pure Dart package `p
 |------|------|
 | `lib/core.dart` | Single public export of the core package (unified `import 'package:core/core.dart'`) |
 | `lib/src/ports.dart` | Platform capability injection points: PathProvider / KeyValueStore / SecretStore / LogSink |
-| `lib/src/crypto/` | Crypto layer: `aes_encryption.dart` (local AES-256-GCM / CBC), `crypto.dart` (PBKDF2 / AES / dataKey wrap-unwrap) |
+| `lib/src/crypto/` | Crypto layer: `crypto.dart` (AES-256-GCM, Argon2id / PBKDF2 MK derivation, dataKey wrap-unwrap) |
 | `lib/src/db/` | `database_handler.dart`: SQLite CRUD (`dbFactoryOverride` / `dbPathOverride` injection) |
 | `lib/src/models/` | Data models: `safenote`, `parse_import` |
-| `lib/src/logger/` | Unified logging: `app_logger.dart` (`logDirResolverOverride` injection), `log_webserver.dart` |
+| `lib/src/logger/` | Unified logging: `app_logger.dart` (`logDirResolverOverride` injection) |
 | `lib/src/sync/` | Sync core (see below) |
 
 ### Sync subsystem (`packages/core/lib/src/sync/`)
 
 | File | Responsibility |
 |------|------|
-| `crypto.dart` | **Key core**: PBKDF2-HMAC-SHA256 derives MK (600k iterations), AES-256-GCM, dataKey wrap / unwrap |
+| `crypto.dart` | **Key core**: AES-256-GCM, MK derivation via KDF (new vaults default **Argon2id** `m=32MiB, t=3, p=2`; legacy PBKDF2-HMAC-SHA256 200k fallback by `algorithm` header), dataKey wrap / unwrap |
 | `keyring.dart` | Keyring management: vault_id, salt, manifest version, password change, multi-device re-auth coordination |
 | `sync_models.dart` | Remote manifest / item data models (hash, deleted, updatedAt) |
 | `sync_backend.dart` | **SyncBackend abstraction**: `getManifest / putManifest / getBlob / putBlob` |
@@ -79,7 +79,8 @@ The core logic (crypto / database / sync engine) lives in a pure Dart package `p
 
 ```
 Password layer (changes on password change)
-  MK = PBKDF2-HMAC-SHA256(password, salt, 600k)
+  MK = KDF(password, salt)  ← new vaults default Argon2id(m=32MiB, t=3, p=2);
+                              legacy vaults / backups fall back to PBKDF2-HMAC-SHA256(200k) per the `algorithm` header
   MK only encrypts the dataKey, never the notes themselves
         ↓ encrypt
 Data layer (never changes; the key that actually encrypts notes)
@@ -107,7 +108,7 @@ Conflicts use **LWW (Last-Write-Wins)**; optimistic locking only happens at the 
 
 ### Sync server (`server/`)
 
-This fork ships a SafeServer reference implementation, **protocol version v2.2**, with Go and Node.js implementations that are **protocol-identical and interchangeable**. The `server/` directory is excluded by `.gitignore` and intended for local testing and reference only.
+This fork ships a SafeServer reference implementation, **protocol version v2.2**, with Go and Node.js implementations that are **protocol-identical for the HTTP API**. The `server/` directory is **committed to the repository** (only its `data/` and `dist/` runtime artifacts are git-ignored) and intended for local testing and reference only.
 
 - `server/go/`: Go 1.21+, **standard library only**
 - `server/nodejs/`: JavaScript (ESM), **built-in modules only**
@@ -173,18 +174,18 @@ Starts automatically when entering the home page and provides a real-time log vi
 - **Core package**: `packages/core` (pure Dart, pub workspace, Flutter dependencies forbidden — enforced by the compiler)
 - **Local storage**: `sqflite` (mobile), `sqflite_common_ffi` (desktop / tests / CLI)
 - **Secure storage**: `flutter_secure_storage` (passphrase / MK cached in the OS keychain)
-- **Crypto**: `cryptography` + `cryptography_flutter` (AES-256-GCM / PBKDF2, hardware accelerated), `crypto` (SHA-256 content hash)
+- **Crypto**: `cryptography` + `cryptography_flutter` (AES-256-GCM hardware-accelerated, Argon2id memory-hard KDF for new vaults, PBKDF2-SHA256 200k fallback), `crypto` (SHA-256 content hash)
 - **Networking**: `http` (WebDAV client)
 - **State management**: `provider`
 - **Biometrics**: `local_auth`; **i18n**: `easy_localization`
-- **CLI parsing**: `args` (CommandRunner); **task management**: `make` / `task` / `just` (three equivalent)
+- **CLI parsing**: `args` (CommandRunner); **task management**: `make` / `task` / `just` (targets mirror each other; note: `gen-build-info` differs — see [Build Info Injection](#build-info-injection-version--git--build-time))
 - **Sync server**: Go (standard library) / Node.js (built-in modules)
 
 ---
 
 ## Build & Run
 
-**Task management**: `make` (Makefile), `task` (Taskfile.yml), and `just` (justfile) are **fully equivalent**,
+**Task management**: `make` (Makefile), `task` (Taskfile.yml), and `just` (justfile) mirror each other,
 organized into dependency / build / test groups. All provide `get`, `clean`, `run`, `cli-build`, `build-*`, `test`,
 `test-core`, `analyze`, `e2e`, etc. On Windows `make` is usually not on PATH, so `task` or `just` is recommended
 (`task --list` / `just --list` shows all tasks).
@@ -221,7 +222,7 @@ just --list
 
 Every build injects the **Git commit hash, branch, tag, working-tree dirtiness, cumulative commit count** and the **build time** into the app, then prints a version report on startup to help reproduce issues and trace back to the exact build.
 
-Implementation: before building, `scripts/generate_build_info.py` generates `lib/utils/build_info.dart` (compile-time constants, zero runtime overhead); `_initLogging()` in `lib/main.dart` reads and prints it at startup.
+Implementation: before building, `scripts/generate_build_info.dart` (run via `dart run scripts/generate_build_info.dart`) generates `lib/utils/build_info.dart` (compile-time constants, zero runtime overhead); `_initLogging()` in `lib/main.dart` reads and prints it at startup.
 
 **Always build via `make` targets** (they auto-inject the latest build info first; `task` / `just` behave the same):
 
@@ -242,8 +243,10 @@ make release        # Release packaging (multi-ABI split + AppBundle; injects la
 ```bash
 make gen-build-info
 # or
-python scripts/generate_build_info.py
+dart run scripts/generate_build_info.dart
 ```
+
+> Note: the `gen-build-info` target currently differs across task runners — `just` invokes the real `scripts/generate_build_info.dart` via `dart run`, while `make` / `task` still reference the legacy `scripts/generate_build_info.py` path (which no longer exists). Align the `make` / `task` targets with the `dart run scripts/generate_build_info.dart` command.
 
 `BuildInfo` exposes: `version` / `buildNumber` / `versionString` / `gitHash` / `gitHashShort` / `gitBranch` / `gitTag` / `gitCommitCount` / `gitDirty` / `buildDate`(UTC) / `buildDateReadable`, plus convenience getters `summary` (one line) and `detail` (multi-line, usable in an About/Debug panel).
 
@@ -251,10 +254,10 @@ Startup log example:
 
 ```
 ════════ SafeNotes startup ════════
-Version: 2.3.0 (build 10)
+Version: 3.0.0 (build 30000)
 Git: 0a4d888 @ sync-refact-dev (uncommitted changes in workspace)
 Commit: 0a4d888c82a636d3394d6b6c939c61e2adfe4b7d
-Tag: v2.3.0-188-g0a4d888 (cumulative commits 608)
+Tag: v3.0.0 (current release tag; cumulative commits vary)
 Build time: 2026-08-02 12:21:18 (UTC 2026-08-02T04:21:18Z)
 Platform: windows Microsoft Windows [Version 10.0.22631.0]
 Dart: 3.44.8
@@ -298,7 +301,7 @@ Detailed design, protocol specs, and review records live in the `docs/` director
 - `docs/server-implementation.md` / `docs/server-backup-design.md`: SafeServer implementation docs
 - `docs/manifest-reliability-design.md` / `docs/spec-manifest.md` / `docs/spec-blob.md` / `docs/spec-journal.md`: manifest / blob / journal spec details
 - `docs/cli-client-design.md`: CLI client design (command tree / acceptance checklist / implementation notes)
-- `docs/crypto-overview-20260810.md`: crypto layer overview
+- `docs/crypto-overview.md`: crypto layer overview
 - `docs/backup-encryption-design-20260810.md`: backup encryption design
 - `docs/CHANGES-YYYYMMDD.md`: daily change logs (archived by date)
 

@@ -1,15 +1,25 @@
 # 去密码明文方案设计（内存与生物认证不存明文密码）
 
-*日期：2026-08-10 · 状态：设计评审稿 · 关联：`backup-encryption-design-20260810.md` / `crypto-overview-20260810.md`*
+*日期：2026-08-10 · 状态：设计评审稿 · 关联：`backup-encryption-design-20260810.md` / `crypto-overview.md`*
 
-> **实现状态（2026-08-11 补记）**：本设计稿中若干「现状」描述已被当日改动改变，与本稿提案采用**不同机制**，请勿据此判断线上行为：
-> - **KDF 默认迁移 Argon2id**（新 vault / 新备份 `m=32MiB, t=3, p=2`），存量 PBKDF2 按 header `algorithm` 字段回退并在改密码时自动升级。该迁移经 `deriveKeyFromKdf` 派发 + `KdfParams` 落地，**未采用**本稿 §4/§5 的 BackupSeed 双层派生方案。
-> - **生物识别凭据刷新**：已实现于 `Session.login(passphrase)`（所有密码登录成功的汇聚点）+ `Session.onPasswordSet`（本地改密码），均读取 `PhraseHandler.getPass` 重新包裹。本稿 §5.4 提出的 `setAuthKey({required String password})` 显式传参改签名方案**未采用**（当前 `setAuthKey()` 仍从 `PhraseHandler.getPass` 取明文）。
-> - 因此本稿中「现状 B-KEY = PBKDF2(密码, 备份salt)」「`kPbkdf2Iterations=200000` 为当前」「需 `setAuthKey` 改签名」等表述反映的是 2026-08-10 设计时点，非当前实现。
+> **落地状态（2026-08-16 代码复核）**：本稿为**设计评审稿，整份提案未实施**。
+> 现状代码仍为「内存驻留明文密码」，本稿 §4–§9 全部为「提案」：
+> - `PhraseHandler` 仍持 `_passphrase` 明文（`preference_and_config.dart`），`initPass` / `getPass` 原样保留；
+> - `Session.login(String passphrase)` / `Session.onPasswordSet` 仍接收并注入明文（`session.dart`）；
+> - `SyncService` 三处仍注入 `passphraseProvider: () => PhraseHandler.getPass`，`SyncEngine` 场景 c/d 判别仍消费（`sync_service.dart` / `sync_engine.dart`）；
+> - 自动备份 / 加密导入试解仍用 `PhraseHandler.getPass`（`scheduled_task.dart` / `file_handler.dart`）；
+> - 备份文件仍为 v1 单层派生（`kBackupFormatVersion = 1`），无 BackupSeed / v2 / `encodeEncryptedFromSeed`。
+> 因此，§2 的现状盘点**属实**（明文确仍在内存），§4–§9 描述的是目标态，请勿据此判断线上行为。
+>
+> **与本稿提案采用不同机制的现状改动（2026-08-11 起）**：
+> - **KDF 默认迁移 Argon2id**：新 vault / 新备份 `m=32MiB, t=3, p=2`，存量 PBKDF2 按文件头 `algorithm` 字段回退。经 `deriveKeyFromKdf` 派发 + `KdfParams` 落地。→ **本稿 §4.4「两层复用 `kPbkdf2Iterations=200000` / `deriveMasterKey`」已过时**，落地须对齐 Argon2id（已修订，见 §4.4）。
+> - **生物识别凭据刷新**：已实现于 `Session.login(passphrase)` + `Session.onPasswordSet`，均读取 `PhraseHandler.getPass` 重新包裹。→ 本稿 §5.4 `setAuthKey({required String password})` 显式传参改签名**未采用**（`setAuthKey()` 仍从 `PhraseHandler.getPass` 取明文）。
+>
+> 全文行内引用统一为「符号 + 文件」形式（不依赖行号），避免随代码演进失准。
 
 ## 1. 背景与目标
 
-当前 `PhraseHandler._passphrase`（`lib/data/preference_and_config.dart:424`）在会话期内**长期驻留明文密码**，且历史版本生物认证曾把明文密码直接写入 secure storage。本方案目标是：
+当前 `PhraseHandler._passphrase`（`lib/data/preference_and_config.dart` `PhraseHandler`）在会话期内**长期驻留明文密码**，且历史版本生物认证曾把明文密码直接写入 secure storage。本方案目标是：
 
 1. **内存不驻留明文密码**：密码只用于「一次性派生密钥」，派生完成后立即丢弃。
 2. **生物认证不存明文密码**：secure storage 只存密码的包裹态（现状 v1 已达成），且**指纹登录路径不再把解包出的明文注入会话内存**。
@@ -17,19 +27,21 @@
 
 ## 2. 现状盘点：明文密码的全部使用点
 
+> 本节经 2026-08-16 代码复核**全部属实**：明文密码当前仍驻留内存（与 §0 落地状态一致）。
+
 ### 2.1 内存驻留（核心问题）
 
 | # | 位置 | 说明 |
 |---|---|---|
-| M1 | `PhraseHandler._passphrase`（`preference_and_config.dart:424`） | 静态字段，会话期持有明文 |
-| M2 | 写入：`Session.login`（`session.dart:31`） | 密码登录成功后注入 |
-| M3 | 写入：`Session.onPasswordSet`（`session.dart:68`） | 设置/改密码成功后注入 |
-| M4 | 清除：`Session.logout` → `PhraseHandler.destroy`（`session.dart:51`） | 仅登出/空闲锁定时清除 |
-| M5 | 消费：`SyncService` 三处注入 `passphraseProvider: () => PhraseHandler.getPass`（`sync_service.dart:202,316,705`） | 同步引擎取明文重派生 |
-| M6 | 消费：`sync_engine.dart:711`（场景 c 判别） | `passphraseProvider?.call()` |
-| M7 | 消费：`BiometricAuth.setAuthKey`（`biometric_auth.dart:64`） | 取明文包裹写入 secure storage |
-| M8 | 消费：自动备份（`scheduled_task.dart:86,131,199,226`） | 取明文派生 B-KEY |
-| M9 | 消费：加密导入自动试解（`file_handler.dart:180`） | 取明文试解加密备份 |
+| M1 | `PhraseHandler._passphrase`（`preference_and_config.dart` `PhraseHandler`） | 静态字段，会话期持有明文 |
+| M2 | 写入：`Session.login(passphrase)`（`session.dart`） | 密码登录成功后注入 |
+| M3 | 写入：`Session.onPasswordSet(passphrase)`（`session.dart`） | 设置/改密码成功后注入 |
+| M4 | 清除：`Session.logout` → `PhraseHandler.destroy`（`session.dart`） | 仅登出/空闲锁定时清除 |
+| M5 | 消费：`SyncService` 三处注入 `passphraseProvider: () => PhraseHandler.getPass`（`sync_service.dart`） | 同步引擎取明文重派生 |
+| M6 | 消费：`SyncEngine` 场景 c/d 判别（`sync_engine.dart` `passphraseProvider?.call()`） | 后台取内存明文重派生判别 |
+| M7 | 消费：`BiometricAuth.setAuthKey()`（`biometric_auth.dart`） | 取明文包裹写入 secure storage |
+| M8 | 消费：自动备份（`scheduled_task.dart` `unitBackupAttempt` 三处 `encryptedOutputBackupContent(password: ...)`） | 取明文派生 B-KEY |
+| M9 | 消费：加密导入自动试解（`file_handler.dart` `_resolveEncryptedRecords`） | 取明文试解加密备份 |
 
 ### 2.2 生物认证持久化（部分达成）
 
@@ -37,18 +49,18 @@
 |---|---|---|
 | B1 | `_secureBiometricAuthKey` | `v1:<base64(nonce‖ct‖tag)>`，密码已包裹（非裸明文）✅ |
 | B2 | `_secureBiometricWrapKey` | 包裹密钥，**与密文同库** ⚠️ |
-| B3 | `authKey` getter（`biometric_auth.dart:44-61`） | **解包返回明文密码**，指纹登录用它注入内存（`login.dart:770`）❌ |
-| B4 | 旧版无前缀兼容（`biometric_auth.dart:59`） | 无前缀值直接当明文返回——历史明文记录未升级则一直躺 secure storage ⚠️ |
+| B3 | `authKey` getter（`biometric_auth.dart`） | **解包返回明文密码**，指纹登录路径 `login.dart` `_login(await BiometricAuth.authKey)` 用它解锁 keyring ❌ |
+| B4 | 旧版无前缀兼容（`biometric_auth.dart` `authKey` getter） | 无前缀值直接当明文返回——历史明文记录未升级则一直躺 secure storage ⚠️ |
 
 ### 2.3 其它临时明文（可接受，本文档不动）
 
 - 登录/设置/改密码页的 `TextEditingController`：用户输入阶段必然在内存，一次性，不驻留。
-- `ImportPassPhraseHandler`（`preference_and_config.dart:456`）：导入弹框输入的口令，导入路径已有 `destroyImportCredentials`（`file_handler.dart:166`）清理。
-- 改密码流程 `change_passphrase.dart:327-328` 的 `oldPassword`/`newPassword`：表单栈内局部变量，用后即弃。
+- `ImportPassPhraseHandler`（`preference_and_config.dart`）：导入弹框输入的口令，导入路径已有 `destroyImportCredentials`（`file_handler.dart`）清理。
+- 改密码流程 `change_passphrase.dart` `_finalSubmitChange` 内的 `oldPassword`/`newPassword`：表单栈内局部变量，用后即弃。
 
 ### 2.4 持久化侧（无明文，本方案不改）
 
-- 数据库：dataKey 仅内存（`database_handler.dart:119`），keyring 账本仅存包裹态 `encryptedDataKey`。
+- 数据库：dataKey 仅内存（`database_handler.dart` `NotesDatabase._dataKey`，登出时 `clearDataKey` 清除），keyring 账本仅存包裹态 `encryptedDataKey`。
 - 登录不再写 passPhraseHash（简化方案已删）。
 
 ## 3. 设计原则与关键约束
@@ -57,8 +69,8 @@
 
 1. **密码零驻留**：密码仅存在于「输入框 → 派生调用」的短暂调用栈内，派生后不可再经任何静态字段访问。
 2. **密钥分类持有**：内存中按职责持有派生密钥，互不复用：
-   - `MK`（Master Key）→ 由 `Keyring` 持有（现状已如此，`keyring.dart:314`）
-   - `dataKey` → 由 `NotesDatabase` 持有（现状已如此，`database_handler.dart:119`）
+   - `MK`（Master Key）→ 由 `Keyring` 持有（现状已如此）
+   - `dataKey` → 由 `NotesDatabase` 持有（现状已如此）
    - `BackupSeed`（备份专用）→ 由 `PhraseHandler` 改造后持有（本次新增）
 3. **备份密钥独立于 vault 密钥链**：不受 MK/dataKey/vault salt 的任何变化影响。
 4. **备份「密码即凭证」**：任何备份文件都能凭「密码 + 文件头参数」跨设备/离线恢复，不依赖任何当前会话状态。
@@ -66,8 +78,8 @@
 ### 3.2 关键约束（经推演确认）
 
 **C1（dataKey 会变，不能作为生物认证凭据）**：dataKey 不是永久不变的。同步的 scenario c/d 迁移中：
-- `migrateToRemote`（`keyring.dart:615`，同 keyring 换远端 dataKey）→ dataKey 变
-- `migrateToRemoteVault`（`keyring.dart:711`，场景 d 整体切远端 vault）→ dataKey 变
+- `migrateToRemote`（`keyring.dart`，同 keyring 换远端 dataKey）→ dataKey 变
+- `migrateToRemoteVault`（`keyring.dart`，场景 d 整体切远端 vault）→ dataKey 变
 
 因此**生物认证不能存 dataKey**（指纹登录可能拿到已失效的 key）。
 
@@ -79,7 +91,7 @@
 - 用 MK 直接加密备份 → 改密码 MK 变 → 旧备份需旧密码 ❌
 - 备份头存当前 MK 包裹的 encryptedDataKey → 改密码后新 MK 解不开旧头 ❌
 
-**唯一自洽解**：备份密钥派生链的输入**只含「密码」与「文件头参数」**。现状 `B-KEY = PBKDF2(密码, 备份salt)` 已满足 C4。
+**唯一自洽解**：备份密钥派生链的输入**只含「密码」与「文件头参数」**。现状 `B-KEY = KDF(密码, 文件头参数)`（Argon2id 新 / PBKDF2 回退）已满足 C4。
 
 **C5（改密码后旧备份需旧密码是固有现实）**：密码管理器的主密码即数据根密钥。改密码后，用旧密钥加密的历史备份自然需要旧密码。**现状方案同样如此**（B-KEY 依赖密码原文），不是本方案新引入的缺陷，接受并在 UI 提示中说明。
 
@@ -93,21 +105,22 @@
 
 ```
 ┌─ 会话期派生一次（登录/设置/改密码时），内存驻留，用后即弃密码：
-│   BackupSeed = PBKDF2-HMAC-SHA256(password, kBackupSeedSalt, iterations)
+│   BackupSeed = KDF(password, kBackupSeedSalt)
 │               // kBackupSeedSalt = 固定 16B 常量（代码硬编码，见 §4.3）
+│               // KDF = 当前新备份默认（Argon2id），见 §4.4
 │
 ├─ 每份备份派生一次：
-│   B-KEY_n    = PBKDF2-HMAC-SHA256(base64(BackupSeed), 备份salt_n, iterations)
+│   B-KEY_n    = deriveBackupKey(base64(BackupSeed), 文件头.kdf)   // 复用现有入口
 │
 └─ 恢复（任意设备，仅凭密码 + 文件头）：
-    BackupSeed = PBKDF2(password, kBackupSeedSalt, iterations)  // 固定常量，代码内置
-    B-KEY_n    = PBKDF2(base64(BackupSeed), 文件头.salt, iterations)
+    BackupSeed = KDF(password, kBackupSeedSalt)          // 固定常量，代码内置
+    B-KEY_n    = deriveBackupKey(base64(BackupSeed), 文件头.kdf)
 ```
 
 要点：
 - 第一层 `BackupSeed` 是「密码的一次性加固态」，**跨备份共享**（同一密码下），内存只驻留它。
-- 第二层 `B-KEY_n` 复用现有 `SyncCrypto.deriveBackupKey`（`crypto.dart:305`）——把 `base64(BackupSeed)` 作为其 `password` 入参即可，**签名零改动**。
-- 第二层提供**域分离**（备份密钥与 BackupSeed 用途区分），并让离线爆破成本 ≈ 两层 KDF（每猜测 2×iterations），不弱于现状。
+- 第二层 `B-KEY_n` 复用现有 `SyncCrypto.deriveBackupKey`——把 `base64(BackupSeed)` 作为其 `password` 入参即可，**签名零改动**；第二层按文件头 KDF 派发（Argon2id 新 / PBKDF2 回退）。
+- 第二层提供**域分离**（备份密钥与 BackupSeed 用途区分），并让离线爆破成本 ≈ 两层 KDF（每猜测两层成本叠加），不弱于现状。
 
 ### 4.3 backupSeedSalt 的来源（关键决策）
 
@@ -117,7 +130,7 @@
 
 初稿曾设计 `backupSeedSalt = SHA-256(domain || vaultId)[0:16]`，意图「零存储、跨端一致」。**经推演否决，理由**：
 
-- `vaultId` 是 `Keyring.createNew` 时**本地生成的 UUID**（`keyring.dart:448`），只在同步场景下才随 keyring 账本传播。
+- `vaultId` 是 `Keyring.createNew` 时**本地生成的 UUID**（`keyring.dart`），只在同步场景下才随 keyring 账本传播。
 - **未启用同步的本地 vault**，其 vaultId 不离开本机；恢复备份的「其它设备」只有备份文件 + 密码，**无从得知 vaultId** → 无法复现 `backupSeedSalt` → **离线恢复断链**。这是备份的核心承诺（仅凭密码恢复），不可牺牲。
 - 若改为「备份头携带 seedSalt」绕过此问题，则 seedSalt 已随文件导出，「由 vaultId 派生」便失去意义——直接随机/固定即可，多此一举。
 
@@ -128,10 +141,10 @@ const Uint8List kBackupSeedSalt = <16 字节固定值，代码硬编码>;
 ```
 
 - **跨设备/跨备份/跨 vault 天然一致**：所有端同一常量，密码相同即 BackupSeed 相同。
-- **零存储、零传播、零竞态**：不新增任何账本/协议/文件头字段；备份头无需记录（恢复时代码内置）。
+- **零存储、零传播、零竞态**：不新增任何账本/协议字段；固定 salt 无需写入文件头（恢复时代码内置）。第一层 KDF 参数是否写入文件头见 §4.4「演进负担」（可选增强，不改变本节结论）。
 - **改密码不变**：BackupSeed 只依赖「密码 + 常量」，与 MK/dataKey/salt 状态无关。
-- **安全性不劣于现状**：离线爆破每份备份 = `PBKDF2(密码, 固定salt)` + `PBKDF2(seed, 每份独立备份salt)` ≈ 2×200k/猜测。BackupSeed 层跨用户可预计算（固定 salt 的通病），但**第二层的备份 salt 每份随机**（`crypto.dart:72` 现有行为）——预计算的 BackupSeed 仍需对每份文件单独跑一层 200k，成本与现状单层 `PBKDF2(密码, 备份salt)` 等价，不劣化。第一层固定 salt 的跨用户预计算收益被第二层完全稀释。
-- 与 `crypto.dart:9-11` 的历史教训（v1 全局固定 salt 被改掉）不冲突：那个全局 salt 是**唯一且唯一层**（跨用户共享派生 MK 的预计算收益大）；本方案固定 salt 只是第一层，第二层独立 salt 兜底。
+- **安全性不劣于现状**：离线爆破每份备份 = `KDF₁(密码, 固定salt)` + `KDF₂(seed, 每份独立备份salt)`，两层成本叠加。BackupSeed 层跨用户可预计算（固定 salt 的通病），但**第二层的备份 salt 每份随机**（`encodeEncrypted` 每份 `generateSalt()` 的现有行为）——预计算的 BackupSeed 仍需对每份文件单独跑一层 KDF，每份备份的爆破成本与现状单层等价，不劣化。第一层固定 salt 的跨用户预计算收益被第二层完全稀释（KDF 选择见 §4.4）。
+- 与 `crypto.dart` 头注释所述历史教训（v1 全局固定 salt 被改掉）不冲突：那个全局 salt 是**唯一且唯一层**（跨用户共享派生 MK 的预计算收益大）；本方案固定 salt 只是第一层，第二层独立 salt 兜底。
 
 **方案乙（备选，更强但更复杂）：随机 salt，导出时写入备份头**
 
@@ -141,15 +154,22 @@ const Uint8List kBackupSeedSalt = <16 字节固定值，代码硬编码>;
 
 **本文档推荐方案甲**：实现最简、零协议变更、安全性不劣于现状。方案乙列为可选增强（若未来威胁模型要求 per-vault 隔离的第二层）。
 
-### 4.4 迭代次数
+### 4.4 KDF 选择与成本（对齐 Argon2id 迁移的修订）
 
-两层均复用现有 `kPbkdf2Iterations = 200000`（`crypto.dart:63`）：
-- 自动备份成本：会话内第一层只算一次，每份备份第二层 200k ≈ 现状每份备份 200k 的成本，**持平**。
-- 恢复成本：两层 ≈ 2×200k，手机端约 2-4 秒，恢复是低频大操作，可接受。
+> 初稿此处写「两层均复用 `kPbkdf2Iterations = 200000` 的 PBKDF2」，那是 2026-08-10 设计时点的现状。2026-08-11 起**新 vault / 新备份默认已是 Argon2id（`m=32MiB, t=3, p=2`）**，备份 KDF 经 `deriveKeyFromKdf` 按文件头 `algorithm` 派发（`crypto.dart`）。两层都写死 PBKDF2 会让新备份相对现状单层 Argon2id 成为**安全回退**，故修订如下：
+
+- **第一层 BackupSeed**：采用与当前新备份默认一致的 KDF——Argon2id `m=32MiB, t=3, p=2`，走 `deriveKeyFromKdf` 派发（而非 `deriveMasterKey`，后者仅 PBKDF2 回退分支）。盐与参数由代码内置（固定契约，见下「演进负担」）。
+- **第二层 B-KEY**：复用现有 `deriveBackupKey`，按文件头 KDF 派发（签名零改动）。
+
+成本估算（两层均 Argon2id 默认参数）：
+- 自动备份：会话内第一层只算一次，每份备份第二层一次 ≈ 现状每份备份一次 Argon2id 的成本，**持平**。
+- 恢复：两层 ≈ 2×一次 Argon2id（Windows 实测单次约 200–330ms；移动端纯 Dart 更慢），恢复是低频大操作，可接受。
+
+**演进负担（零字段设计的固有代价）**：固定 salt 与参数不进文件头意味着第一层 KDF 参数 + salt 是「冻结契约」——未来 Argon2id 参数升级会让旧 v2 备份恢复断链。缓解（推荐）：v2 头**写入第一层 KDF 参数（`algorithm`/`iterations`/`memoryKiB`/`parallelism`，salt 仍代码内置）**，既保留「恢复端零依赖当前会话」，又留演进空间；该改动仅备份文件头加字段，不涉 keyring 账本 / 同步协议。若接受参数冻结（未来变更时 bump 版本并保留旧参数读取分支），则维持零字段（方案甲原版）。
 
 ## 5. 模块级改造详述
 
-### 5.1 PhraseHandler 改造（`lib/data/preference_and_config.dart:423-443`）
+### 5.1 PhraseHandler 改造（`lib/data/preference_and_config.dart` `PhraseHandler`，现状见 §2.1 M1）
 
 不再持有明文密码，改为持有「会话派生密钥」：
 
@@ -178,7 +198,7 @@ class PhraseHandler {
 **改造后**：
 
 1. `_login(passphrase)` 内 `passphrase` 仍是局部变量（输入框读出的，不可避免）。
-2. `initKeyringFromPassword(password)`（`sync_service.dart:974`）内部 `Keyring.unlockLocal` / `createNew` 拿到 `keyring` 后，**追加派生 BackupSeed 并注入 PhraseHandler**：
+2. `initKeyringFromPassword(password)`（`sync_service.dart`）内部 `Keyring.unlockLocal` / `createNew` 拿到 `keyring` 后，**追加派生 BackupSeed 并注入 PhraseHandler**：
 
    ```dart
    final backupSeed = await SessionKeys.deriveBackupSeed(password);
@@ -186,12 +206,12 @@ class PhraseHandler {
    ```
 
    密码在此调用栈内用完即弃，不再向上传递。
-3. `Session.login(String passphrase)`（`session.dart:28-32`）**删除明文参数**，改为无参或仅状态方法（或直接删除，由登录流程注入 PhraseHandler）。
-4. `_onLoginSuccess(String passphrase)`（`login.dart:432`）不再把 passphrase 传给 Session；日志仍只记长度。
+3. `Session.login(String passphrase)`（`session.dart`）**删除明文参数**，改为无参或仅状态方法（或直接删除，由登录流程注入 PhraseHandler）。
+4. `_onLoginSuccess(String passphrase)`（`login.dart`）不再把 passphrase 传给 Session；日志仍只记长度。
 
-**指纹登录路径**（`login.dart:770`）：`_login(await BiometricAuth.authKey)` 保持调用，但 `_login` 内部不再把明文注入 PhraseHandler（改动点 2 已覆盖）——解包出的密码只在解锁调用栈内存活。
+**指纹登录路径**（`login.dart` `_login(await BiometricAuth.authKey)`）：保持调用，但 `_login` 内部不再把明文注入 PhraseHandler（改动点 2 已覆盖）——解包出的密码只在解锁调用栈内存活。
 
-### 5.3 设置密码（`set_passphrase.dart:307-360`）
+### 5.3 设置密码（`set_passphrase.dart` `_loginController` / `_initKeyring`）
 
 `_loginController` 中 `_initKeyring(enteredPassphrase)` 成功后调 `Session.onPasswordSet(enteredPassphrase)`。改造：
 - `Session.onPasswordSet` 改为接收「新密码」（vaultId 不需要，见 5.4）。
@@ -230,25 +250,35 @@ class SessionKeys {
   /// 备份种子盐：固定 16B 常量（方案甲，见 §4.3）
   static const Uint8List kBackupSeedSalt = Uint8List.fromList([...]);
 
+  /// 第一层 BackupSeed 派生（KDF 与当前新备份默认一致，见 §4.4）
   static Future<Uint8List> deriveBackupSeed(String password) =>
-      SyncCrypto.deriveMasterKey(password, salt: kBackupSeedSalt);
+      SyncCrypto.deriveKeyFromKdf(
+        password,
+        kdf: KdfParams(
+          algorithm: kArgon2idAlgorithm,
+          salt: base64Encode(kBackupSeedSalt),
+          iterations: kArgon2idIterations,
+          memoryKiB: kArgon2idMemoryKib,
+          parallelism: kArgon2idParallelism,
+        ),
+      );
 }
 ```
 
-> 说明：`deriveBackupSeed` 直接复用 `deriveMasterKey`（PBKDF2 原语），不经过任何 MK/dataKey，独立派生链（满足原则 3）。入参不需要 vaultId（固定 salt）。
+> 说明：`deriveBackupSeed` 复用 `deriveKeyFromKdf` 派发（第一层 KDF 与当前新备份默认一致，不写死 PBKDF2，见 §4.4），不经过任何 MK/dataKey，独立派生链（满足原则 3）。入参不需要 vaultId（固定 salt）。
 
-### 5.5 改密码流程（`change_passphrase.dart:310-410`）
+### 5.5 改密码流程（`change_passphrase.dart` `_finalSubmitChange`）
 
 - `keyring.verifyPassword(oldPassword)` / `changePassword(oldPassword, newPassword)`：两个密码都在调用栈内，用后即弃，**零改动**。
-- 末尾 `Session.onPasswordSet(newPassword)`（`change_passphrase.dart:408`）改为传新密码（5.4 签名），内部完成 BackupSeed 重派生 + 生物认证刷新，newPassword 用后即弃。
+- 末尾 `Session.onPasswordSet(newPassword)`（`change_passphrase.dart`）改为传新密码（5.4 签名），内部完成 BackupSeed 重派生 + 生物认证刷新，newPassword 用后即弃。
 
 ### 5.6 生物认证改造（`biometric_auth.dart`）
 
 | 项 | 现状 | 改造 |
 |---|---|---|
-| `setAuthKey`（:64） | `PhraseHandler.getPass` 取明文 | `setAuthKey({required String password})` 显式传参；改密码流程传 `newPassword`（5.4），其余不变 |
-| `authKey` getter（:44） | 解包返回明文 | **保留**（指纹登录仍需要密码解锁 keyring，这是 C3 决定的），但调用方 `_login` 不再注入 PhraseHandler（5.2） |
-| 旧版明文兼容（:59） | 无前缀直接当明文返回 | 保留读取兼容；`setAuthKey` 写入时已是 v1 包裹（现状已自动升级）。**可选增强**：应用启动时若检测到旧版明文记录，提示用户重新输入密码以升级 |
+| `setAuthKey()` | `PhraseHandler.getPass` 取明文 | `setAuthKey({required String password})` 显式传参；改密码流程传 `newPassword`（5.4），其余不变 |
+| `authKey` getter | 解包返回明文 | **保留**（指纹登录仍需要密码解锁 keyring，这是 C3 决定的），但调用方 `_login` 不再注入 PhraseHandler（5.2） |
+| 旧版明文兼容 | 无前缀直接当明文返回 | 保留读取兼容；`setAuthKey` 写入时已是 v1 包裹（现状已自动升级）。**可选增强**：应用启动时若检测到旧版明文记录，提示用户重新输入密码以升级 |
 | wrap key 与密文同库（B2） | 两者同 FlutterSecureStorage | **可选增强**：wrap key 改存平台 Keystore/Keychain 不可导出密钥（需原生代码）。文档说明：若信任 secure storage 本身，同库包裹是纵深防御；若要抵御「secure storage 整体被导出」，需硬件级 wrap key |
 
 **核心结论**：生物认证的持久化已是「密码的包裹态」（非明文），改造重点是**登录路径不把解包明文注入内存**（5.2），以及消除旧版明文记录（可选增强）。
@@ -256,8 +286,8 @@ class SessionKeys {
 ### 5.7 同步改造（`sync_service.dart` + `sync_engine.dart`）
 
 **移除 `passphraseProvider`**（M5/M6）：
-- `sync_service.dart:202,316,705` 三处 `passphraseProvider: () => PhraseHandler.getPass` 删除（`SyncEngine` 构造函数参数相应删除）。
-- `sync_engine.dart:708-748` 场景 c/d 判别改造：
+- `sync_service.dart` 三处 `passphraseProvider: () => PhraseHandler.getPass` 删除（`SyncEngine` 构造函数参数相应删除）。
+- `sync_engine.dart` 场景 c/d 判别改造：
 
 **改造前**：分支 2（dataKey 不同）→ 本地 MK 解不开远端包裹 → `passphraseProvider` 取当前密码 → `tryDeriveRemoteDataKey` 判别场景 c（密码不同→requiresRelogin）/ d（密码相同→自动迁移）。
 
@@ -278,12 +308,12 @@ class SessionKeys {
 
 1. `scheduled_task.dart`：判空改为 `PhraseHandler.backupSeed == null`；`encryptedOutputBackupContent` 传入 `backupSeed`（字节）。
 2. `file_handler.dart` `encryptedOutputBackupContent`：签名改为接收 `Uint8List backupSeed`（或统一传 `String`），内部 `BackupFileCodec.encodeEncryptedFromSeed`。
-3. `backup_file.dart` 新增 `encodeEncryptedFromSeed`：内部 `B-KEY = deriveBackupKey(base64Encode(seed), salt: 随机备份salt)`，**formatVersion 写 2**（派生链变为两层，见 §6）。
+3. `backup_file.dart` 新增 `encodeEncryptedFromSeed`：内部 `B-KEY = deriveBackupKey(base64Encode(seed), kdf: 文件头KDF参数)`，**formatVersion 写 2**（派生链变为两层，见 §6）。
 4. `crypto.dart`：`deriveBackupKey` 签名零改动（传入 base64 字节串即可）。新增常量 `kBackupSeedSalt`（16B 固定值，与 5.4 共用）。
 
-**手动导出**（`backup_setting.dart` / `export_backup_dialog.dart`）：用户自定义口令也统一走两层派生（`encodeEncrypted` 升级为两层，formatVersion=2）；默认「当前会话密码」预填逻辑（`export_backup_dialog.dart:93` 已改为不静默填密码）保持——若用户选择用会话密码，走 `encodeEncryptedFromSeed`。
+**手动导出**（`backup_setting.dart` / `export_backup_dialog.dart`）：用户自定义口令也统一走两层派生（`encodeEncrypted` 升级为两层，formatVersion=2）；默认「当前会话密码」预填逻辑（`export_backup_dialog.dart` 已改为不静默填密码）保持——若用户选择用会话密码，走 `encodeEncryptedFromSeed`。
 
-### 5.9 加密导入改造（`file_handler.dart:175-216`）
+### 5.9 加密导入改造（`file_handler.dart` `_resolveEncryptedRecords`）
 
 **改造前**：`PhraseHandler.getPass` 自动试解 → 失败弹框。
 
@@ -294,7 +324,7 @@ class SessionKeys {
 
 ### 5.10 其它
 
-- `main.dart:332`：用 `NotesDatabase.instance.isEncryptionEnabled` 判断登录状态，不依赖 PhraseHandler.getPass —— **零改动**。
+- `main.dart`：用 `NotesDatabase.instance.isEncryptionEnabled` 判断登录状态，不依赖 PhraseHandler.getPass —— **零改动**。
 - `ImportPassPhraseHandler` / `destroyImportCredentials`：维持现状（临时值 + 用完清理）。
 
 ## 6. 备份文件格式变更（v2）
@@ -305,19 +335,20 @@ class SessionKeys {
 |---|---|---|
 | `format` | `snbak` | `snbak`（不变） |
 | `formatVersion` | `1` | `2` |
-| `enc.kdf.salt` | 备份 salt（16B，每份随机） | 不变 |
-| `enc.kdf.iterations` | 200000 | 不变 |
+| `enc.kdf.salt` | 备份 salt（16B，每份随机） | 不变（第二层派生用） |
+| `enc.kdf.algorithm`/`iterations`/`memoryKiB`/`parallelism` | Argon2id 默认 / PBKDF2 回退 | 不变（第二层派生用） |
+| `seedKdf.*`（可选增强） | —（无） | 第一层 KDF 参数（不含 salt，salt 代码内置）——是否新增见 §4.4「演进负担」 |
 | `payload` | AES-GCM(B-KEY, nonce, aad='backup-v1', plaintext) | 不变（B-KEY 由两层派生链得出） |
 
-**v2 唯一变更：`formatVersion = 2`，表示 B-KEY 由「两层派生链」得出（第一层固定 `kBackupSeedSalt`，见 §4.2）。无任何新增字段**——固定 salt 不需要写进文件头（恢复时代码内置）。
+**v2 核心变更：`formatVersion = 2`，表示 B-KEY 由「两层派生链」得出（第一层固定 `kBackupSeedSalt`，见 §4.2）。固定 salt 不写入文件头（恢复时代码内置）；第一层 KDF 参数默认也零字段（冻结契约），是否写入见 §4.4「演进负担」。**
 
 ### 6.2 格式兼容矩阵
 
 | 场景 | formatVersion | 解密路径 |
 |---|---|---|
-| v1 旧备份（历史导出） | 1 | 输入密码 → `PBKDF2(密码, 备份salt)` → B-KEY（现状单层） |
-| v2 新备份（自动/默认导出，登录密码） | 2 | 输入密码 → `PBKDF2(密码, 固定salt)` → BackupSeed → `PBKDF2(seed, 备份salt)` → B-KEY |
-| v2 + 独立备份口令 | 2 | 输入自定义口令 → `PBKDF2(口令, 固定salt)` → BackupSeed → `PBKDF2(seed, 备份salt)` → B-KEY（同一公式，口令即密码） |
+| v1 旧备份（历史导出） | 1 | 输入密码 → 按文件头 KDF 派生 B-KEY（现状单层，Argon2id 新 / PBKDF2 回退） |
+| v2 新备份（自动/默认导出，登录密码） | 2 | 输入密码 → `KDF(密码, 固定salt)` → BackupSeed → `deriveBackupKey(seed, 文件头.kdf)` → B-KEY |
+| v2 + 独立备份口令 | 2 | 输入自定义口令 → `KDF(口令, 固定salt)` → BackupSeed → `deriveBackupKey(seed, 文件头.kdf)` → B-KEY（同一公式，口令即密码） |
 
 > 独立备份口令语义不变：口令即文件头的「密码」。v2 统一两层派生，无论口令是登录密码还是自定义口令。
 
@@ -329,7 +360,7 @@ class SessionKeys {
 4. **存量 keyring（无任何新增字段）**：方案甲用固定 `kBackupSeedSalt`，**与 keyring 状态无关，存量用户零迁移**——下次登录即自动获得 BackupSeed。
 5. **同步协议**：固定 salt 不涉及任何协议字段，manifest header / keyring 账本 **零变更**。
 6. **测试更新**：
-   - `test/sync/change_password_multi_client_test.dart:802,810` 的 `PhraseHandler.initPass/destroy` 改 `initSession/destroy`。
+   - `test/sync/change_password_multi_client_test.dart` 的 `PhraseHandler.initPass/destroy` 改 `initSession/destroy`。
    - `test/sync/sync_test_support.dart` 等处的 `passphraseProvider` 构造参数移除。
    - 新增用例见 §10。
 
@@ -349,13 +380,13 @@ class SessionKeys {
 2. **生物认证 wrap key 与密文同库**：secure storage 被整体导出时两者同泄，包裹退化为纵深防御。彻底解决需硬件级 wrap key（原生代码），列为可选增强。**Windows 上的具体结论见 §8.4**。
 3. **改密码后旧备份需旧密码**：C5 固有现实，UI 在改密码前弹窗提示（现状 `_preChangeCheck` 已强制备份，需补充提示文案）。
 4. **BackupSeed 泄露可解同 vault 全部备份**：BackupSeed 是密码的加固态，等价「密码的离线爆破结果」。其泄露路径与 MK/dataKey 相同（读内存），不构成新增风险。
-5. **固定 salt 的跨用户预计算**：BackupSeed 层 salt 为固定常量，攻击者可为常见密码预计算 BackupSeed 表。但**第二层备份 salt 每份随机**，预计算结果仍需对每份文件单独跑一层 PBKDF2——每份备份的爆破成本 ≈ 2×200k，**不弱于现状单层**，收益被第二层完全稀释（论证见 §4.3 方案甲）。
+5. **固定 salt 的跨用户预计算**：BackupSeed 层 salt 为固定常量，攻击者可为常见密码预计算 BackupSeed 表。但**第二层备份 salt 每份随机**，预计算结果仍需对每份文件单独跑一层 KDF——每份备份的爆破成本 = 两层 KDF 成本叠加，**不弱于现状单层**，收益被第二层完全稀释（论证见 §4.3 方案甲 / §4.4）。
 
 ### 8.3 安全强度对比
 
 | 项 | 现状 | 本方案 |
 |---|---|---|
-| 备份离线爆破成本（每猜测） | 1×PBKDF2(200k) | 2×PBKDF2(200k)，不弱于现状 |
+| 备份离线爆破成本（每猜测） | 1×KDF（Argon2id 默认） | 2×KDF，不弱于现状 |
 | 生物认证持久化 | 包裹态（v1） | 包裹态（不变） |
 | 内存明文密码 | 有 | 无 |
 | 同步场景 c/d 自动迁移 | 后台自动 | 需重登一次（更保守） |
@@ -425,4 +456,4 @@ class SessionKeys {
 
 ---
 
-*变更记录：2026-08-10 初稿。基于对话推演：确认 dataKey/MK 均会随同步迁移变化（C1/C2）→ 生物认证维持存「密码包裹态」；确认备份密钥不能依赖当前密钥状态（C4）→ BackupSeed 独立派生链。2026-08-10 修订：经用户指出 vaultId 是本地 UUID、无法跨未同步设备复现，否决「backupSeedSalt 由 vaultId 派生」（方案甲 v1），改为**固定常量 salt**（方案甲 v2），备份格式仅 bump formatVersion 至 2、无新增字段；并查证 Windows secure storage 实现（.secure 文件 = AES-GCM 密文，密钥存 Credential Manager），补充 §8.4 威胁模型。*
+*变更记录：2026-08-10 初稿。基于对话推演：确认 dataKey/MK 均会随同步迁移变化（C1/C2）→ 生物认证维持存「密码包裹态」；确认备份密钥不能依赖当前密钥状态（C4）→ BackupSeed 独立派生链。2026-08-10 修订：经用户指出 vaultId 是本地 UUID、无法跨未同步设备复现，否决「backupSeedSalt 由 vaultId 派生」（方案甲 v1），改为**固定常量 salt**（方案甲 v2），备份格式仅 bump formatVersion 至 2、无新增字段；并查证 Windows secure storage 实现（.secure 文件 = AES-GCM 密文，密钥存 Credential Manager），补充 §8.4 威胁模型。2026-08-16 修订（对齐现状代码）：§0 改为「整份提案未实施」完整状态框；全文行号引用改为符号引用；§4.4 由「两层 PBKDF2 200k」修订为对齐 Argon2id 迁移（第一层走 `deriveKeyFromKdf` 派发）；新增「演进负担」说明与可选 `seedKdf.*` 头字段；§6.1/§6.2/§8.3 相应更新。*

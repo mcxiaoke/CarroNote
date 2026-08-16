@@ -55,17 +55,17 @@
 |------|------|
 | `lib/core.dart` | 核心包唯一公开出口（统一 `import 'package:core/core.dart'`） |
 | `lib/src/ports.dart` | 平台能力注入点：PathProvider / KeyValueStore / SecretStore / LogSink |
-| `lib/src/crypto/` | 加密层：`aes_encryption.dart`（本地 AES-256-GCM / CBC）、`crypto.dart`（PBKDF2 / AES / dataKey wrap-unwrap） |
+| `lib/src/crypto/` | 加密层：`crypto.dart`（AES-256-GCM、Argon2id / PBKDF2 派生 MK、dataKey wrap-unwrap） |
 | `lib/src/db/` | `database_handler.dart`：SQLite CRUD（`dbFactoryOverride` / `dbPathOverride` 注入） |
 | `lib/src/models/` | 数据模型：`safenote`、`parse_import` |
-| `lib/src/logger/` | 统一日志：`app_logger.dart`（`logDirResolverOverride` 注入）、`log_webserver.dart` |
+| `lib/src/logger/` | 统一日志：`app_logger.dart`（`logDirResolverOverride` 注入） |
 | `lib/src/sync/` | 同步核心（见下文） |
 
 ### 同步子系统（`packages/core/lib/src/sync/`）
 
 | 文件 | 职责 |
 |------|------|
-| `crypto.dart` | **密钥核心**：PBKDF2-HMAC-SHA256 派生 MK（600k 迭代）、AES-256-GCM、dataKey 的 wrap / unwrap |
+| `crypto.dart` | **密钥核心**：AES-256-GCM；MK 由 KDF 派生（新 vault 默认 **Argon2id** `m=32MiB, t=3, p=2`；存量按 `algorithm` 头回退到 PBKDF2-HMAC-SHA256 200k）、dataKey 的 wrap / unwrap |
 | `keyring.dart` | Keyring 管理：vault_id、salt、manifest 版本、改密码、多设备重新认证协调 |
 | `sync_models.dart` | 远端 manifest / item 数据模型（hash、deleted、updatedAt） |
 | `sync_backend.dart` | **SyncBackend 抽象接口**：`getManifest / putManifest / getBlob / putBlob` |
@@ -79,7 +79,8 @@
 
 ```
 密码层（改密码时变化）
-  MK = PBKDF2-HMAC-SHA256(password, salt, 600k)
+  MK = KDF(password, salt)  ← 新 vault 默认 Argon2id(m=32MiB, t=3, p=2)；
+                            存量老 vault / 备份按 header 的 `algorithm` 回退到 PBKDF2-HMAC-SHA256(200k)
   MK 只用于加密 dataKey，不直接加密笔记
         ↓ 加密
 数据层（永不变化，真正加密笔记的密钥）
@@ -107,7 +108,7 @@
 
 ### 同步服务端（`server/`）
 
-本 fork 提供 SafeServer 参考实现，协议版本 **v2.2**，Go 与 Node.js **两种实现协议完全一致、可互换**。`server/` 目录已被 `.gitignore` 排除，仅供本地测试与参考。
+本 fork 提供 SafeServer 参考实现，协议版本 **v2.2**，Go 与 Node.js **两种实现的 HTTP API 协议一致**。`server/` 目录**已提交进仓库**（仅 `data/`、`dist/` 运行时产物被 git 忽略），仅供本地测试与参考。
 
 - `server/go/`：Go 1.21+，**仅标准库**
 - `server/nodejs/`：JavaScript (ESM)，**仅内置模块**
@@ -143,7 +144,7 @@ safenotes_cli.exe --data-dir temp/dev-a --password P db info
 `note`（add / list / get / update / delete / restore / hard-delete / purge-deleted）、
 `export` / `import`、`sync`（setup / run / repair / status）、`log` / `journal`、`meta`。
 退出码约定：`0` 成功、`1` 用户可预期错误、`2` 异常崩溃。完整说明见
-`docs/cli-client-design-20260803.md`，端到端测试见 [测试](#测试) 中的 `e2e`。
+`docs/cli-client-design.md`，端到端测试见 [测试](#测试) 中的 `e2e`。
 
 ---
 
@@ -175,18 +176,18 @@ Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业�
 - **核心包**：`packages/core`（纯 Dart，pub workspace，禁止 Flutter 依赖；编译器强制）
 - **本地存储**：`sqflite`（移动端）、`sqflite_common_ffi`（桌面端 / 测试 / CLI）
 - **安全存储**：`flutter_secure_storage`（密码 / MK 缓存于系统钥匙串）
-- **加密**：`cryptography` + `cryptography_flutter`（AES-256-GCM / PBKDF2，硬件加速）、`crypto`（SHA-256 内容 hash）
+- **加密**：`cryptography` + `cryptography_flutter`（AES-256-GCM 硬件加速、Argon2id 内存硬化 KDF 用于新 vault、PBKDF2-SHA256 200k 回退）、`crypto`（SHA-256 内容 hash）
 - **网络**：`http`（WebDAV 客户端）
 - **状态管理**：`provider`
 - **生物识别**：`local_auth`；**本地化**：`easy_localization`
-- **CLI 解析**：`args`（CommandRunner）；**任务管理**：`make` / `task` / `just` 三套等价
+- **CLI 解析**：`args`（CommandRunner）；**任务管理**：`make` / `task` / `just` 目标互相对应（注：`gen-build-info` 存在差异，见 [构建信息注入](#构建信息注入版本--git--构建时间)）
 - **同步服务端**：Go（标准库）/ Node.js（内置模块）
 
 ---
 
 ## 构建与运行
 
-**任务管理**：`make`（Makefile）、`task`（Taskfile.yml）、`just`（justfile）三份**完全等价**，
+**任务管理**：`make`（Makefile）、`task`（Taskfile.yml）、`just`（justfile）目标互相对应，
 按「依赖 / 构建 / 测试」三类组织，均含 `get`、`clean`、`run`、`cli-build`、`build-*`、`test`、
 `test-core`、`analyze`、`e2e` 等。Windows 下 `make` 默认不在 PATH，推荐用 `task` 或 `just`
 （`task --list` / `just --list` 查看全部任务）。
@@ -223,7 +224,7 @@ just --list
 
 每次构建都会把 **Git 提交哈希、分支、tag、工作区是否脏、累计提交数** 以及 **构建时间** 注入到应用内，并在启动时打印一份版本详情，便于复现线上问题与溯源。
 
-实现方式：构建前由 `scripts/generate_build_info.py` 生成 `lib/utils/build_info.dart`（编译期常量，零运行时开销），`lib/main.dart` 的 `_initLogging()` 在启动时读取并打印。
+实现方式：构建前由 `scripts/generate_build_info.dart`（通过 `dart run scripts/generate_build_info.dart` 执行）生成 `lib/utils/build_info.dart`（编译期常量，零运行时开销），`lib/main.dart` 的 `_initLogging()` 在启动时读取并打印。
 
 **统一使用 `make` 目标构建**（会自动先注入最新构建信息；`task` / `just` 同理）：
 
@@ -244,8 +245,10 @@ make release       # 发布打包（多 ABI 拆分 + AppBundle，先注入最新
 ```bash
 make gen-build-info
 # 或
-python scripts/generate_build_info.py
+dart run scripts/generate_build_info.dart
 ```
+
+> 注：`gen-build-info` 目标在三个任务运行器间当前并不一致 —— `just` 通过 `dart run scripts/generate_build_info.dart` 调用真实脚本，而 `make` / `task` 仍引用已不存在的遗留 `scripts/generate_build_info.py` 路径。请将 `make` / `task` 目标统一改为 `dart run scripts/generate_build_info.dart`。
 
 `BuildInfo` 暴露字段：`version` / `buildNumber` / `versionString` / `gitHash` / `gitHashShort` / `gitBranch` / `gitTag` / `gitCommitCount` / `gitDirty` / `buildDate`(UTC) / `buildDateReadable`，以及便捷 getter `summary`（单行）与 `detail`（多行，可用于「关于 / 调试」面板）。
 
@@ -253,10 +256,10 @@ python scripts/generate_build_info.py
 
 ```
 ════════ SafeNotes 启动 ════════
-版本: 2.3.0 (build 10)
+版本: 3.0.0 (build 30000)
 Git: 0a4d888 @ sync-refact-dev (工作区有未提交改动)
 Commit: 0a4d888c82a636d3394d6b6c939c61e2adfe4b7d
-Tag: v2.3.0-188-g0a4d888 (累计提交 608)
+Tag: v3.0.0 (当前发布 tag；累计提交数随版本变化)
 构建时间: 2026-08-02 12:21:18 (UTC 2026-08-02T04:21:18Z)
 平台: windows Microsoft Windows [Version 10.0.22631.0]
 Dart: 3.44.8
@@ -298,8 +301,8 @@ flutter test
 - `docs/server-api-spec.md`：服务端 HTTP API 规范（端点、ETag、认证）
 - `docs/simplified-sync-design.md` / `docs/sync-feature-design.md`：同步架构设计
 - `docs/server-implementation.md`：SafeServer 实现文档
-- `docs/cli-client-design-20260803.md`：CLI 客户端设计（命令树 / 验收清单 / 实现要点）
-- `docs/crypto-overview-20260810.md`：加密层概览
+- `docs/cli-client-design.md`：CLI 客户端设计（命令树 / 验收清单 / 实现要点）
+- `docs/crypto-overview.md`：加密层概览
 - `docs/backup-encryption-design-20260810.md`：备份加密设计
 - `docs/CHANGES-YYYYMMDD.md`：每日变更日志（按日期归档）
 

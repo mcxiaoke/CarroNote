@@ -2,7 +2,9 @@
  * 同步功能核心加密层
  *
  * 两层密钥架构：
- *   MK (Master Key) = PBKDF2(password, per-vault-salt, 200k)  ← 改密码时变化，只用来加密 dataKey
+ *   MK (Master Key) = deriveKeyFromKdf(password, per-vault-salt)  ← 改密码时变化，只用来加密 dataKey
+ *       新 vault 默认 KDF = Argon2id(m=32MiB, t=3, p=2)；存量老 vault / 备份按 header 的
+ *       algorithm 字段回退到 PBKDF2-HMAC-SHA256(200k)。
  *   dataKey = 随机 32 字节                                     ← 永不变化，真正加密笔记内容
  *
  * 多端一致性关键：

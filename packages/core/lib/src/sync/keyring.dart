@@ -4,7 +4,8 @@
  * 设计文档：docs/p2-keyring-journal-design-fixed.md（v2 方案 B）
  *
  * 两层密钥架构：
- *   MK      = PBKDF2-HMAC-SHA256(password, per-vault-salt, 200k)  ← 改密码时变化
+ *   MK      = deriveKeyFromKdf(password, per-vault-salt)  ← 改密码时变化
+ *            新 vault 默认 KDF = Argon2id(m=32MiB, t=3, p=2)；存量按 header 的 algorithm 回退 PBKDF2-HMAC-SHA256(200k)
  *   dataKey = 随机 32 字节                                        ← 仅 scenario-c/d 迁移时变化
  *   encryptedDataKey = AES-GCM(MK, dataKey)                       ← 存 manifest header
  *

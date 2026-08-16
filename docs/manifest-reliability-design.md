@@ -70,7 +70,7 @@
 
 | 字段 | 含义 |
 |---|---|
-| `schemaVersion` | 协议版本，当前 `4`（`kManifestSchemaVersion`） |
+| `schemaVersion` | 协议版本，当前 `5`（`kManifestSchemaVersion`，见 `sync_models.dart:79`） |
 | `version` | 每次成功 PUT +1 |
 | `vaultId` | 同步组 UUID |
 | `createdAt` / `updatedAt` | 毫秒时间戳 |
@@ -79,8 +79,8 @@
 | `encryptedDataKey` | MK 加密的 dataKey（base64） |
 | `kdf.{algorithm,salt,iterations,memoryKiB?,parallelism?}` | 新 vault 默认 `ARGON2ID`（m=32MiB,t=3,p=2）；存量 `PBKDF2-HMAC-SHA256`/per-vault salt/200000，按 `algorithm` 字段分派，互操作 |
 | `dataKeyWrap` | `AES-256-GCM` |
-| `dataKeyEpoch` | v4 后仅审计元数据 |
-| `dataKeyFingerprint` / `dataKeyCreatedAt` / `dataKeyCreatedBy` | v4 新增自描述审计字段 |
+| `dataKeyEpoch` | v5 后仅审计元数据 |
+| `dataKeyFingerprint` / `dataKeyCreatedAt` / `dataKeyCreatedBy` | v5 新增自描述审计字段 |
 | `lastModifiedBy` | 最后修改设备 |
 
 ### 1.3 真实文件验证
@@ -88,7 +88,7 @@
 `temp/safenotes-vault/manifest.json`（30631 字节）解析结果：
 
 - header 长度字段 = 729，明文 header 解析正常；加密 items 体 = 29898 字节（需 dataKey 才能解）。
-- header 实测值：`schemaVersion=4`、`version=51`、`keyVersion=3`、`dataKeyFingerprint=4d42b5f6...`、`lastModifiedBy=windows-{A6BD8CBA-...}`，字段与 `ManifestHeader` 完全吻合。
+- header 实测值：`schemaVersion=5`、`version=51`、`keyVersion=3`、`dataKeyFingerprint=4d42b5f6...`、`lastModifiedBy=windows-{A6BD8CBA-...}`，字段与 `ManifestHeader` 完全吻合。
 
 ---
 
@@ -208,7 +208,7 @@
 - `magic`：4 字节固定标识 `'SMNT'`（SafeNotes ManifesT）——**容器家族标识，不带版本数字**；实际
   版本由 `fileVer`（容器布局）与 `schemaVersion`（协议语义）分别承载，避免"系列 v2 / 协议 v5"混淆。
 - `fileVer`（**2 字节**）：**文件级容器布局版本**，首个布局为 `1`。2 字节的理由见 §5.4。
-- `schemaVersion`（2 字节）：**协议语义版本**（当前 `kManifestSchemaVersion=4`，新协议定 `5`），与 fileVer 职责分离：容器布局变更只动 fileVer，字段语义变更只动 schemaVersion，二者解耦便于各自演进。
+- `schemaVersion`（2 字节）：**协议语义版本**（当前 `kManifestSchemaVersion=5`），与 fileVer 职责分离：容器布局变更只动 fileVer，字段语义变更只动 schemaVersion，二者解耦便于各自演进。
 - `headerLen`：4 字节大端，header 字节数（沿用现编码）。
 - `header`：明文 JSON（同现格式）。
 - `items`：`AES-256-GCM(dataKey, AAD='manifest-items', items JSON)`，信封格式不变。

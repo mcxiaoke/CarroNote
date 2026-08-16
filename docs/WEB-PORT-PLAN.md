@@ -13,7 +13,7 @@
 | 安全强度 | **弱化无所谓**。Web 版为本地 dev/test，不要求 HTTPS/CSP/SRI、不要求 OS 级安全存储。 |
 | 导入 / 导出 | **Web 上不支持**。相关 UI 与逻辑在 Web 一律禁用 / no-op。 |
 | 指纹 / 生物识别 | **Web 上不支持**。login 走纯密码；`local_auth` 在 Web 不引入。 |
-| 存储引擎 | **保留 SQLite**，Web 端用 `sqflite` 自带的 Web 后端（WASM SQLite + IndexedDB 持久化）。**不使用 LevelDB**（无浏览器移植，且换成 NoSQL 要重写全部 SQL）。 |
+| 存储引擎 | **保留 SQLite**，Web 端用 `sqflite_common_ffi_web`（WASM SQLite + IndexedDB 持久化）。**不使用 LevelDB**（无浏览器移植，且换成 NoSQL 要重写全部 SQL）。 ⚠️ `sqflite` 本身**不支持 Web**，Web 依赖 `sqflite_common_ffi_web` + `sqlite3.wasm` 二进制（见 §3.2）。 |
 | 同步 | Web 端只走 `webdav` / `safe_server`（HTTP，`http` 包，跨平台可用）；`local_fs` 后端（纯 `dart:io`）在 Web 排除。本地 dev/test 可不配置同步，app 不依赖同步即可跑全流程。 |
 
 **不做的事**：安全加固、导入导出 Web 实现、生物识别 Web 实现、SQL 改写、LevelDB 移植。
@@ -39,7 +39,7 @@
 
 ## 2. 现有架构优势（已具备，复用即可）
 
-- `packages/core` 是纯 Dart 包，DB 访问已通过 `NotesDatabase.dbFactoryOverride` 注入（`database_handler.dart:107`），`main.dart:134` 把这个工厂设成全局 `databaseFactory`。Web 上只要**不进 ffi 分支**，`sqflite` 的 Web 工厂自动接管，**同一套 SQL 零改动**。
+- `packages/core` 是纯 Dart 包，DB 访问已通过 `NotesDatabase.dbFactoryOverride` 注入（`database_handler.dart:107`），`main.dart:134` 把这个工厂设成全局 `databaseFactory`。Web 上只要把全局 factory 换成 `databaseFactoryFfiWeb`（见 §3.2），**同一套 SQL 零改动**。
 - `DeviceIdProvider.overrideForTesting` 已存在（`device_id.dart`），Web 设备 ID 只需加一个 `kIsWeb` 分支。
 - `main.dart` 里 ffi 初始化、`SystemChrome` 取向已经被 `!kIsWeb && Platform.isX` 守卫，逻辑分支正确，只差**顶层 import** 在 Web 编译不过。
 - `easy_localization` / `shared_preferences` / `path_provider` / `url_launcher` / `device_info_plus` / `file_picker` 均有 Web 实现，开箱可用。
@@ -103,11 +103,11 @@ typedef FileStat = void; // 若未使用可省略
 > 实际符号集合以各文件真实引用为准；迁移时编译器报错会精确指出缺哪个符号，补到 stub 即可。
 
 所有 app 层 `import 'dart:io';` / `import 'dart:io' show Platform;` 替换为 `import 'package:safenotes/src/platform/platform_io.dart';`。涉及文件：
-`main.dart:16` · `window_title_bar.dart:2` · `device_id.dart:24` · `file_handler.dart` · `scheduled_task.dart:15` · `cache_manager.dart:15` · `home.dart` · `backup_setting.dart:12` · `sync_diagnostics_page.dart:17` · `export_backup_dialog.dart:15`。
+`main.dart:16` · `window_title_bar.dart:2` · `device_id.dart:26` · `file_handler.dart:16` · `scheduled_task.dart:15` · `cache_manager.dart:15` · `home.dart` · `backup_setting.dart:12` · `sync_diagnostics_page.dart:19` · `export_backup_dialog.dart:15` · **`vault_backup.dart:13`（原稿遗漏的 `import 'dart:io'`）**。
 
-`core` 包内：`app_logger.dart:31` · `journal.dart:46`（用同样的垫片思路，见 §4）。
+`core` 包内：`app_logger.dart:31` · `journal.dart:46` · `database_handler.dart:23`（`inspectMetadata` 用 `File(path).length()` @220）· `sync_backend.dart:18`(原子写 manifest 用 `File`/`Directory` @296-326) · `local_fs_backend.dart:22`（用同样的垫片思路，见 §4）。
 
-### 3.2 SQLite ffi 条件 import
+### 3.2 SQLite Web 后端 + ffi 条件 import
 
 `main.dart:28` 的 `import 'package:sqflite_common_ffi/sqflite_ffi.dart';` 直接拖垮 Web 编译。改法：把 ffi 初始化抽到一个仅在非 Web 才真正导入的文件。
 
@@ -117,10 +117,25 @@ export 'database_bootstrap_native.dart'
     if (dart.library.html) 'database_bootstrap_web.dart';
 ```
 
-- `database_bootstrap_native.dart`：`import 'package:sqflite_common_ffi/sqflite_ffi.dart';` 并实现 `void initDatabaseForNative() { sqfliteFfiInit(); databaseFactory = databaseFactoryFfi; ...setDatabasesPath... }`。
-- `database_bootstrap_web.dart`：空实现 `void initDatabaseForNative() {}`（Web 上 `sqflite` 自带后端自动注册，无需手动设工厂）。
+- `database_bootstrap_native.dart`：`import 'package:sqflite_common_ffi/sqflite_ffi.dart';` 并实现 `Future<void> initDatabaseForNative() async { sqfliteFfiInit(); databaseFactory = databaseFactoryFfi; ...setDatabasesPath... }`。
+- `database_bootstrap_web.dart`：**必须设 factory**，不是空实现：
+  ```dart
+  import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
+  Future<void> initDatabaseForNative() async {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
+  ```
+  ⚠️ 关键（纠正原稿）：`sqflite` 无 Web 实现，**不会自动接管**。必须显式 `databaseFactory = databaseFactoryFfiWeb`，否则 Web 建库直接失败。
 
 `main.dart:_bootstrap()` 改为调用 `initDatabaseForNative()`（原本那段 `!kIsWeb && (Windows|Linux|macOS)` 分支整体搬进 native 实现里）。
+
+**新增依赖与脚手架（P0 必做）**：
+```bash
+flutter pub add sqflite_common_ffi_web
+dart run sqflite_common_ffi_web:setup        # 生成 web/sqlite3.wasm + web/sqflite_sw.js
+```
+- `web/index.html` 需加载 `sqlite3.wasm`（setup 会处理好，若手动则需在 html 里加 `<script src="sqlite3.wasm"></script>` 或按官方说明集成）。
+- 版本升级或 wasm 二进制更新时需重跑 setup（`--force`）。
 
 ---
 
@@ -131,17 +146,26 @@ export 'database_bootstrap_native.dart'
 ### 4.1 `app_logger.dart`（文件日志层）
 `main._initLogging()` 早期就调用 `AppLogFile.init()`（`app_logger.dart` 用 `File`/`Directory`/`Platform.resolvedExecutable` 写文件）。Web 无文件系统 → **Web 上日志改为 console / 内存**。
 
-推荐：在 `core.dart` 把
+⚠️ **纠正原稿**：不能靠改 `core.dart` 的 export 实现。`app_logger.dart` 被 10+ 个 core 文件**直连**
+`import 'package:core/src/logger/app_logger.dart'`（database_handler / keyring / journal / sync_engine / webdav_backend / http_util / safe_server_backend / local_fs_backend / crypto / ports），
+不经过 `core.dart`，改 `core.dart` 的 export 对它们无效。
+
+正确做法：**在 `app_logger.dart` 文件内部**做条件 import——
 ```dart
-export 'src/logger/app_logger.dart';
+// app_logger.dart 顶部
+import 'app_logger_io.dart'
+    if (dart.library.html) 'app_logger_web.dart';
 ```
-改为条件 export，Web 走 `app_logger_web.dart`（只 `print` / 内存 ring buffer，无 `dart:io`）。`Log.app.xxx` 调用签名保持不变，业务代码零改动。
+- `app_logger_io.dart`：现有 `dart:io` 文件日志实现（`AppLogFile` / `devModeProvider` / `logDirResolverOverride` 等）。
+- `app_logger_web.dart`：同名 `AppLogFile` 桩，`init()`/`flush()`/`close()` no-op，文件相关字段返回 null（仅 console + 内存 ring buffer）。
+`Log.app.xxx` 调用签名保持不变，业务代码零改动。
 
 ### 4.2 `log_webserver.dart`（调试日志 HTTP 服务）
-`ServerSocket` / `HttpRequest` / `File` 全是 `dart:io`（`log_webserver.dart:36,176,231,249,265`）。Web 上**整个禁用**：同 §4.1 思路，`core.dart` 条件 export，Web 走 `log_webserver_web.dart`，所有方法（`start`/`stop`/`isRunning`/`port`/`diagnosticsProvider`）返回安全默认值（`isRunning=false`、`start()` 直接返回端口占位）。调用方（`home.dart:103/141` 的 `_startLogWebServer`、`main.dart:202` 的 `_shutdown`、`sync_diagnostics_page.dart` 的启停 UI）无需改逻辑，因为桩已保证 no-op。
+`lib/src/logger/log_webserver.dart` 是 **app 层**文件（非 core），`ServerSocket` / `HttpRequest` / `File` 全是 `dart:io`（`log_webserver.dart:36,176,231,249,265`）。Web 上**整个禁用**：在 `log_webserver.dart` 文件内部做条件 import，Web 走 `log_webserver_web.dart`（或把整文件拆桩），所有方法（`start`/`stop`/`isRunning`/`port`/`diagnosticsProvider`）返回安全默认值（`isRunning=false`、`start()` 直接返回端口占位）。调用方（`home.dart:103/141` 的 `_startLogWebServer`、`main.dart:202` 的 `_shutdown`、`sync_diagnostics_page.dart` 的启停 UI）无需改逻辑，因为桩已保证 no-op。⚠️ 不要试图改 `core.dart`（它不导出此文件，且这是 app 层代码）。
 
 ### 4.3 `journal.dart`（同步日志持久化）
-`_writeLogFile()` / `_loadLogFile()` 用 `Directory.create` / `File`（`journal.dart:479,491,529,646,654`）。Web 上若启用同步需持久化 journal，但本地 dev/test 通常不同步。最稳做法：**`kIsWeb` 时跳过文件读写**（内存态 journal），方法入口 `if (kIsWeb) return;`。文件顶部 `import 'dart:io'` 走 §3.1 垫片。
+`_writeLogFile()` / `_loadLogFile()` 用 `Directory.create` / `File`（`journal.dart:479,491,529,646,654`）。Web 上若启用同步需持久化 journal，但本地 dev/test 通常不同步。**不让文件读写真正生效**即可：文件顶部 `import 'dart:io'` 走 §3.1 垫片（core 包内自备的 `platform_io.dart` 桩），桩的 `File`/`Directory` 方法返回空/安全值，journal 自然退化为「内存态」。
+⚠️ **纠正原稿**：core 是纯 Dart，**不能 import `package:flutter/foundation.dart` 的 `kIsWeb`**（违反"core 禁止 Flutter 依赖"红线）。用 §3.1 的 io 桩取代 `if (kIsWeb) return;`，两种效果等价。
 
 ### 4.4 `local_fs_backend.dart`（本地文件同步后端）
 整个文件是 `dart:io` 实现（`local_fs_backend.dart:22` 起几十处 `File`/`Directory`）。Web 不使用该后端。在同步后端工厂处做条件 import：
@@ -155,7 +179,12 @@ import 'src/sync/backends/local_fs_backend.dart'
 `local_fs_backend_stub.dart` 提供同名类，构造与所有方法体为空实现（Web 永不实例化，仅满足编译）。`webdav` / `safe_server` 后端基于 `http` 包，跨平台，无需改动。
 
 ### 4.5 `deleteDbFile()`（登录页"删除保险库"）
-`login.dart:710` 调用 `NotesDatabase.instance.deleteDbFile()`（推测内部 `File(path).delete()`）。Web 上应走 `sqflite` 的 `deleteDatabase()`（删 IndexedDB 库）。在 `database_handler.dart` 内对该方法做 `kIsWeb` 分支：Web 用 `databaseFactory.deleteDatabase(dbPath)`；非 Web 保留原 `File.delete()`。
+`login.dart:710` 调用 `NotesDatabase.instance.deleteDbFile()`。⚠️ **纠正原稿**：该方法**现在已用** `factory.deleteDatabase(path)`（`database_handler.dart:1690`），并非 `File.delete()`，本身已跨平台实现。
+
+真正的坑在 wasm：`sqflite_common_ffi_web` 官方 README 明确 **"deleteDatabase is not supported on wasm"**。因此 Web 上「删除保险库」会抛错。备选方案（任选其一，建议 P2）：
+1. **最佳**：改为「清空重建」——drop 全部表 + 重建 schema + 清空 keyring，等价于"重置保险库"，wasm 完全支持。
+2. 降级：Web 上该按钮 no-op 并提示"Web 不支持删除数据库"。
+若选方案 1，需在 `database_handler.dart` 内对删除逻辑做 `kIsWeb` 分支（app 层注入开关，core 用 io 桩或注入标志，避免直接引 `kIsWeb`）。
 
 ---
 
@@ -169,6 +198,9 @@ import 'src/sync/backends/local_fs_backend.dart'
 
 ### 5.3 `cryptography_flutter`（仅原生）
 app 未直接 import（靠插件自动注册），Web 构建会跳过它、回退 `BrowserCryptography`。**验证点**：`flutter build web` 不应硬失败；若告警/失败，在 `web/` 的 `pubspec` 覆盖或临时从 Web 依赖移除（crypto 仍可用纯 Dart / 浏览器 crypto，仅少硬件加速）。
+
+### 5.4 `permission_handler`（无 Web 实现）
+`lib/utils/storage_permission.dart:15` 直接 `import 'package:permission_handler/permission_handler.dart';`（`handleStoragePermission` 用于备份/导入路径）。Web 上该路径被 §6 门控禁用，运行时不会真调用，但**顶层 import 会拖垮 Web 编译**。需条件 import 一个 Web 桩（`Permission.storage` 恒返回 granted 之类的安全默认），或把调用包进 `if (!kIsWeb)` 且 import 走垫片。**原稿遗漏，必须补。**
 
 ---
 
@@ -229,26 +261,31 @@ cd build/web && python -m http.server 8080
 
 ## 10. 风险与开放问题
 
-- **sqflite Web 持久化**：依赖 IndexedDB，浏览器隐私模式 / 配额 / 清缓存会让库"消失"，开发测试无碍，需注意。
+- **sqflite Web 后端**：`sqflite_common_ffi_web` 官方标注 **experimental**（慢、未完全测试、可能有 bug）。依赖 IndexedDB，浏览器隐私模式 / 配额 / 清缓存会让库"消失"，开发测试无碍，需注意。
+- **wasm `deleteDatabase` 不支持**：`sqflite_common_ffi_web` 明确 "deleteDatabase is not supported on wasm"。§4.5「删除保险库」需改走"清空重建"或 no-op，**P2 前不可用**。
+- **wasm 二进制脚手架**：`sqlite3.wasm` / `sqflite_sw.js` 需 `dart run sqflite_common_ffi_web:setup` 生成，且与 `sqlite3` 版本强绑定，升级后需重跑（`--force`）。忘记跑 setup 会导致 Web 运行时加载失败。
 - **同步 CORS**：若 Web 真接 `webdav`/`safe_server`，目标服务需开 CORS；本地 dev 不同步则无此问题。
 - **`flutter_secure_storage` Web = localStorage 明文**：因定位是本地测试、安全弱化，可接受；但别把 Web 版当"安全产品"对外发布。
-- **构建告警**：`cryptography_flutter`、`media_scanner`(若未完全排除) 等原生插件在 Web 构建可能告警，逐条确认不硬失败即可。
+- **构建告警**：`cryptography_flutter`、`media_scanner`、`permission_handler`(若未完全排除) 等原生插件在 Web 构建可能告警，逐条确认不硬失败即可。
 - **`io_stub.dart` 符号完整度**：以编译器报错为准逐步补齐，无预见性风险。
+- **端口绑定**：IndexedDB 库与端口绑定，`localhost:8080` 与 `8081` 是不同的库；调试时固定端口以免"数据突然消失"误判。
 
 ---
 
 ## 11. 分步执行清单（checklist）
 
 - [ ] **P0-脚手架**：`flutter create . --platforms=web`
-- [ ] **P0-shim**：建 `lib/src/platform/{platform_io.dart, io_stub.dart, database_bootstrap.dart, database_bootstrap_native.dart, database_bootstrap_web.dart}`
+- [ ] **P0-wasm**：`flutter pub add sqflite_common_ffi_web` + `dart run sqflite_common_ffi_web:setup`（生成 `web/sqlite3.wasm`、`web/sqflite_sw.js`）
+- [ ] **P0-shim**：建 `lib/src/platform/{platform_io.dart, io_stub.dart, database_bootstrap.dart, database_bootstrap_native.dart, database_bootstrap_web.dart}`（web 桩需设 `databaseFactory = databaseFactoryFfiWeb`，**非空实现**）
 - [ ] **P0-sqlite**：`main.dart` ffi import → 条件 import + 抽 `initDatabaseForNative()`
-- [ ] **P0-io**：10 个 app 文件 `import 'dart:io'` → `platform_io.dart`
-- [ ] **P0-core**：`core.dart` 对 `app_logger` / `log_webserver` 改条件 export（Web 桩）；`local_fs_backend` 条件 import 桩；`journal` / `app_logger` / `deleteDbFile` 加 `kIsWeb` 门控
-- [ ] **P0-插件**：`media_scanner` / `local_auth` 条件 import 桩；`login.dart` 隐藏生物识别 UI
+- [ ] **P0-io**：11 个 app 文件 `import 'dart:io'` → `platform_io.dart`（含遗漏的 `vault_backup.dart`）
+- [ ] **P0-core**：`app_logger.dart` / `local_fs_backend.dart` / `journal.dart` / `database_handler.dart` / `sync_backend.dart` 文件内条件 import 桩（**不用 `kIsWeb`、不改 `core.dart` export**）；`deleteDbFile` 走核心化方案（§4.5）
+- [ ] **P0-插件**：`media_scanner` / `local_auth` / `permission_handler` 条件 import 桩；`login.dart` 隐藏生物识别 UI
 - [ ] **P1-门控**：`scheduled_task`/`backup_setting`/`export_backup_dialog`/`sync_diagnostics_page`/`home`/`file_handler`/`main.onAppUpdate` 加 `kIsWeb` 门控
 - [ ] **P1-deviceId**：`device_id.dart` 加 Web 分支
-- [ ] **P1-验证**：`flutter build web` 出包；起静态服务手动走 §1 清单
+- [ ] **P1-验证**：`flutter build web` 出包；起静态服务（固定端口）手动走 §1 清单
 - [ ] **P2-e2e**：Playwright 冒烟 + `flutter test --platform=chrome` 跑通 `auth_flow_test`（含 `_TestAssetLoader` rootBundle 修复）
+- [ ] **P2-deleteDb**：Web「删除保险库」改"清空重建"或 no-op（wasm 不支持 `deleteDatabase`）
 
 ---
 

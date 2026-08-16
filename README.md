@@ -36,7 +36,7 @@ This project is a fork of the upstream [keshav-space/safenotes](https://github.c
 lib/               Flutter client: UI, state assembly, platform injection (entry: lib/main.dart)
 packages/core/     Pure-Dart core package: crypto, SQLite DB, models, SyncEngine (no Flutter dependency)
 bin/               Pure-Dart CLI client: reads/writes the encrypted DB without the Flutter SDK
-server/            SafeServer reference implementations in Go and Node.js (excluded by .gitignore)
+server/            SafeServer reference implementations in Go and Node.js (committed; only its `data/` and `dist/` artifacts are git-ignored)
 docs/              Design docs, protocol specs, and the developer guide
 test/              App-side and integration tests
 ```

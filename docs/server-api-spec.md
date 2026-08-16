@@ -9,14 +9,14 @@
 > - 新增**通用资源层** `/api/v2/resources/<path>`（详见 §5.10），用纯 REST/JSON 表达等价于 WebDAV `GET`/`PUT`/`DELETE`/`MOVE`/`MKCOL`/`COPY`/`PROPFIND` 的语义，兼容任意 HTTP client。
 > - 软删除（孤儿 blob 隔离）与 `backupCorruptManifest` 现在可走资源层 `move`/`mkdir`/`propfind`，与 `localFs`/`webdav` 后端能力对齐，消除"能力倒置"。
 > - `manifest` 与 `blob` 端点（§5.2–§5.9）作为资源层的**便利接口**保留，语义不变，旧客户端（v2.1）继续兼容。
-> - 旧版 v2.1/v2 服务端若不实现资源层，客户端对 405 静默降级（仅失去软删除隔离等增强能力）。
+> - 旧版 v2.1/v2 服务端若不实现资源层：早期客户端对 405 静默降级（仅失去软删除隔离等增强能力）。**注意（2026-08-16）**：当前 `SafeServerBackend` 已改为**强制要求 v2.2**——任何非 2xx 响应（含旧版 405）直接抛 `BackendUnavailableException`，不再静默降级（见 §5.9 / §8.1 / §12.2）。
 >
 > **v2.1 变更摘要**（详见 §15）：
 > - 新增 `DELETE /api/v2/manifest` 端点（清理损坏文件，客户端 `backupCorruptManifest` 用）
 > - 新增 `DELETE /api/v2/blob/<hash>` 端点（GC 清理孤儿 blob）
 > - 新增 `GET /api/v2/blobs` 端点（列出所有 blob hash，GC 用，需认证）
 > - 速率限制从"推荐"升级为"强烈建议"，并对 401 认证失败做 IP+时间窗口限速
-> - 旧版 v2 服务端仍可互操作（客户端对 405 静默降级）
+> - 旧版 v2 服务端仍可互操作（早期客户端对 405 静默降级；**当前客户端已不再降级，见上文 v2.2 摘要**）
 
 ---
 
@@ -343,7 +343,7 @@ Authorization: Bearer <token>
 |--------|------|------|
 | 200 OK | 成功 | JSON 数组，如 `["hash1", "hash2", ...]` |
 | 401 Unauthorized | 认证失败 | 错误描述 |
-| 405 Method Not Allowed | 旧版 v2 服务端未实现此端点（客户端静默降级为空列表） | 空 |
+| 405 Method Not Allowed | 旧版 v2 服务端未实现此端点（早期客户端静默降级为空列表；**当前 `SafeServerBackend` 对 405 抛 `BackendUnavailableException`，见 §12.2**） | 空 |
 
 **响应体格式**：
 
@@ -356,7 +356,7 @@ Authorization: Bearer <token>
 - 服务端不解析 blob 内容，仅列文件名。
 - **需认证**：此端点不破坏 §10.5 防枚举原则——攻击者无 Token 无法访问。
 - blobs 目录不存在时返回空数组 `[]`。
-- 客户端对 404/405/网络错误静默降级为空列表，GC 退化为"只标记不清理"。
+- 客户端对 404/网络错误静默降级为空列表，GC 退化为"只标记不清理"。**注意**：当前 `SafeServerBackend` 对 405（旧版服务端）直接抛 `BackendUnavailableException` 而非降级（不再兼容 v2.1/v2 服务端，见 §12.2）。
 
 ### 5.10 通用资源层 `/api/v2/resources/<path>`（v2.2 新增）
 
@@ -444,6 +444,7 @@ v2.2 引入一个**通用资源层**，用纯 REST/JSON 表达等价于 WebDAV �
 - `depth: 0` → 返回单个资源自身的元数据（等价于 `stats`）。
 - 资源不存在 → 404 Not Found。
 - 返回 `Content-Type: application/json`，数组按子项名排序（结果稳定）。
+- **`depth` 缺省行为**：服务端实现默认取 `0`（客户端调用时**须显式传 `depth:1`** 以列出子项，见 `safe_server_backend.dart`）。
 
 **`op: "stats"`（`propfind` depth=0 的别名）**
 
@@ -468,17 +469,17 @@ v2.2 引入一个**通用资源层**，用纯 REST/JSON 表达等价于 WebDAV �
 # 1. 确保孤儿隔离区存在
 curl -X POST -H "Authorization: Bearer <token>" \
   -d '{"op":"mkdir"}' \
-  http://localhost:8080/api/v2/resources/blobs-orphan
+  http://localhost:4080/api/v2/resources/blobs-orphan
 
 # 2. 将孤儿 blob 移入隔离区（等价 localFs rename / webdav COPY+DELETE）
 curl -X POST -H "Authorization: Bearer <token>" \
   -d '{"op":"move","dest":"blobs-orphan/<hash>.<epochMs>","overwrite":false}' \
-  http://localhost:8080/api/v2/resources/blobs/<hash>
+  http://localhost:4080/api/v2/resources/blobs/<hash>
 
 # 3. 列出隔离区内容（等价 webdav PROPFIND blobs-orphan/）
 curl -X POST -H "Authorization: Bearer <token>" \
   -d '{"op":"propfind","depth":1}' \
-  http://localhost:8080/api/v2/resources/blobs-orphan
+  http://localhost:4080/api/v2/resources/blobs-orphan
 ```
 
 ---
@@ -566,7 +567,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 | 400 Bad Request | 路径非法（含 `..` / 绝对路径 / NUL）/ JSON 体非法 / `move`/`copy` 缺 `dest` | 视为请求错误，中止本次操作 |
 | 401 Unauthorized | 认证失败 | 提示用户检查配置 |
 | 404 Not Found | GET manifest / GET blob / `GET|DELETE` resources / `propfind` 资源不存在 | manifest: 视为首次同步；blob: 跳过本次 |
-| 405 Method Not Allowed | v2.1/v2.2 端点未实现（旧版服务端）；`mkdir` 目标已存在（v2.2，客户端忽略） | 客户端静默降级 |
+| 405 Method Not Allowed | v2.1/v2.2 端点未实现（旧版服务端）；`mkdir` 目标已存在（v2.2，客户端忽略） | 客户端静默降级（`mkdir` 目标已存在 / v2.1/v2 旧版端点：**早期客户端降级；当前 `SafeServerBackend` 对旧版 405 抛 `BackendUnavailableException`，不再降级**） |
 | 409 Conflict | `move`/`copy` 目标已存在且 `overwrite=false`；`mkdir` 父目录不存在（v2.2） | 中止本次操作或改用其他策略 |
 | 412 Precondition Failed | PUT manifest 乐观锁冲突 | 重新 GET manifest 并重试（最多 3 次） |
 | 429 Too Many Requests | 认证失败速率限制触发（v2.1） | 等待 Retry-After 后重试 |
@@ -615,11 +616,17 @@ v2.2 起，资源层可在 vault 命名空间内创建子目录（典型用途�
 
 如果服务端用文件系统存储，必须校验 `<hash>` 不会逃逸出 `<dataDir>/blobs/`：
 
-- 拒绝包含 `..` 或路径分隔符的 hash。
+- 拒绝包含 `..` 的 hash（由资源层 `ValidateVaultPath` 校验，返回 400）。
 - 拒绝空 hash、含 NUL 字节的 hash。
 - 使用 `filepath.Join` + `filepath.Abs` 后验证结果以 `<dataDir>/blobs/` 为前缀。
 
 这是安全红线，缺失会导致目录穿越漏洞。
+
+> **实现注记（2026-08-16）**：blob 便利接口（§5.4/§5.5/§5.8）的 `<hash>` 直接委托资源层处理，
+> `ValidateHash` 当前**仅用于** `NewVault` 校验 vaultID，未接入 blob 便捷端点。因此含 `..` 的 hash
+> 仍被资源层 `ValidateVaultPath` 拒绝（无穿越），但含 `/` 的 hash 会被当作 vault 内子路径存储
+> （不返回 400，仍受 `<dataDir>/blobs/` 前缀约束）。若需严格按本节约「含路径分隔符即 400」，
+> 应在 blob 便捷端点接入 `ValidateHash`（Node 端 `resolveBlobPath` 已有实现但未被调用）。
 
 对于数据库存储，hash 是主键，不存在路径穿越问题。
 
@@ -737,9 +744,16 @@ v2.1 起 `GET /api/v2/blobs` 端点**需认证**才能访问，不破坏防枚�
 **推荐策略**（参考实现已采用）：
 - 按客户端 IP 分组，滑动窗口 1 分钟。
 - 同一 IP 在窗口内累计 10 次认证失败后，拒绝该 IP 的所有请求（返回 `429 Too Many Requests`，附 `Retry-After: 60` 头）。
-- 认证成功后清除该 IP 的失败计数。
+- 认证成功后清除该 IP 的失败计数（即：给出**正确** Token 的 IP 应立即解除限速，避免限速放大）。
 - 通过 `X-Forwarded-For` 头识别反向代理后的真实客户端 IP。
-- 可通过启动参数 `--rate-limit N` 配置阈值，`0` 表示禁用（仅测试环境用）。
+
+**`X-Forwarded-For` 处理红线（2026-08-16 修订）**：
+- 仅在显式「处于反向代理之后」（`--behind-proxy`）时信任 `X-Forwarded-For`；默认**不信任**，直接使用 TCP 对端 IP。
+- 信任时只取**最右一跳**（代理追加的那一跳）；**绝不可**取客户端可控的**最左一跳**，否则攻击者可伪造 XFF 绕过限速或将限速打到受害者 IP（DoS 放大）。
+- Go 参考实现已按此实现；Node.js 参考实现当前**始终信任 XFF 且取最左一跳**，存在上述风险，需对齐修复。
+- 两个参考实现还须就「检查顺序」保持一致：先校验 Token，成功即清失败计数；被限速 IP 给出正确 Token 应立即可恢复（而非等到窗口过期）。
+
+- 可通过启动参数 `--rate-limit N` 配置阈值，`0`（或 ≤0）表示禁用（仅测试环境用）。
 
 **其他速率限制**（可选）：
 - PUT manifest 频率限制（防恶意覆盖）。
@@ -806,51 +820,51 @@ v2.1 起 `GET /api/v2/blobs` 端点**需认证**才能访问，不破坏防枚�
 
 ```bash
 # 健康检查
-curl http://localhost:8080/api/v2/health
+curl http://localhost:4080/api/v2/health
 # ok
 
 # 无认证应返回 401
-curl -i http://localhost:8080/api/v2/manifest
+curl -i http://localhost:4080/api/v2/manifest
 
 # 首次上传 manifest
 curl -X PUT -H "Authorization: Bearer my-secret-token" \
   -H "If-None-Match: *" \
   --data-binary @manifest.bin \
-  http://localhost:8080/api/v2/manifest
+  http://localhost:4080/api/v2/manifest
 
 # 重复上传应返回 412
 curl -X PUT -H "Authorization: Bearer my-secret-token" \
   -H "If-None-Match: *" \
   --data-binary @manifest.bin \
-  http://localhost:8080/api/v2/manifest
+  http://localhost:4080/api/v2/manifest
 
 # 下载 manifest（带返回的 ETag）
 curl -i -H "Authorization: Bearer my-secret-token" \
-  http://localhost:8080/api/v2/manifest
+  http://localhost:4080/api/v2/manifest
 
 # v2.1：列出所有 blob hash（GC 用）
 curl -H "Authorization: Bearer my-secret-token" \
-  http://localhost:8080/api/v2/blobs
+  http://localhost:4080/api/v2/blobs
 # ["hash1", "hash2", ...]
 
 # v2.1：删除孤儿 blob（幂等，404 返回 204）
 curl -i -X DELETE -H "Authorization: Bearer my-secret-token" \
-  http://localhost:8080/api/v2/blob/<hash>
+  http://localhost:4080/api/v2/blob/<hash>
 # HTTP/1.1 204 No Content
 
 # v2.1：清理损坏 manifest（自愈用）
 curl -i -X DELETE -H "Authorization: Bearer my-secret-token" \
-  http://localhost:8080/api/v2/manifest
+  http://localhost:4080/api/v2/manifest
 # HTTP/1.1 204 No Content
 
 # v2.1：未认证访问 blobs 列表应返回 401
-curl -i http://localhost:8080/api/v2/blobs
+curl -i http://localhost:4080/api/v2/blobs
 # HTTP/1.1 401 Unauthorized
 
 # v2.1：连续 10 次错误 Token 后应返回 429
 for i in $(seq 1 11); do
   curl -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer wrong-token" \
-    http://localhost:8080/api/v2/manifest
+    http://localhost:4080/api/v2/manifest
 done
 # 401 401 401 401 401 401 401 401 401 401 429
 ```
@@ -860,42 +874,42 @@ done
 # 创建孤儿隔离区（等价 webdav MKCOL blobs-orphan/）
 curl -i -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"mkdir"}' \
-  http://localhost:8080/api/v2/resources/blobs-orphan
+  http://localhost:4080/api/v2/resources/blobs-orphan
 # HTTP/1.1 201 Created
 
 # 重复创建应返回 405（客户端忽略，视为已存在）
 curl -i -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"mkdir"}' \
-  http://localhost:8080/api/v2/resources/blobs-orphan
+  http://localhost:4080/api/v2/resources/blobs-orphan
 # HTTP/1.1 405 Method Not Allowed
 
 # 写入任意资源（等价 webdav PUT，可含子目录）
 curl -X PUT -H "Authorization: Bearer my-secret-token" \
   --data-binary @note.bin \
-  http://localhost:8080/api/v2/resources/blobs-orphan/note1
+  http://localhost:4080/api/v2/resources/blobs-orphan/note1
 
 # 软删除：将 blob 移到隔离区（等价 localFs rename / webdav COPY+DELETE）
 curl -i -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"move","dest":"blobs-orphan/<hash>.<epochMs>","overwrite":false}' \
-  http://localhost:8080/api/v2/resources/blobs/<hash>
+  http://localhost:4080/api/v2/resources/blobs/<hash>
 # HTTP/1.1 204 No Content
 
 # 列出隔离区（等价 webdav PROPFIND blobs-orphan/ depth=1）
 curl -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"propfind","depth":1}' \
-  http://localhost:8080/api/v2/resources/blobs-orphan
+  http://localhost:4080/api/v2/resources/blobs-orphan
 # [{"name":"<hash>.<epochMs>","path":"blobs-orphan/<hash>.<epochMs>","isDir":false,...}]
 
 # 单资源元数据（等价 PROPFIND depth=0）
 curl -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"stats"}' \
-  http://localhost:8080/api/v2/resources/blobs/<hash>
+  http://localhost:4080/api/v2/resources/blobs/<hash>
 # {"name":"<hash>","path":"blobs/<hash>","isDir":false,"size":...,"modTime":...,"etag":"\"...\""}
 
 # 路径穿越应返回 400
 curl -i -X POST -H "Authorization: Bearer my-secret-token" \
   -d '{"op":"move","dest":"../../etc/passwd","overwrite":false}' \
-  http://localhost:8080/api/v2/resources/blobs/<hash>
+  http://localhost:4080/api/v2/resources/blobs/<hash>
 # HTTP/1.1 400 Bad Request
 ```
 

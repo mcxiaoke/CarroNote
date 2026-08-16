@@ -2,7 +2,7 @@
 
 > 状态：设计稿（待评审）
 > 适用范围：`lib/models/file_handler.dart` 导出/导入、`packages/core` 加密原语、`bin/` CLI
-> 配套：`docs/crypto-overview-20260810.md` §5.6（当前明文备份现状）、`docs/flutter-code-review-20260810.md` 高 1
+> 配套：`docs/crypto-overview.md` §5.6（备份导出/导入现状）、`docs/flutter-code-review-20260810.md` 高 1
 
 ---
 
@@ -296,7 +296,7 @@ AAD 仅取一个**固定常量** `backup-v1` 作为域分隔符（domain separat
 | `lib/utils/scheduled_task.dart`（自动/登出/改密前备份） | 固定加密导出，用 `PhraseHandler.getPass` 派生，异常时记日志并返回 false（评审 #2 语义保持） |
 | `bin/safenotes_cli.dart` | `export` 增加 `--format plaintext|encrypted`（默认 encrypted），`import` 自动按格式分流；encrypted 用 `--password` 或交互输入 |
 | `lib/data/preference_and_config.dart` | `importFileExtension` 支持 `json`/`snbak` 双扩展名；加密导出文件名用 `.snbak` |
-| `docs/crypto-overview-20260810.md` | §5.6 更新为加密备份格式 |
+| `docs/crypto-overview.md` | §5.6 备份导出/导入（手动与自动均为加密 .snbak） |
 
 ## 11. 验证计划
 

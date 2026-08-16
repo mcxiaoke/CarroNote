@@ -28,7 +28,7 @@
 
 > ⚠️ **观察**：`isDesktopPlatform`（框架层）与 `_isDesktopUi`（`dart:io`）语义几乎相同，但实现来源不同。
 > 在 Web 上，`defaultTargetPlatform` 在 `flutter test` / Web 下行为不同于 `dart:io`，
-> 因此 `main.dart` / `home.dart` 额外加了 `!kIsWeb` 短路。建议后续统一为单一助手并封装 `kIsWeb` 判断。
+> 故 `kIsWeb` 判断统一收敛到 `lib/utils/platform_ui.dart` 的单一助手（`isDesktopPlatform` / `isMobilePlatform` / `isWeb`），调用方不再内联 `!kIsWeb`（见 §12 / §14.1）。
 
 ---
 
@@ -221,8 +221,8 @@
 
 ## 12. kIsWeb 防御性短路
 
-- `main.dart`、`home.dart` 在所有「桌面特性」判断前加 `!kIsWeb`，确保 Web 构建不会误入 `dart:io` 分支。
-- 当前 Web 非发布目标，但代码已对 `kIsWeb` 做了最小保护。
+- `kIsWeb` 的防御性保护**集中在 `lib/utils/platform_ui.dart`**：`isDesktopPlatform` / `isMobilePlatform` / `isWeb` 三个语义桶内部统一处理 `kIsWeb`（`platform_ui.dart:91/103/109/123/131` 等处 `if (kIsWeb) return …`），调用方（含 `main.dart` / `home.dart`）只需使用这些助手，**无需、也不再内联 `!kIsWeb`**。（早期版本曾在 `main.dart` / `home.dart` 内联 `!kIsWeb` 短路，现已收敛到 `platform_ui.dart`，见 §14.1。）
+- 当前 Web 非发布目标（`pubspec.yaml` 未排除 `web` 平台，默认可编译；完整移植见 `WEB-PORT-PLAN.md`），但代码已对 `kIsWeb` 做了最小保护。
 
 ---
 

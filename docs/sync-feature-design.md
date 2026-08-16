@@ -9,9 +9,14 @@
 > fork 项目按"新数据库 + 新加密格式"从零启动，旧 safenotes 备份不复用。
 >
 > **注意（2026-08-11 补记）**：本文档 §KDF 章节的「PBKDF2-SHA256 600k」属本 fork 设计的独立选型，
-> 与主应用 `crypto-overview-20260810.md` 所述**当前实现不一致**——主应用自 2026-08-11 起
+> 与主应用 `crypto-overview.md` 所述**当前实现不一致**——主应用自 2026-08-11 起
 > 默认 KDF 为 **Argon2id**（`m=32MiB, t=3, p=2`），存量 PBKDF2 按 header `algorithm` 字段回退。
 > 阅读本文档时请以本 fork 的设计口径为准，勿与主线实现混用。
+>
+> **架构状态（2026-08-16 补记）**：本文档描述的同步架构（`ISyncTransport` / `SyncClient` / `Keystore`、
+> 「纯 fork 冲突、保留双份」）**并非最终实现**。实际落地的是 `docs/simplified-sync-design.md` 的
+> **manifest 架构 + LWW 冲突解决 + 后端无关（WebDAV / SafeServer / localFs）**方案（见 `sync_engine.dart`）。
+> 本文档保留为早期设计依据，架构/fork-冲突相关描述请勿当作当前实现。
 
 ---
 

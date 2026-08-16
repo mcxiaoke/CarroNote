@@ -184,11 +184,11 @@ AAD 决定「这个信封只能用在这个位置」，是防止密文搬移/替
 
 | 数据面 | AAD | 密钥 | 代码位置 |
 |---|---|---|---|
-| dataKey 包裹 | 固定串 `"datakey-wrap"` | **MK** | crypto.dart:198, 211 |
+| dataKey 包裹 | 固定串 `"datakey-wrap"` | **MK** | crypto.dart:325, 337 |
 | 远端 blob（笔记正文） | `contentHash`（SHA-256 hex，即 blob 文件名） | dataKey | crypto.dart:232（`_blobAad`）、sync_engine.dart:1955 |
 | 本地 DB 字段（title/description） | 笔记 `uuid` | dataKey | database_handler.dart:276, 290 |
-| manifest items 段 | 固定串 `"manifest-items"` | dataKey | sync_models.dart:852, 929, 969 |
-| journal 远端副本 | 固定串 `"journal-archive"`（`kJournalAad`） | dataKey | journal.dart:81, 906, 965 |
+| manifest items 段 | 固定串 `"manifest-items"` | dataKey | sync_models.dart:856, 937, 985 |
+| journal 远端副本 | 固定串 `"journal-archive"`（`kJournalAad`） | dataKey | journal.dart:81, 913, 923, 970 |
 | 生物识别凭据 | 固定串 `"biometric-auth"` | 独立随机 32B 包裹密钥 | biometric_auth.dart:71, 122 |
 
 **blob AAD 纯化（v4 epoch 消除）**：blob 的 AAD 恒为裸 `id`（内容哈希），
@@ -379,12 +379,12 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
   **历史坑**：此前仅 `onPasswordSet` 刷新，导致他端改密后本端用旧密码指纹登录失败、
   改用新密码重登却未刷新 biometric，下次指纹登录即报密码错误。
 
-### 5.6 备份导出 / 导入（导出面板支持加密 .snbak；自动备份仍为明文）
+### 5.6 备份导出 / 导入（手动与自动备份均为加密 .snbak）
 
-代码：`lib/models/file_handler.dart`、`lib/dialogs/export_backup_dialog.dart`
+代码：`lib/models/file_handler.dart`、`lib/dialogs/export_backup_dialog.dart`、`lib/utils/scheduled_task.dart`
 
 ```
-明文导出（默认历史行为）: { "records": [...], "recordHandlerHash": "plaintext-v1", "total": N }
+明文导出（可选历史行为）: { "records": [...], "recordHandlerHash": "plaintext-v1", "total": N }
 加密导出（snbak v1）     : 明文内容整体 AES-GCM 加密，密文随附件打包为 .snbak
 ```
 
@@ -392,14 +392,14 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
   - **加密 `.snbak`（推荐）**：`FileHandler.encryptedOutputBackupContent(password:)`，
     用面板输入口令派生密钥加密后落盘，任何持有文件的人无口令无法读取；
   - **明文 `.json`**：`plainOutputBackupContent()`，等同旧行为，UI 明确警示「文件未加密」。
-- **自动备份**（`ScheduledTask.backup`）**仍为明文 `.json`**（加密自动备份为遗留 TODO）。
+- **自动备份**（`ScheduledTask.backup`）**同样走加密 `.snbak` 导出**：`unitBackupAttempt()`
+  用会话内存密码（`PhraseHandler.getPass`）派生 B-KEY 加密，密码为空时如实失败（绝不写明文备份）。
+  （早期版本自动备份为明文 `.json` 的遗留 TODO 已落地。）
 - `recordHandlerHash` 写死为 `"plaintext-v1"`；旧版的 `passPhraseHash` 密码指纹已移除，
   明文导入时**不做任何密码校验**（`ImportEncryptionControl.setIsImportEncrypted(false)`）。
 - 导入自动识别：顶层 `format=="snbak"` 走解密导入（需要导出时使用的口令）；
   否则按明文 `.json` 导入。
 - 导入体积上限 256MB，整体单事务写入（任一条失败整体回滚）。
-- 遗留 TODO：代码注释指向 `登录验证简化方案-20260729.md` §5.2（该文档已不在 `docs/`）。
-  **确认导出的是明文时，等同明文笔记本，需在 UI/文档中明确告知用户。**
 
 ---
 
@@ -429,7 +429,8 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 
 ```
 1. ledger = 读 sync_meta['keyring']；无 → KeyringNotInitializedException
-2. MK      = PBKDF2(password, ledger.kdf.saltBytes, ledger.kdf.iterations)
+2. MK      = deriveKeyFromKdf(password, ledger.kdf)   ← 按 ledger.kdf.algorithm 派发：
+            新 vault 默认 Argon2id(m=32MiB, t=3, p=2)；存量老 vault 回退 PBKDF2-HMAC-SHA256(200k)
 3. dataKey = AES-GCM-open(MK, 'datakey-wrap', base64d(ledger.current.encryptedDataKey))
              失败 → WrongPasswordException（即「密码错误」的唯一判定方式）
 4. database.setDataKey(dataKey) → Session.login(password)（明文密码进 PhraseHandler 内存；
@@ -437,7 +438,7 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
 ```
 
 **登录即验证**：没有独立的密码哈希表，「能解开 dataKey」就是密码正确。
-UI 侧 `_isLoggingIn` 防重入（PBKDF2 需 1-2s，防连点），失败递减
+UI 侧 `_isLoggingIn` 防重入（派生 MK 需 1-2s，防连点），失败递减
 `_noOfAllowedAttempts` 并在归零后进入锁定倒计时。
 
 ### 6.3 新设备加入 / 本地账本失效 → 远端验证登录

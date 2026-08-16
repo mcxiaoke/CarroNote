@@ -1,7 +1,7 @@
 # SafeNotes 代码与模块结构介绍
 
 > 本文档全面介绍 SafeNotes 项目的代码结构、模块职责与关键设计。
-> 适用版本：`2.3.0+10`（GPL-3.0-or-later）。
+> 适用版本：`3.0.0+30000`（GPL-3.0-or-later）。
 > 阅读对象：新接手开发者、代码审计者、架构评审者。
 
 ---
@@ -311,7 +311,7 @@ P2 设计，作为**可审计 + 可恢复的第二数据源**：本地明文 + �
 
 ### 8.2 SafeServer 参考实现 `server/`
 
-自托管轻量同步服务，实现 `docs/server-api-spec.md` v2.1 协议：
+自托管轻量同步服务，实现 `docs/server-api-spec.md` v2.2 协议：
 
 - **Go**：`server/go/`（`main.go` 极简入口；`internal/config|auth|storage|server` 分层；
   `server.go` 路由 + graceful shutdown；`auth.go` 固定 Token + 速率限制含 OOM 防护；
@@ -378,7 +378,7 @@ cd packages/core && dart test
 |------|------|
 | `simplified-sync-design.md` / `sync-feature-design.md` | 同步引擎与 5 步流程设计 |
 | `spec-manifest.md` / `spec-journal.md` / `spec-blob.md` | manifest v5 / journal / blob 格式规范 |
-| `crypto-overview-20260810.md` | 密码学总览（MK / dataKey / Argon2id / AES-GCM） |
+| `crypto-overview.md` | 密码学总览（MK / dataKey / Argon2id / AES-GCM） |
 | `plaintext-passphrase-elimination-design-20260810.md` | 移除明文密码哈希、Keyring 方案 B 演进 |
 | `manifest-reliability-design.md` | manifest 自恢复与冲突处理 |
 | `cli-client-design.md` | CLI 设计 |

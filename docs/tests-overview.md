@@ -5,13 +5,16 @@
 >
 > 测试分两类目录：
 > - **`packages/core/test/`**：纯 Dart 核心包（`core`）的测试，涵盖加密、同步引擎、
->   keyring、journal、各后端。绝大多数可脱离 Flutter 框架用 `flutter test` 跑。
-> - **`test/`**：Flutter 应用层测试（widget、同步配置、真实数据库生成工具等）。
+>   keyring、journal、各后端。纯 Dart，**用 `dart test` 跑（无需 Flutter SDK）**；
+>   `flutter test` 亦可但更重，不推荐作为核心测试常规手段。
+> - **`test/`**：Flutter 应用层测试（widget、同步配置、真实数据库生成工具等），需 Flutter。
+> - **`integration_test/`**：端到端集成测试（见 §2.5）。
 >
 > 公共支撑文件：
 > - `packages/core/test/sync/sync_test_support.dart`：造 `Keyring` / `Journal`、
 >   持久化账本断言、`FakeJournalStore` mixin（给 FakeBackend 补真实存储的
 >   journal 三件套）。所有 core 同步测试都 `import` 它。
+> - `test/sync/sync_test_support.dart`：app 侧对 core 测试支撑的 re-export（唯一引用点，避免两处代码漂移）。
 
 ---
 
@@ -85,7 +88,7 @@
 
 ### 1.7 `sync/chaos_multi_client_test.dart` —— 重型随机混沌测试
 
-设计文档：`docs/chaos-test-plan-20260729.md`。
+设计要点见本节下文（早期混沌测试计划文档 `docs/chaos-test-plan-20260729.md` 已不在仓库中，以本文本节为准）。
 
 - 3 个客户端 + 随机交织操作流（新建/编辑/删除/同步/改密码）+ 随机延迟。
 - 纪律：每次运行先克隆 `temp/safenotes-vault` 到 `temp/chaos/run-<seed>/`，
@@ -122,6 +125,18 @@
 - 驱动真实 `hacdias/webdav` v5.14.1 服务器跑完整同步流程。
 - 服务器路径 `C:\Home\Develop\tools\webdav.exe`；`setUpAll` 启动、`tearDownAll` 停止。
 - 库级 `@Timeout(120s)`；webdav.exe 不在指定路径时自动跳过。
+
+### 1.12 其他核心测试文件（未在以上小节逐一展开）
+
+以下 `packages/core/test/sync/` 下的测试文件同样存在，覆盖额外回归点：
+
+- `backend_redirect_test.dart` —— WebDavBackend / SafeServerBackend 重定向防护（B-H1 HTTP 重定向修复）。
+- `http_util_test.dart` —— `sendWithRedirectPolicy` 单元测试（B-H1 HTTP 重定向修复）。
+- `http_util_live_test.dart` —— `sendWithRedirectPolicy` 真实网络集成测试（B-H1，默认跳过）。
+- `database_import_test.dart` —— 备份导入 `storeNotesInTransaction` 的 uuid 幂等去重（避免导出再导回撞唯一约束整体回滚）。
+- `backup_file_test.dart` —— 备份文件编解码（明文 plaintext-v1 + 加密 snbak v1）：格式往返、错误密码/篡改 salt/iterations 失败、旧格式兼容、未知格式拒绝、版本保护、B-KEY 原语往返。
+- `blob_addressing_test.dart` —— blob 寻址不变量测试。
+- `hard_delete_all_test.dart` —— `hardDeleteAllDeleted` 批量硬删除（回收站清空单事务回归）。
 
 ---
 
@@ -163,6 +178,23 @@
 - 仅验证 `login_button.dart` 的 `ButtonWidget` 能正确渲染 `FilledButton`、
   文案，点击触发 `onClicked`。最小 Flutter widget 测试。
 
+### 2.5 其他应用层测试与集成测试
+
+以下 `test/` 下的测试文件同样存在，未在 §2.1–§2.4 逐一展开：
+
+- `test/auth_flow_test.dart` —— 认证流程集成测试：驱动真实 App（AuthWall → 登录 / 首次设置密码），覆盖首次运行设密码、登录、改密码三条主路径。
+- `test/export_backup_dialog_test.dart` —— 导出面板（ExportBackupDialog）widget 测试：加密/明文二选一、密码确认、空/不一致密码按钮禁用、明文模式隐藏密码框、提交返回 `ExportOptions`。
+- `test/notes_color_contrast_test.dart` —— 笔记卡字体色对比度测试（P1-12）：16 个卡片色主题在「原色」与「浅色模式提亮 0.4」两种背景下的 `getFontColorForBackground` 对比度。
+- `test/theme_color_setting_test.dart` —— 主题颜色选择器（ThemeColorPicker）测试：目标色从 `AppThemeSeeds` 动态获取，断言聚焦行为而非硬编码色值。
+- `test/sync/sync_test_support.dart` —— app 侧对 core 测试支撑的 re-export（见上文「公共支撑文件」）。
+
+### 2.6 端到端集成测试（`integration_test/`）
+
+- 入口：`integration_test/app_test.dart`（单文件，无需额外 `integration_test.dart` 驱动）。
+- 覆盖 note CRUD + 设置页 12 项导航（双视口）冒烟。
+- 运行：`flutter test integration_test/ -d windows`（见 `CLAUDE.md`）。
+- **状态**：`docs/integration-test-plan.md` 规划的 4 个 flow 文件 + `test_helpers` 改造**仅部分落地**，当前为单文件 `app_test.dart`；登录错误、首次设密码、删除路径等断言尚未覆盖。
+
 ---
 
 ## 3. 测试支撑与脚本
@@ -178,29 +210,39 @@
 ## 4. 运行速查
 
 ```bash
-# 核心同步单元测试（内存后端，秒级）
-flutter test packages/core/test/sync/sync_engine_test.dart
-flutter test packages/core/test/sync/crypto_test.dart
-flutter test packages/core/test/sync/keyring_test.dart
-flutter test packages/core/test/sync/journal_test.dart
-flutter test packages/core/test/sync/multi_device_test.dart
-flutter test packages/core/test/sync/p0p1_self_heal_test.dart
-flutter test packages/core/test/sync/local_fs_backend_test.dart
+# 核心同步单元测试（纯 Dart，用 dart test，无需 Flutter SDK；内存后端，秒级）
+dart test packages/core/test/sync/sync_engine_test.dart
+dart test packages/core/test/sync/crypto_test.dart
+dart test packages/core/test/sync/keyring_test.dart
+dart test packages/core/test/sync/journal_test.dart
+dart test packages/core/test/sync/multi_device_test.dart
+dart test packages/core/test/sync/p0p1_self_heal_test.dart
+dart test packages/core/test/sync/local_fs_backend_test.dart
+# 其他核心测试（§1.12）同上改用 dart test
 
-# 集成测试（需 Go / Node.js / webdav.exe 实际存在，否则自动跳过）
+# 集成测试（需 Go / Node.js / webdav.exe 实际存在，否则自动跳过；用 flutter test）
 flutter test packages/core/test/sync/safe_server_integration_test.dart
 flutter test packages/core/test/sync/webdav_integration_test.dart
 
-# 重型/长期测试（注意文件落盘与克隆纪律）
-flutter test packages/core/test/sync/chaos_multi_client_test.dart
-LONGRUN_GENS=5 flutter test packages/core/test/sync/longrun_persistent_store_test.dart
+# 重型/长期测试（注意文件落盘与克隆纪律；纯 Dart 用 dart test）
+dart test packages/core/test/sync/chaos_multi_client_test.dart
+LONGRUN_GENS=5 dart test packages/core/test/sync/longrun_persistent_store_test.dart
 
-# 应用层
+# 应用层（需 Flutter）
 flutter test test/sync/sync_config_test.dart
 flutter test test/sync/change_password_multi_client_test.dart
 flutter test test/generate_real_db_test.dart
 flutter test test/widget_test.dart
+flutter test test/auth_flow_test.dart
+flutter test test/export_backup_dialog_test.dart
+flutter test test/notes_color_contrast_test.dart
+flutter test test/theme_color_setting_test.dart
 
-# 全量
+# 端到端集成（见 §2.6）
+flutter test integration_test/ -d windows
+
+# 核心全量
+dart test packages/core/test
+# 应用层全量
 flutter test
 ```
