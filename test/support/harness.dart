@@ -52,12 +52,12 @@ const Color kHarnessThemeSeed = Color(0xFF0F3460);
 ///   - EasyLocalization + TestAssetLoader
 ///   - ShadApp.custom + ShadThemes 双主题
 ///   - MediaQuery(viewInsets: EdgeInsets.zero) 消除键盘滚动动画
-///   - ChangeNotifierProvider<ThemeProvider>
-///   - ChangeNotifierProvider<NotesColor>
-///   - ChangeNotifierProvider<SessionProvider> (vaultInitialized: null)
-///   - ChangeNotifierProvider<NotesRepository> (FakeNotesRepository)
-///   - ChangeNotifierProvider<SyncRepository> (FakeSyncRepository)
-///   - Provider<NotesDbAdminPort> (FakeNotesDbAdminPort)
+///   - `ChangeNotifierProvider<ThemeProvider>`
+///   - `ChangeNotifierProvider<NotesColor>`
+///   - `ChangeNotifierProvider<SessionProvider>` (vaultInitialized: null)
+///   - `ChangeNotifierProvider<NotesRepository>` (FakeNotesRepository)
+///   - `ChangeNotifierProvider<SyncRepository>` (FakeSyncRepository)
+///   - `Provider<NotesDbAdminPort>` (FakeNotesDbAdminPort)
 ///
 /// [overrides] 可覆盖或追加 Provider，替换默认的 Provider 或新增依赖。
 /// 注意：传入的 overrides 元素应为 Provider&lt;T&gt; 等 SingleChildWidget 实例。
@@ -91,9 +91,8 @@ Widget withProviders(
                 create: (_) => preferences ?? FakePreferencesRepository(),
               ),
               ChangeNotifierProvider<ThemeProvider>(
-                create: (context) => ThemeProvider(
-                  prefs: context.read<PreferencesRepository>(),
-                ),
+                create: (context) =>
+                    ThemeProvider(prefs: context.read<PreferencesRepository>()),
               ),
               ChangeNotifierProvider<NotesRepository>(
                 create: (_) => FakeNotesRepository(),
@@ -101,9 +100,7 @@ Widget withProviders(
               ChangeNotifierProvider<SyncRepository>(
                 create: (_) => FakeSyncRepository(),
               ),
-              Provider<NotesDbAdminPort>(
-                create: (_) => FakeNotesDbAdminPort(),
-              ),
+              Provider<NotesDbAdminPort>(create: (_) => FakeNotesDbAdminPort()),
               // §4.6 平台 port 测试替身
               Provider<SecureStoragePort>(create: (_) => FakeSecureStorage()),
               Provider<BiometricPort>(create: (_) => FakeBiometric()),

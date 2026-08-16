@@ -11,19 +11,16 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Project imports:
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/db_admin_port.dart';
 import 'package:safenotes/data/note_repository.dart';
@@ -42,11 +39,13 @@ import 'package:safenotes/utils/route_observer.dart';
 class App extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
   final GlobalKey<NavigatorState> navigatorKey;
+  final SharedPreferences? sharedPreferences;
 
   const App({
     super.key,
     required this.sessionStateStream,
     required this.navigatorKey,
+    this.sharedPreferences,
   });
 
   @override
@@ -56,18 +55,20 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<NotesColor>(create: (_) => NotesColor()),
         // P4: 注入 Repository 接口（向下兼容，现有代码仍直接访问 NotesDatabase.instance 等）
         ChangeNotifierProvider<PreferencesRepository>(
-          create: (_) => SharedPreferencesPreferencesRepository(),
+          create: (_) => SharedPreferencesPreferencesRepository(
+            prefs: sharedPreferences,
+          ),
         ),
         // ThemeProvider 依赖 PreferencesRepository，需在其后创建。
         ChangeNotifierProvider<ThemeProvider>(
           create: (context) =>
               ThemeProvider(prefs: context.read<PreferencesRepository>()),
         ),
-        ChangeNotifierProvider<NotesRepository>.value(
-          value: NotesDatabaseRepository(),
+        ChangeNotifierProvider<NotesRepository>(
+          create: (_) => NotesDatabaseRepository(),
         ),
-        ChangeNotifierProvider<SyncRepository>.value(
-          value: SyncServiceRepository(),
+        ChangeNotifierProvider<SyncRepository>(
+          create: (_) => SyncServiceRepository(),
         ),
         Provider<NotesDbAdminPort>.value(value: NotesDbAdminAdapter()),
         // §4.6 平台 port 注入（真实 adapter）

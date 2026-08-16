@@ -68,7 +68,9 @@ class FakeBiometric implements BiometricPort {
   Future<bool> isAvailable() async => available;
 
   @override
-  Future<bool> authenticate() async {
+  Future<bool> authenticate({
+    String localizedReason = 'Login using your biometric credential',
+  }) async {
     authenticateCalls++;
     return authResult;
   }

@@ -23,6 +23,9 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Project imports:
+import 'package:safenotes/data/preference_and_config.dart';
+
 /// 偏好存储抽象接口。
 ///
 /// 所有 getter/setter 与现有 PreferencesStorage 静态方法一一对应。
@@ -194,7 +197,9 @@ class SharedPreferencesPreferencesRepository extends PreferencesRepository {
 
   @override
   Future<void> setAppVersionCodeToCurrent() async {
-    await _setInt('appVersionCode', 30000);
+    // 与 PreferencesStorage.setAppVersionCodeToCurrent 一致：写入当前版本号，
+    // 不硬编码，避免版本升级后此处漂移导致 onAppUpdate 每次启动重复执行。
+    await _setInt('appVersionCode', SafeNotesConfig.appVersionCode);
   }
 
   // ── 主题 ──
@@ -259,7 +264,8 @@ class SharedPreferencesPreferencesRepository extends PreferencesRepository {
   }
 
   @override
-  bool get isLocalDarkSwitchEnabled => _getBool('isLocalDarkSwitchEnabled', false);
+  bool get isLocalDarkSwitchEnabled =>
+      _getBool('isLocalDarkSwitchEnabled', false);
 
   @override
   Future<void> setLocalDarkSwitchEnabled(bool flag) async {
@@ -425,7 +431,8 @@ class SharedPreferencesPreferencesRepository extends PreferencesRepository {
   int get focusTimeout => inactivityTimeout;
 
   @override
-  int get preInactivityLogoutCounter => _getInt('preInactivityLogoutCounter', 15);
+  int get preInactivityLogoutCounter =>
+      _getInt('preInactivityLogoutCounter', 15);
 
   // ── 暴力破解防护 ──
 

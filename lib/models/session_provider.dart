@@ -30,20 +30,17 @@ import 'package:safenotes/utils/scheduled_task.dart';
 /// BiometricPort），测试时用 fake 即可，不碰全局单例。
 class SessionProvider extends ChangeNotifier {
   SessionProvider({
-    required NotesRepository notesRepo,
-    required SyncRepository syncRepo,
-    required PreferencesRepository prefsRepo,
-    required BiometricPort biometric,
+    required this.notesRepo,
+    required this.syncRepo,
+    required this.prefsRepo,
+    required this.biometric,
     this.vaultInitialized,
-  }) : _notesRepo = notesRepo,
-       _syncRepo = syncRepo,
-       _prefsRepo = prefsRepo,
-       _biometric = biometric;
+  });
 
-  final NotesRepository _notesRepo;
-  final SyncRepository _syncRepo;
-  final PreferencesRepository _prefsRepo;
-  final BiometricPort _biometric;
+  final NotesRepository notesRepo;
+  final SyncRepository syncRepo;
+  final PreferencesRepository prefsRepo;
+  final BiometricPort biometric;
 
   /// null=未就绪(启动中), true=已有 keyring(走登录页), false=无 keyring(走设置密码页)
   bool? vaultInitialized;
@@ -61,8 +58,8 @@ class SessionProvider extends ChangeNotifier {
   void login(String passphrase) {
     Log.auth.i('会话登录: 已装载密码短语 (长度=${passphrase.length})');
     initPassphrase(passphrase);
-    if (_prefsRepo.isBiometricAuthEnabled) {
-      unawaited(_biometric.saveCredential(passphrase));
+    if (prefsRepo.isBiometricAuthEnabled) {
+      unawaited(biometric.saveCredential(passphrase));
     }
   }
 
@@ -73,10 +70,10 @@ class SessionProvider extends ChangeNotifier {
     // 登出前自动备份（ScheduledTask 仍为静态调度器，见文档 §4.7 遗留）
     await ScheduledTask.backup();
 
-    await _syncRepo.logout();
+    await syncRepo.logout();
     Log.sync.d('会话登出: 同步服务已登出并释放密钥');
 
-    _notesRepo.clearDataKey();
+    notesRepo.clearDataKey();
     Log.crypto.i('会话登出: 内存中的 dataKey 已清除');
 
     clearPassphrase();
@@ -87,8 +84,8 @@ class SessionProvider extends ChangeNotifier {
   void onPasswordSet(String passphrase) {
     Log.auth.i('密码已设置/变更: 更新会话密码短语 (长度=${passphrase.length})');
     initPassphrase(passphrase);
-    if (_prefsRepo.isBiometricAuthEnabled) {
-      unawaited(_biometric.saveCredential(passphrase));
+    if (prefsRepo.isBiometricAuthEnabled) {
+      unawaited(biometric.saveCredential(passphrase));
     }
   }
 }

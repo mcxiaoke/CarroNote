@@ -12,33 +12,36 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/window_title_bar.dart';
 
 class ThemeProvider extends ChangeNotifier {
-  ThemeProvider({required PreferencesRepository prefs})
-      : _prefs = prefs,
-        themeMode = prefs.isThemeDark ? ThemeMode.dark : ThemeMode.light,
-        _groupIndex = prefs.themeGroupIndex,
-        _colorIndex = prefs.themeColorIndex {
+  ThemeProvider({required this._prefs}) {
     // 启动时把已保存的主题同步到 Windows 标题栏（非 Windows 平台无副作用）。
     syncWindowsTitleBar(isDarkMode);
+    // 偏好变化（含其它页面写入 isthemedark / 跟随系统开关）时重建主题树。
+    _prefs.addListener(_onPrefsChanged);
+    // 系统亮度变化（「跟随系统」开启时）需实时生效。
+    WidgetsBinding.instance.platformDispatcher.onPlatformBrightnessChanged =
+        _onPlatformBrightnessChanged;
   }
 
   final PreferencesRepository _prefs;
 
-  ThemeMode themeMode;
+  /// 当前明暗：实时反映 PreferencesRepository 的有效值
+  /// （「跟随系统」开启时返回系统亮度，否则返回显式设置）。
+  /// 用 getter 实时计算，避免构造期一次性快照导致的启动竞态 / 不再刷新。
+  ThemeMode get themeMode =>
+      _prefs.isThemeDark ? ThemeMode.dark : ThemeMode.light;
 
   // 主题色（seed 色库）二维索引：组 + 组内颜色。
   // 默认 0 / 0 = 第一组（「通用」稳定默认组）第一个颜色。
-  int _groupIndex;
-  int _colorIndex;
+  int get _groupIndex => _prefs.themeGroupIndex;
+  int get _colorIndex => _prefs.themeColorIndex;
 
   int get groupIndex => _groupIndex;
 
@@ -49,9 +52,19 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isDarkMode => themeMode == ThemeMode.dark;
 
+  void _onPrefsChanged() {
+    syncWindowsTitleBar(isDarkMode);
+    notifyListeners();
+  }
+
+  void _onPlatformBrightnessChanged() {
+    // 跟随系统模式下系统亮度变化需重建；非跟随模式 getter 本身已正确，无副作用。
+    notifyListeners();
+  }
+
   void setIsDarkMode(bool isDark) {
-    themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
     _prefs.setIsThemeDark(isDark);
+    _prefs.setSystemDarkLightSwitchEnabled(false);
     syncWindowsTitleBar(isDark);
     notifyListeners();
   }
@@ -59,11 +72,19 @@ class ThemeProvider extends ChangeNotifier {
   /// 实时切换主题色：更新索引 → 持久化 → 全局重建主题树。
   void setThemeColor(int groupIndex, int colorIndex) {
     if (groupIndex == _groupIndex && colorIndex == _colorIndex) return;
-    _groupIndex = groupIndex;
-    _colorIndex = colorIndex;
     _prefs.setThemeGroupIndex(groupIndex);
     _prefs.setThemeColorIndex(colorIndex);
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _prefs.removeListener(_onPrefsChanged);
+    final dispatcher = WidgetsBinding.instance.platformDispatcher;
+    if (dispatcher.onPlatformBrightnessChanged == _onPlatformBrightnessChanged) {
+      dispatcher.onPlatformBrightnessChanged = null;
+    }
+    super.dispose();
   }
 }
 

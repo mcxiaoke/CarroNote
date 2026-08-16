@@ -22,8 +22,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
-// Project imports:
-
 class BiometricAuth {
   static const String _secureBiometricAuthKey = "_secureBiometricAuthKey";
 
@@ -86,6 +84,14 @@ class BiometricAuth {
       value: '$_wrappedPrefix${base64Encode(envelope)}',
     );
     Log.auth.i('生物识别凭据已更新为包裹态 (escaped=${pass.isEmpty})');
+  }
+
+  /// 轮换包裹密钥（丢弃旧 KEY，下次 [savePassword] 时重新生成）。
+  ///
+  /// 对应旧 [enable] 的「防止开关周期内密钥复用」语义（F-C01），
+  /// 由 [BiometricPort] 适配器在写入凭据前调用。
+  static Future<void> rotateWrapKey() async {
+    await storage.delete(key: _secureBiometricWrapKey);
   }
 
   static Future<void> disable() async {

@@ -11,24 +11,21 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-// Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
@@ -168,6 +165,11 @@ Future<void> _bootstrap() async {
 
   await PreferencesStorage.init();
 
+  // 复用已加载（init 已 await）的 SharedPreferences 实例：注入 ThemeProvider 依赖的
+  // PreferencesRepository，消除构造期 _prefs 为 null 导致的主题/偏好竞态
+  // （详见 lib/data/preference_repository.dart 构造器与 lib/models/app_theme.dart）。
+  final SharedPreferences sharedPrefs = await SharedPreferences.getInstance();
+
   // 偏好加载完成后刷新日志级别：若上次会话开启了 dev 模式，立即恢复全量 trace
   //（启动早期 Preferences 未就绪，devModeProvider 读到的是默认 false）。
   AppLog.refreshLevel();
@@ -209,7 +211,7 @@ Future<void> _bootstrap() async {
       path: 'assets/translations',
       supportedLocales: SafeNotesConfig.localesValues,
       fallbackLocale: const Locale('en', 'US'),
-      child: SafeNotesApp(),
+      child: SafeNotesApp(sharedPreferences: sharedPrefs),
     ),
   );
 }
@@ -230,7 +232,12 @@ Future<void> _shutdown() async {
 }
 
 class SafeNotesApp extends StatefulWidget {
-  const SafeNotesApp({super.key});
+  // 可选注入已加载的 SharedPreferences：runApp 的根实例会传入以消启动竞态；
+  // 路由表里的 `const SafeNotesApp()`（/ 路由）不传，由 PreferencesRepository
+  // 在 null 时自行 SharedPreferences.getInstance() 懒加载（同一单例，无竞态）。
+  final SharedPreferences? sharedPreferences;
+
+  const SafeNotesApp({super.key, this.sharedPreferences});
 
   @override
   State<SafeNotesApp> createState() => _SafeNotesAppState();
@@ -312,6 +319,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
     return SessionTimeoutManager(
       sessionConfig: _cachedSessionConfig!,
       child: App(
+        sharedPreferences: widget.sharedPreferences,
         sessionStateStream: sessionStateStream,
         navigatorKey: navigatorKey,
       ),

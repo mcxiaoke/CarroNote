@@ -78,7 +78,12 @@ abstract class BiometricPort {
   Future<bool> isAvailable();
 
   /// 触发系统生物识别认证。
-  Future<bool> authenticate();
+  ///
+  /// [localizedReason] 传给系统弹窗的说明文案（默认与登录页一致）；
+  /// 实现方需保持 `persistAcrossBackgrounding: true`（与重构前行为一致）。
+  Future<bool> authenticate({
+    String localizedReason = 'Login using your biometric credential',
+  });
 
   /// 读取生物识别凭据（解密后的 vault 密码；未设置返回空串）。
   Future<String> readCredential();
@@ -104,10 +109,14 @@ class PlatformBiometricPort implements BiometricPort {
   }
 
   @override
-  Future<bool> authenticate() async {
+  Future<bool> authenticate({
+    String localizedReason = 'Login using your biometric credential',
+  }) async {
     final la = LocalAuthentication();
     return la.authenticate(
-      localizedReason: 'Login using your biometric credential',
+      localizedReason: localizedReason,
+      // 恢复重构前行为：应用后台时生物识别弹窗仍保持存活（Android）。
+      persistAcrossBackgrounding: true,
     );
   }
 
@@ -116,6 +125,9 @@ class PlatformBiometricPort implements BiometricPort {
 
   @override
   Future<void> saveCredential(String password) async {
+    // 与旧 BiometricAuth.enable() 语义一致：写入前轮换包裹密钥，
+    // 防止「开启→关闭→再开启」周期内复用旧密钥（F-C01）。
+    await BiometricAuth.rotateWrapKey();
     await BiometricAuth.savePassword(password);
     await PreferencesStorage.setIsBiometricAuthEnabled(true);
   }

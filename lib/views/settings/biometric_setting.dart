@@ -79,7 +79,9 @@ class _BiometricSettingState extends State<BiometricSetting> {
         Log.auth.w('启用生物识别验证失败: 设备不支持或无已录入生物识别');
         return false;
       }
-      return await biometric.authenticate();
+      return await biometric.authenticate(
+        localizedReason: 'Verify your biometric to enable biometric login'.tr(),
+      );
     } on Object catch (e, st) {
       Log.auth.w('启用生物识别前的验证失败', error: e, stackTrace: st);
       return false;

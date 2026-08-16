@@ -12,15 +12,12 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -59,17 +56,18 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
   @override
   Widget build(BuildContext context) {
     // 订阅 ThemeProvider：切明暗时本弹层随之重建，根 Material 背景色跟随新主题。
-    Provider.of<ThemeProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
     final theme = ShadTheme.of(context);
 
     final isPlatformDark =
         MediaQuery.of(context).platformBrightness == Brightness.dark;
 
-    // 跟随系统时展示系统当前明暗，否则展示本地开关值。
+    // 跟随系统时展示系统当前明暗，否则展示 ThemeProvider 的实际明暗
+    // （与 app.dart 使用的 themeMode 同源，避免与 isLocalDarkSwitchEnabled 脱节）。
     final darkModeSwitchValue =
         context.read<PreferencesRepository>().isSystemDarkLightSwitchEnabled
         ? isPlatformDark
-        : context.read<PreferencesRepository>().isLocalDarkSwitchEnabled;
+        : themeProvider.isDarkMode;
 
     return Material(
       color: theme.colorScheme.background,
@@ -111,7 +109,6 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                       listen: false,
                     ).setIsDarkMode(value);
 
-                    await context.read<PreferencesRepository>().setLocalDarkSwitchEnabled(value);
                     await context.read<PreferencesRepository>().setSystemDarkLightSwitchEnabled(
                       false,
                     );
@@ -133,9 +130,6 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
                       listen: false,
                     ).setIsDarkMode(isPlatformDark);
 
-                    await context.read<PreferencesRepository>().setLocalDarkSwitchEnabled(
-                      isPlatformDark,
-                    );
                     await context.read<PreferencesRepository>().setSystemDarkLightSwitchEnabled(
                       value,
                     );

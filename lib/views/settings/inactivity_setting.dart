@@ -20,7 +20,6 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Project imports:
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/data/preference_repository.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
@@ -60,7 +59,9 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
             description: 'Close and open app for change to take effect'.tr(),
             value: context.read<PreferencesRepository>().isInactivityTimeoutOn,
             onChanged: (value) {
-              context.read<PreferencesRepository>().setIsInactivityTimeoutOn(value);
+              context.read<PreferencesRepository>().setIsInactivityTimeoutOn(
+                value,
+              );
               setState(() {});
             },
           ),
@@ -74,7 +75,9 @@ class _InactivityTimerSettingState extends State<InactivityTimerSetting> {
               description: items[i].helper,
               selected: _selectedIndex == i,
               onTap: () {
-                context.read<PreferencesRepository>().setInactivityTimeoutIndex(index: i);
+                context.read<PreferencesRepository>().setInactivityTimeoutIndex(
+                  index: i,
+                );
                 setState(() => _selectedIndex = i);
               },
             ),
@@ -106,20 +109,14 @@ const Map<int, String> _inactivityTimeoutKeyBySeconds = {
   900: '15 minutes',
 };
 
-List<Item> get _inactivityItems => PreferencesStorage
-    .kInactivityTimeoutChoicesSeconds
-    .asMap()
-    .entries
-    .map((entry) {
+List<Item> get _inactivityItems =>
+    kInactivityTimeoutChoicesSeconds.asMap().entries.map((entry) {
       final seconds = entry.value;
       final index = entry.key;
       final prefix = (_inactivityTimeoutKeyBySeconds[seconds] ?? '').tr();
       // 缺省值索引标出「Default」提示（原实现里 3 分钟标记为 Default）
       return Item(
         prefix: prefix,
-        helper: index == kDefaultInactivityTimeoutIndex
-            ? 'Default'.tr()
-            : null,
+        helper: index == kDefaultInactivityTimeoutIndex ? 'Default'.tr() : null,
       );
-    })
-    .toList();
+    }).toList();

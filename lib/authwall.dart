@@ -54,9 +54,10 @@ class AuthWall extends StatelessWidget {
   Widget build(BuildContext context) {
     // P2: 优先使用 SessionProvider，回退到 AppBootState（兼容已有调用方）
     final sessionProvider = context.read<SessionProvider?>();
-    final bool initialized = sessionProvider?.vaultInitialized == true
-        ? true
-        : AppBootState.vaultInitialized == true;
+    final bool initialized = resolveVaultInitialized(
+      sessionProvider?.vaultInitialized,
+      AppBootState.vaultInitialized,
+    );
     Log.ui.i(
       '启动路由决策: vaultInitialized=${AppBootState.vaultInitialized} '
       '→ ${initialized ? "登录页(已有密钥环)" : "设置密码页(首次初始化保险库)"}',
@@ -71,4 +72,14 @@ class AuthWall extends StatelessWidget {
             isKeyboardFocused: isKeyboardFocused,
           );
   }
+
+  /// 启动路由决策的纯函数（便于单元测试）。
+  ///
+  /// 优先取注入的 [SessionProvider] 状态；未注入时回退到启动期缓存的
+  /// [AppBootState.vaultInitialized]。
+  @visibleForTesting
+  static bool resolveVaultInitialized(
+    bool? sessionVaultInitialized,
+    bool? bootVaultInitialized,
+  ) => sessionVaultInitialized == true ? true : bootVaultInitialized == true;
 }

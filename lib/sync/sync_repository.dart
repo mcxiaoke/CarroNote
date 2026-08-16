@@ -123,9 +123,13 @@ abstract class SyncRepository extends ChangeNotifier {
 /// 生产实现：委托给 [SyncService.instance]
 class SyncServiceRepository extends SyncRepository {
   StreamSubscription<SyncServiceState>? _stateSub;
+  final SyncService _service;
 
-  SyncServiceRepository() {
-    _stateSub = SyncService.instance.stateStream.listen((_) {
+  /// [service] 注入点（测试用）；默认委托给进程级 [SyncService.instance]，
+  /// 行为与重构前完全一致。
+  SyncServiceRepository({SyncService? service})
+    : _service = service ?? SyncService.instance {
+    _stateSub = _service.stateStream.listen((_) {
       notifyListeners();
     });
   }
@@ -135,7 +139,7 @@ class SyncServiceRepository extends SyncRepository {
     required Keyring keyring,
     required SyncBackend backend,
   }) async {
-    await SyncService.instance.initialize(
+    await _service.initialize(
       keyring: keyring,
       backend: backend,
       database: NotesDatabase.instance,
@@ -145,35 +149,35 @@ class SyncServiceRepository extends SyncRepository {
 
   @override
   Future<SyncResult?> sync() async {
-    final result = await SyncService.instance.sync();
+    final result = await _service.sync();
     notifyListeners();
     return result;
   }
 
   @override
   void autoSync() {
-    SyncService.instance.autoSync();
+    _service.autoSync();
     notifyListeners();
   }
 
   @override
   Future<void> logout() async {
-    await SyncService.instance.logout();
+    await _service.logout();
     notifyListeners();
   }
 
   @override
-  SyncServiceState get state => SyncService.instance.state;
+  SyncServiceState get state => _service.state;
 
   @override
-  bool get isSyncing => SyncService.instance.isSyncing;
+  bool get isSyncing => _service.isSyncing;
 
   @override
-  bool get isInitialized => SyncService.instance.state.isInitialized;
+  bool get isInitialized => _service.state.isInitialized;
 
   @override
   Future<void> switchBackend(SyncBackend backend) async {
-    await SyncService.instance.switchBackend(
+    await _service.switchBackend(
       backend: backend,
       database: NotesDatabase.instance,
     );
@@ -182,7 +186,7 @@ class SyncServiceRepository extends SyncRepository {
 
   @override
   Future<({bool success, String? error})> applyConfigToService() async {
-    final result = await SyncService.instance.applyConfigToService(
+    final result = await _service.applyConfigToService(
       database: NotesDatabase.instance,
     );
     notifyListeners();
@@ -193,7 +197,7 @@ class SyncServiceRepository extends SyncRepository {
   Future<({bool success, String? error})> initKeyringFromPassword(
     String password,
   ) async {
-    final result = await SyncService.instance.initKeyringFromPassword(
+    final result = await _service.initKeyringFromPassword(
       password: password,
       database: NotesDatabase.instance,
     );
@@ -203,7 +207,7 @@ class SyncServiceRepository extends SyncRepository {
 
   @override
   Future<({bool success, String? error})> initBackend() async {
-    final result = await SyncService.instance.initBackend(
+    final result = await _service.initBackend(
       database: NotesDatabase.instance,
     );
     notifyListeners();
@@ -214,21 +218,21 @@ class SyncServiceRepository extends SyncRepository {
   Future<({bool success, String? error})> testBackendConfig(
     SyncBackendDraft draft,
   ) async {
-    return SyncService.instance.testBackendConfig(draft);
+    return _service.testBackendConfig(draft);
   }
 
   @override
-  Stream<SyncServiceState> get stateStream => SyncService.instance.stateStream;
+  Stream<SyncServiceState> get stateStream => _service.stateStream;
 
   @override
   Future<void> cacheKeyringFromLogin(Keyring keyring) async {
-    await SyncService.instance.cacheKeyringFromLogin(keyring);
+    await _service.cacheKeyringFromLogin(keyring);
     notifyListeners();
   }
 
   @override
   Future<void> updateKeyring({required Keyring keyring}) async {
-    await SyncService.instance.updateKeyring(
+    await _service.updateKeyring(
       keyring: keyring,
       database: NotesDatabase.instance,
     );
@@ -236,43 +240,43 @@ class SyncServiceRepository extends SyncRepository {
   }
 
   @override
-  Keyring? get keyring => SyncService.instance.keyring;
+  Keyring? get keyring => _service.keyring;
 
   @override
-  SyncBackend? get backend => SyncService.instance.backend;
+  SyncBackend? get backend => _service.backend;
 
   @override
   Future<SyncResult?> repairRemote() async {
-    final result = await SyncService.instance.repairRemote();
+    final result = await _service.repairRemote();
     notifyListeners();
     return result;
   }
 
   @override
   SyncBackend? createBackendForVerification() =>
-      SyncService.instance.createBackendForVerification();
+      _service.createBackendForVerification();
 
   @override
   SyncDiagnosticsSnapshot getDiagnosticsSnapshot() =>
-      SyncService.instance.getDiagnosticsSnapshot();
+      _service.getDiagnosticsSnapshot();
 
   @override
-  List<AppLogEntry> getLogEntries() => SyncService.instance.getLogEntries();
+  List<AppLogEntry> getLogEntries() => _service.getLogEntries();
 
   @override
-  Stream<AppLogEntry> get logStream => SyncService.instance.logStream;
+  Stream<AppLogEntry> get logStream => _service.logStream;
 
   @override
-  void clearLogBuffer() => SyncService.instance.clearLogBuffer();
+  void clearLogBuffer() => _service.clearLogBuffer();
 
   @override
   Future<Map<String, dynamic>> getJournalDump() async {
-    return SyncService.instance.getJournalDump();
+    return _service.getJournalDump();
   }
 
   @override
   Future<String> exportAllLogsAsText() async {
-    return SyncService.instance.exportAllLogsAsText();
+    return _service.exportAllLogsAsText();
   }
 
   @override
