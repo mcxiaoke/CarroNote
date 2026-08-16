@@ -67,11 +67,13 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const Key('ui-deleted-screen'),
       appBar: AppBar(
         title: Text('Recently Deleted'.tr(), style: appBarTitle),
         actions: [
           if (_deletedNotes.isNotEmpty)
             IconButton(
+              key: const Key('ui-deleted-clearall'),
               icon: const Icon(LucideIcons.trash2),
               tooltip: 'Clear All'.tr(),
               onPressed: _confirmClearAll,
@@ -295,6 +297,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _menuRow(
+                  key: const Key('ui-deleted-menu-restore'),
                   icon: LucideIcons.rotateCcw,
                   label: 'Restore'.tr(),
                   onTap: () {
@@ -303,6 +306,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
                   },
                 ),
                 _menuRow(
+                  key: const Key('ui-deleted-menu-permdelete'),
                   icon: LucideIcons.trash2,
                   label: 'Permanently Delete'.tr(),
                   destructive: true,
@@ -322,6 +326,7 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
   }
 
   Widget _menuRow({
+    Key? key,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -331,17 +336,20 @@ class _DeletedNoteTileState extends State<_DeletedNoteTile> {
     final color = destructive
         ? ShadTheme.of(context).colorScheme.destructive
         : null;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 10),
-            Text(label, style: TextStyle(color: color)),
-          ],
+    return KeyedSubtree(
+      key: key,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 10),
+              Text(label, style: TextStyle(color: color)),
+            ],
+          ),
         ),
       ),
     );

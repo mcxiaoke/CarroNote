@@ -469,6 +469,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _gridListView() {
     return IconButton(
+      key: const Key('ui-home-toolbar-layout'),
       icon: !isGridView
           ? const Icon(LucideIcons.layoutGrid)
           : const Icon(LucideIcons.columns2),
@@ -499,6 +500,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _shortNotes() {
     return IconButton(
+      key: const Key('ui-home-toolbar-sort'),
       icon: !isNewFirst
           ? Icon(LucideIcons.arrowUp)
           : Icon(LucideIcons.arrowDown),

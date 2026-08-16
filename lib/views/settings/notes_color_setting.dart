@@ -43,17 +43,20 @@ class ColorPalletState extends State<ColorPallet> {
       appBar: AppBar(title: Text('Notes Color'.tr(), style: appBarTitle)),
       body: shadSettingsList([
         shadSettingsCard([
-          shadSwitchTile(
-            context,
-            icon: LucideIcons.palette,
-            title: 'Colorful Notes'.tr(),
-            description: 'Choose the note color theme from below'.tr(),
-            value: PreferencesStorage.isColorful,
-            onChanged: (_) {
-              // 颜色开关走 Provider，主界面卡片配色需要立即刷新。
-              Provider.of<NotesColor>(context, listen: false).toggleColor();
-              setState(() {});
-            },
+          KeyedSubtree(
+            key: const Key('ui-notescolor-switch'),
+            child: shadSwitchTile(
+              context,
+              icon: LucideIcons.palette,
+              title: 'Colorful Notes'.tr(),
+              description: 'Choose the note color theme from below'.tr(),
+              value: PreferencesStorage.isColorful,
+              onChanged: (_) {
+                // 颜色开关走 Provider，主界面卡片配色需要立即刷新。
+                Provider.of<NotesColor>(context, listen: false).toggleColor();
+                setState(() {});
+              },
+            ),
           ),
         ]),
         const SizedBox(height: 12),

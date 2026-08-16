@@ -61,15 +61,18 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Widget _buildBody() {
     return shadSettingsList([
       shadSettingsCard([
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.cloudSync,
-          title: 'Enable Sync'.tr(),
-          description:
-              'Disables all communication with remote; backend config is kept.'
-                  .tr(),
-          value: SyncConfig.isSyncEnabled,
-          onChanged: _toggleSyncEnabled,
+        KeyedSubtree(
+          key: const Key('ui-setting-switch-sync'),
+          child: shadSwitchTile(
+            context,
+            icon: LucideIcons.cloudSync,
+            title: 'Enable Sync'.tr(),
+            description:
+                'Disables all communication with remote; backend config is kept.'
+                    .tr(),
+            value: SyncConfig.isSyncEnabled,
+            onChanged: _toggleSyncEnabled,
+          ),
         ),
       ]),
       shadSectionTitle(context, 'Sync Status'.tr()),
@@ -98,13 +101,16 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ]),
       shadSectionTitle(context, 'Backend Config'.tr()),
       shadSettingsCard([
-        shadNavigationTile(
-          context,
-          icon: LucideIcons.server,
-          title: 'Sync Configuration'.tr(),
-          subtitle: _backendSummaryText(),
-          value: SyncConfig.backendDisplayName,
-          onTap: () => _openBackendConfigPanel(),
+        KeyedSubtree(
+          key: const Key('ui-sync-config-tile'),
+          child: shadNavigationTile(
+            context,
+            icon: LucideIcons.server,
+            title: 'Sync Configuration'.tr(),
+            subtitle: _backendSummaryText(),
+            value: SyncConfig.backendDisplayName,
+            onTap: () => _openBackendConfigPanel(),
+          ),
         ),
       ]),
       shadSectionTitle(context, 'Auto Sync'.tr()),

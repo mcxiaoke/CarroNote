@@ -90,11 +90,14 @@ class HomeDrawerState extends State<HomeDrawer> {
                       onClicked: widget.onNotesCallback,
                     ),
                     if (widget.onDeletedNotesCallback != null)
-                      _buildMenuItem(
-                        topPadding: itemSpacing,
-                        text: deletedNotesText,
-                        icon: LucideIcons.trash2,
-                        onClicked: widget.onDeletedNotesCallback!,
+                      KeyedSubtree(
+                        key: const Key('ui-home-nav-deleted'),
+                        child: _buildMenuItem(
+                          topPadding: itemSpacing,
+                          text: deletedNotesText,
+                          icon: LucideIcons.trash2,
+                          onClicked: widget.onDeletedNotesCallback!,
+                        ),
                       ),
                     KeyedSubtree(
                       key: const Key('ui-home-nav-settings'),
@@ -106,11 +109,14 @@ class HomeDrawerState extends State<HomeDrawer> {
                       ),
                     ),
                     // 锁定：与上方其它项目一致，无分割线、不置底
-                    _buildMenuItem(
-                      topPadding: itemSpacing,
-                      text: lockText,
-                      icon: LucideIcons.lock,
-                      onClicked: widget.onLockCallback,
+                    KeyedSubtree(
+                      key: const Key('ui-home-nav-lock'),
+                      child: _buildMenuItem(
+                        topPadding: itemSpacing,
+                        text: lockText,
+                        icon: LucideIcons.lock,
+                        onClicked: widget.onLockCallback,
+                      ),
                     ),
                   ],
                 ),

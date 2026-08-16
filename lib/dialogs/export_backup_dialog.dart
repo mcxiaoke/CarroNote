@@ -348,6 +348,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
         Text('Password'.tr(), style: dialogBodyTextStyle),
         const SizedBox(height: 6),
         ShadInput(
+          key: const Key('ui-export-password'),
           controller: _passwordCtrl,
           obscureText: _hidden,
           enableIMEPersonalizedLearning: false,
@@ -365,6 +366,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
         ),
         const SizedBox(height: 8),
         ShadInput(
+          key: const Key('ui-export-confirm'),
           controller: _confirmCtrl,
           obscureText: _hidden,
           enableIMEPersonalizedLearning: false,

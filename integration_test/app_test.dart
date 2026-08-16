@@ -27,7 +27,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 // Project imports:
+import 'package:core/core.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:safenotes/main.dart' as safenotes;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 命名视口表（逻辑尺寸，单位 dp）。默认两种：窄手机 + 桌面。
 ///
@@ -37,8 +40,8 @@ import 'package:safenotes/main.dart' as safenotes;
 /// 换算：逻辑尺寸 = 物理像素 / (dpi / 160)。例如真机 2670x1200 @480dpi
 /// => density 3.0 => 890x400 dp，可加：'phone-land-890x400': Size(890, 400),
 const Map<String, Size> _viewports = {
-  'compact-port-400x890': const Size(400, 890), // 窄屏手机，最容易暴露 overflow
-  'desktop-1280x800': const Size(1280, 800), // 桌面窗口
+  'compact-port-400x890': Size(400, 890), // 窄屏手机，最容易暴露 overflow
+  'desktop-1280x800': Size(1280, 800), // 桌面窗口
 };
 
 /// 设置页 12 个导航 tile 的 key，按屏幕上从上到下的顺序。
@@ -172,6 +175,771 @@ void main() {
         });
       },
     );
+
+    testWidgets(
+      'auth: lock via sidebar/drawer then re-login across window sizes',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+
+        await _forEachViewport(tester, (tester, size) async {
+          // Lock lands us back on the login page.
+          await _openNavEntry(tester, const Key('ui-home-nav-lock'));
+          await _waitFor(
+            tester,
+            () => tester.any(find.byKey(const Key('passphraseInput'))),
+          );
+          expect(
+            find.byKey(const Key('passphraseInput')),
+            findsOneWidget,
+            reason: 'Lock should land on the login screen @ $size',
+          );
+
+          // Re-login returns to home.
+          await _loginIfNeeded(tester);
+          expect(_isHome(tester), isTrue, reason: 'Expected home @ $size');
+        });
+      },
+    );
+
+    testWidgets(
+      'auth: passphrase visibility toggle on the login screen',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        // Lock to reach the login page.
+        await _openNavEntry(tester, const Key('ui-home-nav-lock'));
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('passphraseInput'))),
+        );
+
+        EditableText editable() => tester.widget<EditableText>(
+          find.descendant(
+            of: find.byKey(const Key('passphraseInput')),
+            matching: find.byType(EditableText),
+          ),
+        );
+
+        // Hidden by default.
+        expect(editable().obscureText, isTrue);
+        // Reveal via the trailing eye button.
+        await tester.tap(find.byIcon(LucideIcons.eye));
+        await tester.pumpAndSettle();
+        expect(editable().obscureText, isFalse);
+        // Hide again.
+        await tester.tap(find.byIcon(LucideIcons.eyeOff));
+        await tester.pumpAndSettle();
+        expect(editable().obscureText, isTrue);
+
+        // Log back in (field stays empty) for the next test.
+        await _loginIfNeeded(tester);
+        expect(_isHome(tester), isTrue);
+      },
+    );
+
+    testWidgets(
+      'home: search filters notes and shows the no-result empty state',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+
+        // Throwaway notes with unique titles make the match deterministic
+        // regardless of pre-existing notes; they are cleaned up at the end.
+        const tgt = 'ZZZHomeFilterTgt';
+        const other = 'ZZZHomeFilterOther';
+        await _createNote(tester, tgt, 'body $tgt');
+        await _createNote(tester, other, 'body $other');
+        try {
+          await _forEachViewport(tester, (tester, size) async {
+            // A term matching only the target filters the other note out.
+            await tester.enterText(
+              find.byKey(const Key('ui-home-search-input')),
+              tgt,
+            );
+            await _waitFor(
+              tester,
+              () => !tester.any(find.text(other)),
+            );
+            expect(
+              find.text(tgt),
+              findsWidgets,
+              reason: 'matching note should remain @ $size',
+            );
+            expect(
+              find.text(other),
+              findsNothing,
+              reason: 'non-matching note should be filtered out @ $size',
+            );
+
+            // A term matching nothing shows the no-result empty state.
+            await tester.enterText(
+              find.byKey(const Key('ui-home-search-input')),
+              'zzz-no-such-note',
+            );
+            await _waitFor(
+              tester,
+              () => tester.any(find.byIcon(LucideIcons.searchX)),
+            );
+            expect(
+              find.byIcon(LucideIcons.searchX),
+              findsOneWidget,
+              reason: 'no-result empty state icon @ $size',
+            );
+            expect(
+              find.text(tgt),
+              findsNothing,
+              reason: 'no notes shown on no-result empty state @ $size',
+            );
+
+            // Clear via the search box clearing icon restores the full list.
+            await tester.tap(find.byIcon(LucideIcons.x));
+            await _waitFor(tester, () => tester.any(find.text(tgt)));
+            expect(
+              find.text(tgt),
+              findsWidgets,
+              reason: 'full list restored after clearing search @ $size',
+            );
+          });
+        } finally {
+          await _deleteNoteByTitle(tester, tgt);
+          await _deleteNoteByTitle(tester, other);
+        }
+      },
+    );
+
+    testWidgets(
+      'home: toggle grid/list layout without crash',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _ensureMinNotes(tester, 2);
+
+        await _forEachViewport(tester, (tester, size) async {
+          IconButton layoutBtn() => tester.widget<IconButton>(
+            find.byKey(const Key('ui-home-toolbar-layout')),
+          );
+          final firstIcon = (layoutBtn().icon as Icon).icon;
+
+          await tester.tap(find.byKey(const Key('ui-home-toolbar-layout')));
+          await tester.pumpAndSettle();
+          expect(
+            (layoutBtn().icon as Icon).icon,
+            isNot(firstIcon),
+            reason: 'layout toggle should flip the button icon @ $size',
+          );
+          expect(tester.takeException(), isNull, reason: 'overflow @ $size');
+
+          // Toggle back to restore the original layout.
+          await tester.tap(find.byKey(const Key('ui-home-toolbar-layout')));
+          await tester.pumpAndSettle();
+          expect(
+            (layoutBtn().icon as Icon).icon,
+            firstIcon,
+            reason: 'layout toggle should toggle back @ $size',
+          );
+        });
+      },
+    );
+
+    testWidgets(
+      'home: toggle note sort order without crash',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _ensureMinNotes(tester, 2);
+
+        await _forEachViewport(tester, (tester, size) async {
+          IconButton sortBtn() => tester.widget<IconButton>(
+            find.byKey(const Key('ui-home-toolbar-sort')),
+          );
+          final firstIcon = (sortBtn().icon as Icon).icon;
+
+          await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
+          await tester.pumpAndSettle();
+          expect(
+            (sortBtn().icon as Icon).icon,
+            isNot(firstIcon),
+            reason: 'sort toggle should flip the button icon @ $size',
+          );
+          expect(tester.takeException(), isNull, reason: 'overflow @ $size');
+
+          // Toggle back to restore the original sort order.
+          await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
+          await tester.pumpAndSettle();
+          expect(
+            (sortBtn().icon as Icon).icon,
+            firstIcon,
+            reason: 'sort toggle should toggle back @ $size',
+          );
+        });
+      },
+    );
+
+    testWidgets(
+      'note: edit an existing note and save the changes',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        const title = 'ZZZEditTgt';
+        await _createNote(tester, title, 'original body');
+        try {
+          await _openNoteByTitle(tester, title);
+          // Switch to edit mode and change the body.
+          await tester.tap(find.byKey(const Key('ui-note-button-preview')));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.byKey(const Key('ui-note-field-body')),
+            'edited body',
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-note-button-save')));
+          await _waitFor(tester, () => _isHome(tester));
+
+          // Re-open and verify the edited body persisted.
+          await _openNoteByTitle(tester, title);
+          expect(
+            find.text('edited body'),
+            findsWidgets,
+            reason: 'edited body should persist',
+          );
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+        } finally {
+          await _deleteNoteByTitle(tester, title);
+        }
+      },
+    );
+
+    testWidgets(
+      'note: delete moves a note out of the home list',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        const title = 'ZZZDelTgt';
+        await _createNote(tester, title, 'body');
+        try {
+          await _openNoteByTitle(tester, title);
+          await tester.tap(find.byIcon(LucideIcons.trash2));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+          await _waitFor(tester, () => _isHome(tester));
+          // Clear the leftover search query (its text still matches the title).
+          if (tester.any(find.byIcon(LucideIcons.x))) {
+            await tester.tap(find.byIcon(LucideIcons.x));
+            await tester.pumpAndSettle();
+          }
+          await _waitFor(tester, () => !tester.any(find.text(title)));
+          expect(
+            find.text(title),
+            findsNothing,
+            reason: 'deleted note should be gone from home',
+          );
+        } finally {
+          // Soft-deleted note now lives in the recycle bin; group D clears it.
+        }
+      },
+    );
+
+    testWidgets(
+      'note: unsaved changes three-way dialog (cancel/discard/save)',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        const title = 'ZZZThreeWay';
+        await _createNote(tester, title, 'orig body');
+        try {
+          // Branch 1: Cancel keeps us on the editor.
+          await _openNoteByTitle(tester, title);
+          await tester.tap(find.byKey(const Key('ui-note-button-preview')));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.byKey(const Key('ui-note-field-body')),
+            'unsaved change',
+          );
+          await tester.pumpAndSettle();
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(find.byKey(const Key('ui-dialog-cancel')), findsOneWidget);
+          await tester.tap(find.byKey(const Key('ui-dialog-cancel')));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const Key('ui-note-screen')),
+            findsOneWidget,
+            reason: 'cancel should stay on the editor',
+          );
+
+          // Branch 2: Discard pops without saving.
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-dialog-discard')));
+          await _waitFor(tester, () => _isHome(tester));
+          await _openNoteByTitle(tester, title);
+          expect(
+            find.text('orig body'),
+            findsWidgets,
+            reason: 'discard should keep the last saved body',
+          );
+          expect(find.text('unsaved change'), findsNothing);
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+
+          // Branch 3: Save persists the changes.
+          await _openNoteByTitle(tester, title);
+          await tester.tap(find.byKey(const Key('ui-note-button-preview')));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.byKey(const Key('ui-note-field-body')),
+            'saved body',
+          );
+          await tester.pumpAndSettle();
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-dialog-confirm'))); // Save
+          await _waitFor(tester, () => _isHome(tester));
+          await _openNoteByTitle(tester, title);
+          expect(
+            find.text('saved body'),
+            findsWidgets,
+            reason: 'save should persist the body',
+          );
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+        } finally {
+          await _deleteNoteByTitle(tester, title);
+        }
+      },
+    );
+
+    testWidgets(
+      'note: markdown renders in the preview when enabled',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        const title = 'ZZZMarkdown';
+        // Enable Markdown preview via settings, then restore it afterwards.
+        await _toggleMarkdown(tester);
+        try {
+          await _createNote(tester, title, '# Heading\n**bold** text');
+          await _openNoteByTitle(tester, title);
+          expect(
+            find.byType(MarkdownBody),
+            findsWidgets,
+            reason: 'MarkdownBody should render when markdown is enabled',
+          );
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+        } finally {
+          await _deleteNoteByTitle(tester, title);
+          await _toggleMarkdown(tester); // restore markdown off
+        }
+      },
+    );
+
+    testWidgets(
+      'trash: recycle bin page renders (empty state)',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _clearAllTrash(tester);
+        await _openNavEntry(tester, const Key('ui-home-nav-deleted'));
+        // Empty state shows the trash icon; no Clear All button.
+        expect(find.byIcon(LucideIcons.trash2), findsWidgets);
+        expect(find.byKey(const Key('ui-deleted-clearall')), findsNothing);
+        expect(tester.takeException(), isNull);
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'trash: restore a single note returns it to home',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _clearAllTrash(tester);
+        const title = 'ZZZRestore';
+        await _createNote(tester, title, 'body');
+        await _deleteNoteByTitle(tester, title); // into the recycle bin
+        try {
+          await _openNavEntry(tester, const Key('ui-home-nav-deleted'));
+          await tester.tap(find.byIcon(LucideIcons.moreVertical));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-deleted-menu-restore')));
+          await _waitFor(tester, () => !tester.any(find.text(title)));
+
+          // Back to home and confirm the note is back.
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+          await _openNoteByTitle(tester, title);
+          expect(find.text(title), findsWidgets);
+          // Return home before cleanup (the editor is open right now).
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+        } finally {
+          // Delete it again (back to trash; the clear-all test empties it).
+          await _deleteNoteByTitle(tester, title);
+        }
+      },
+    );
+
+    testWidgets(
+      'trash: permanently delete a single note',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _clearAllTrash(tester);
+        const title = 'ZZZPermDel';
+        await _createNote(tester, title, 'body');
+        await _deleteNoteByTitle(tester, title); // into the recycle bin
+        try {
+          await _openNavEntry(tester, const Key('ui-home-nav-deleted'));
+          await tester.tap(find.byIcon(LucideIcons.moreVertical));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-deleted-menu-permdelete')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+          await _waitFor(tester, () => !tester.any(find.text(title)));
+
+          // Gone from trash and from home (permanently deleted).
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+          expect(find.text(title), findsNothing);
+        } finally {
+          // The note is permanently gone; nothing to clean up.
+        }
+      },
+    );
+
+    testWidgets(
+      'trash: clear all empties the recycle bin',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _clearAllTrash(tester);
+        for (final t in const ['ZZZClear1', 'ZZZClear2']) {
+          await _createNote(tester, t, 'body');
+          await _deleteNoteByTitle(tester, t);
+        }
+        try {
+          await _openNavEntry(tester, const Key('ui-home-nav-deleted'));
+          expect(find.byKey(const Key('ui-deleted-clearall')), findsOneWidget);
+          await tester.tap(find.byKey(const Key('ui-deleted-clearall')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+          await _waitFor(
+            tester,
+            () => !tester.any(find.byKey(const Key('ui-deleted-clearall'))),
+          );
+          // Empty state shown again.
+          expect(find.byIcon(LucideIcons.trash2), findsWidgets);
+          await _popTopRoute(tester);
+          await _waitFor(tester, () => _isHome(tester));
+        } finally {
+          // Trash is empty; nothing to clean up.
+        }
+      },
+    );
+
+    testWidgets(
+      'backup: export dialog renders and validates a matching password',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-exportbackup')),
+          200.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-setting-item-exportbackup')));
+        await tester.pumpAndSettle();
+
+        // Panel open: password + confirm fields present.
+        expect(find.byKey(const Key('ui-export-password')), findsOneWidget);
+        expect(find.byKey(const Key('ui-export-confirm')), findsOneWidget);
+
+        // The Export button is the only disabled ShadButton while the password
+        // is empty/mismatched; it becomes enabled once the passwords match.
+        bool exportDisabled() => tester.any(
+          find.byWidgetPredicate(
+            (w) => w is ShadButton && w.enabled == false,
+          ),
+        );
+
+        // No password yet -> Export disabled.
+        expect(exportDisabled(), isTrue);
+
+        // Mismatched passwords keep Export disabled.
+        await tester.enterText(
+          find.byKey(const Key('ui-export-password')),
+          'abc',
+        );
+        await tester.enterText(
+          find.byKey(const Key('ui-export-confirm')),
+          'def',
+        );
+        await tester.pumpAndSettle();
+        expect(exportDisabled(), isTrue);
+
+        // Matching passwords enable Export.
+        await tester.enterText(
+          find.byKey(const Key('ui-export-confirm')),
+          'abc',
+        );
+        await tester.pumpAndSettle();
+        expect(exportDisabled(), isFalse);
+
+        // Cancel (pop the dialog) closes the panel back to settings.
+        await _popTopRoute(tester);
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('ui-settings-screen'))),
+        );
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'backup: import confirmation dialog can be cancelled',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-importbackup')),
+          200.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-setting-item-importbackup')));
+        await tester.pumpAndSettle();
+
+        // Confirmation dialog appears; cancel it (no file picker is triggered).
+        expect(find.byKey(const Key('ui-dialog-cancel')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('ui-dialog-cancel')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('ui-settings-screen')), findsOneWidget);
+
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'settings: dark mode bottom sheet toggles without crash',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        // The dark-mode tile opens a bottom sheet.
+        await _toggleSettingSwitch(tester, const Key('ui-setting-item-darkmode'));
+        expect(find.byKey(const Key('ui-theme-switch-dark')), findsOneWidget);
+
+        // Toggle the dark-mode switch and back (restores the original state).
+        await _toggleSettingSwitch(tester, const Key('ui-theme-switch-dark'));
+        await _toggleSettingSwitch(tester, const Key('ui-theme-switch-dark'));
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester); // close the sheet
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('ui-settings-screen'))),
+        );
+        await _popTopRoute(tester); // back home
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'settings: notes color switch toggles without crash',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await _toggleSettingSwitch(tester, const Key('ui-setting-item-notescolor'));
+        expect(find.byKey(const Key('ui-notescolor-switch')), findsOneWidget);
+
+        await _toggleSettingSwitch(tester, const Key('ui-notescolor-switch'));
+        await _toggleSettingSwitch(tester, const Key('ui-notescolor-switch'));
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester); // back to settings
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('ui-settings-screen'))),
+        );
+        await _popTopRoute(tester); // back home
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'settings: change passphrase page renders without changing',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await _toggleSettingSwitch(
+          tester,
+          const Key('ui-setting-item-changepassphrase'),
+        );
+        // Page renders with at least the old/new/confirm passphrase fields.
+        expect(
+          tester.widgetList(find.byType(EditableText)).length,
+          greaterThanOrEqualTo(3),
+          reason: 'change passphrase should show 3 password fields',
+        );
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester); // back to settings (no change performed)
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('ui-settings-screen'))),
+        );
+        await _popTopRoute(tester); // back home
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'settings: preference switches toggle and restore',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        // Compact Notes and Relative Time: toggle on then back off.
+        await _toggleSettingSwitch(tester, const Key('ui-setting-switch-compact'));
+        await _toggleSettingSwitch(tester, const Key('ui-setting-switch-compact'));
+        await _toggleSettingSwitch(
+          tester,
+          const Key('ui-setting-switch-relativetime'),
+        );
+        await _toggleSettingSwitch(
+          tester,
+          const Key('ui-setting-switch-relativetime'),
+        );
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester); // back home
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'sync: sync settings page renders',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-sync')),
+          200.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+        await tester.pumpAndSettle();
+
+        // The sync settings page renders its tiles (sync switch, config tile).
+        expect(find.byKey(const Key('ui-setting-switch-sync')), findsOneWidget);
+        expect(find.byKey(const Key('ui-sync-config-tile')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester); // back to settings
+        await _waitFor(
+          tester,
+          () => tester.any(find.byKey(const Key('ui-settings-screen'))),
+        );
+        await _popTopRoute(tester); // back home
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'sync: backend config panel opens and switches type',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-sync')),
+          200.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+        await tester.pumpAndSettle();
+
+        // Open the backend config panel (a dialog on desktop).
+        await tester.tap(find.byKey(const Key('ui-sync-config-tile')));
+        await tester.pumpAndSettle();
+        expect(find.text('WebDAV'), findsWidgets);
+        expect(find.text('SafeServer'), findsWidgets);
+
+        // Switch to SafeServer: its section title now appears twice (selector
+        // row + section header). The backend behind is WebDAV, so SafeServer
+        // only occurs inside the panel, making the count deterministic.
+        await tester.tap(find.text('SafeServer').first);
+        await tester.pumpAndSettle();
+        expect(find.text('SafeServer'), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+
+        // Close the panel (back to sync settings), then back home.
+        await _popTopRoute(tester);
+        await tester.pumpAndSettle();
+        await _backToHome(tester);
+      },
+    );
+
+    testWidgets(
+      'scroll: settings page scrolls to bottom and back to top',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _openSettings(tester);
+        final scrollable = find.byType(Scrollable).first;
+
+        // About is the last tile; scroll down to reveal it.
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-about')),
+          300.0,
+          scrollable: scrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('ui-setting-item-about')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        // Scroll back up to the first tile.
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-item-darkmode')),
+          -300.0,
+          scrollable: scrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('ui-setting-item-darkmode')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+      },
+    );
+
+    testWidgets(
+      'scroll: home notes list scrolls down and back to top',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _ensureMinNotes(tester, 15);
+
+        // Desktop has two Scrollables (sidebar + notes); notes is the last.
+        // Compact has only one.
+        final scrollables = find.byType(Scrollable);
+        final noteScrollable = scrollables.last;
+
+        // A far note is off-screen initially; scroll it into view.
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-home-note-9')),
+          200.0,
+          scrollable: noteScrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('ui-home-note-9')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        // Scroll back to the top (note 0).
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-home-note-0')),
+          -200.0,
+          scrollable: noteScrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('ui-home-note-0')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
 
@@ -188,9 +956,14 @@ Future<void> _loginToHome(WidgetTester tester) async {
 
   if (!appMounted) {
     await safenotes.main();
+    // 压噪：集成测试只需在出错时看日志，把输出级别提到 error。
+    AppLog.setLevel(AppLogLevel.error);
     await _waitForFirstScreen(tester);
     await _ensureVaultReady(tester);
     await _loginIfNeeded(tester);
+    // Disable sync once (backend unreachable in the test env) so background
+    // syncs don't destabilize unrelated tests.
+    await _disableSync(tester);
     return;
   }
 
@@ -239,6 +1012,7 @@ bool _isHome(WidgetTester tester) {
   for (final other in const [
     Key('ui-note-screen'),
     Key('ui-settings-screen'),
+    Key('ui-deleted-screen'),
   ]) {
     if (tester.any(find.byKey(other))) return false;
   }
@@ -282,16 +1056,79 @@ Future<void> _createNote(
   String title,
   String body,
 ) async {
-  await tester.tap(find.byKey(const Key('ui-home-fab-newnote')));
+  // Ensure we are on home (a prior helper may have left a route open).
+  await _backToHome(tester);
+  expect(
+    find.byKey(const Key('ui-home-fab-newnote')),
+    findsOneWidget,
+    reason: '_createNote should start on home with the FAB present',
+  );
+  // Let any lingering toast/snackbar (e.g. from a prior clear-all) auto-dismiss
+  // so it does not obscure the FAB. Error toasts last 6s.
+  await tester.pump(const Duration(seconds: 8));
+  await tester.tap(
+    find.byKey(const Key('ui-home-fab-newnote')),
+    warnIfMissed: false,
+  );
   await tester.pumpAndSettle();
+  // If the tap missed, retry once.
+  if (!tester.any(find.byKey(const Key('ui-note-screen')))) {
+    await tester.tap(
+      find.byKey(const Key('ui-home-fab-newnote')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+  }
+  // Wait for the editor and its fields to be ready before typing.
+  await _waitFor(tester, () => tester.any(find.byKey(const Key('ui-note-screen'))));
+  await _waitFor(
+    tester,
+    () => tester.any(find.byKey(const Key('ui-note-field-title'))),
+  );
 
   await tester.enterText(find.byKey(const Key('ui-note-field-title')), title);
   await tester.enterText(find.byKey(const Key('ui-note-field-body')), body);
   await tester.pumpAndSettle();
 
+  await tester.ensureVisible(find.byKey(const Key('ui-note-button-save')));
   await tester.tap(find.byKey(const Key('ui-note-button-save')));
   // Save is async (DB write) then closes the page; wait for the note to show.
   await _waitFor(tester, () => tester.any(find.text(title)));
+}
+
+/// Opens an existing note by its (unique) title: searches the exact title
+/// (narrows the home list to that single note) then taps it, landing on the
+/// editor in preview mode. The search query is left in place.
+Future<void> _openNoteByTitle(WidgetTester tester, String title) async {
+  await tester.enterText(
+    find.byKey(const Key('ui-home-search-input')),
+    title,
+  );
+  await _waitFor(tester, () => tester.any(find.text(title)));
+  await tester.tap(find.byKey(const Key('ui-home-note-0')));
+  await tester.pumpAndSettle(); // open the editor (preview mode)
+}
+
+/// Deletes an existing note by its (unique) title, cleaning up the DB.
+///
+/// Used after tests that create throwaway notes so the note count does not
+/// keep growing across runs. Steps: open the note -> tap delete in the editor
+/// -> confirm the destructive dialog -> return home and clear the leftover
+/// search query.
+Future<void> _deleteNoteByTitle(WidgetTester tester, String title) async {
+  await _openNoteByTitle(tester, title);
+
+  await tester.tap(find.byIcon(LucideIcons.trash2));
+  await tester.pumpAndSettle(); // destructive confirmation dialog
+
+  await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+  await _waitFor(tester, () => _isHome(tester));
+
+  // Clear the leftover search query so the next test sees the full list.
+  if (tester.any(find.byIcon(LucideIcons.x))) {
+    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.pumpAndSettle();
+  }
 }
 
 /// Counts the note cards currently present on home (by their keyed index).
@@ -382,23 +1219,102 @@ Future<void> _ensureVaultReady(WidgetTester tester) async {
 ///  - Compact: the navigation drawer must be opened first (via the menu
 ///    button) before the Settings entry is reachable.
 Future<void> _openSettings(WidgetTester tester) async {
-  final settingsKey = find.byKey(const Key('ui-home-nav-settings'));
+  await _openNavEntry(tester, const Key('ui-home-nav-settings'));
+}
 
-  if (tester.any(settingsKey)) {
-    // Desktop / wide: a persistent sidebar exposes the Settings entry.
-    await tester.tap(settingsKey);
+/// Opens a home navigation entry ([key]) from the current screen, handling both
+/// layouts like [_openSettings]:
+///  - Desktop / wide: the entry is already visible in the persistent sidebar.
+///  - Compact: open the navigation drawer, then tap the entry inside it.
+Future<void> _openNavEntry(WidgetTester tester, Key key) async {
+  if (tester.any(find.byKey(key))) {
+    // Desktop / wide: a persistent sidebar exposes the entry.
+    await tester.tap(find.byKey(key));
   } else {
-    // Compact: open the navigation drawer, then tap Settings inside it.
+    // Compact: open the navigation drawer, then tap the entry inside it.
     final scaffold = tester.state<ScaffoldState>(
       find.byType(Scaffold).first,
     );
     scaffold.openDrawer();
     await tester.pumpAndSettle();
-    expect(settingsKey, findsWidgets);
-    await tester.tap(settingsKey);
+    expect(find.byKey(key), findsWidgets);
+    await tester.tap(find.byKey(key));
   }
 
   await tester.pumpAndSettle();
+}
+
+/// Toggles a settings switch tile located by [key], scrolling it into view first
+/// (the settings list is a lazily built ListView).
+Future<void> _toggleSettingSwitch(WidgetTester tester, Key key) async {
+  await tester.scrollUntilVisible(
+    find.byKey(key),
+    200.0,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(key));
+  await tester.pumpAndSettle();
+}
+
+/// Opens Settings, toggles the "Markdown" switch, and returns to the home screen.
+Future<void> _toggleMarkdown(WidgetTester tester) async {
+  await _openSettings(tester);
+  await _toggleSettingSwitch(tester, const Key('ui-setting-switch-markdown'));
+  await _popTopRoute(tester); // back to home
+  await tester.pumpAndSettle();
+}
+
+/// Turns off "Enable Sync" once so the app's autoSync is a no-op for the rest of
+/// the run. The test environment's sync backend is unreachable, so leaving sync
+/// on makes background syncs throw BackendNotInitialized / BackendUnavailable
+/// and destabilizes otherwise-unrelated tests.
+bool _syncDisabled = false;
+Future<void> _disableSync(WidgetTester tester) async {
+  if (_syncDisabled) return;
+  _syncDisabled = true;
+
+  await _openNavEntry(tester, const Key('ui-home-nav-settings'));
+  await tester.scrollUntilVisible(
+    find.byKey(const Key('ui-setting-item-sync')),
+    200.0,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+  await tester.pumpAndSettle();
+
+  // Only toggle off if sync is currently enabled.
+  final switchFinder = find.descendant(
+    of: find.byKey(const Key('ui-setting-switch-sync')),
+    matching: find.byType(ShadSwitch),
+  );
+  if (tester.any(switchFinder) && tester.widget<ShadSwitch>(switchFinder).value) {
+    await tester.tap(find.byKey(const Key('ui-setting-switch-sync')));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+  }
+
+  await _backToHome(tester);
+}
+
+/// Empties the recycle bin (if it has anything) via Clear All, then returns home.
+/// Gives each recycle-bin sub-test a clean slate so the per-note "more" menu is
+/// unambiguous (only the note the test seeds is present).
+Future<void> _clearAllTrash(WidgetTester tester) async {
+  await _openNavEntry(tester, const Key('ui-home-nav-deleted'));
+  if (tester.any(find.byKey(const Key('ui-deleted-clearall')))) {
+    await tester.tap(find.byKey(const Key('ui-deleted-clearall')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+    await _waitFor(
+      tester,
+      () => !tester.any(find.byKey(const Key('ui-deleted-clearall'))),
+    );
+  }
+  // Loop-popping handles any lingering dialog/route from the clear-all before
+  // settling back on home.
+  await _backToHome(tester);
 }
 
 /// Runs [body] once per viewport listed in [_viewports].

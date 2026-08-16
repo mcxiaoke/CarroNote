@@ -100,48 +100,56 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
               ),
               const SizedBox(height: 14),
               shadSettingsCard([
-                shadSwitchTile(
-                  context,
-                  icon: LucideIcons.moon,
-                  title: 'Dark mode'.tr(),
-                  value: darkModeSwitchValue,
-                  onChanged: (value) async {
-                    Provider.of<ThemeProvider>(
-                      context,
-                      listen: false,
-                    ).setIsDarkMode(value);
+                KeyedSubtree(
+                  key: const Key('ui-theme-switch-dark'),
+                  child: shadSwitchTile(
+                    context,
+                    icon: LucideIcons.moon,
+                    title: 'Dark mode'.tr(),
+                    value: darkModeSwitchValue,
+                    onChanged: (value) async {
+                      Provider.of<ThemeProvider>(
+                        context,
+                        listen: false,
+                      ).setIsDarkMode(value);
 
-                    await PreferencesStorage.setLocalDarkSwitchEnabled(value);
-                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                      false,
-                    );
+                      await PreferencesStorage.setLocalDarkSwitchEnabled(
+                        value,
+                      );
+                      await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                        false,
+                      );
 
-                    if (mounted) setState(() {});
-                  },
+                      if (mounted) setState(() {});
+                    },
+                  ),
                 ),
-                shadSwitchTile(
-                  context,
-                  icon: LucideIcons.monitorSmartphone,
-                  title: 'Use device settings'.tr(),
-                  description:
-                      "Use device's light or dark mode setting for the app."
-                          .tr(),
-                  value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
-                  onChanged: (value) async {
-                    Provider.of<ThemeProvider>(
-                      context,
-                      listen: false,
-                    ).setIsDarkMode(isPlatformDark);
+                KeyedSubtree(
+                  key: const Key('ui-theme-switch-system'),
+                  child: shadSwitchTile(
+                    context,
+                    icon: LucideIcons.monitorSmartphone,
+                    title: 'Use device settings'.tr(),
+                    description:
+                        "Use device's light or dark mode setting for the app."
+                            .tr(),
+                    value: PreferencesStorage.isSystemDarkLightSwitchEnabled,
+                    onChanged: (value) async {
+                      Provider.of<ThemeProvider>(
+                        context,
+                        listen: false,
+                      ).setIsDarkMode(isPlatformDark);
 
-                    await PreferencesStorage.setLocalDarkSwitchEnabled(
-                      isPlatformDark,
-                    );
-                    await PreferencesStorage.setSystemDarkLightSwitchEnabled(
-                      value,
-                    );
+                      await PreferencesStorage.setLocalDarkSwitchEnabled(
+                        isPlatformDark,
+                      );
+                      await PreferencesStorage.setSystemDarkLightSwitchEnabled(
+                        value,
+                      );
 
-                    if (mounted) setState(() {});
-                  },
+                      if (mounted) setState(() {});
+                    },
+                  ),
                 ),
               ]),
             ],

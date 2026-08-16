@@ -149,11 +149,13 @@ Future<bool?> showAppConfirm(
       actions: [
         _dialogActions(ctx, [
           OutlinedButton(
+            key: const Key('ui-dialog-cancel'),
             style: _dialogOutlineAction(),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(cancelLabel ?? 'Cancel'.tr()),
           ),
           FilledButton(
+            key: const Key('ui-dialog-confirm'),
             style: _dialogFilledAction(),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(confirmLabel ?? 'OK'.tr()),
@@ -185,11 +187,13 @@ Future<bool?> showAppDestructive(
         actions: [
           _dialogActions(ctx, [
             OutlinedButton(
+              key: const Key('ui-dialog-cancel'),
               style: _dialogOutlineAction(),
               onPressed: () => Navigator.of(ctx).pop(false),
               child: Text(cancelLabel ?? 'Cancel'.tr()),
             ),
             FilledButton(
+              key: const Key('ui-dialog-confirm'),
               style: _dialogFilledAction(
                 background: scheme.error,
                 foreground: scheme.onError,
@@ -284,17 +288,20 @@ Future<AppThreeWayResult?> showAppThreeWay(
         actions: [
           _dialogActions(ctx, [
             OutlinedButton(
+              key: const Key('ui-dialog-cancel'),
               style: _dialogOutlineAction(),
               onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.cancel),
               child: Text(cancelLabel ?? 'Cancel'.tr()),
             ),
             // 放弃：OutlinedButton + error 文字色（有边框可见，权重介于取消与保存之间）
             OutlinedButton(
+              key: const Key('ui-dialog-discard'),
               style: _dialogOutlineAction(foreground: scheme.error),
               onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.discard),
               child: Text(discardLabel),
             ),
             FilledButton(
+              key: const Key('ui-dialog-confirm'),
               style: _dialogFilledAction(),
               onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.confirm),
               child: Text(confirmLabel),
@@ -390,11 +397,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
       actions: [
         _dialogActions(context, [
           OutlinedButton(
+            key: const Key('ui-dialog-cancel'),
             style: _dialogOutlineAction(),
             onPressed: () => Navigator.of(context).pop(),
             child: Text(widget.cancelLabel ?? 'Cancel'.tr()),
           ),
           FilledButton(
+            key: const Key('ui-dialog-confirm'),
             style: _dialogFilledAction(),
             onPressed: _submit,
             child: Text(widget.confirmLabel ?? 'Submit'.tr()),

@@ -115,10 +115,13 @@ class HomeSidebar extends StatelessWidget {
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  sideItem(
-                    LucideIcons.trash2,
-                    'Recently Deleted'.tr(),
-                    onDeletedNotesCallback,
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-deleted'),
+                    child: sideItem(
+                      LucideIcons.trash2,
+                      'Recently Deleted'.tr(),
+                      onDeletedNotesCallback,
+                    ),
                   ),
                   KeyedSubtree(
                     key: const Key('ui-home-nav-settings'),
@@ -129,7 +132,10 @@ class HomeSidebar extends StatelessWidget {
                     ),
                   ),
                   // 锁定：紧跟在设置之下，不置底、无分割线（与移动端 Drawer 一致）
-                  sideItem(LucideIcons.lock, 'Lock'.tr(), onLockCallback),
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-lock'),
+                    child: sideItem(LucideIcons.lock, 'Lock'.tr(), onLockCallback),
+                  ),
                 ],
               ),
             ),

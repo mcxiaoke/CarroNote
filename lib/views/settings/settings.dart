@@ -158,42 +158,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         ),
         // 排版（紧凑/Markdown）居中
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.shrink,
-          title: 'Compact Notes'.tr(),
-          value: _isCompactPreview,
-          onChanged: (v) {
-            PreferencesStorage.setIsCompactPreview(v);
-            setState(() => _isCompactPreview = v);
-          },
+        KeyedSubtree(
+          key: const Key('ui-setting-switch-compact'),
+          child: shadSwitchTile(
+            context,
+            icon: LucideIcons.shrink,
+            title: 'Compact Notes'.tr(),
+            value: _isCompactPreview,
+            onChanged: (v) {
+              PreferencesStorage.setIsCompactPreview(v);
+              setState(() => _isCompactPreview = v);
+            },
+          ),
         ),
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.type,
-          title: 'Markdown'.tr(),
-          description:
-              'Format note preview with Markdown. Off shows plain text.'.tr(),
-          value: _isMarkdownEnabled,
-          onChanged: (v) {
-            PreferencesStorage.setIsMarkdownEnabled(v);
-            setState(() => _isMarkdownEnabled = v);
-          },
+        KeyedSubtree(
+          key: const Key('ui-setting-switch-markdown'),
+          child: shadSwitchTile(
+            context,
+            icon: LucideIcons.type,
+            title: 'Markdown'.tr(),
+            description:
+                'Format note preview with Markdown. Off shows plain text.'.tr(),
+            value: _isMarkdownEnabled,
+            onChanged: (v) {
+              PreferencesStorage.setIsMarkdownEnabled(v);
+              setState(() => _isMarkdownEnabled = v);
+            },
+          ),
         ),
         // 时间与排序（信息呈现方式）靠后
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.clock,
-          title: 'Relative Time'.tr(),
-          description:
-              'Show note timestamps as relative (e.g. 5 minutes ago). '
-                      'Off shows absolute dates.'
-                  .tr(),
-          value: _isRelativeTime,
-          onChanged: (v) {
-            PreferencesStorage.setIsRelativeTime(v);
-            setState(() => _isRelativeTime = v);
-          },
+        KeyedSubtree(
+          key: const Key('ui-setting-switch-relativetime'),
+          child: shadSwitchTile(
+            context,
+            icon: LucideIcons.clock,
+            title: 'Relative Time'.tr(),
+            description:
+                'Show note timestamps as relative (e.g. 5 minutes ago). '
+                        'Off shows absolute dates.'
+                    .tr(),
+            value: _isRelativeTime,
+            onChanged: (v) {
+              PreferencesStorage.setIsRelativeTime(v);
+              setState(() => _isRelativeTime = v);
+            },
+          ),
         ),
         shadSwitchTile(
           context,
