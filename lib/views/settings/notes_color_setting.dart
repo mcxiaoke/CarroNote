@@ -90,20 +90,28 @@ class ColorPalletState extends State<ColorPallet> {
   ///
   /// 整体紧凑，配合顶部常驻预览，滚动后仍能看到当前配色。
   Widget _grid(BuildContext context) {
-    // 按可用宽度决定列数：宽屏（桌面/平板）3 列，窄屏 2 列。
-    final columns = MediaQuery.sizeOf(context).width >= 600 ? 3 : 2;
-    // 用固定高度 mainAxisExtent 而非 childAspectRatio，避免窗口缩窄时
-    // 格子高度随宽度变小导致卡片内容溢出。
-    return GridView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        mainAxisExtent: 88,
-      ),
-      children: [for (var i = 0; i < items.length; i++) _themeCard(context, i)],
+    // 用 LayoutBuilder 读弹层实际可用宽度决定列数，而非窗口宽度。
+    // 该网格位于底部弹层内，可用宽度受弹层自身 maxWidth 约束，不等于窗口宽，
+    // 用约束宽度更准（避免桌面大窗下窗口宽≥600 却把弹层挤成 3 列）。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 600 ? 3 : 2;
+        // 用固定高度 mainAxisExtent 而非 childAspectRatio，避免窗口缩窄时
+        // 格子高度随宽度变小导致卡片内容溢出。
+        return GridView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            mainAxisExtent: 88,
+          ),
+          children: [
+            for (var i = 0; i < items.length; i++) _themeCard(context, i),
+          ],
+        );
+      },
     );
   }
 

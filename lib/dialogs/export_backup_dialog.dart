@@ -199,7 +199,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
       // 桌面窗口 resize 到更窄时同样收窄，避免横向溢出
       width: math.min(
         kDialogMaxWidthWide,
-        MediaQuery.of(context).size.width - 32,
+        MediaQuery.sizeOf(context).width - 32,
       ),
       // 内容加滚动：避免小窗口/低分辨率下 Column 底部溢出
       child: SingleChildScrollView(

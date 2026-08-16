@@ -319,52 +319,56 @@ class HomePageState extends State<HomePage> with RouteAware {
   Widget build(BuildContext context) {
     Provider.of<NotesColor>(context);
 
-    // 桌面/大屏适配（P2 NavigationRail）：按整个应用窗口宽度做断点判断。
-    // 用 MediaQuery.sizeOf 取「窗口」尺寸（而非某个局部 widget 的约束），
-    // 因为导航形态是顶层布局决策，应与窗口整体尺寸绑定。
+    // 桌面/大屏适配（P2 NavigationRail）：用 LayoutBuilder 读实际可用宽度做断点
+    // 判断，而非 MediaQuery.sizeOf（窗口尺寸）。响应式布局建议避免直接读
+    // MediaQuery.size，改用约束宽度更稳健——此处 Scaffold 拿到的约束宽度即为
+    // 窗口宽度，等价且重建范围更小。
     // - Compact (< 600px)：保留移动端 Drawer（汉堡菜单）
     // - Medium/Expanded (≥ 600px)：左侧常驻 NavigationRail + 内容区
-    final double windowWidth = MediaQuery.sizeOf(context).width;
-    final bool isCompact = windowWidth < 600;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool isCompact = constraints.maxWidth < 600;
 
-    return GestureDetector(
-      onTap: dismissKeyboard,
-      onVerticalDragStart: dismissKeyboard,
-      onVerticalDragDown: dismissKeyboard,
-      child: Scaffold(
-        key: const Key('ui-home-screen'),
-        drawer: isCompact ? _buildDrawer(context) : null,
-        appBar: AppBar(
-          title: Text('Safe Notes'.tr(), style: appBarTitle),
-          actions: isLoading
-              ? null
-              : [
-                  //_DevSessionListner(),
-                  _syncStatusButton(),
-                  _diagnosticsButton(),
-                  _gridListView(),
-                  _shortNotes(),
-                ],
-        ),
-        // 桌面/大屏适配（P0-2）：原本 body 铺满整个窗口宽度。
-        // 用 Center + ConstrainedBox 将内容宽度收束到最大 1300 并居中，
-        // 避免大屏上文字行过宽、卡片被拉散；手机宽度 < 1300 时约束不生效，
-        // 行为与改动前一致。crossAxisAlignment.stretch 让内容填满受限宽度。
-        body: isCompact
-            ? _homeBody()
-            : Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  HomeSidebar(
-                    onSettingsCallback: _navSettings,
-                    onDeletedNotesCallback: _navDeletedNotes,
-                    onLockCallback: _navLock,
+        return GestureDetector(
+          onTap: dismissKeyboard,
+          onVerticalDragStart: dismissKeyboard,
+          onVerticalDragDown: dismissKeyboard,
+          child: Scaffold(
+            key: const Key('ui-home-screen'),
+            drawer: isCompact ? _buildDrawer(context) : null,
+            appBar: AppBar(
+              title: Text('Safe Notes'.tr(), style: appBarTitle),
+              actions: isLoading
+                  ? null
+                  : [
+                      //_DevSessionListner(),
+                      _syncStatusButton(),
+                      _diagnosticsButton(),
+                      _gridListView(),
+                      _shortNotes(),
+                    ],
+            ),
+            // 桌面/大屏适配（P0-2）：原本 body 铺满整个窗口宽度。
+            // 用 Center + ConstrainedBox 将内容宽度收束到最大 1300 并居中，
+            // 避免大屏上文字行过宽、卡片被拉散；手机宽度 < 1300 时约束不生效，
+            // 行为与改动前一致。crossAxisAlignment.stretch 让内容填满受限宽度。
+            body: isCompact
+                ? _homeBody()
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      HomeSidebar(
+                        onSettingsCallback: _navSettings,
+                        onDeletedNotesCallback: _navDeletedNotes,
+                        onLockCallback: _navLock,
+                      ),
+                      Expanded(child: _homeBody()),
+                    ],
                   ),
-                  Expanded(child: _homeBody()),
-                ],
-              ),
-        floatingActionButton: _addANewNoteButton(context),
-      ),
+            floatingActionButton: _addANewNoteButton(context),
+          ),
+        );
+      },
     );
   }
 
@@ -495,7 +499,9 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _shortNotes() {
     return IconButton(
-      icon: !isNewFirst ? Icon(LucideIcons.arrowUp) : Icon(LucideIcons.arrowDown),
+      icon: !isNewFirst
+          ? Icon(LucideIcons.arrowUp)
+          : Icon(LucideIcons.arrowDown),
       onPressed: () {
         setState(() {
           isNewFirst = !isNewFirst;

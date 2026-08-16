@@ -53,7 +53,7 @@ class HomeDrawerState extends State<HomeDrawer> {
 
     const drawerPaddingHorizontal = 16.0;
     const double drawerRadius = 16.0;
-    final height = MediaQuery.of(context).size.height;
+    final height = MediaQuery.sizeOf(context).height;
     final topHeadPadding = height * 0.07;
     final bottomHeadPadding = height * 0.01;
     const double itemSpacing = 2;
@@ -150,8 +150,8 @@ class HomeDrawerState extends State<HomeDrawer> {
 
   Widget _drawerHeader({required double topPadding, required var orientation}) {
     final width = orientation == Orientation.portrait
-        ? MediaQuery.of(context).size.width
-        : MediaQuery.of(context).size.height;
+        ? MediaQuery.sizeOf(context).width
+        : MediaQuery.sizeOf(context).height;
 
     final logoPath = SafeNotesConfig.appLogoPath;
     final officialAppName = SafeNotesConfig.appName;

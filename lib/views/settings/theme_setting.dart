@@ -63,7 +63,7 @@ class ThemeBottomSheetState extends State<ThemeBottomSheet> {
     final theme = ShadTheme.of(context);
 
     final isPlatformDark =
-        MediaQuery.of(context).platformBrightness == Brightness.dark;
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
 
     // 跟随系统时展示系统当前明暗，否则展示本地开关值。
     final darkModeSwitchValue =

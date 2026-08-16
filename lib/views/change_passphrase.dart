@@ -74,7 +74,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
     // 评审 #15：只在键盘从无到有出现时才触发滚动，避免每次 build
     // （如 setState、主题切换）都重复执行滚动动画
     if (bottom > 0 && _lastViewInset == 0) {
@@ -103,7 +103,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   void scrollToBottomIfOnScreenKeyboard() {
-    if (MediaQuery.of(context).viewInsets.bottom > 0) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         // P1-11：300ms → AppMotion.normal。
