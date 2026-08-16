@@ -13,7 +13,7 @@
 
 // Dart imports:
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:ui' show PlatformDispatcher;
 
 // Flutter imports:
@@ -24,13 +24,16 @@ import 'package:flutter/services.dart';
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/prefs_store_override.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
@@ -42,6 +45,12 @@ import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 
+/// 数据目录覆盖（集成测试 / 特殊构建用）。
+///
+/// 读环境变量 `SN_DATA_DIR`：非空时把日志、prefs、数据库全部重定向到该目录，
+/// 让测试跑在完全独立的数据环境，避免污染本机真实数据。null 表示未覆盖。
+String? dataDirOverride;
+
 Future main() async {
   // runZonedGuarded 捕获所有异步未捕获异常（Zone 级兜底）。
   // 必须把 ensureInitialized 和 runApp 放在同一个 Zone 内，
@@ -49,6 +58,11 @@ Future main() async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // 数据目录覆盖必须在最早期应用：日志目录解析（_initLogging）、
+      // prefs 后端（SharedPreferencesStorePlatform.instance）都要在各自
+      // 初始化前被替换，DB 路径则在 _bootstrap 里读取。
+      _applyDataDirOverride();
 
       // ① 日志系统必须最先初始化，保证后续任何环节的错误都能落盘
       await _initLogging();
@@ -65,6 +79,25 @@ Future main() async {
   );
 }
 
+/// 应用数据目录覆盖（若有）。无覆盖时保持默认行为。
+///
+/// 优先读环境变量 `SN_DATA_DIR`；若未设置但 [dataDirOverride] 已被调用方
+/// （如集成测试）预先赋值，则沿用该值。两者皆无时保持默认数据目录。
+void _applyDataDirOverride() {
+  final env = Platform.environment['SN_DATA_DIR'];
+  if (env != null && env.isNotEmpty) {
+    dataDirOverride = env;
+  }
+  final dir = dataDirOverride;
+  if (dir == null) return;
+  // prefs 存储后端：指向隔离目录的 JSON 文件（老式 SharedPreferences 通过
+  // 全局单例读写，替换实例即可生效，与 setMockInitialValues 同一机制）。
+  SharedPreferencesStorePlatform.instance = FilePreferencesStore(
+    File(p.join(dir, 'preferences.json')),
+  );
+  Log.app.i('数据目录覆盖: $dir');
+}
+
 /// 初始化日志系统（全平台一致：移动端 + 桌面端）
 Future<void> _initLogging() async {
   // 注入 dev 模式判断（读取 SharedPreferences，非 debug 构建生效）。
@@ -72,7 +105,7 @@ Future<void> _initLogging() async {
   devModeProvider = () => PreferencesStorage.isDevMode;
   // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
   logDirResolverOverride = () async =>
-      (await getApplicationSupportDirectory()).path;
+      dataDirOverride ?? (await getApplicationSupportDirectory()).path;
   await AppLogFile.init();
   Log.app.i('════════ SafeNotes 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
@@ -133,12 +166,38 @@ Future<void> _bootstrap() async {
     // 打包到 Program Files 后该目录通常无写权限，会导致无法建库。
     // 注意：setDatabasesPath 必须在首次访问 database 之前调用（见下方
     // NotesDatabase.instance.database），此处顺序满足要求。
-    final supportDir = await getApplicationSupportDirectory();
-    await databaseFactory.setDatabasesPath(supportDir.path);
+    final dbDir =
+        dataDirOverride ?? (await getApplicationSupportDirectory()).path;
+    await databaseFactory.setDatabasesPath(dbDir);
     Log.app.i(
-      '桌面平台，sqflite_ffi数据库目录已指向应用支持目录: '
-      '${supportDir.path}\\safenotes_sync.db',
+      '桌面平台，sqflite_ffi数据库目录已指向: '
+      '$dbDir\\safenotes_sync.db',
     );
+  }
+
+  // 移动端 + 数据目录覆盖（集成测试真机模式）：把设备真实的 safenotes_sync.db
+  // 复制一份到隔离目录，并从该副本打开，避免测试污染设备真实数据。
+  // 真实 db 不存在时跳过复制（首次运行走建档流程，用空目录）。
+  // 注意：必须在首次访问 database（下方 NotesDatabase.instance.database）之前完成。
+  // 关键：sqflite 原生（Android）要求数据库路径位于 getDatabasesPath()（即
+  // .../databases）之下，否则会把它当外部文件处理/复制，导致只读
+  // （SQLITE_READONLY_DBMOVED）。因此隔离副本固定放在 <databases>/integration_test_data，
+  // 而非 dataDirOverride；prefs/日志仍用 dataDirOverride。
+  final overrideDir = dataDirOverride;
+  if (!isDesktopPlatform && overrideDir != null) {
+    final realDbDir = await databaseFactory.getDatabasesPath();
+    final isoDir = p.join(realDbDir, 'integration_test_data');
+    final src = File(p.join(realDbDir, 'safenotes_sync.db'));
+    final dst = File(p.join(isoDir, 'safenotes_sync.db'));
+    await Directory(isoDir).create(recursive: true);
+    if (await src.exists()) {
+      if (await dst.exists()) await dst.delete();
+      await src.copy(dst.path);
+      Log.app.i('移动端数据目录覆盖: 已复制 db 到 ${dst.path}');
+    } else {
+      Log.app.i('移动端数据目录覆盖: 真实 db 不存在(首次建档), 用空目录 $isoDir');
+    }
+    NotesDatabase.dbPathOverride = isoDir;
   }
 
   // 统一注入数据库工厂：桌面端已被换成 FFI 实现，移动端由 sqflite 插件注册

@@ -33,6 +33,74 @@ flutter test integration_test/app_test.dart -d windows --name "trash:"
 - **注意**：debug 构建下日志会输出到 stdout，噪音较大；集成测试已把日志级别压到
   `error`（见 §6「日志降噪」），出错时才看得到日志。
 
+### 2.1 数据隔离（重要，仅桌面平台）
+
+集成测试**不读写本机真实数据**。App 启动时会把日志、prefs、数据库全部重定向到
+`temp/integration_test_data/`（相对项目根，代码里用绝对路径解析，避免 cwd 漂移），
+由 `main.dart` 的 `_applyDataDirOverride()` 实现：
+
+- 日志目录、sqflite_ffi 数据库目录 → 指向该目录；
+- prefs → 替换 `SharedPreferencesStorePlatform.instance` 为 `FilePreferencesStore`
+  （`lib/data/prefs_store_override.dart`），把 prefs 持久化到该目录下的
+  `preferences.json`。
+
+**数据快照复用**：集成测试默认**复用**该目录里的快照（不删不建），保证数据稳定。
+快照是**一次性复制** debug 版数据而来（`safenotes_sync.db` + `flutter_secure_storage.dat`
++ `shared_preferences.json` 转存的 `preferences.json`）。需要更新测试数据时，手动重新
+复制 debug 版数据覆盖即可，无需每次运行前复制。
+
+**临时覆盖**：可用环境变量 `SN_DATA_DIR` 指向别的目录（例如空目录做「首次建档」类用例），
+在 `safenotes.main()` 之前设置即可：
+
+```powershell
+$env:SN_DATA_DIR = "temp/integration_test_firstrun"
+flutter test integration_test/app_test.dart -d windows
+```
+
+> 该目录在 `temp/` 下，**不纳入 git 跟踪**。
+
+### 2.2 真机（Android / iOS）行为
+
+在真机上运行（`flutter test integration_test/app_test.dart -d <device>`）时，测试
+**自动切换为移动端模式**：
+
+- **数据隔离（自动复制 db）**：`dataDirOverride` 指向设备沙箱
+  `<documents>/temp/integration_test_data`（用于 prefs/日志）。App 启动时
+  （`main.dart` `_bootstrap`）把设备真实的 `safenotes_sync.db` **复制一份**到
+  `getDatabasesPath()/integration_test_data/`，并从该副本打开——测试跑在副本上，
+  不污染设备真实数据。副本必须放在 `getDatabasesPath()`（`.../databases`）之下，
+  否则 Android sqflite 会将它当外部文件处理导致只读（`SQLITE_READONLY_DBMOVED`）。
+  真实 db 不存在时跳过复制（首次建档走空目录）。
+- **prefs 隔离**：`FilePreferencesStore` 同样生效，prefs 落到隔离目录的
+  `preferences.json`。
+- **不遍历视口**：`_forEachViewport` 直接按设备自然尺寸跑一遍，跳过 `setSurfaceSize`
+  程序化 resize（真机窗口尺寸由系统决定，不可缩放）。
+
+桌面与真机的差异由 `_isDesktop`（`Platform.isWindows/Linux/macOS`）自动判断，无需手动切换。
+
+### 2.3 桌面视口（`_viewports`）
+
+桌面平台每个用例在 `_viewports` 列出的每个尺寸下各跑一遍（`_forEachViewport` 用
+`setSurfaceSize` 程序化 resize，等效拖拽窗口边框）。`null` 表示「原始默认窗口大小」
+（不特意设定，直接用 runner 启动时的默认尺寸）。默认两组：
+
+```dart
+const Map<String, Size?> _viewports = {
+  'default-size': null, // 原始默认窗口大小
+  'compact-port-400x890': Size(400, 890), // 窄屏，最容易暴露 overflow
+};
+```
+
+想覆盖更多尺寸，直接加一行即可，所有用例自动覆盖，无需改动各条 flow。
+
+### 2.4 空库容错
+
+`flutter test` 会重装/卸载 app，可能清空数据目录（真机尤其常见）。`_loginToHome` 已做
+容错：首次启动建档后先等稳定在主界面，再调用 `_ensureMinNotes` 补足随机种子笔记
+（数据为空时自动创建），保证后续用例始终有数据可用。独立冒烟测试
+[first_run_test.dart](../integration_test/first_run_test.dart) 专门验证「空库 → 建档 →
+加 5 条随机笔记 → 验证」全流程。
+
 ---
 
 ## 3. 现有集成测试（A–H 功能组，25 用例）
@@ -42,7 +110,7 @@ flutter test integration_test/app_test.dart -d windows --name "trash:"
 
 | 组 | 前缀 | 覆盖内容 |
 | --- | --- | --- |
-| 基础 | （无前缀） | 登录进入主界面；两套视口（compact 手机 / desktop 桌面）渲染；打开笔记预览↔编辑切换；新建笔记保存；设置页 12 个导航 tile 逐个打开不崩溃/不溢出 |
+| 基础 | （无前缀） | 登录进入主界面；多视口渲染（桌面平台，见 §2.3）；打开笔记预览↔编辑切换；新建笔记保存；设置页 12 个导航 tile 逐个打开不崩溃/不溢出 |
 | A 认证 | `auth:` | 锁定（抽屉/侧栏 Lock）→ 重新登录；登录页密码显隐切换 |
 | B 主界面 | `home:` | 搜索过滤与无结果空态、清空恢复；网格↔列表切换；排序切换 |
 | C 笔记 | `note:` | 编辑已有笔记并保存；删除移入回收站；未保存改动三选弹框（取消/放弃/保存三分支）；Markdown 预览渲染 |
