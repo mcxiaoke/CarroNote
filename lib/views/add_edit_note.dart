@@ -32,6 +32,7 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_widget.dart';
@@ -217,6 +218,27 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
+  /// 复刻编辑态 ShadInputFormField 的有效文字样式，保证预览与编辑逐像素一致。
+  ///
+  /// 编辑态内部实现：`theme.textTheme.muted.copyWith(color: foreground)
+  /// .merge(widget.style)`，其中 widget.style = `AppText.x.copyWith(
+  /// fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback)`。
+  /// 关键：在 Android 等移动端 `uiFontFamily` 为 null，并不覆盖 shad muted 的字体，
+  /// 编辑态实际落到 shad muted 字体；而预览态若只用 `AppText`（fontFamily 为 null）
+  /// 会继承 Material 默认字体（Roboto），两种字体对 `#` 等符号的宽窄/粗细差异明显。
+  /// 因此预览态必须直接复用同一来源，而非另设可能为 null 的字体族。
+  TextStyle _editorLikeStyle(BuildContext context, TextStyle base) {
+    final shad = ShadTheme.of(context);
+    return shad.textTheme.muted
+        .copyWith(color: shad.colorScheme.foreground)
+        .merge(
+          base.copyWith(
+            fontFamily: uiFontFamily,
+            fontFamilyFallback: uiFontFamilyFallback,
+          ),
+        );
+  }
+
   Widget _buildPreview(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -225,9 +247,16 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           SelectableText(
             title,
             // P1-19：预览标题走 AppText.title（20 bold），与编辑器标题一致。
-            style: AppText.title,
+            // 复用 _editorLikeStyle：直接套用编辑态 ShadInputFormField 的同一文字样式
+            // 来源（shad muted 字体 + 注入 foreground），确保预览与编辑逐像素一致
+            // （含 Android 上 uiFontFamily 为 null 时落到 shad muted 字体的情况）。
+            style: _editorLikeStyle(context, AppText.title),
           ),
-          const SizedBox(height: 10),
+          // 与编辑态同构：标题/正文间统一分隔线 + 17px 间距，
+          // 消除模式切换时的纵向跳动与分隔线闪现。
+          const SizedBox(height: 8),
+          const Divider(height: 1, thickness: 1),
+          const SizedBox(height: 8),
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
           if (PreferencesStorage.isMarkdownEnabled)
             MarkdownBody(
@@ -247,7 +276,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
             )
           else
             // 预览纯文本与编辑态一致（16），不套 Markdown 排版。
-            SelectableText(description, style: AppText.body),
+            // 复用 _editorLikeStyle，与编辑态（ShadInputFormField）字体/颜色完全一致。
+            SelectableText(
+              description,
+              style: _editorLikeStyle(context, AppText.body),
+            ),
         ],
       ),
     );
@@ -260,25 +293,30 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   MarkdownStyleSheet _markdownStyleSheet(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    // 预览与编辑态共用同一套文字样式来源：_editorLikeStyle 复刻 ShadInputFormField
+    // 的有效样式（shad muted 字体 + 注入 foreground），避免 Markdown 正文/标题落到
+    // Material 排印导致与编辑态字体/色差（尤其 Android 上 uiFontFamily 为 null 时）。
+    // h6 / blockquote 保留 M3 弱化色做层级区分。
+    final TextStyle uiBase = _editorLikeStyle(context, AppText.body);
     final base = MarkdownStyleSheet.fromTheme(theme);
     // 行内代码沿用主题已有配色，仅统一为等宽 + 小一号，避免硬编码颜色在
     // 亮/暗模式下对比度失衡。
     final baseCode = base.code ?? AppText.body;
     const mono = 'monospace';
     return base.copyWith(
-      p: AppText.body,
+      p: uiBase,
       // 标题层级：h1=24 起逐级递减，h5/h6 不小于正文（16），仅用字重/颜色区分。
-      h1: AppText.body.copyWith(fontSize: 24, fontWeight: FontWeight.w700),
-      h2: AppText.body.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
-      h3: AppText.body.copyWith(fontSize: 18, fontWeight: FontWeight.w700),
-      h4: AppText.body.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
-      h5: AppText.body.copyWith(fontWeight: FontWeight.w700),
-      h6: AppText.body.copyWith(
+      h1: uiBase.copyWith(fontSize: 24, fontWeight: FontWeight.w700),
+      h2: uiBase.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
+      h3: uiBase.copyWith(fontSize: 18, fontWeight: FontWeight.w700),
+      h4: uiBase.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
+      h5: uiBase.copyWith(fontWeight: FontWeight.w700),
+      h6: uiBase.copyWith(
         fontWeight: FontWeight.w600,
         color: cs.onSurfaceVariant,
       ),
       // 引用块：左竖线 + 斜体弱化，shad 风格。
-      blockquote: AppText.body.copyWith(
+      blockquote: uiBase.copyWith(
         fontStyle: FontStyle.italic,
         color: cs.onSurfaceVariant,
       ),
