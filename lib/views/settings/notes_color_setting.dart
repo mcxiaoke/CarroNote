@@ -95,7 +95,7 @@ class ColorPalletState extends State<ColorPallet> {
     // 用约束宽度更准（避免桌面大窗下窗口宽≥600 却把弹层挤成 3 列）。
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 600 ? 3 : 2;
+        final columns = constraints.maxWidth >= kCompactBreakpoint ? 3 : 2;
         // 用固定高度 mainAxisExtent 而非 childAspectRatio，避免窗口缩窄时
         // 格子高度随宽度变小导致卡片内容溢出。
         return GridView(

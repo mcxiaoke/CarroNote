@@ -626,7 +626,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     final String cantRecoverPassphraseMsg = "Can't decrypt without phrase!"
         .tr();
     // 桌面端字太小（原固定 10），按屏宽自适应放大（桌面窗口可 resize）
-    final double fontSize = MediaQuery.sizeOf(context).width < 600
+    final double fontSize =
+        MediaQuery.sizeOf(context).width < kCompactBreakpoint
         ? AppTextSize.s12
         : AppTextSize.s14;
 

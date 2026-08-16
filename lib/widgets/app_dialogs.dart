@@ -37,6 +37,65 @@ const BoxConstraints _kAlertConstraints = BoxConstraints(
   maxWidth: 560,
 );
 
+/// 对话框底部操作按钮统一最小宽度：保证 2/3 个按钮等宽，
+/// 消除 TextButton / FilledButton 默认内边距不同导致的宽度错位。
+const double _kDialogActionMinWidth = 104;
+
+/// 负向（取消/放弃）按钮：OutlinedButton 带描边，避免与对话框背景融为一体。
+/// （曾被 34f91f4 改回 TextButton 导致无边框，此处恢复描边。）
+ButtonStyle _dialogOutlineAction({Color? foreground}) {
+  return ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(_kDialogActionMinWidth, 48)),
+    foregroundColor: foreground == null
+        ? null
+        : WidgetStatePropertyAll(foreground),
+  );
+}
+
+/// 正向（确认）按钮：FilledButton，与负向按钮同宽。
+ButtonStyle _dialogFilledAction({Color? background, Color? foreground}) {
+  return ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(_kDialogActionMinWidth, 48)),
+    backgroundColor: background == null
+        ? null
+        : WidgetStatePropertyAll(background),
+    foregroundColor: foreground == null
+        ? null
+        : WidgetStatePropertyAll(foreground),
+  );
+}
+
+/// 对话框底部操作区自适应布局：
+///
+/// - 紧凑（屏幕宽度 < [kCompactBreakpoint]，如手机竖屏）：按钮上下排列、
+///   各自占满整行，避免 AlertDialog 的 OverflowBar 竖排时按钮粘连、宽度不一。
+///   按屏幕宽度而非对话框内容宽度判断：对话框宽度被 _kAlertConstraints 固定
+///   在 400~560，用内容宽度会恒判为紧凑，桌面端也会误竖排；
+/// - 宽屏/横屏：按钮横向右对齐排列。
+Widget _dialogActions(BuildContext context, List<Widget> buttons) {
+  final compact = MediaQuery.sizeOf(context).width < kCompactBreakpoint;
+  if (compact) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < buttons.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          buttons[i],
+        ],
+      ],
+    );
+  }
+  return Row(
+    mainAxisAlignment: MainAxisAlignment.end,
+    children: [
+      for (var i = 0; i < buttons.length; i++) ...[
+        if (i > 0) const SizedBox(width: 8),
+        buttons[i],
+      ],
+    ],
+  );
+}
+
 /// 打开 M3 AlertDialog 的通用入口（系统 showDialog）。
 Future<T?> _showM3Dialog<T>({
   required BuildContext context,
@@ -88,14 +147,18 @@ Future<bool?> showAppConfirm(
               ],
             ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text(cancelLabel ?? 'Cancel'.tr()),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text(confirmLabel ?? 'OK'.tr()),
-        ),
+        _dialogActions(ctx, [
+          OutlinedButton(
+            style: _dialogOutlineAction(),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(cancelLabel ?? 'Cancel'.tr()),
+          ),
+          FilledButton(
+            style: _dialogFilledAction(),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(confirmLabel ?? 'OK'.tr()),
+          ),
+        ]),
       ],
       constraints: _kAlertConstraints,
     ),
@@ -120,18 +183,21 @@ Future<bool?> showAppDestructive(
         title: Text(title),
         content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(cancelLabel ?? 'Cancel'.tr()),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: scheme.error,
-              foregroundColor: scheme.onError,
+          _dialogActions(ctx, [
+            OutlinedButton(
+              style: _dialogOutlineAction(),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(cancelLabel ?? 'Cancel'.tr()),
             ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(confirmLabel ?? 'Delete'.tr()),
-          ),
+            FilledButton(
+              style: _dialogFilledAction(
+                background: scheme.error,
+                foreground: scheme.onError,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(confirmLabel ?? 'Delete'.tr()),
+            ),
+          ]),
         ],
         constraints: _kAlertConstraints,
       );
@@ -154,10 +220,13 @@ Future<void> showAppInfo(
       title: title.isEmpty ? null : Text(title),
       content: Text(message),
       actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: Text(okLabel ?? 'OK'.tr()),
-        ),
+        _dialogActions(ctx, [
+          FilledButton(
+            style: _dialogFilledAction(),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(okLabel ?? 'OK'.tr()),
+          ),
+        ]),
       ],
       constraints: _kAlertConstraints,
     ),
@@ -213,20 +282,24 @@ Future<AppThreeWayResult?> showAppThreeWay(
         title: Text(title),
         content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.cancel),
-            child: Text(cancelLabel ?? 'Cancel'.tr()),
-          ),
-          // 放弃：TextButton + error 文字色（有可见文字，权重介于取消与保存之间）
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: scheme.error),
-            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.discard),
-            child: Text(discardLabel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.confirm),
-            child: Text(confirmLabel),
-          ),
+          _dialogActions(ctx, [
+            OutlinedButton(
+              style: _dialogOutlineAction(),
+              onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.cancel),
+              child: Text(cancelLabel ?? 'Cancel'.tr()),
+            ),
+            // 放弃：OutlinedButton + error 文字色（有边框可见，权重介于取消与保存之间）
+            OutlinedButton(
+              style: _dialogOutlineAction(foreground: scheme.error),
+              onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.discard),
+              child: Text(discardLabel),
+            ),
+            FilledButton(
+              style: _dialogFilledAction(),
+              onPressed: () => Navigator.of(ctx).pop(AppThreeWayResult.confirm),
+              child: Text(confirmLabel),
+            ),
+          ]),
         ],
         constraints: _kAlertConstraints,
       );
@@ -315,14 +388,18 @@ class _PasswordDialogState extends State<_PasswordDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(widget.cancelLabel ?? 'Cancel'.tr()),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(widget.confirmLabel ?? 'Submit'.tr()),
-        ),
+        _dialogActions(context, [
+          OutlinedButton(
+            style: _dialogOutlineAction(),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(widget.cancelLabel ?? 'Cancel'.tr()),
+          ),
+          FilledButton(
+            style: _dialogFilledAction(),
+            onPressed: _submit,
+            child: Text(widget.confirmLabel ?? 'Submit'.tr()),
+          ),
+        ]),
       ],
       constraints: _kAlertConstraints,
     );

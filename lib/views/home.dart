@@ -327,7 +327,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     // - Medium/Expanded (≥ 600px)：左侧常驻 NavigationRail + 内容区
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isCompact = constraints.maxWidth < 600;
+        final bool isCompact = constraints.maxWidth < kCompactBreakpoint;
 
         return GestureDetector(
           onTap: dismissKeyboard,

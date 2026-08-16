@@ -53,6 +53,11 @@ const EdgeInsets kInputPadding = EdgeInsets.symmetric(
 /// 避免在宽窗口上被拉满。历史值 420 已统一为 440（与 kDialogMaxWidth 一致）。
 const double kDialogMaxWidthCompact = 440.0;
 
+/// 响应式紧凑断点：可用宽度 >= 此值视为宽屏（横向布局 / 常驻侧栏），
+/// < 此值视为紧凑（竖排 / 抽屉布局）。与 Material 断点一致（600）。
+/// 参考分级：Compact (< 600) / Medium (600–1023) / Expanded (≥ 1024)。
+const double kCompactBreakpoint = 600.0;
+
 /// 桌面端对话框最大宽度：导入备份等简单对话框。
 const double kDialogMaxWidth = 440.0;
 
