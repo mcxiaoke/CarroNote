@@ -14,6 +14,7 @@
 
 // Flutter imports:
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
@@ -70,6 +71,19 @@ class AppThemes {
   // 再生成原生 ThemeData（不再依赖 flex_color_scheme）。
   static ThemeData build(Color seed, Brightness brightness) {
     final ColorScheme scheme = buildSeedColorScheme(seed, brightness);
+    // AppBar/状态栏统一用「亮色板」的品牌深色：深色模式下 M3 会把 primary 提亮成
+    // 浅色（中性 seed 甚至变纯白），AppBar 会刺眼；亮色板的 primary 才是用户
+    // 认知里的"按钮深色"（黑 seed=纯黑、蓝 seed=深蓝），且两种模式外观稳定。
+    final ColorScheme appBarScheme = buildSeedColorScheme(
+      seed,
+      Brightness.light,
+    );
+    // 危险/错误色同样固定用亮色板的 error：M3 暗色面板会把 error 提亮成浅粉
+    // （Material 组件的 error 色源），亮色板的 #ba1a1a 才是用户认知里的红。
+    final ColorScheme fixedScheme = scheme.copyWith(
+      error: appBarScheme.error,
+      onError: appBarScheme.onError,
+    );
     // 用平台原生字体（Windows=Segoe UI 等）替代原先全局强制的 NotoSerif 衬线体，
     // 让桌面端更贴近原生观感；移动端返回 null 沿用系统默认字体。
     final TextTheme uiText = applyUiFont(
@@ -78,7 +92,7 @@ class AppThemes {
     );
 
     final ThemeData base = ThemeData(
-      colorScheme: scheme,
+      colorScheme: fixedScheme,
       useMaterial3: true,
       // 组件级微调：统一圆角，桌面端更协调（M3 默认按钮/输入/卡片圆角各异）。
       // 对应原 flex_color_scheme 的 FlexSubThemesData(defaultRadius: 8)。
@@ -116,17 +130,29 @@ class AppThemes {
     final OutlineInputBorder inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(radius),
     );
+    // AppBar：亮色用品牌深色（appBarScheme.primary，同按钮色）染色，前景用
+    // onPrimary；暗色用 M3 默认 AppBar 背景色（scheme.surface）——观感与
+    // 「不设置」一致（带轻微品牌色相），但必须显式赋值：滚动时 _resolveColor
+    // 会用 backgroundColor 兜底（app_bar.dart 的 scrolledUnderBackground），
+    // 否则传 null 会落到 surfaceContainer，滚动背景变亮一档。
+    final bool darkMode = brightness == Brightness.dark;
 
     return base.copyWith(
       // 页面背景用 M3 的 surfaceContainerLow（亮色 #f3f3fa / 暗色 #191c20）：
       // 相比默认 surface（近白/近黑）更柔和，带轻微品牌色相，缓解
       // 「亮色死白、暗色死黑」的观感；仍属中性表面，不破坏整体风格。
       scaffoldBackgroundColor: scheme.surfaceContainerLow,
-      // AppBar 滚动时不再叠加 surfaceTint 染色（之前主界面"安全笔记"标题
-      // 滚动会变色；FCS 默认开了 surfaceTint，需要显式关闭）。
       appBarTheme: base.appBarTheme.copyWith(
+        backgroundColor: darkMode ? scheme.surface : appBarScheme.primary,
+        foregroundColor: darkMode ? scheme.onSurface : appBarScheme.onPrimary,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
+        systemOverlayStyle: darkMode
+            ? null
+            : SystemUiOverlayStyle(
+                statusBarColor: appBarScheme.primary,
+                statusBarIconBrightness: Brightness.light,
+              ),
       ),
       filledButtonTheme: FilledButtonThemeData(style: secondaryBtn),
       outlinedButtonTheme: OutlinedButtonThemeData(style: secondaryBtn),

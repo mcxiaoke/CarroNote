@@ -28,6 +28,13 @@ class ShadThemes {
     // M3 算法：为当前 seed 生成明暗自适应的完整色板（含 onPrimary/onSecondary/
     // onError 等对比前景色）。中性 seed 走 monochrome（色度 0），对比度仍由算法保证。
     final m3 = buildSeedColorScheme(seed, brightness);
+    // 危险/错误色恒定用「亮色板」的 error：暗色模式下 M3 会把 error 提亮成
+    // 浅粉（与 primary 被提亮同理），不符合红色危险语义；亮色板的 error 才是
+    // 用户认知里的红色（如 #ba1a1a + 白字），亮/暗两种模式观感一致。
+    final ColorScheme errorScheme = buildSeedColorScheme(
+      seed,
+      Brightness.light,
+    );
 
     // 中性基底沿用 Slate（背景/卡片/边框等不随品牌色走，保持页面观感稳定），
     // 品牌相关色全部映射到 M3 色板。
@@ -42,8 +49,8 @@ class ShadThemes {
               secondaryForeground: m3.onSecondary,
               accent: m3.primaryContainer,
               accentForeground: m3.onPrimaryContainer,
-              destructive: m3.error,
-              destructiveForeground: m3.onError,
+              destructive: errorScheme.error,
+              destructiveForeground: errorScheme.onError,
               ring: m3.primary,
               selection: m3.primary.withValues(alpha: 0.2),
             );
