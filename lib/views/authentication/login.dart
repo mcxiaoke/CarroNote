@@ -16,7 +16,6 @@ import 'dart:async';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 // Package imports:
 import 'package:after_layout/after_layout.dart';
@@ -73,7 +72,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   final ScrollController _scrollController = ScrollController();
   bool? _isKeyboardFocused;
   bool _isHidden = true;
-  bool _isLocked = false;
 
   // 评审 #15（反向移植自 change_passphrase）：记录上次 viewInsets，
   // 只在键盘从无到有出现时才触发滚动，避免每次 build 重复执行滚动动画
@@ -87,36 +85,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   // 见 _inputField/_showError):提示绑定本页生命周期,登录成功 pushReplacement 进
   // home 时随路由销毁,不会像 ShadSonner 那样悬停在 home 上方残留。
   String? _errorMessage;
-
-  // 简化方案:限流计数从 validator(sync)迁移到 _login 失败分支(async)
-  // 原本 validator 里 hash 比对失败时递减,现在 validator 只做长度检查
-  int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
-
-  // F-H09 修复:锁定倒计时状态从文件顶层移入 State,随 widget 生命周期创建/释放
-  // 修复前这些是顶层全局变量 + 顶层 Timer,无法在路由销毁时取消,可能泄漏 Timer
-  // 并持续向已释放的 StreamController 发事件(在 widget 销毁后 setState 报错)
-  final int _lockoutTime = PreferencesStorage.bruteforceLockOutTime;
-  int _counter = 0;
-  Timer? _timer;
-  final StreamController<String> _controller =
-      StreamController<String>.broadcast();
-
-  void _startTimer(VoidCallback callback) {
-    _counter = _lockoutTime;
-
-    // F-H09:每次重启前取消旧 Timer,避免多个周期叠加
-    _timer?.cancel();
-
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      (_counter > 0) ? _counter-- : _timer?.cancel();
-      if (!_controller.isClosed) {
-        _controller.add(_counter.toString().padLeft(2, '0'));
-      }
-      if (_counter <= 0) {
-        callback();
-      }
-    });
-  }
 
   @override
   void initState() {
@@ -139,10 +107,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   @override
   void dispose() {
-    // F-H09 修复:销毁时取消倒计时 Timer 并释放 StreamController,避免泄漏
-    _timer?.cancel();
-    _timer = null;
-    _controller.close();
     // F-H11 修复:补齐 _scrollController 的 dispose
     _scrollController.dispose();
     passPhraseController.dispose();
@@ -252,7 +216,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             padding: const EdgeInsets.all(padding),
             child: Column(
               children: [
-                _buildTimeOut(),
                 _inputField(),
                 _buildForgotPassphrase(),
                 _buildLoginButton(),
@@ -265,44 +228,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  Widget _buildTimeOut() {
-    // 评审 #3 修复：build 只读 stream，绝不在这里启动 Timer / 清输入框——
-    // 否则锁定期内任何 setState（焦点变化、snackbar 等）都会把倒计时重置回满值、
-    // 强制清空用户输入。倒计时只应在进入锁定的那一刻启动一次（见 _onLoginFailure）。
-    if (!_isLocked) return const SizedBox(height: 20);
-
-    // 锁定期：文本输入框已由锁定流程禁用（enabled: !_isLocked），
-    // 无需在每次 build 时再次隐藏键盘 / 清空输入。
-    return StreamBuilder(
-      stream: _controller.stream,
-      builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
-        String? timeLeft = snapshot.hasData
-            ? snapshot.data
-            : _lockoutTime.toString();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Align(
-            alignment: Alignment.center,
-            child: Text(
-              'Exceeded number of attempts, try after {timeLeft} seconds'.tr(
-                namedArgs: {'timeLeft': timeLeft.toString()},
-              ),
-              style: TextStyle(
-                color: ShadTheme.of(context).colorScheme.destructive,
-                fontSize: AppTextSize.s12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _inputField() {
     return ShadInputFormField(
       key: const Key('passphraseInput'),
-      enabled: !_isLocked,
       enableIMEPersonalizedLearning: false,
       controller: passPhraseController,
       autofocus: _isKeyboardFocused!,
@@ -367,11 +295,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   /// 简化方案:validator 只做长度检查
   ///
   /// 密码正确性不在 validator 里判断(keyring 解密是 async,1-2 秒),
-  /// 改在 _login 里 async 处理,失败时在 _onLoginFailure 递减尝试次数。
-  ///
-  /// 评审 #4 修复:validator 不再拦截最后 1 次尝试(此前 `_noOfAllowedAttempts <= 1`
-  /// 时直接 setState 锁定,密码正确也进不了 `_login`,存在 off-by-one),也不得在
-  /// validator 内调用 setState(反模式)。锁定判定统一收口到 _onLoginFailure。
+  /// 改在 _login 里 async 处理,失败时统一走 _onLoginFailure 提示错误。
   String? _passphraseValidator(String passphrase) {
     if (passphrase.isEmpty) {
       return 'Enter Passphrase'.tr();
@@ -399,14 +323,14 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   }
 
   Widget _buildLoginButton() {
-    // 简化方案:验证中(_isLoggingIn)或锁定(_isLocked)时禁用按钮防重入
+    // 简化方案:验证中(_isLoggingIn)时禁用按钮防重入
     final String loginText = _isLoggingIn ? 'Verifying...'.tr() : 'Login'.tr();
 
     return ShadButton(
       key: const Key('loginButton'),
       width: double.infinity,
-      enabled: !(_isLocked || _isLoggingIn),
-      onPressed: (_isLocked || _isLoggingIn) ? null : () => _loginController(),
+      enabled: !_isLoggingIn,
+      onPressed: _isLoggingIn ? null : () => _loginController(),
       child: Text(loginText),
     );
   }
@@ -416,7 +340,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     if (!PreferencesStorage.isBiometricAuthEnabled) {
       return const SizedBox.shrink();
     }
-    final bool enabled = !forcePassphraseInput && !_isLocked;
+    final bool enabled = !forcePassphraseInput;
     return Column(
       children: [
         Padding(
@@ -458,12 +382,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///   1. 本地 keyring 解锁(优先):Keyring.unlockLocal 成功 = 密码正确
   ///   2. 远端验证(仅启用同步时):拉 manifest header 比对 keyFingerprint
   ///      - verified: 密码正确(他端改密码后本端旧 MK 失效场景)
-  ///      - wrongPassword: fingerprint 不匹配,扣尝试次数
-  ///      - unreachable: 网络故障,不扣次数,提示用户检查网络
-  ///   3. 都失败 = 密码错误,递减 _noOfAllowedAttempts
+  ///      - wrongPassword: fingerprint 不匹配,密码错误
+  ///      - unreachable: 网络故障,不算密码错误,提示用户检查网络
+  ///   3. 都失败 = 密码错误
   ///
   /// 防重入:_isLoggingIn 标志 + 按钮禁用,避免 PBKDF2 1-2 秒内连点
-  /// 限流:_noOfAllowedAttempts 从 validator(sync)迁移到 _onLoginFailure(async)
   Future<void> _login(String passphrase) async {
     // 防重入:PBKDF2 1-2 秒内防止重复提交
     if (_isLoggingIn) return;
@@ -496,7 +419,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           return;
         }
         if (remoteResult == RemoteVerifyResult.unreachable) {
-          // 网络不可达:不算密码错误,不扣尝试次数
+          // 网络不可达:不算密码错误
           _showError(
             'Unable to verify password (network unavailable). Check your connection and try again.'
                 .tr(),
@@ -563,44 +486,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  /// 登录失败处理:递减尝试次数 + 锁定判断
-  ///
-  /// 简化方案:限流计数从 validator(sync)迁移到这里(async)
+  /// 登录失败处理：显示页内联密码错误提示
   void _onLoginFailure() {
-    Log.auth.w('登录失败：剩余尝试次数 $_noOfAllowedAttempts');
-    _noOfAllowedAttempts--;
-    final numberOfAttemptExceeded = 'Number of attempt exceeded'.tr();
-
-    if (_noOfAllowedAttempts <= 0) {
-      // 评审 #3/#4 修复：进入锁定的唯一入口。倒计时 Timer 只在这里启动一次
-      // （build 只读 stream），并在此清空输入框、隐藏键盘、禁用输入。
-      _startLockoutTimer();
-      _showError(numberOfAttemptExceeded);
-    } else {
-      final wrongPhraseMsg =
-          'Wrong passphrase {noOfAllowedAttempts} attempts left!'.tr(
-            namedArgs: {'noOfAllowedAttempts': _noOfAllowedAttempts.toString()},
-          );
-      _showError(wrongPhraseMsg);
-    }
-  }
-
-  /// 进入锁定状态：启动一次倒计时，超时后解除锁定并重置尝试次数
-  void _startLockoutTimer() {
-    setState(() => _isLocked = true);
-    passPhraseController.clear();
-    SystemChannels.textInput.invokeMethod('TextInput.hide');
-    _startTimer(() {
-      setState(() {
-        _isLocked = false;
-        _isKeyboardFocused = true;
-        // 重置表单校验错误提示即可，无需重建 GlobalKey
-        // （重建会强制整棵 Form 子树重建并丢失输入框状态）
-        _formKey.currentState?.reset();
-        // 简化方案:锁定超时后重置尝试次数(原为全局变量,现为实例字段)
-        _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
-      });
-    });
+    Log.auth.w('登录失败：密码错误');
+    _showError('Wrong passphrase!'.tr());
   }
 
   /// 远端验证三态结果(评审 hy3 A7)

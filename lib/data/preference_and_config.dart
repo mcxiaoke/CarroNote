@@ -30,8 +30,6 @@ class PreferencesStorage {
   static const _keyIsInactivityTimeoutOn = 'isInactivityTimeoutOn';
   static const _keyInactivityTimeout = 'inactivityTimeout';
   static const _keyPreInactivityLogoutCounter = 'preInactivityLogoutCounter';
-  static const _keyNoOfLogginAttemptAllowed = 'noOfLogginAttemptAllowed';
-  static const _keyBruteforceLockOutTime = 'bruteforceLockOutTime';
   static const _keyIsColorful = 'isColorful';
   static const _keyLastBackupTime = 'lastBackupTime';
   static const _keyIsBackupOn = 'isBackupOn';
@@ -76,8 +74,7 @@ class PreferencesStorage {
     );
     Log.settings.d(
       '安全配置: 生物识别=$isBiometricAuthEnabled '
-      '无操作锁定=$isInactivityTimeoutOn 锁定时长=${inactivityTimeout}s '
-      '允许登录尝试=$noOfLogginAttemptAllowed 锁定时长=${bruteforceLockOutTime}s',
+      '无操作锁定=$isInactivityTimeoutOn 锁定时长=${inactivityTimeout}s',
     );
     Log.settings.d(
       '备份配置: 自动备份=$isBackupOn 待备份=$isBackupNeeded '
@@ -269,16 +266,6 @@ class PreferencesStorage {
 
   static bool get keyboardIncognito =>
       _preferences?.getBool(_keyKeyboardIncognito) ?? true;
-
-  static int get noOfLogginAttemptAllowed {
-    //default: 3 unsuccessful
-    return _preferences?.getInt(_keyNoOfLogginAttemptAllowed) ?? 4;
-  }
-
-  static int get bruteforceLockOutTime {
-    //default: 30 seconds
-    return _preferences?.getInt(_keyBruteforceLockOutTime) ?? 30;
-  }
 
   static bool get isInactivityTimeoutOn =>
       _preferences?.getBool(_keyIsInactivityTimeoutOn) ?? true;
