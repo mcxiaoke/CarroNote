@@ -542,7 +542,7 @@ class SafeNotesConfig {
   static const int _appVersionCode = 30000;
   static const String _appName = 'Secure Notes';
   static const String _appSlogan = 'Encrypted Note App';
-  static const String _appLogoPath = 'assets/images/splash_500.png';
+  static const String _appLogoPath = 'assets/images/icon-round-256.png';
   static const String _exportFileNamePrefix = 'safenotes_';
   // 导入允许的扩展名：明文 .json + 加密 .snbak（见 docs/
   // backup-encryption-design-20260810.md §4，双扩展名均需文件选择器可识别）

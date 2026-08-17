@@ -153,7 +153,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                     // Spacer 在错误提示出现时 RenderFlex 溢出。
                     Expanded(child: _buildLoginWorkflow(context: context)),
                     Padding(
-                      padding: const EdgeInsets.only(top: 6),
+                      padding: const EdgeInsets.only(top: 24),
                       child: footer(context),
                     ),
                   ],
@@ -181,9 +181,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _buildTopLogo() {
     // 固定尺寸，不随窗口缩放（此前用屏宽/屏高 40%，桌面大窗口下 logo 巨大）。
-    // 顶部间距 24→8:让输入框/提示区整体上移,缓解软键盘弹出时按钮被遮挡。
-    const double topPadding = 8;
-    const double logoSize = 180;
+    const double topPadding = 24;
+    const double logoSize = 128;
 
     return Padding(
       padding: const EdgeInsets.only(top: topPadding),

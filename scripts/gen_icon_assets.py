@@ -136,14 +136,31 @@ def make_rounded_icon(src, safe_ratio=FG_RATIO, canvas=SIZE):
     )
     rounded = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
     rounded.paste(base, (0, 0), mask)
+
     # 2. 缩放到安全区
     sz = round(canvas * safe_ratio)
+
     rounded = rounded.resize((sz, sz), Image.LANCZOS)
     # 3. 四周补透明像素到 canvas
     out = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
     out.paste(rounded, ((canvas - sz) // 2, (canvas - sz) // 2), rounded)
     return out
 
+def make_rounded_icon_simple(src, safe_ratio=FG_RATIO, canvas=SIZE):
+    """圆角 icon 最简算法（按比例，源图多大都行，无多余步骤）：
+    1. 原图加圆角（圆角比例 ROUND_R 固定）
+    2. 缩放到安全区（canvas * safe_ratio，safe_ratio 固定）
+    3. 四周补透明像素到 canvas（默认 1024）
+    """
+    # 1. 原图加圆角
+    base = src.convert("RGBA").resize((canvas, canvas), Image.LANCZOS)
+    mask = Image.new("L", (canvas, canvas), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [0, 0, canvas - 1, canvas - 1], radius=int(canvas * ROUND_R), fill=255
+    )
+    rounded = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    rounded.paste(base, (0, 0), mask)
+    return rounded
 
 def make_splash(src, out_500, out_12, safe_ratio=SPLASH_ICON_RATIO):
     """圆角 icon：整图加圆角 → 缩放到安全区 → 透明补边（splash_500 / splash_12）。"""
@@ -156,14 +173,14 @@ def make_splash(src, out_500, out_12, safe_ratio=SPLASH_ICON_RATIO):
 def write_launcher_yaml(bg):
     content = f"""flutter_launcher_icons:
   android: true
-  ios: false
+  #ios: true
 
   # iOS / Windows / Web / Android legacy 共用直角母版
   image_path: "assets/images/icon.png"
-  image_path_ios: "assets/images/icon.png"
+  #image_path_ios: "assets/images/icon.png"
 
   # iOS 去掉 alpha（App Store 拒收透明）
-  remove_alpha_ios: true
+  #remove_alpha_ios: true
 
   # Android adaptive icon：背景取主色，前景透明主体居中 66%
   adaptive_icon_background: "{bg}"
@@ -174,10 +191,11 @@ def write_launcher_yaml(bg):
 
   web:
     generate: false
-    image_path: "assets/images/icon.png"
+    image_path: "assets/images/icon-round.png"
   windows:
     generate: true
-    image_path: "assets/images/icon.png"
+    icon_size: 256
+    image_path: "assets/images/icon-round.png"
 """
     with open(os.path.join(ROOT, "flutter_launcher_icons.yaml"), "w", encoding="utf-8") as f:
         f.write(content)
@@ -234,13 +252,16 @@ def main():
     master_img.convert("RGB").save(icon_out, "PNG")
     print(f"已生成: {icon_out}")
 
-    fg_out = make_android_foreground(master_img.convert("RGBA"),
-                                     os.path.join(IMG_DIR, "icon-android-foreground.png"))
-    print(f"已生成: {fg_out}")
+    fg_file_path = os.path.join(IMG_DIR, "icon-android-foreground.png")
+    if os.path.exists(fg_file_path):
+        print(f"已存在，跳过: {fg_file_path}")
+    else:
+        #fg_file_path = make_android_foreground(master_img.convert("RGBA"), fg_file_path)
+        print(f"已生成: {fg_file_path}")
 
     # 圆角 icon（保留背景色，供别处使用）
-    round_out = os.path.join(IMG_DIR, "icon_round.png")
-    make_rounded_icon(master_img.convert("RGBA"), FG_RATIO).save(round_out, "PNG")
+    round_out = os.path.join(IMG_DIR, "icon-round.png")
+    make_rounded_icon_simple(master_img.convert("RGBA"), FG_RATIO).save(round_out, "PNG")
     print(f"已生成: {round_out}")
 
     make_splash(master_img.convert("RGBA"),
