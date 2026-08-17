@@ -83,6 +83,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   // _isLoggingIn=true 期间禁用登录按钮,避免 PBKDF2 期间连点触发并发验证
   bool _isLoggingIn = false;
 
+  // 登录错误提示改为页内联文本(不用全局 Toast,渲染在密码输入框 label 行右侧,
+  // 见 _inputField/_showError):提示绑定本页生命周期,登录成功 pushReplacement 进
+  // home 时随路由销毁,不会像 ShadSonner 那样悬停在 home 上方残留。
+  String? _errorMessage;
+
   // 简化方案:限流计数从 validator(sync)迁移到 _login 失败分支(async)
   // 原本 validator 里 hash 比对失败时递减,现在 validator 只做长度检查
   int _noOfAllowedAttempts = PreferencesStorage.noOfLogginAttemptAllowed;
@@ -171,7 +176,6 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           centerTitle: true,
         ),
         body: CustomScrollView(
-          controller: _scrollController,
           slivers: [
             SliverFillRemaining(
               hasScrollBody: false,
@@ -180,8 +184,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                 child: Column(
                   children: [
                     _buildTopLogo(),
-                    _buildLoginWorkflow(context: context),
-                    const Spacer(),
+                    // 表单区域(含页内联错误提示)可能超出视口,用 Expanded 包裹
+                    // 让内部 SingleChildScrollView 滚动,避免固定高度 Column +
+                    // Spacer 在错误提示出现时 RenderFlex 溢出。
+                    Expanded(child: _buildLoginWorkflow(context: context)),
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: footer(context),
@@ -211,7 +217,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   Widget _buildTopLogo() {
     // 固定尺寸，不随窗口缩放（此前用屏宽/屏高 40%，桌面大窗口下 logo 巨大）。
-    const double topPadding = 24;
+    // 顶部间距 24→8:让输入框/提示区整体上移,缓解软键盘弹出时按钮被遮挡。
+    const double topPadding = 8;
     const double logoSize = 180;
 
     return Padding(
@@ -239,6 +246,9 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: kDialogMaxWidthCompact),
           child: SingleChildScrollView(
+            // 绑定 _scrollController:键盘弹出时 scrollToBottomIfOnScreenKeyboard
+            // 滚动本表单让登录按钮可见(外层 CustomScrollView 不可滚,maxScrollExtent 恒为 0)
+            controller: _scrollController,
             padding: const EdgeInsets.all(padding),
             child: Column(
               children: [
@@ -305,11 +315,51 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             : const Icon(LucideIcons.eyeOff, size: kInputIconSize),
         onPressed: _togglePasswordVisibility,
       ),
-      label: Text('Passphrase'.tr()),
+      // label 行左侧为 "Passphrase",右侧为页内联错误提示(与输入框右缘对齐)。
+      // 错误提示放在 label 行内,有/无错误不改变输入框与按钮的垂直间距,布局稳定。
+      label: SizedBox(
+        width: double.infinity,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Passphrase'.tr()),
+            if (_errorMessage != null)
+              Flexible(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Icon(
+                      LucideIcons.circleAlert,
+                      size: 12,
+                      color: ShadTheme.of(context).colorScheme.destructive,
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        _errorMessage!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          color: ShadTheme.of(context).colorScheme.destructive,
+                          fontSize: AppTextSize.s12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
       placeholder: Text('Enter Passphrase'.tr()),
       autofillHints: const [AutofillHints.password],
       keyboardType: TextInputType.visiblePassword,
       onEditingComplete: _loginController,
+      // 重新输入时立即清除页内联错误提示,避免陈旧文案残留
+      onChanged: (_) => _clearError(),
       validator: _passphraseValidator,
     );
   }
@@ -331,6 +381,21 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   void _togglePasswordVisibility() {
     setState(() => _isHidden = !_isHidden);
+  }
+
+  /// 页内联错误提示:替代全局 Toast,生命周期绑定本页,
+  /// 路由切换(登录成功进 home)时随页面销毁,无残留。
+  void _showError(String message) {
+    if (!mounted) return;
+    setState(() => _errorMessage = message);
+  }
+
+  /// 清除页内联错误提示(用户重新输入时调用)。
+  void _clearError() {
+    if (!mounted) return;
+    if (_errorMessage != null) {
+      setState(() => _errorMessage = null);
+    }
   }
 
   Widget _buildLoginButton() {
@@ -383,7 +448,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       final phrase = passPhraseController.text;
       await _login(phrase);
     } else {
-      showErrorToast(context, snackMsgWrongEncryptionPhrase);
+      _showError(snackMsgWrongEncryptionPhrase);
     }
   }
 
@@ -432,13 +497,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         }
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误,不扣尝试次数
-          if (mounted) {
-            showErrorToast(
-              context,
-              'Unable to verify password (network unavailable). Check your connection and try again.'
-                  .tr(),
-            );
-          }
+          _showError(
+            'Unable to verify password (network unavailable). Check your connection and try again.'
+                .tr(),
+          );
           return;
         }
         // remoteResult == wrongPassword:继续走失败流程
@@ -513,17 +575,13 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       // 评审 #3/#4 修复：进入锁定的唯一入口。倒计时 Timer 只在这里启动一次
       // （build 只读 stream），并在此清空输入框、隐藏键盘、禁用输入。
       _startLockoutTimer();
-      if (mounted) {
-        showErrorToast(context, numberOfAttemptExceeded);
-      }
+      _showError(numberOfAttemptExceeded);
     } else {
       final wrongPhraseMsg =
           'Wrong passphrase {noOfAllowedAttempts} attempts left!'.tr(
             namedArgs: {'noOfAllowedAttempts': _noOfAllowedAttempts.toString()},
           );
-      if (mounted) {
-        showErrorToast(context, wrongPhraseMsg);
-      }
+      _showError(wrongPhraseMsg);
     }
   }
 
