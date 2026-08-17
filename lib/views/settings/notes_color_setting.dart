@@ -79,7 +79,7 @@ class ColorPalletState extends State<ColorPallet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${'Selected'.tr()}: ${items[_selectedIndex].prefix}',
+            '${'Selected'.tr()}: ${items[_selectedIndex].prefix.tr()}',
             style: theme.textTheme.small,
           ),
           const SizedBox(height: 10),
@@ -108,7 +108,7 @@ class ColorPalletState extends State<ColorPallet> {
             crossAxisCount: columns,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            mainAxisExtent: 88,
+            mainAxisExtent: 108,
           ),
           children: [
             for (var i = 0; i < items.length; i++) _themeCard(context, i),
@@ -150,15 +150,28 @@ class ColorPalletState extends State<ColorPallet> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      items[i].prefix,
-                      style: theme.textTheme.p.copyWith(
-                        fontSize: AppTextSize.s12,
-                        fontWeight: selected ? FontWeight.w600 : null,
-                        color: selected ? theme.colorScheme.primary : null,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          items[i].prefix.tr(),
+                          style: theme.textTheme.p.copyWith(
+                            fontSize: AppTextSize.s12,
+                            fontWeight: selected ? FontWeight.w600 : null,
+                            color: selected ? theme.colorScheme.primary : null,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (items[i].helper != null)
+                          Text(
+                            items[i].helper!.tr(),
+                            style: theme.textTheme.small,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
                   ),
                   if (selected)

@@ -272,7 +272,9 @@ def main():
 
     # 3. 生成配置
     write_launcher_yaml(bg_hex)
-    write_splash_yaml(bg_light, bg_hex)
+    # write_splash_yaml(bg_light, bg_hex)
+    # using black for dark mode splash bg
+    write_splash_yaml(bg_light, "#000000")
     print(f"已生成: {os.path.join(ROOT, 'flutter_launcher_icons.yaml')}")
     print(f"已生成: {os.path.join(ROOT, 'flutter_native_splash.yaml')}")
     print("-" * 50)
