@@ -24,6 +24,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
@@ -349,13 +350,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() => _isAutoRotate = v);
             },
           ),
+        // 开发者模式：未开启时不显示；开启后（在关于页连点图标）才出现本开关，
+        // 仅用于关闭；关闭即刻消失，再次开启须回关于页。
+        if (DevMode.isActive)
+          KeyedSubtree(
+            key: const Key('ui-setting-switch-devmode'),
+            child: shadSwitchTile(
+              context,
+              icon: LucideIcons.bug,
+              title: 'Developer Mode'.tr(),
+              description:
+                  'Enable debug panel, full logs and log web server.'.tr(),
+              value: true,
+              onChanged: (v) async {
+                await DevMode.setActive(v);
+                if (mounted) setState(() {});
+              },
+            ),
+          ),
         // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
         shadNavigationTile(
           context,
           key: const Key('ui-setting-item-about'),
           icon: LucideIcons.info,
           title: 'About'.tr(),
-          onTap: () => Navigator.pushNamed(context, '/about'),
+          onTap: () async {
+            await Navigator.pushNamed(context, '/about');
+            // 从关于页解锁开发者模式后返回，需重建以显示/启用开发者模式开关
+            if (mounted) setState(() {});
+          },
         ),
       ]),
     ];

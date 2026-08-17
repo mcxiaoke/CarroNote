@@ -227,6 +227,8 @@
     "Debug Panel": "Debug Panel",
     "Developer mode enabled": "Developer mode enabled",
     "Already in developer mode": "Already in developer mode",
+    "Developer Mode": "Developer Mode",
+    "Enable debug panel, full logs and log web server.": "Enable debug panel, full logs and log web server.",
     "Recently Deleted": "Recently Deleted",
     "Sync Settings": "Sync Settings",
     "Disabled": "Disabled",

@@ -227,6 +227,8 @@
     "Debug Panel": "调试面板",
     "Developer mode enabled": "开发者模式已开启",
     "Already in developer mode": "已处于开发者模式",
+    "Developer Mode": "开发者模式",
+    "Enable debug panel, full logs and log web server.": "开启调试面板、完整日志与日志 Web 服务。",
     "Recently Deleted": "最近删除",
     "Sync Settings": "同步设置",
     "Disabled": "已关闭",
