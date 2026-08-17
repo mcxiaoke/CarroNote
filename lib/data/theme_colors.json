@@ -10,6 +10,11 @@
                 "color": "#fbdd82"
             },
             {
+                "name": "浅柠黄",
+                "nameEn": "Lemon",
+                "color": "#FACC15"
+            },
+            {
                 "name": "琥珀橙",
                 "nameEn": "Amber",
                 "color": "#D97706"
@@ -18,6 +23,11 @@
                 "name": "金色",
                 "nameEn": "Gold",
                 "color": "#C58B16"
+            },
+            {
+                "name": "落日橙",
+                "nameEn": "Sunset Orange",
+                "color": "#FB923C"
             },
             {
                 "name": "珊瑚橙",
@@ -53,6 +63,11 @@
                 "name": "酒红",
                 "nameEn": "Burgundy",
                 "color": "#9F2D4E"
+            },
+            {
+                "name": "烟粉",
+                "nameEn": "Dusty Pink",
+                "color": "#D8A2A2"
             },
             {
                 "name": "玫瑰红",
@@ -150,34 +165,19 @@
                 "color": "#71864A"
             },
             {
-                "name": "石板蓝",
-                "nameEn": "Slate Blue",
-                "color": "#58728C"
+                "name": "鼠尾草绿",
+                "nameEn": "Sage",
+                "color": "#87A884"
             },
             {
-                "name": "石墨灰",
-                "nameEn": "Graphite",
-                "color": "#56616F"
+                "name": "冷银灰",
+                "nameEn": "Silver Gray",
+                "color": "#9CA3AF"
             },
             {
-                "name": "雾灰",
-                "nameEn": "Smoke Gray",
-                "color": "#78828C"
-            },
-            {
-                "name": "米白",
-                "nameEn": "Off White",
-                "color": "#F5F5F5"
-            },
-            {
-                "name": "瓷白",
-                "nameEn": "Porcelain White",
-                "color": "#FAFAFA"
-            },
-            {
-                "name": "墨黑",
-                "nameEn": "Ink Black",
-                "color": "#171717"
+                "name": "炭灰",
+                "nameEn": "Charcoal",
+                "color": "#374151"
             },
             {
                 "name": "纯黑",

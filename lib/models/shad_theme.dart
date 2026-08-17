@@ -10,6 +10,9 @@
 // seed 塞给 Shad。fromSeed 会自动为任意 seed 推导对比度合规的 onXxx 前景色
 // （暗色模式下 primary 自动提亮、文字自动变深），保证任何主题色下按钮/开关/
 // 选中项都清晰可读，无需手调 —— 这正是「主题色自适应」的意义。
+//
+// 中性灰度 seed 走 monochrome 变体（方案 A+C，见 seed_scheme.dart），避免被染成
+// 任意彩色；明暗跟随全局暗色开关，与彩色 seed 行为一致。两端共用 buildSeedColorScheme。
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -17,11 +20,14 @@ import 'package:flutter/material.dart';
 // Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// Project imports:
+import 'package:safenotes/models/seed_scheme.dart';
+
 class ShadThemes {
   static ShadThemeData build(Color seed, Brightness brightness) {
     // M3 算法：为当前 seed 生成明暗自适应的完整色板（含 onPrimary/onSecondary/
-    // onError 等对比前景色）。对比度由算法保证，任何 seed 都自动可读。
-    final m3 = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
+    // onError 等对比前景色）。中性 seed 走 monochrome（色度 0），对比度仍由算法保证。
+    final m3 = buildSeedColorScheme(seed, brightness);
 
     // 中性基底沿用 Slate（背景/卡片/边框等不随品牌色走，保持页面观感稳定），
     // 品牌相关色全部映射到 M3 色板。

@@ -62,7 +62,7 @@ primaryPalette: TonalPalette.of(sourceColorHct.hue, 36.0),
 注意：即使是彩色种子，其 `primary` 也不是 seed 本身（如蓝色 seed → `#4B5C92` 而非 `#2563EB`），
 这是 M3 的既定行为，并非本次问题。
 
-## 修复方向（未实施，供参考）
+## 修复方向（供参考，最终采用方案 B）
 
 1. 对"低色度/中性"种子做特判：当 `Hct.fromInt(seed).chroma` 低于阈值（如 < 8）时，
    不用 `tonalSpot`，改传 `DynamicSchemeVariant.monochrome`（色度恒 0）或 `neutral`（色度 12），
@@ -75,3 +75,55 @@ primaryPalette: TonalPalette.of(sourceColorHct.hue, 36.0),
 
 `temp/seedtest/bin/seedtest.dart`（依赖 Flutter 缓存中的 material_color_utilities 0.13.0），
 可直接重跑验证上述 primary 值。
+
+## 修复实施演进
+
+### 最终采用：方案 A+C（最简单，已实施）
+
+对中性 seed 统一用 `DynamicSchemeVariant.monochrome`（色度恒 0），明暗跟随**全局暗色开关**
+（与彩色 seed 一致）；彩色 seed 保持默认 `tonalSpot`。两端（Material / ShadCN）共用
+`buildSeedColorScheme`，保证同步换肤。不自定义 ShadCN 色板。
+
+- 代码最小：仅 `seed_scheme.dart` 一处判定 + 一个生成函数，`app_theme.dart` / `shad_theme.dart`
+  都只调用 `buildSeedColorScheme(seed, brightness)`。
+- 已知取舍：所有中性 seed 在暗色模式下都渲染成同一套深色中性主题（背景近黑、品牌色近白），
+  在亮色模式下都渲染成同一套浅色中性主题；即"不同灰度彼此观感接近"。这是 monochrome + 全局
+  开关的固有行为，用户已接受（见下方回退说明）。
+
+### 方案 B（曾试，已回退，备忘）
+
+为避免"所有中性色没区别"，曾尝试：中性明暗由 **seed 自身亮度**决定（米白→浅、墨黑→深），
+且 ShadCN 端改用 shadcn_ui 内置 `ShadNeutralColorScheme`。实测观感未提升、且引入较多自定义
+ShadCN 代码，故回退到上面的方案 A+C。两条思路保留在 `seed_scheme.dart` 顶部注释中作备选。
+
+改动文件（2026-08-17）：
+
+- 新增 `lib/models/seed_scheme.dart`：
+  - `isNeutralSeed(Color)` —— 通道最大差值 ≤ 26 判定中性灰度色（全色库扫描恰好命中
+    通用组 6 个灰度尾色 + 深邃组黑曜石，不误伤米色/奶油棕/灰豆绿等浅彩色）；
+  - `buildSeedColorScheme(Color, Brightness)` —— 中性走 monochrome（明暗=传入 brightness），
+    否则 tonalSpot。
+- `lib/models/app_theme.dart`：`AppThemes.build` 改用 `buildSeedColorScheme`（Material 主题）。
+- `lib/models/shad_theme.dart`：`ShadThemes.build` 同样调用 `buildSeedColorScheme`，再映射到
+  `ShadSlateColorScheme`（原行为，无自定义中性色板）；switch 未选中轨道用 `m3.surfaceContainerHighest`。
+- 回归测试 `test/theme_neutral_verify_test.dart`：中性识别 + monochrome 输出为灰度 + 彩色不误判。
+
+验证：
+
+- `flutter analyze` 三个 model 文件 + 测试：No issues found。
+- `flutter test test/theme_neutral_verify_test.dart`：全过。
+
+修复前后对照（中性 seed 经 monochrome）：
+
+| 颜色 | 修复前(tonalSpot) | 方案 A+C 结果 |
+|---|---|---|
+| 石墨灰 `#56616F` | `#33618D` 蓝 | 中性（色度 0） |
+| 雾灰 `#78828C` | `#28638A` 蓝 | 中性 |
+| 米白 `#F5F5F5` | `#006874` 青 | 中性 |
+| 瓷白 `#FAFAFA` | `#006874` 青 | 中性 |
+| 墨黑 `#171717` | `#006874` 青 | 中性 |
+| 纯黑 `#000000` | `#8C4A60` 粉紫 | 中性 |
+
+对照（不受影响，仍为 tonalSpot 彩色）：蓝色 `#2563EB`→`#4B5C92`、灰豆绿 `#A9BFA3`→`#3B693A`、米色 `#D4C5A0`→`#725C0C`。
+
+要点：6 个灰度尾色都不再被染成彩色，得到真正中性主题；彩色/浅彩色种子行为完全不变。

@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/seed_scheme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/window_title_bar.dart';
@@ -68,10 +69,7 @@ class AppThemes {
   // 用 Flutter 内置 ColorScheme.fromSeed 生成和谐、对比度合规的 M3 调色板，
   // 再生成原生 ThemeData（不再依赖 flex_color_scheme）。
   static ThemeData build(Color seed, Brightness brightness) {
-    final ColorScheme scheme = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: brightness,
-    );
+    final ColorScheme scheme = buildSeedColorScheme(seed, brightness);
     // 用平台原生字体（Windows=Segoe UI 等）替代原先全局强制的 NotoSerif 衬线体，
     // 让桌面端更贴近原生观感；移动端返回 null 沿用系统默认字体。
     final TextTheme uiText = applyUiFont(

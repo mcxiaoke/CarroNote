@@ -4,7 +4,7 @@
 //
 // 如需修改色值 / 增删颜色，请编辑 theme_colors.json 后运行：
 //   dart run scripts/generate_theme_seeds.dart
-// 生成时间：2026-08-17T15:51:52.155578
+// 生成时间：2026-08-17T18:15:40.991362
 
 // Flutter imports:
 import 'package:flutter/material.dart';
@@ -64,6 +64,11 @@ class AppThemeSeeds {
         color: Color(0xFFFBDD82),
       ),
       ColorSeedItem(
+        name: '浅柠黄',
+        nameEn: 'Lemon',
+        color: Color(0xFFFACC15),
+      ),
+      ColorSeedItem(
         name: '琥珀橙',
         nameEn: 'Amber',
         color: Color(0xFFD97706),
@@ -72,6 +77,11 @@ class AppThemeSeeds {
         name: '金色',
         nameEn: 'Gold',
         color: Color(0xFFC58B16),
+      ),
+      ColorSeedItem(
+        name: '落日橙',
+        nameEn: 'Sunset Orange',
+        color: Color(0xFFFB923C),
       ),
       ColorSeedItem(
         name: '珊瑚橙',
@@ -107,6 +117,11 @@ class AppThemeSeeds {
         name: '酒红',
         nameEn: 'Burgundy',
         color: Color(0xFF9F2D4E),
+      ),
+      ColorSeedItem(
+        name: '烟粉',
+        nameEn: 'Dusty Pink',
+        color: Color(0xFFD8A2A2),
       ),
       ColorSeedItem(
         name: '玫瑰红',
@@ -204,34 +219,19 @@ class AppThemeSeeds {
         color: Color(0xFF71864A),
       ),
       ColorSeedItem(
-        name: '石板蓝',
-        nameEn: 'Slate Blue',
-        color: Color(0xFF58728C),
+        name: '鼠尾草绿',
+        nameEn: 'Sage',
+        color: Color(0xFF87A884),
       ),
       ColorSeedItem(
-        name: '石墨灰',
-        nameEn: 'Graphite',
-        color: Color(0xFF56616F),
+        name: '冷银灰',
+        nameEn: 'Silver Gray',
+        color: Color(0xFF9CA3AF),
       ),
       ColorSeedItem(
-        name: '雾灰',
-        nameEn: 'Smoke Gray',
-        color: Color(0xFF78828C),
-      ),
-      ColorSeedItem(
-        name: '米白',
-        nameEn: 'Off White',
-        color: Color(0xFFF5F5F5),
-      ),
-      ColorSeedItem(
-        name: '瓷白',
-        nameEn: 'Porcelain White',
-        color: Color(0xFFFAFAFA),
-      ),
-      ColorSeedItem(
-        name: '墨黑',
-        nameEn: 'Ink Black',
-        color: Color(0xFF171717),
+        name: '炭灰',
+        nameEn: 'Charcoal',
+        color: Color(0xFF374151),
       ),
       ColorSeedItem(
         name: '纯黑',
