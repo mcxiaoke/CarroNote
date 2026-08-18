@@ -54,12 +54,6 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
-# Multi-config generators (MSBuild) ignore CMAKE_BUILD_TYPE, so use a generator
-# expression to name the output: Debug -> CarroDev.exe, others -> CarroNote.exe.
-set_target_properties(${BINARY_NAME} PROPERTIES
-  OUTPUT_NAME "$<IF:$<CONFIG:Debug>,CarroDev,CarroNote>")
-
-
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)

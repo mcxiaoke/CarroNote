@@ -255,7 +255,7 @@ class FileHandler {
   /// 文档目录（Windows=Documents、Linux=~/Documents、macOS=Documents）。
   static Future<String> defaultBackupDirectory() async {
     if (isAndroid) {
-      // 首选 Download/Carro Note（有权限时）；不可用回退应用私有目录
+      // 首选 Download/CarroNote（有权限时）；不可用回退应用私有目录
       if (await Directory(SafeNotesConfig.androidDownloadDirectory).exists()) {
         try {
           await Directory(

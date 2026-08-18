@@ -189,7 +189,7 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.byKey(const Key('loginButton')));
     await settle(tester);
-    expect(find.text('Carro Notess'), findsAtLeastNWidgets(1));
+    expect(find.text('CarroNote'), findsAtLeastNWidgets(1));
   }, timeout: const Timeout(Duration(seconds: 90)));
 }
 ```

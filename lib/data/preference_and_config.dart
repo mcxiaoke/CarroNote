@@ -461,7 +461,7 @@ class PreferencesStorage {
   /// 用户自定义备份目录（选择备份路径功能，移动+桌面通用，持久化记住）
   ///
   /// 空串表示「未设置」，此时备份落盘回退到平台默认目录
-  /// （Android=Download/Carro Note，iOS/桌面=应用文档目录）。
+  /// （Android=Download/CarroNote，iOS/桌面=应用文档目录）。
   static String get backupDirectory =>
       _preferences?.getString(_keyBackupDirectory) ?? '';
   static Future<void> setBackupDirectory(String path) async {

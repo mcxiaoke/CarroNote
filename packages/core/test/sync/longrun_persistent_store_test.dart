@@ -70,7 +70,7 @@ const String kSeedVaultRel = 'temp/safenotes-vault';
 
 /// 真实数据集的候选密码（最初始 safe-a-2026 → 改密 safe-a-2026aaa →
 /// safe-a-2026bbb，**当前密码放首位**）。
-const List<String> kSeedVaultPasswords = ['hello.1234', 'hello.123'];
+const List<String> kSeedVaultPasswords = ['hello.1111', 'hello.1234'];
 
 /// 模拟的设备数（手机 / 平板 / 桌面）
 const List<String> kDeviceIds = ['A', 'B', 'C'];

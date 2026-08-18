@@ -163,7 +163,7 @@ def make_release():
     print(
         "\n发布命令示例：\n"
         f"  gh release create v{version} {github}/*.zip {github}/SHA256SUMS.txt \\\n"
-        f"    --title 'Carro Note v{version}' --notes '...'"
+        f"    --title 'CarroNote v{version}' --notes '...'"
     )
 
 
