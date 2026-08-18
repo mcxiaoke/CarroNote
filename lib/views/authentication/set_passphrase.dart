@@ -363,7 +363,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
 
           // 评审 #14 修复：此处才提示成功——keyring 初始化与所有副作用都成功，
           // 不会再有"误报成功"。
-          showSnackBarMessage(context, 'Passphrase set!'.tr());
+          // showSnackBarMessage(context, 'Passphrase set!'.tr());
           // start listening for session inactivity on successful login
           widget.sessionStream.add(SessionState.startListening);
 

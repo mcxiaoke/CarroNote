@@ -37,19 +37,19 @@ void showSnackBarMessage(BuildContext context, String? message) {
   }
 }
 
-/// 错误提示：destructive 变体 + 6 秒，用于同步失败等关键场景。
+/// 错误提示：destructive 变体 + 3 秒，用于同步失败等关键场景。
 void showErrorToast(BuildContext context, String message) {
   final shown = ShadSonner.maybeOf(context)?.show(
     ShadToast.destructive(
       title: Text(message, textAlign: TextAlign.center),
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 3),
     ),
   );
   if (shown == null) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
         content: Text(message),
-        duration: const Duration(seconds: 6),
+        duration: const Duration(seconds: 3),
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );

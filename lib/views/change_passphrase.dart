@@ -299,7 +299,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
     Log.auth.i('用户发起修改密码请求');
     final startedAt = DateTime.now();
     final form = formKey.currentState!;
-    final String passChangedSnackMsg = 'Passphrase changed!'.tr();
+    // final String passChangedSnackMsg = 'Passphrase changed!'.tr();
     final String wrongOldPassMsg = 'Wrong passphrase!'.tr();
 
     // 防重入：改密流程进行中（含确认框/备份/ping/密钥轮换）时忽略重复提交
@@ -443,7 +443,7 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 使用 if (!mounted) return; 模式,让 analyzer 识别 mounted 守卫
       if (!mounted) return;
-      showSnackBarMessage(context, passChangedSnackMsg);
+      // showSnackBarMessage(context, passChangedSnackMsg);
       navigator.pop();
     } finally {
       // 复位防重入（成功路径 pop 后页面已销毁，跳过 setState）

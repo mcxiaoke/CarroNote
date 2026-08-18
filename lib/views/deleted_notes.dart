@@ -128,12 +128,12 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     SyncService.instance.autoSync();
     if (mounted) {
       // P2-3：信息提示走 ShadToast。
-      showSnackBarMessage(
-        context,
-        'Restored: "{title}"'.tr(
-          namedArgs: {'title': _truncateTitle(note.title)},
-        ),
-      );
+      // showSnackBarMessage(
+      //   context,
+      //   'Restored: "{title}"'.tr(
+      //     namedArgs: {'title': _truncateTitle(note.title)},
+      //   ),
+      // );
       _refresh();
     }
   }
