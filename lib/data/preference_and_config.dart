@@ -44,6 +44,7 @@ class PreferencesStorage {
       'biometricAttemptAllTimeCount';
   static const _keyIsCompactPreview = 'isCompactPreview';
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
+  static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
   static const _keyIsRelativeTime = 'isRelativeTime';
   static const _keyIsSortByModified = 'isSortByModified';
   static const _keyIsDimTheme = 'isDimTheme';
@@ -370,6 +371,20 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsMarkdownEnabled);
     await _preferences?.setBool(_keyIsMarkdownEnabled, flag);
     _logPrefChange('Markdown 渲染', old, flag);
+  }
+
+  /// 编辑器（笔记编辑/预览页）字体大小档位索引。
+  ///
+  /// 存索引不存像素值：索引 → [EditorText.bodySizes] 映射，老用户升级改档位范围
+  /// 也自动生效；默认值 1 = 标准（16px，等于现状）。
+  /// 读取方用 [EditorText.index] 的夹紧逻辑防越界。
+  static int get editorFontSizeIndex =>
+      _preferences?.getInt(_keyEditorFontSizeIndex) ?? 1;
+
+  static Future<void> setEditorFontSizeIndex(int index) async {
+    final old = editorFontSizeIndex;
+    await _preferences?.setInt(_keyEditorFontSizeIndex, index);
+    _logPrefChange('编辑器字体大小', old, index);
   }
 
   static bool get isRelativeTime =>

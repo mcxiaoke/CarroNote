@@ -380,5 +380,12 @@
     "Failed to save note: {error}": "保存笔记失败: {error}",
     "Last Backup": "上次备份时间",
     "Backup folder: {path}": "备份路径: {path}",
-    "...": "..."
+    "...": "...",
+    "Apply": "应用",
+    "Extra Large": "特大",
+    "Font size": "字体大小",
+    "Large": "大",
+    "Small": "小",
+    "Standard": "标准",
+    "Markdown preview does not support font size adjustment": "Markdown 预览不支持字体调节"
 }

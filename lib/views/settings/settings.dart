@@ -26,7 +26,9 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
+import 'package:safenotes/views/settings/editor_font_setting.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -182,6 +184,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() => _isMarkdownEnabled = v);
             },
           ),
+        ),
+        // 编辑器字体大小：进入独立子页（预览 + 滑块 + Apply）。
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-editorfont'),
+          icon: LucideIcons.type,
+          title: 'Font size'.tr(),
+          value: EditorText.labelOf(PreferencesStorage.editorFontSizeIndex),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const EditorFontPicker(),
+              ),
+            );
+            _refreshDisplayValues();
+          },
         ),
         // 时间与排序（信息呈现方式）靠后
         KeyedSubtree(

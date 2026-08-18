@@ -20,9 +20,8 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
-import 'package:safenotes/utils/text_styles.dart';
+import 'package:safenotes/utils/editor_text.dart';
 
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -77,11 +76,9 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(title!),
       initialValue: title,
       enableInteractiveSelection: true,
-      // P1-19：编辑器标题走 AppText.title（20 bold），保留平台字体族。
-      style: AppText.title.copyWith(
-        fontFamily: uiFontFamily,
-        fontFamilyFallback: uiFontFamilyFallback,
-      ),
+      // P1-19：编辑器标题走 EditorText.title（档位标题尺寸，默认 20 bold），
+      // 仅调节编辑/预览页字体，沿用平台字体族。
+      style: EditorText.title(),
       placeholder: Text(titleHint),
       // 防御主题层 minHeight:48 抬高：编辑器标题/正文保持按内容（行高）紧凑布局
       constraints: const BoxConstraints(minHeight: 0),
@@ -117,11 +114,8 @@ class NoteFormWidget extends StatelessWidget {
       textDirection: getTextDirecton(description!),
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
-      // 编辑器正文保持 16（AppText.body），编辑态为纯文本、不套 Markdown 排版。
-      style: AppText.body.copyWith(
-        fontFamily: uiFontFamily,
-        fontFamilyFallback: uiFontFamilyFallback,
-      ),
+      // 编辑器正文走 EditorText.body（档位正文字尺寸，默认 16），编辑态纯文本。
+      style: EditorText.body(),
       placeholder: Text(hintDescription),
       // 防御主题层 minHeight:48 抬高（同标题框）
       constraints: const BoxConstraints(minHeight: 0),

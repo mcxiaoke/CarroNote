@@ -28,6 +28,7 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
@@ -242,11 +243,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         children: [
           SelectableText(
             title,
-            // P1-19：预览标题走 AppText.title（20 bold），与编辑器标题一致。
-            // 复用 _editorLikeStyle：直接套用编辑态 ShadInputFormField 的同一文字样式
-            // 来源（shad muted 字体 + 注入 foreground），确保预览与编辑逐像素一致
+            // P1-19：预览标题走 EditorText.title（档位标题尺寸，默认 20 bold），
+            // 与编辑器标题一致。复用 _editorLikeStyle 确保预览与编辑逐像素一致
             // （含 Android 上 uiFontFamily 为 null 时落到 shad muted 字体的情况）。
-            style: _editorLikeStyle(context, AppText.title),
+            style: _editorLikeStyle(context, EditorText.title()),
           ),
           // 与编辑态同构：标题/正文间统一分隔线 + 17px 间距，
           // 消除模式切换时的纵向跳动与分隔线闪现。
@@ -271,11 +271,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               },
             )
           else
-            // 预览纯文本与编辑态一致（16），不套 Markdown 排版。
-            // 复用 _editorLikeStyle，与编辑态（ShadInputFormField）字体/颜色完全一致。
+            // 预览纯文本走 EditorText.body（档位正文字尺寸，默认 16），与编辑态一致，
+            // 不套 Markdown 排版。复用 _editorLikeStyle 保证字体/颜色完全对齐。
             SelectableText(
               description,
-              style: _editorLikeStyle(context, AppText.body),
+              style: _editorLikeStyle(context, EditorText.body()),
             ),
         ],
       ),
@@ -293,6 +293,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     // 的有效样式（shad muted 字体 + 注入 foreground），避免 Markdown 正文/标题落到
     // Material 排印导致与编辑态字体/色差（尤其 Android 上 uiFontFamily 为 null 时）。
     // h6 / blockquote 保留 M3 弱化色做层级区分。
+    // P1-20：Markdown 预览暂不支持自定义字号，正文/标题固定用 AppText.body
+    // 基准与 24/20/18/17 固定层级（与编辑/预览页的 EditorText 调节解耦），
+    // 避免 Markdown 众多标签（列表/引用/代码/表格等）字号联动失控、排印错乱。
     final TextStyle uiBase = _editorLikeStyle(context, AppText.body);
     final base = MarkdownStyleSheet.fromTheme(theme);
     // 行内代码沿用主题已有配色，仅统一为等宽 + 小一号，避免硬编码颜色在

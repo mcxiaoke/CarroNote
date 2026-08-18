@@ -380,5 +380,12 @@
     "Failed to save note: {error}": "Failed to save note: {error}",
     "Last Backup": "Last Backup",
     "Backup folder: {path}": "Backup folder: {path}",
-    "...": "..."
+    "...": "...",
+    "Apply": "Apply",
+    "Extra Large": "Extra Large",
+    "Font size": "Font size",
+    "Large": "Large",
+    "Small": "Small",
+    "Standard": "Standard",
+    "Markdown preview does not support font size adjustment": "Markdown preview does not support font size adjustment"
 }
