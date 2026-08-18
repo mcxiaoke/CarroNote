@@ -1,7 +1,7 @@
 name: safenotes
 description: Encrypted, private note manager
-homepage: https://safenotes.dev/
-documentation: https://safenotes.dev/
+homepage: https://github.com/mcxiaoke/CarroNote
+documentation: https://github.com/mcxiaoke/CarroNote
 publish_to: 'none'
 
 version: 3.0.0+30000

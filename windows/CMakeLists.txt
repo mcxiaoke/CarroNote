@@ -1,10 +1,10 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(safenotes LANGUAGES CXX)
+project(CarroNote LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "safenotes")
+set(BINARY_NAME "CarroNote")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -53,6 +53,11 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+
+# Multi-config generators (MSBuild) ignore CMAKE_BUILD_TYPE, so use a generator
+# expression to name the output: Debug -> CarroDev.exe, others -> CarroNote.exe.
+set_target_properties(${BINARY_NAME} PROPERTIES
+  OUTPUT_NAME "$<IF:$<CONFIG:Debug>,CarroDev,CarroNote>")
 
 
 # Generated plugin build rules, which manage building the plugins and adding

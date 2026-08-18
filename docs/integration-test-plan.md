@@ -6,7 +6,7 @@
 
 ## 0. 背景与目标
 
-Safe Notes 当前已有 `test/` 下的"集成风格"widget 测试（`auth_flow_test.dart`
+Carro Note 当前已有 `test/` 下的"集成风格"widget 测试（`auth_flow_test.dart`
 驱动真实 App 走登录流程、`settings_flow_test.dart` 验证设置页），但：
 
 - `pubspec.yaml` 未引入 `integration_test` 包；
@@ -189,7 +189,7 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.byKey(const Key('loginButton')));
     await settle(tester);
-    expect(find.text('Safe Notes'), findsAtLeastNWidgets(1));
+    expect(find.text('Carro Notess'), findsAtLeastNWidgets(1));
   }, timeout: const Timeout(Duration(seconds: 90)));
 }
 ```

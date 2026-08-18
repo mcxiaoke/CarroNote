@@ -13,6 +13,7 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:core/core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -460,7 +461,7 @@ class PreferencesStorage {
   /// 用户自定义备份目录（选择备份路径功能，移动+桌面通用，持久化记住）
   ///
   /// 空串表示「未设置」，此时备份落盘回退到平台默认目录
-  /// （Android=Download/Safe Notes，iOS/桌面=应用文档目录）。
+  /// （Android=Download/Carro Note，iOS/桌面=应用文档目录）。
   static String get backupDirectory =>
       _preferences?.getString(_keyBackupDirectory) ?? '';
   static Future<void> setBackupDirectory(String path) async {
@@ -538,8 +539,7 @@ class ImportPassPhraseHandler {
 class SafeNotesConfig {
   static const String _appVersion = '3.0.0';
   static const int _appVersionCode = 30000;
-  static const String _appName = 'Secure Notes';
-  static const String _appSlogan = 'Encrypted Note App';
+  // 应用显示名/标语改为跟随翻译资源（AppName / AppSlogan 键），
   static const String _appLogoPath = 'assets/images/icon-round-256.png';
   // 单色主题化图标：圆角方块用 currentColor，纸张为镂空（透出页面底色），
   // 运行期按 Theme 主色着色（见 login/about 页面 SvgPicture + ColorFilter）。
@@ -553,23 +553,23 @@ class SafeNotesConfig {
   static const String _encryptedExportFileNameExtension = '.snbak';
   static const String _backupExtension = '.snbak';
   static const String _backupFileNamePrefix = 'secure_notes_backup';
-  static const String _githubUrl = 'https://github.com/mcxiaoke/SecureNotes';
-  static const String _faqsUrl = 'https://github.com/mcxiaoke/SecureNotes';
+  static const String _githubUrl = 'https://github.com/mcxiaoke/CarroNote';
+  static const String _faqsUrl = 'https://github.com/mcxiaoke/CarroNote';
   static const String _iosBackupDirectoryIndicativePath =
       '/On My iPhone/SecureNotes/';
   static const String _androidDownloadDirectory =
       '/storage/emulated/0/Download/';
   static const String _androidBackupDirectory =
-      '/storage/emulated/0/Download/SecureNotes/';
+      '/storage/emulated/0/Download/CarroNote/';
   static const String _mailToForFeedback =
-      'https://github.com/mcxiaoke/SecureNotes/issues';
+      'https://github.com/mcxiaoke/CarroNote/issues';
   static const String _sourceCodeUrl =
-      'https://github.com/mcxiaoke/SecureNotes';
+      'https://github.com/mcxiaoke/CarroNote';
   static const String _bugReportUrl =
-      'https://github.com/mcxiaoke/SecureNotes/issues';
+      'https://github.com/mcxiaoke/CarroNote/issues';
   static const String _openSourceLicense =
-      'https://github.com/mcxiaoke/SecureNotes/blob/main/files/LICENSE';
-  static const String _playStorUrl = 'https://github.com/mcxiaoke/SecureNotes';
+      'https://github.com/mcxiaoke/CarroNote/blob/main/files/LICENSE';
+  static const String _playStorUrl = 'https://github.com/mcxiaoke/CarroNote';
 
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),
@@ -609,7 +609,10 @@ class SafeNotesConfig {
     timeago.setLocaleMessages('uk', timeago.UkMessages());
   }
 
-  static String get appName => _appName;
+  /// 应用显示名：跟随系统语言（中文 萝笺 / 其它 CarroNote）；
+  static String get appName {
+    return 'AppName'.tr();
+  }
   static String get appVersion => _appVersion;
   static int get appVersionCode => _appVersionCode;
   static String get bugReportUrl => _bugReportUrl;
@@ -618,7 +621,8 @@ class SafeNotesConfig {
   static String get openSourceLicense => _openSourceLicense;
   static String get playStoreUrl => _playStorUrl;
   static String get githubUrl => _githubUrl;
-  static String get appSlogan => _appSlogan;
+  /// 应用标语：跟随翻译（中文用中文文案，其它语言回落英文统一文案）。
+  static String get appSlogan => 'AppSlogan'.tr();
   static String get appLogoPath => _appLogoPath;
   static String get appLogoSvgPath => _appLogoSvgPath;
   static String get exportFileExtension => _exportFileNameExtension;

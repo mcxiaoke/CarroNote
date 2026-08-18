@@ -53,7 +53,7 @@ class AboutPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 // 应用名 + 标语
                 Text(
-                  SafeNotesConfig.appName.tr(),
+                  SafeNotesConfig.appName,
                   style: TextStyle(
                     fontFamily: uiFontFamily,
                     fontFamilyFallback: uiFontFamilyFallback,
@@ -63,7 +63,7 @@ class AboutPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  SafeNotesConfig.appSlogan.tr(),
+                  SafeNotesConfig.appSlogan,
                   style: theme.textTheme.muted,
                 ),
                 const SizedBox(height: 24),

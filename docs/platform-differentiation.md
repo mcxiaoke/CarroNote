@@ -100,7 +100,7 @@
 ### 6.1 备份落盘通道
 文件：`lib/utils/scheduled_task.dart`（`unitBackupAttempt`）
 
-- `Platform.isAndroid` → `androidBackup()`：首选 `Download/Safe Notes`（分区存储下可能无权限，捕获 `FileSystemException` 后回退应用私有目录）；写完后 `MediaScanner.loadMedia` 让系统文件管理器可见。
+- `Platform.isAndroid` → `androidBackup()`：首选 `Download/Carro Note`（分区存储下可能无权限，捕获 `FileSystemException` 后回退应用私有目录）；写完后 `MediaScanner.loadMedia` 让系统文件管理器可见。
 - `Platform.isIOS` → `iosBackup()`：落应用文档目录（iOS 无外部目录概念）。
 - 桌面（`windows/macOS/linux`）→ `desktopBackup()`：写应用文档目录（`path_provider` 桌面返回 Documents）。
   - **历史坑**：桌面此前直接 `return true` 形成「假备份」，现已补全为真实加密落盘（评审 #2 修复）。
@@ -108,7 +108,7 @@
 ### 6.2 默认备份目录
 文件：`lib/models/file_handler.dart`（`defaultBackupDirectory`）
 
-- Android：优先 `Download/Safe Notes`，不可用回退应用文档目录。
+- Android：优先 `Download/Carro Note`，不可用回退应用文档目录。
 - iOS / 桌面：统一 `getApplicationDocumentsDirectory()`。
 
 ### 6.3 写盘后媒体库收录
@@ -144,8 +144,8 @@
 文件：`lib/data/preference_and_config.dart`（`SafeNotesConfig`）
 
 - `androidDownloadDirectory = /storage/emulated/0/Download/`
-- `androidBackupDirectory = /storage/emulated/0/Download/Safe Notes/`
-- `iosBackupDirectoryIndicativePath = /On My iPhone/Safe Notes/`（仅指示用）
+- `androidBackupDirectory = /storage/emulated/0/Download/Carro Note/`
+- `iosBackupDirectoryIndicativePath = /On My iPhone/Carro Note/`（仅指示用）
 - `backupFileName` / `exportFileNameFor()`：备份 `.snbak`、明文导出 `.json`、加密导出 `.snbak`，文件名带时间戳防覆盖。
 
 ---

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds always show CarroDev, regardless of system language -->
+    <string name="appLabel">CarroDev</string>
+</resources>

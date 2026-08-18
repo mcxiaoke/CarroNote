@@ -33,8 +33,8 @@ OUT_ROOT = os.path.join(ROOT, "temp", "screenshots")
 # 截图的 variant 列表(与 lib/utils/env_config.dart 的 _dsvByName 对应)
 VARIANTS = ["tonalSpot", "monochrome", "neutral", "vibrant", "expressive", "fidelity"]
 
-# 窗口标题匹配(应用名为 'Safe Notes')
-TITLE_RE = ".*Safe Notes.*"
+# 窗口标题匹配(应用名为 'Carro Note')
+TITLE_RE = ".*Carro Note.*"
 
 # 截图窗口尺寸：模拟手机竖屏，便于横向对比登录页布局
 PHONE_WIDTH = 390
@@ -51,7 +51,7 @@ def _get_hwnd(dlg):
     try:
         return int(dlg.handle)
     except Exception:
-        return ctypes.windll.user32.FindWindowW(None, "Safe Notes")
+        return ctypes.windll.user32.FindWindowW(None, "Carro Note")
 
 
 def _resize_to_phone(dlg):

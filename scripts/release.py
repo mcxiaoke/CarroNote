@@ -73,14 +73,14 @@ def copy_apk(src: str, dst: str, newdir: Path):
 
 def zip_windows(github: Path, version: str):
     """
-    把整个 Windows Release 目录（safenotes.exe + 各插件 DLL + data/）打包成 zip。
+    把整个 Windows Release 目录（CarroNote.exe + 各插件 DLL + data/）打包成 zip。
     只复制单个 exe 无法运行——Flutter Windows 应用依赖同目录下的 DLL 与资源。
     排除运行时生成的 logs/ 目录。
     """
     src = WIN_RELEASE_DIR
-    if not (src / "safenotes.exe").exists():
-        raise SystemExit(f"Windows 构建产物缺失：{src / 'safenotes.exe'}")
-    dst = github / f"safenotes-{version}-windows-x64.zip"
+    if not (src / "CarroNote.exe").exists():
+        raise SystemExit(f"Windows 构建产物缺失：{src / 'CarroNote.exe'}")
+    dst = github / f"CarroNote-{version}-windows-x64.zip"
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in sorted(src.rglob("*")):
             if f.is_dir():
@@ -95,9 +95,9 @@ def zip_windows(github: Path, version: str):
 
 def zip_android(github: Path, version: str):
     """把全部 Android APK + metadata 汇总打成一个 android zip。"""
-    dst = github / f"safenotes-{version}-android.zip"
+    dst = github / f"CarroNote-{version}-android.zip"
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(github.glob(f"safenotes-{version}-*.apk")):
+        for f in sorted(github.glob(f"CarroNote-{version}-*.apk")):
             zf.write(f, f.name)
         for f in sorted(github.glob(f"metadata-{version}-*.json")):
             zf.write(f, f.name)
@@ -138,14 +138,14 @@ def make_release():
         "flutter build apk --release --split-per-abi "
         "--target-platform android-arm,android-arm64,android-x64"
     )
-    copy_apk("app-x86_64-release.apk", f"safenotes-{version}-x86_64.apk", github)
-    copy_apk("app-arm64-v8a-release.apk", f"safenotes-{version}-arm64-v8a.apk", github)
-    copy_apk("app-armeabi-v7a-release.apk", f"safenotes-{version}-armeabi-v7a.apk", github)
+    copy_apk("app-x86_64-release.apk", f"CarroNote-{version}-x86_64.apk", github)
+    copy_apk("app-arm64-v8a-release.apk", f"CarroNote-{version}-arm64-v8a.apk", github)
+    copy_apk("app-armeabi-v7a-release.apk", f"CarroNote-{version}-armeabi-v7a.apk", github)
     copy_apk("output-metadata.json", f"metadata-{version}-split-per-abi.json", github)
 
     # ② Android fat APK（单包兼容所有 ABI，方便侧载）
     run("flutter build apk --release")
-    copy_apk("app-release.apk", f"safenotes-{version}-all.apk", github)
+    copy_apk("app-release.apk", f"CarroNote-{version}-all.apk", github)
     copy_apk("output-metadata.json", f"metadata-{version}-all.json", github)
 
     # ③ Windows desktop（整目录打包 zip，单 exe 缺 DLL 无法运行）
@@ -163,7 +163,7 @@ def make_release():
     print(
         "\n发布命令示例：\n"
         f"  gh release create v{version} {github}/*.zip {github}/SHA256SUMS.txt \\\n"
-        f"    --title 'Safe Notes v{version}' --notes '...'"
+        f"    --title 'Carro Note v{version}' --notes '...'"
     )
 
 

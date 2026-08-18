@@ -1,6 +1,6 @@
 {
-    "name": "safenotes",
-    "short_name": "safenotes",
+    "name": "CarroNote",
+    "short_name": "CarroNote",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

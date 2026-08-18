@@ -1,4 +1,4 @@
-# Safe Notes 同步功能改造设计文档
+# Carro Note 同步功能改造设计文档
 
 > 版本：v1.0
 > 适用项目：safenotes（Flutter / Android，fork 改造版）
@@ -109,7 +109,7 @@
 
 ```
 ┌──────────────────────────────────────────────────┐
-│              Safe Notes App (Flutter)            │
+│              Carro Note App (Flutter)            │
 │                                                  │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐  │
 │  │   Views    │  │  Settings  │  │  Sync UI   │  │

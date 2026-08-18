@@ -67,8 +67,7 @@ void main() {
       await settle(tester);
 
       // 应进入主界面（主屏在 ≥600px 视口下 AppBar 与 HomeSidebar 都会出现
-      // "Safe Notes"，故至少 1 个即可；精确数量随布局变化，不写死）。
-      expect(find.text('Safe Notes'), findsAtLeastNWidgets(1));
+      expect(find.text('Carro Note'), findsAtLeastNWidgets(1));
       // 设置密码页已不在
       expect(find.text('Set Passphrase'), findsNothing);
     }, timeout: const Timeout(Duration(seconds: 90)));
@@ -92,8 +91,7 @@ void main() {
         await settle(tester);
 
         // 进入主界面且 seed 的笔记可见（主屏 AppBar 与 HomeSidebar 都会渲染
-        // "Safe Notes"，至少 1 个即可）。
-        expect(find.text('Safe Notes'), findsAtLeastNWidgets(1));
+        expect(find.text('Carro Note'), findsAtLeastNWidgets(1));
         expect(find.text(kSeedNoteTitle), findsOneWidget);
       },
       timeout: const Timeout(Duration(seconds: 90)),

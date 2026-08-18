@@ -1,4 +1,4 @@
-# Safe Notes — 开发指南
+# Carro Note — 开发指南
 
 本指南涵盖 **代码结构、构建与测试流程**。项目概要请参阅 [`README.zh.md`](../README.zh.md)。
 
@@ -150,7 +150,7 @@ safenotes_cli.exe --data-dir temp/dev-a --password P db info
 
 ## 日志系统
 
-Safe Notes 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。日志核心在 `packages/core/lib/src/logger/`，平台目录由 App 侧经 `logDirResolverOverride` 注入。
+Carro Note 内置一套**全应用统一日志系统**，覆盖所有重要业务操作与未捕获异常，桌面端（Windows / macOS / Linux）与移动端（Android / iOS）一视同仁启用。日志核心在 `packages/core/lib/src/logger/`，平台目录由 App 侧经 `logDirResolverOverride` 注入。
 
 ### 核心设计
 - **统一入口**：`Log.app` / `Log.note` / `Log.db` / `Log.auth` / `Log.sync` / `Log.backup` / `Log.settings` / `Log.crypto` / `Log.web` / `Log.ui` 十类分级日志（trace / debug / info / warn / error / fatal）。

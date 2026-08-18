@@ -34,7 +34,7 @@
 
 [Unit]
 Description=SafeNotes Sync Server (SafeServer v2.1)
-Documentation=https://github.com/your-org/safenotes/docs/server-api-spec.md
+Documentation=https://github.com/mcxiaoke/CarroNote/docs/server-api-spec.md
 After=network.target
 Wants=network-online.target
 

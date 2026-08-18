@@ -1,8 +1,8 @@
-# Safe Notes
+# Carro Note
 
 > 加密、私密的本地优先（local-first）笔记管理器 —— **端到端加密（E2EE）同步版**
 
-Safe Notes 是一款注重隐私的笔记应用：所有笔记**默认在本地设备上加密存储**（AES-256-GCM），不依赖任何第三方云。
+Carro Note 是一款注重隐私的笔记应用：所有笔记**默认在本地设备上加密存储**（AES-256-GCM），不依赖任何第三方云。
 
 本项目基于上游 [keshav-space/safenotes](https://github.com/keshav-space/safenotes) fork 并进行了大幅改造，**核心新增了一套完整的端到端加密多设备同步子系统**：客户端 `SyncEngine` + 可插拔后端抽象（WebDAV / 自建 HTTP 服务 / 本地文件系统），并配套提供了 **Go 与 Node.js 两种**参考实现的服务端（SafeServer）。
 

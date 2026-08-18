@@ -75,15 +75,15 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 // Keep this file ASCII-only (rc.exe
 // parses with the system codepage; non-ASCII comments would garble strings).
 #if defined(_DEBUG)
-#define VER_PRODUCT_NAME_STR "snotes-dev"
-#define VER_FILE_DESCRIPTION_STR "Secure Notes (Dev)"
-#define VER_INTERNAL_NAME_STR "snotes-dev"
-#define VER_FILENAME_NAME_STR "SNotesDev.exe"
+#define VER_PRODUCT_NAME_STR "carronote-dev"
+#define VER_FILE_DESCRIPTION_STR "CarroNote (Dev)"
+#define VER_INTERNAL_NAME_STR "carronote-dev"
+#define VER_FILENAME_NAME_STR "CarroNote.exe"
 #else
-#define VER_PRODUCT_NAME_STR "snotes"
-#define VER_FILE_DESCRIPTION_STR "Secure Notes"
-#define VER_INTERNAL_NAME_STR "snotes"
-#define VER_FILENAME_NAME_STR "SNotes.exe"
+#define VER_PRODUCT_NAME_STR "carronote"
+#define VER_FILE_DESCRIPTION_STR "CarroNote"
+#define VER_INTERNAL_NAME_STR "carronote"
+#define VER_FILENAME_NAME_STR "CarroNote.exe"
 #endif
 
 VS_VERSION_INFO VERSIONINFO
@@ -107,7 +107,7 @@ BEGIN
             VALUE "FileDescription", VER_FILE_DESCRIPTION_STR "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", VER_INTERNAL_NAME_STR "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 SecureNotes. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 CarroNote. All rights reserved." "\0"
             VALUE "OriginalFilename", VER_FILENAME_NAME_STR "\0"
             VALUE "ProductName", VER_PRODUCT_NAME_STR "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

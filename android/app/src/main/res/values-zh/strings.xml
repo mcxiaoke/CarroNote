@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Simplified Chinese launcher label -->
+    <string name="appLabel">萝笺</string>
+</resources>

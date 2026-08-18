@@ -115,8 +115,7 @@ class BackupSettingState extends State<BackupSetting> {
           icon: LucideIcons.cloud,
           title: 'Auto Backup'.tr(),
           description:
-              'This will create an encrypted local backup, which gets automatically updated every day. Moreover, the backup is designed such that it can be used in tandem with other open-source tools like SyncThing to keep the multiple redundant backups across different devices on the local network.\nTo switch to a new device, you would simply need to copy this backup file to the new device and import that in your new Safe Notes app.\nFor more, see FAQ.'
-                  .tr(),
+              'AppBackupDescription'.tr(),
           value: isBackupOn,
           onChanged: (value) async {
             await PreferencesStorage.setIsBackupOn(value);

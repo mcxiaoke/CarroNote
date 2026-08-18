@@ -1,8 +1,8 @@
-# Safe Notes
+# Carro Note
 
 > Encrypted, private, local-first note manager — **end-to-end encrypted (E2EE) sync edition**
 
-Safe Notes is a privacy-focused note-taking app: all notes are **encrypted at rest on your device by default** (AES-256-GCM), with no dependency on any third-party cloud.
+Carro Note is a privacy-focused note-taking app: all notes are **encrypted at rest on your device by default** (AES-256-GCM), with no dependency on any third-party cloud.
 
 This project is a fork of the upstream [keshav-space/safenotes](https://github.com/keshav-space/safenotes) with extensive modifications. The centerpiece is a **complete end-to-end encrypted multi-device sync subsystem**: a client-side `SyncEngine` + a pluggable backend abstraction (WebDAV / self-hosted HTTP service / local filesystem), accompanied by two reference server implementations (SafeServer) in **Go and Node.js**.
 

@@ -29,9 +29,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Size size(1280, 800);
 #ifdef _DEBUG
   // Runner.rc). Keep this file ASCII-only: MSVC builds with codepage 936.
-  if (!window.Create(L"Safe Notes (Debug)", origin, size)) {
+  if (!window.Create(L"CarroNote (Debug)", origin, size)) {
 #else
-  if (!window.Create(L"Safe Notes", origin, size)) {
+  if (!window.Create(L"CarroNote", origin, size)) {
 #endif
     return EXIT_FAILURE;
   }

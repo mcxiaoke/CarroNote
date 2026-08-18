@@ -1,4 +1,4 @@
-# Safe Notes — Developer Guide
+# Carro Note — Developer Guide
 
 This guide covers the **code structure, build, and testing workflow**. For a brief project overview, see [`README.md`](../README.md).
 
@@ -148,7 +148,7 @@ Exit-code convention: `0` success, `1` user-anticipated error, `2` abnormal cras
 
 ## Logging System
 
-Safe Notes ships an **app-wide unified logging system** covering all important business operations and uncaught exceptions, enabled equally on desktop (Windows / macOS / Linux) and mobile (Android / iOS). The log core lives in `packages/core/lib/src/logger/`; the platform directory is injected by the app side via `logDirResolverOverride`.
+Carro Note ships an **app-wide unified logging system** covering all important business operations and uncaught exceptions, enabled equally on desktop (Windows / macOS / Linux) and mobile (Android / iOS). The log core lives in `packages/core/lib/src/logger/`; the platform directory is injected by the app side via `logDirResolverOverride`.
 
 ### Core design
 - **Unified entry points**: `Log.app` / `Log.note` / `Log.db` / `Log.auth` / `Log.sync` / `Log.backup` / `Log.settings` / `Log.crypto` / `Log.web` / `Log.ui` — ten leveled log categories (trace / debug / info / warn / error / fatal).

@@ -189,7 +189,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           AutoSizeText(
-                            officialAppName.tr(),
+                            officialAppName,
                             maxLines: 1,
                             minFontSize: 8,
                             style: TextStyle(
@@ -202,7 +202,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
                             child: AutoSizeText(
-                              appSlogan.tr(),
+                              appSlogan,
                               maxLines: 1,
                               minFontSize: 8,
                               overflow: TextOverflow.ellipsis,

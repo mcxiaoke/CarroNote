@@ -90,8 +90,8 @@ class HomeSidebar extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      SafeNotesConfig.appName.tr(),
+                    child:                   Text(
+                      SafeNotesConfig.appName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

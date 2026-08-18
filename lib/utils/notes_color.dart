@@ -118,7 +118,7 @@ List<NotesColorTheme> allNotesColorTheme = [
     ],
   ),
   const NotesColorTheme(
-    prefix: 'Refreshing',
+    prefix: 'Blossom',
     helper: 'Soft Pink, Peach Amber, Yucca and Arbor Green',
     colorList: [
       Color(0xFFFFDDE2),

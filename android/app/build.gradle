@@ -73,15 +73,14 @@ android {
        debug {
            applicationIdSuffix ".dev"
            versionNameSuffix ".dev"
-           resValue "string", "appLabel", '"SNotesDev"'
+           // appLabel 改由 src/debug/res/values*/strings.xml
        }
        release {
-           resValue "string", "appLabel", '"SNotes"'
+           // appLabel 由 src/main/res/values*/strings.xml 按系统语言提供（萝笺/蘿箋/CarroNote）
            signingConfig signingConfigs.release
        }
 
        profile {
-           resValue "string", "appLabel", '"SNotesP"'
            signingConfig signingConfigs.release
        }
    }
