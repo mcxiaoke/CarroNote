@@ -10,7 +10,7 @@ Flutter 加密笔记应用，本地优先 + E2EE 多设备同步。
 - `server/`：服务端参考实现（Go / Node.js）
 
 ## 环境路径
-- `PUB_CACHE`: Dart包缓存在这里 C:\Home\Develop\flutter\dart\cache\hosted
+- `PUB_CACHE`: Flutter|Dart包缓存路径看这里 `./dart_tool/package_config.json`
 - 查找工具和开发环境和软件包用 Everything Cli工具 `es.exe` 直接搜索，禁止大范围find
 
 ## 开发测试
