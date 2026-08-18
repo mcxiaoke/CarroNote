@@ -75,14 +75,15 @@ class HomeSidebar extends StatelessWidget {
         color: bg,
         child: Column(
           children: [
-            // 顶部 Logo + 应用名
+            // 顶部 Logo + 应用名 + 标语（与 Android Drawer 的 _drawerHeader 对齐）
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: 32,
-                    height: 32,
+                    width: 48,
+                    height: 48,
                     child: Image.asset(
                       SafeNotesConfig.appLogoPath,
                       semanticLabel: SafeNotesConfig.appName,
@@ -90,17 +91,35 @@ class HomeSidebar extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child:                   Text(
-                      SafeNotesConfig.appName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontFamily: uiFontFamily,
-                        fontFamilyFallback: uiFontFamilyFallback,
-                        fontWeight: FontWeight.bold,
-                        fontSize: AppTextSize.s16,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          SafeNotesConfig.appName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontFamily: uiFontFamily,
+                            fontFamilyFallback: uiFontFamilyFallback,
+                            fontWeight: FontWeight.bold,
+                            fontSize: AppTextSize.s16,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          SafeNotesConfig.appSlogan,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg.withValues(alpha: 0.65),
+                            fontFamily: uiFontFamily,
+                            fontFamilyFallback: uiFontFamilyFallback,
+                            fontSize: AppTextSize.s12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

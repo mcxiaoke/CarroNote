@@ -55,15 +55,14 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
   BuildContext context, {
   required SyncBackendDraft initialDraft,
 }) {
-  final theme = ShadTheme.of(context);
   if (isDesktopPlatform) {
     return showDialog<SyncBackendDraft>(
       context: context,
       // 点遮罩 = 取消（返回 null），与移动端返回键语义一致
       barrierDismissible: true,
       builder: (dialogContext) => Dialog(
-        // 与 shadcn 设置页同源的背景与圆角，避免"没样式"的观感
-        backgroundColor: theme.colorScheme.background,
+        // 与 app_dialogs 内 M3 AlertDialog 默认表面 surfaceContainerHigh 一致
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         insetPadding: const EdgeInsets.all(24),
         child: ConstrainedBox(
@@ -90,7 +89,7 @@ Future<SyncBackendDraft?> showSyncBackendConfigPanel(
     MaterialPageRoute<SyncBackendDraft>(
       fullscreenDialog: true,
       builder: (_) => Scaffold(
-        backgroundColor: theme.colorScheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         appBar: AppBar(title: Text('Sync Configuration'.tr())),
         body: SafeArea(
           bottom: false,

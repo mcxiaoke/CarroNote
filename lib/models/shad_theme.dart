@@ -76,9 +76,14 @@ class ShadThemes {
       // 输入框与按钮同高（48）：外层 minHeight 垫高 + 对称大内边距使文字垂直居中，
       // 避免「minHeight 只把内容顶到上方、底部留空」的偏上观感。
       // 仅在此覆盖，未显式指定 padding/constraints 的 ShadInput/ShadInputFormField 全部生效。
-      inputTheme: const ShadInputTheme(
-        constraints: BoxConstraints(minHeight: 48),
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      // 填充：用 M3 中性表面阶梯的 surfaceContainer（比页面底色 surfaceContainerLow
+      // 恰好一档），亮/暗两种模式都保持可辨的微弱对比，且随 seed 色与明暗自动适配、
+      // 不写死固定颜色。ShadInputTheme.merge 会把默认 variant 的 outline 边框与此
+      // decoration 合并，所以边框不会丢。
+      inputTheme: ShadInputTheme(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: ShadDecoration(color: m3.surfaceContainer),
       ),
       // 按钮文字随 48 高度放大一档（14→16），与 Material 按钮视觉一致；link 保持原样。
       // 填充主按钮：背景用 primaryContainer（如奶油色），文字用
@@ -108,6 +113,17 @@ class ShadThemes {
       switchTheme: ShadSwitchTheme(
         uncheckedTrackColor: m3.surfaceContainerHighest,
         thumbColor: scheme.background,
+      ),
+      // 对话框背景：用 M3 的 surfaceContainerHigh，与 app_dialogs 里系统 M3
+      // AlertDialog 的默认表面（colorScheme.surfaceContainerHigh）保持一致；
+      // 替代 shadcn Slate 默认的「纯白(亮)/纯黑(暗)」background，随明暗与 seed
+      // 自动适配，绝不刺眼的纯白纯黑。覆盖后，桌面 ShadDialog
+      // （导出备份弹窗、各类 showAppDialog 弹窗）默认即使用此背景。
+      primaryDialogTheme: ShadDialogTheme(
+        backgroundColor: m3.surfaceContainerHigh,
+      ),
+      alertDialogTheme: ShadDialogTheme(
+        backgroundColor: m3.surfaceContainerHigh,
       ),
     );
   }

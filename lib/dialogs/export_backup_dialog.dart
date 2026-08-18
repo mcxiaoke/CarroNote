@@ -239,7 +239,7 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
     // 移动端：全屏对话框，与同步配置一致
     if (!isDesktopPlatform) {
       return Scaffold(
-        backgroundColor: ShadTheme.of(context).colorScheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         appBar: AppBar(title: Text('Export Backup'.tr(), style: appBarTitle)),
         body: SafeArea(
           bottom: false,
