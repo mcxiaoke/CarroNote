@@ -543,6 +543,10 @@ class SafeNotesConfig {
   static const String _appName = 'Secure Notes';
   static const String _appSlogan = 'Encrypted Note App';
   static const String _appLogoPath = 'assets/images/icon-round-256.png';
+  // 单色主题化图标：圆角方块用 currentColor，纸张为镂空（透出页面底色），
+  // 运行期按 Theme 主色着色（见 login/about 页面 SvgPicture + ColorFilter）。
+  static const String _appLogoSvgPath =
+      'assets/images/icon-round-simple-chip.svg';
   static const String _exportFileNamePrefix = 'safenotes_';
   // 导入允许的扩展名：明文 .json + 加密 .snbak（见 docs/
   // backup-encryption-design-20260810.md §4，双扩展名均需文件选择器可识别）
@@ -615,6 +619,7 @@ class SafeNotesConfig {
   static String get githubUrl => _githubUrl;
   static String get appSlogan => _appSlogan;
   static String get appLogoPath => _appLogoPath;
+  static String get appLogoSvgPath => _appLogoSvgPath;
   static String get exportFileExtension => _exportFileNameExtension;
 
   /// 导入允许的文件扩展名列表：明文 `.json` + 加密 `.snbak`

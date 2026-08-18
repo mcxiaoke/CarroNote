@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Simple flat-color redraw of the supplied icon. Pure SVG: no embedded raster image. -->
+  <rect width="1024" height="1024" rx="210" fill="#FFE48A"/>
+  <rect x="48" y="48" width="928" height="928" rx="190" fill="#FFE7A0" opacity="0.35"/>
+
+  <g transform="translate(0, 80)">
+  <!-- subtle simplified shadow -->
+  <path d="M213 247L213 622Q213 747 338 747L671 747Q796 747 796 622L796 247Q796 122 671 122L338 122Q213 122 213 247Z" fill="#D9A83C" opacity="0.18" transform="translate(0 12)"/>
+
+  <!-- paper -->
+  <path d="M223 232L223 633Q223 753 343 753L666 753Q786 753 786 633L786 232Q786 112 666 112L343 112Q223 112 223 232Z" fill="#FFFDF8" stroke="#E8B34B" stroke-width="3"/>
+
+  <!-- top dots -->
+  <circle cx="341" cy="269" r="22" fill="#FFD76C"/>
+  <circle cx="453" cy="269" r="22" fill="#FFD76C"/>
+  <circle cx="565" cy="269" r="22" fill="#FFD76C"/>
+  <circle cx="677" cy="269" r="22" fill="#FFD76C"/>
+
+  <!-- text lines -->
+  <rect x="307" y="378" width="398" height="23" rx="11.5" fill="#FFD46A"/>
+  <rect x="307" y="486" width="324" height="20" rx="10" fill="#FFD46A"/>
+  <rect x="307" y="594" width="231" height="20" rx="10" fill="#FFD46A"/>
+
+  <!-- carrot leaves -->
+  <path d="M741 571c-36-60-27-105 14-107 34-2 52 25 47 65-4 31-25 54-61 71Z" fill="#8FBE22" stroke="#6F9C13" stroke-width="3"/>
+  <path d="M770 559c-22-75 2-123 42-117 37 5 52 41 36 81-14 34-38 54-78 63Z" fill="#A8D62A" stroke="#79A916" stroke-width="3"/>
+  <path d="M788 575c30-64 72-78 94-48 20 28 3 64-32 81-25 12-45 10-62-2Z" fill="#92C522" stroke="#6F9C13" stroke-width="3"/>
+  <path d="M757 584c-1-67 22-103 55-92 30 10 34 45 8 75-17 19-37 29-63 17Z" fill="#A8D62A" opacity="0.98"/>
+
+  <!-- carrot body -->
+  <path d="M781 570c53 49 45 134-10 184-58 53-170 113-214 102-48-12 2-131 38-195 36-64 81-118 127-109 22 4 42 12 59 18Z" fill="#FF9E32" stroke="#E9821F" stroke-width="4"/>
+
+  <!-- carrot simple grooves -->
+  <path d="M611 624c18 7 32 15 48 26" fill="none" stroke="#E9821F" stroke-width="22" stroke-linecap="round"/>
+  <path d="M627 730c18 14 31 23 44 36" fill="none" stroke="#E9821F" stroke-width="22" stroke-linecap="round"/>
+  </g>
+</svg>
