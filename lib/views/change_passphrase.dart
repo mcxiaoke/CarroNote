@@ -84,7 +84,11 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
       body: SingleChildScrollView(
         //reverse: true,
         controller: _scrollController,

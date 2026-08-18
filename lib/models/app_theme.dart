@@ -143,15 +143,17 @@ class AppThemes {
       // 「亮色死白、暗色死黑」的观感；仍属中性表面，不破坏整体风格。
       scaffoldBackgroundColor: scheme.surfaceContainerLow,
       appBarTheme: base.appBarTheme.copyWith(
-        backgroundColor: darkMode ? scheme.surface : appBarScheme.primary,
-        foregroundColor: darkMode ? scheme.onSurface : appBarScheme.onPrimary,
+        backgroundColor:
+            darkMode ? scheme.surface : appBarScheme.primaryContainer,
+        foregroundColor:
+            darkMode ? scheme.onSurface : appBarScheme.onPrimaryContainer,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         systemOverlayStyle: darkMode
             ? null
             : SystemUiOverlayStyle(
-                statusBarColor: appBarScheme.primary,
-                statusBarIconBrightness: Brightness.light,
+                statusBarColor: appBarScheme.primaryContainer,
+                statusBarIconBrightness: Brightness.dark,
               ),
       ),
       filledButtonTheme: FilledButtonThemeData(style: secondaryBtn),

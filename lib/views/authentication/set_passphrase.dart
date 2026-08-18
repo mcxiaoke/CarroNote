@@ -102,8 +102,16 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: AppBar(
-          title: Text('Set Passphrase'.tr(), style: appBarTitle),
+          title: Text(
+            'Set Passphrase'.tr(),
+            style: appBarTitle.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
           centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
         ),
         body: CustomScrollView(
           controller: _scrollController,

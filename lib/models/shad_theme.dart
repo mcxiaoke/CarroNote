@@ -75,7 +75,13 @@ class ShadThemes {
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
       // 按钮文字随 48 高度放大一档（14→16），与 Material 按钮视觉一致；link 保持原样。
+      // 填充主按钮：背景用 primaryContainer（如奶油色），文字用
+      // onPrimaryContainer（深色）。注意不能把全局 colorScheme.primary 改成
+      // primaryContainer——outline/link 按钮的文字就是拿 primary 当前景色的，
+      // 那样会让它们变成浅色而压不住浅背景。所以只在此处单独覆盖填充按钮。
       primaryButtonTheme: ShadButtonTheme(
+        backgroundColor: m3.primaryContainer,
+        foregroundColor: m3.onPrimaryContainer,
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
       destructiveButtonTheme: ShadButtonTheme(

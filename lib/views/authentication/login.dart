@@ -136,8 +136,16 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: AppBar(
-          title: Text('Login'.tr(), style: appBarTitle),
+          title: Text(
+            'Login'.tr(),
+            style: appBarTitle.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
           centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
         ),
         body: CustomScrollView(
           slivers: [
