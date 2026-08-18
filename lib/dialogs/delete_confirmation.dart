@@ -1,13 +1,19 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 笔记删除确认对话框。
 // 已迁移到统一模板 showAppDestructive（lib/widgets/app_dialogs.dart）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 
-// Project imports:
 import 'package:safenotes/widgets/app_dialogs.dart';
 
 /// 显示删除确认对话框，删除确认后调用 [callback]。

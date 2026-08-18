@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * WebDavBackend / SafeServerBackend 重定向防护单元测试（B-H1 HTTP 重定向修复）
  *
  * 用 MockClient 模拟服务端 3xx，验证两个后端的写路径：

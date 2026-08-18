@@ -1,16 +1,22 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 笔记卡字体色对比度测试（P1-12）
 //
 // 覆盖：16 个卡片色主题（allNotesColorTheme）的每个颜色，
 // 在「原色」与「浅色模式提亮 0.4」两种背景下，getFontColorForBackground
 // 选出的字体色对比度均 ≥ 4.5（WCAG AA）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 
-// Project imports:
 import 'package:safenotes/utils/notes_color.dart';
 
 void main() {

@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 设备 ID 工具
  *
  * 用途：
@@ -22,13 +31,10 @@
 
 // Dart 原生导入
 
-// Dart imports:
 import 'dart:io' show Platform;
 
-// Package imports:
 import 'package:device_info_plus/device_info_plus.dart';
 
-// Project imports:
 import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入

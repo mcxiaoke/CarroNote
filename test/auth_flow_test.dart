@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 认证流程集成测试
 //
 // 驱动真实 App（AuthWall → 登录 / 首次设置密码），覆盖三条主路径：
@@ -11,11 +20,9 @@
 // flutter_test 中 autofocus 唤起模拟软键盘会让该动画永不收敛，导致 pumpAndSettle
 // 卡死。因此全程用 settle()（有限时长 pump）代替 pumpAndSettle。
 
-// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'test_helpers.dart';
 
 const String kTestPassword = 'hello.1111';

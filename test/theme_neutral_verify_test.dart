@@ -1,7 +1,19 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 主题 seed 中性换肤（方案 A+C）回归测试。
 // 验证：中性灰度 seed 被识别为中性且 monochrome 输出确为灰度；彩色 seed 不被误判。
+
 import 'package:flutter/material.dart';
+
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:safenotes/models/seed_scheme.dart';
 
 /// 颜色是否灰度（三通道最大差值 ≤ 阈值，monochrome 色度恒 0，留容差给转换误差）。
@@ -48,14 +60,20 @@ void main() {
         scheme.secondary,
         scheme.outline,
       ]) {
-        expect(_isGray(c), isTrue,
-            reason: '非灰度: #${c.toARGB32().toRadixString(16)}');
+        expect(
+          _isGray(c),
+          isTrue,
+          reason: '非灰度: #${c.toARGB32().toRadixString(16)}',
+        );
       }
     }
   });
 
   test('彩色 seed 仍用 tonalSpot（primary 带色度）', () {
-    final scheme = buildSeedColorScheme(const Color(0xFF2D6CDF), Brightness.light);
+    final scheme = buildSeedColorScheme(
+      const Color(0xFF2D6CDF),
+      Brightness.light,
+    );
     expect(_isGray(scheme.primary), isFalse);
   });
 }

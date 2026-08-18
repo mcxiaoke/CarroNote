@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 结构化日志工具
 //
 // 使用 Go 1.21+ 标准库 log/slog，输出 JSON 或文本格式的结构化日志。

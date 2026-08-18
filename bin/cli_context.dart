@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // SafeNotes CLI 运行时上下文（纯 Dart，无 Flutter 依赖）。
 //
 // CLI 是核心逻辑的第二个前端（App 是第一个）。本文件只依赖纯 Dart 包
@@ -15,11 +24,9 @@
 
 // Dart 原生导入
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package imports:
 import 'package:args/args.dart';
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;

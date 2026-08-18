@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 后端 HTTP 统一发送助手 —— B-H1 重定向修复
  *
  * 背景问题：

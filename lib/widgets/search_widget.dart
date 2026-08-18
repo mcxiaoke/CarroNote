@@ -11,13 +11,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/text_direction_util.dart';

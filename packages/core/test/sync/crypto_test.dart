@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 加密层单元测试
 //
 // 验证：PBKDF2 确定性、AES-GCM 往返、dataKey wrap/unwrap、

@@ -11,13 +11,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 
-// Package imports:
 import 'package:core/core.dart';
 
-// Project imports:
 import 'package:safenotes/sync/sync_service.dart';
 
 class NoteEditorState {

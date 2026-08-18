@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
 * First-run smoke test: simulate a fresh install (empty data dir) by pointing
 * the app's data dir at a dedicated empty folder, then:
 *   1. create the vault (enter the passphrase twice on the setup screen),

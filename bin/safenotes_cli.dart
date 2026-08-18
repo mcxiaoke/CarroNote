@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // SafeNotes 核心逻辑 CLI —— 纯 Dart 驱动的真实流程测试 / 互操作验证入口。
 //
 // CLI 是核心逻辑的第二个前端（App 是第一个）。它一旦编译不过，就说明有人往
@@ -19,14 +28,11 @@
 
 // Dart 原生导入
 
-// Dart imports:
 import 'dart:io';
 
-// Package imports:
 import 'package:args/command_runner.dart';
 import 'package:core/core.dart';
 
-// Project imports:
 import 'cli_commands.dart';
 import 'cli_context.dart';
 

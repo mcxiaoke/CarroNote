@@ -8,13 +8,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:io';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
@@ -22,7 +19,6 @@ import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/file_handler.dart';

@@ -128,3 +128,9 @@ flutter:
     - family: NotoMonochromaticEmoji
       fonts:
         - asset: assets/fonts/NotoEmoji-VariableFont_wght.ttf
+
+import_sorter:
+  emojis: false # Optional, defaults to false
+  comments: false # Optional, defaults to true
+  ignored_files: # Optional, defaults to []
+    - \/temp\/*

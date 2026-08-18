@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 最近删除视图
  *
  * 功能：
@@ -14,15 +23,12 @@
  *     真正永久清理需要“远端过期墓碑清理”机制（暂未实现，参见 sync_design）
  */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';

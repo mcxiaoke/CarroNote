@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 桌面平台滚动行为。

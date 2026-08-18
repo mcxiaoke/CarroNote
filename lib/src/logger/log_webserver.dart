@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 日志 HTTP 服务器（全平台：移动端 + 桌面端）
  *
  * 设计目标：
@@ -42,19 +51,15 @@
 
 // Dart 导入
 
-// Dart imports:
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-// Flutter imports:
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/platform_ui.dart';

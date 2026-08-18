@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * Keyring 密钥环（P2 方案 B：取代 Vault，密钥单一真相源）
  *
  * 设计文档：docs/p2-keyring-journal-design-fixed.md（v2 方案 B）

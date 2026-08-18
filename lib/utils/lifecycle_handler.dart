@@ -11,11 +11,9 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 
 class AppLifecycleEventHandler extends WidgetsBindingObserver {

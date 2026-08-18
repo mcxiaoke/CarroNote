@@ -11,16 +11,13 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:io';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:media_scanner/media_scanner.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';

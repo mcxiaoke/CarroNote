@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * sendWithRedirectPolicy 真实网络集成测试（B-H1，默认跳过）
  *
  * 用真实 http.Client()（底层 dart:io HttpClient）打 https://httpbun.com/，

@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Package imports:
 import 'package:zxcvbnm/languages/en.dart' as en;
 import 'package:zxcvbnm/zxcvbnm.dart';
 

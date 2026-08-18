@@ -11,10 +11,8 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 信息提示（P2-3）：统一走 ShadSonner/ShadToast。

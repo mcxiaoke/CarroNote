@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // SafeNotes 核心逻辑唯一公开出口。
 //
 // 本包为纯 Dart（无 Flutter 依赖），包含加密 / 数据库 / 同步引擎核心逻辑。

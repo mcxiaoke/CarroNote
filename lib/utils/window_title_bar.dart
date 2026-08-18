@@ -1,7 +1,14 @@
-// Dart imports:
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 import 'dart:io';
 
-// Flutter imports:
 import 'package:flutter/services.dart';
 
 /// 将应用主题同步到 Windows 原生标题栏（仅 Windows 平台生效）。

@@ -16,7 +16,6 @@
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, kIsWeb;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 平台相关的 UI 字体族。

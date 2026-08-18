@@ -12,11 +12,9 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/seed_scheme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
@@ -143,10 +141,12 @@ class AppThemes {
       // 「亮色死白、暗色死黑」的观感；仍属中性表面，不破坏整体风格。
       scaffoldBackgroundColor: scheme.surfaceContainerLow,
       appBarTheme: base.appBarTheme.copyWith(
-        backgroundColor:
-            darkMode ? scheme.surface : appBarScheme.primaryContainer,
-        foregroundColor:
-            darkMode ? scheme.onSurface : appBarScheme.onPrimaryContainer,
+        backgroundColor: darkMode
+            ? scheme.surface
+            : appBarScheme.primaryContainer,
+        foregroundColor: darkMode
+            ? scheme.onSurface
+            : appBarScheme.onPrimaryContainer,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         systemOverlayStyle: darkMode

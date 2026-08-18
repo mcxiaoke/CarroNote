@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * Journal 操作日志（P2 设计 §3）
  *
  * 双角色（docs/p2-keyring-journal-design-fixed.md §3.1）：

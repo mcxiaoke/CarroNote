@@ -1,13 +1,19 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 导航菜单项（Drawer / 桌面 Sidebar 共用），风格与设置页 shadcn 设置项一致：
 // 品牌色圆角图标容器 + 文字 + 可选尾部 + 整行点击反馈（Material + InkWell）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/utils/spacing.dart';
 
 /// 单个导航菜单项。

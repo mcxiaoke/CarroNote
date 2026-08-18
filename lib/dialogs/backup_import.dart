@@ -1,14 +1,20 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 导入备份入口。
 // 已迁移到统一模板 showAppConfirm（lib/widgets/app_dialogs.dart）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 
-// Project imports:
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';

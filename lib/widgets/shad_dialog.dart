@@ -1,13 +1,19 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 对话框底部操作区 shadcn 化：替代 DialogActionBar / DialogButton，
 // 统一为 ShadButton（outline / 主操作 / 危险操作），风格与设置页、主页一致。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/utils/styles.dart';
 
 /// 统一弹窗约束：固定宽度 440（min=max，窄屏自动收窄到可用宽度）。

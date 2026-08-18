@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 重型随机混沌测试：多客户端 + 随机时序 + 随机改密码
 //
 // 设计文档：docs/chaos-test-plan-20260729.md

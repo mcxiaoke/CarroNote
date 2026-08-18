@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 主题颜色选择器（ThemeColorPicker）测试
 //
 // 设计原则：不硬编码具体的颜色名 / 色值（数据会变）。
@@ -8,15 +17,12 @@
 //   - Apply 后重进页面，对应 item 保持选中态
 //   - 切分组显示新组颜色
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/views/settings/theme_color_setting.dart';

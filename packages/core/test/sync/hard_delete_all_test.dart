@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // hardDeleteAllDeleted 批量硬删除测试（回收站清空回归）
 //
 // 背景：回收站「清空」此前在 UI 层逐条 hardDelete，N 条笔记 = N 个事务。

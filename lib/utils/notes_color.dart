@@ -11,13 +11,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:math' as math;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
 class NotesColor extends ChangeNotifier {

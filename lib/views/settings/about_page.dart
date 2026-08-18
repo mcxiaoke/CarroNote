@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 关于页面
  *
  * 承载应用标识（LOGO + 应用名 + 版本号 + 构建时间 + Git 提交信息），
@@ -6,15 +15,12 @@
  * 见 docs/settings-sidebar-ia-design-20260815.md §4.2）。
  */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/utils/dev_mode.dart';

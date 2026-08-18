@@ -11,19 +11,15 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:math' as math;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';

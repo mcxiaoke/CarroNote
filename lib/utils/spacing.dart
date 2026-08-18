@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 间距刻度（P0-2）：全站统一间距，禁止散落的魔法数字。

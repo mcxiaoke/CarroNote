@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 备份文件编解码测试（明文 plaintext-v1 + 加密 snbak v1）
 //
 // 验证：格式编解码往返、错误密码/篡改 salt/篡改 iterations 失败、

@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // Command build is a shell-independent cross-compile builder for SafeServer (Go).
 //
 // It is the single source of truth for the release target matrix and is invoked

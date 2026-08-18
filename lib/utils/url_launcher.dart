@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Package imports:
 import 'package:url_launcher/url_launcher.dart';
 
 Future<void> launchUrlExternal(Uri url) async {

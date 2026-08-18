@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 生成两个「可直接替换客户端数据库」的真实 safenotes_sync.db 文件
  *
  * 用途：构造两份真实客户端数据库，供多端/大笔记/同步联调测试。
@@ -27,12 +36,10 @@
  *   GEN_DB_CORPUS    自定义语料文件（绝对路径 .txt）
  */
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;

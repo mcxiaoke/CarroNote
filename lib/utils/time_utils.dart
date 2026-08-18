@@ -11,11 +11,9 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Package imports:
 import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
 String humanTime({required DateTime time, required String localeString}) {

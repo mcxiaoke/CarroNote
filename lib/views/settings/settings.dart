@@ -9,25 +9,21 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
-import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
@@ -359,8 +355,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               icon: LucideIcons.bug,
               title: 'Developer Mode'.tr(),
-              description:
-                  'Enable debug panel, full logs and log web server.'.tr(),
+              description: 'Enable debug panel, full logs and log web server.'
+                  .tr(),
               value: true,
               onChanged: (v) async {
                 await DevMode.setActive(v);

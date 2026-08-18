@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:ui' as ui;
 
 // RTL 检测暂时禁用：完整正文检测成本过高（根因 3），且当前不支持 RTL 排版。

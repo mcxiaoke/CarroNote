@@ -1,22 +1,27 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 导出面板（ExportBackupDialog）widget 测试
 //
 // 覆盖：加密/明文二选一、密码确认、空/不一致密码按钮禁用、
 //       明文模式隐藏密码框、提交返回 ExportOptions。
 
-// Dart imports:
 import 'dart:convert';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Project imports:
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'test_helpers.dart';

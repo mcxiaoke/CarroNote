@@ -11,10 +11,8 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Project imports:
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/text_styles.dart';

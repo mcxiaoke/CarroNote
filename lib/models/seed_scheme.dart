@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 主题 seed 色的 M3 调色板生成（Material 与 ShadCN 两端共用，保证同步换肤）。
 //
 // 背景：ColorScheme.fromSeed 默认 tonalSpot 只取 seed 的 HCT 色相、把 primary
@@ -17,10 +26,8 @@
 // - ShadCN 端改用 shadcn_ui 内置 ShadNeutralColorScheme 替代 Slate + 品牌色覆盖：
 //   改动大、观感未提升，回退到本简单方案。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Project imports:
 import 'package:safenotes/utils/env_config.dart';
 
 /// seed 是否为中性灰度色：RGB 三通道最大差值极小（R≈G≈B）。

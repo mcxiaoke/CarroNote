@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 集成测试共享 harness
 //
 // 提供「可复用、隔离、真实」的测试环境，让 widget/集成测试能驱动真实 UI 屏幕：
@@ -14,16 +23,13 @@
 //
 // 用法见 auth_flow_test.dart / settings_flow_test.dart。
 
-// Dart imports:
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:crypto/crypto.dart' show Hmac, sha256;
 import 'package:cryptography/src/dart/cryptography.dart' show DartCryptography;
@@ -35,7 +41,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-// Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';

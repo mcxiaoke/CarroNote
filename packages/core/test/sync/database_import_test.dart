@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // storeNotesInTransaction uuid 幂等去重测试（导入备份回归）
 //
 // 背景：备份导入此前裸 INSERT，同一份备份「导出后再导回」会撞

@@ -11,16 +11,13 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
 import 'dart:ui' show PlatformDispatcher;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
@@ -29,7 +26,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-// Project imports:
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';

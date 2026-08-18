@@ -11,15 +11,12 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:typed_data';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
 // Project imports:

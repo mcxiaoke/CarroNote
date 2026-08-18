@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 同步层测试公共支撑
  *
  * 存在理由：P2 收敛（Keyring 取代 Vault、SyncEngine 强制注入 Journal）之后，

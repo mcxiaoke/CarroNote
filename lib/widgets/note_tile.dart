@@ -11,13 +11,10 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 
-// Project imports:
 import 'package:safenotes/widgets/note_card_body.dart';
 
 /// 列表视图笔记卡（正常模式）：标题 1 行 + 时间 + 摘要 2 行。

@@ -11,28 +11,24 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:async';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_widget.dart';

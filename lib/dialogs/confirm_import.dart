@@ -1,13 +1,19 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 导入数量确认。
 // 已迁移到统一模板 showAppConfirm（lib/widgets/app_dialogs.dart）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 
-// Project imports:
 import 'package:safenotes/widgets/app_dialogs.dart';
 
 /// 显示「导入数量确认」对话框，返回 true=确认导入，false/null=取消。

@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 重置前保险库快照备份（忘记密码逃生通道的安全网）
 //
 // 背景：忘记密码重置原本直接删除数据库文件，过于激进——一旦用户
@@ -8,16 +17,13 @@
 // 安全性：数据库内容为字段级 AES-GCM 加密，无密码不可解密；
 // 偏好 dump 仅含 UI/功能开关，不含任何密钥类数据。
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 
 /// 保留的重置前快照份数（超出删除最旧）

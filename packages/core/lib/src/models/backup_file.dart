@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 备份文件 v1 格式的统一编解码（明文 plaintext + 加密 snbak）。
 //
 // 设计文档：docs/backup-encryption-design-20260810.md §4 / §8

@@ -11,14 +11,11 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
@@ -26,7 +23,6 @@ import 'package:media_scanner/media_scanner.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/utils/cache_manager.dart';

@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * SyncEngine 单元测试
  *
  * 使用 FakeBackend（内存实现）+ 真实 NotesDatabase（in-memory SQLite）验证：

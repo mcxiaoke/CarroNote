@@ -11,10 +11,8 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Package imports:
 import 'package:permission_handler/permission_handler.dart';
 
-// Project imports:
 import 'package:safenotes/utils/device_info.dart';
 
 // return true on successful storage permission

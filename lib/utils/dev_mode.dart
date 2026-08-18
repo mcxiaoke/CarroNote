@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * dev 模式全局状态
  *
  * 需求：非 debug 构建（release/profile）默认不开启任何调试能力：
@@ -16,10 +25,8 @@
  * 因此本文件不影响任何 debug 构建的既有行为。
  */
 
-// Package imports:
 import 'package:core/core.dart';
 
-// Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 

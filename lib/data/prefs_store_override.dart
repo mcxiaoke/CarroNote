@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * 自定义 SharedPreferences 存储后端（数据目录覆盖用）
  *
  * 场景：集成测试 / 特殊构建需要用「独立数据目录」跑真实 App，避免污染
@@ -11,11 +20,9 @@
  * 过滤读写，与 `InMemorySharedPreferencesStore` 行为对齐。
  */
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package imports:
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 /// 把 prefs 持久化到指定目录的 JSON 文件（`preferences.json`）的文件版 store。

@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 将 shadcn_ui 的 ShadTheme 对接到 Safenotes 的动态品牌色（seed 色库）。
 //
 // 只作用于 ShadXxx 组件；旧 Material 页面仍由 M3 ColorScheme.fromSeed 生成的 ThemeData 主题化。
@@ -14,13 +23,10 @@
 // 中性灰度 seed 走 monochrome 变体（方案 A+C，见 seed_scheme.dart），避免被染成
 // 任意彩色；明暗跟随全局暗色开关，与彩色 seed 行为一致。两端共用 buildSeedColorScheme。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/models/seed_scheme.dart';
 
 class ShadThemes {

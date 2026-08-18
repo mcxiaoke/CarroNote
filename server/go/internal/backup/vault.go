@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // ObservableVault 是 storage.Vault 的装饰器，在写操作时联动备份引擎
 //
 //   - PutBlob 成功 → 立即复制到备份 blob 池（blob 不可变，实时备份）

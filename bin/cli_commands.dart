@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // SafeNotes CLI 命令层（纯 Dart）。
 //
 // 用 package:args 的 CommandRunner/Command 命令树实现（标准解析，不手写 parser）。
@@ -9,17 +18,14 @@
 
 // Dart 原生导入
 
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 
-// Package imports:
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 
-// Project imports:
 import 'cli_context.dart';
 
 // Package 导入

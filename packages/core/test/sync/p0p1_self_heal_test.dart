@@ -1,4 +1,13 @@
 /*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
+/*
  * P0-1 / P0-3 / P0-4 / P1-1 / P1-2 回归测试 + 自愈/混沌场景
  *
  * 覆盖本轮改动：

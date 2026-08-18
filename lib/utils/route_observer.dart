@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 全局路由观察者。

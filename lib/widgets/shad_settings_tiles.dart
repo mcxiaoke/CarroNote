@@ -1,16 +1,22 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 共享的 shadcn_ui 风格设置项组件，供 Settings / Backup / Sync 等设置类页面复用。
 //
 // 设计原则：每个分区用一张 [ShadCard] 装若干 tile，tile 之间用细分隔线；
 // 图标统一是品牌色圆角容器；点击反馈用 [Material]+[InkWell] 包裹（叠加在
 // ShadApp 内部的 MaterialApp 之上，行为与原生一致）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/text_styles.dart';
 

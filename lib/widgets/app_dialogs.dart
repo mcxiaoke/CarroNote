@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 统一对话框模板：基于 Flutter 系统 M3 AlertDialog 实现。
 //
 // 背景：shadcn_ui 的 ShadDialog 在移动端 title 上方会留大片空白
@@ -26,14 +35,11 @@
 // appDialogFilledAction）已公开，复杂对话框如需 M3 按钮可直接复用，保证全 app
 // 对话框按钮同尺寸（高 48、最小宽度 kDialogActionMinWidth）。
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Package imports:
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-// Project imports:
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
 

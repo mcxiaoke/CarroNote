@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // SafeNotes 核心层端口（Ports）定义。
 //
 // 沿用 SyncBackend 的抽象风格，为核心层所需的「平台能力」定义最小接口。

@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 运行时环境变量支持（供主题/外观调试与对比截图使用）。
 //
 // 设计：
@@ -8,18 +17,13 @@
 // 读取发生在进程启动时（buildSeedColorScheme 首次调用），因此同一份构建产物
 // 只需在启动时注入不同环境变量即可切换外观，无需重新打包。
 
-// Dart imports:
 import 'dart:io' show Platform;
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 通用环境变量容器（SN_ENV_VARS）的解析结果，懒加载缓存，进程内只解析一次。
 Map<String, String> _parseGenericEnvVars() {
-  const String raw = String.fromEnvironment(
-    'SN_ENV_VARS',
-    defaultValue: '',
-  );
+  const String raw = String.fromEnvironment('SN_ENV_VARS', defaultValue: '');
   final String fromPlatform = Platform.environment['SN_ENV_VARS'] ?? '';
   final String source = fromPlatform.isNotEmpty ? fromPlatform : raw;
   if (source.isEmpty) return const <String, String>{};
@@ -51,14 +55,15 @@ String? envVar(String name, [String? fallback]) {
 }
 
 /// DynamicSchemeVariant 名称 → 枚举的合法映射（Flutter 3.x）。
-const Map<String, DynamicSchemeVariant> _dsvByName = <String, DynamicSchemeVariant>{
-  'tonalspot': DynamicSchemeVariant.tonalSpot,
-  'monochrome': DynamicSchemeVariant.monochrome,
-  'neutral': DynamicSchemeVariant.neutral,
-  'vibrant': DynamicSchemeVariant.vibrant,
-  'expressive': DynamicSchemeVariant.expressive,
-  'fidelity': DynamicSchemeVariant.fidelity,
-};
+const Map<String, DynamicSchemeVariant> _dsvByName =
+    <String, DynamicSchemeVariant>{
+      'tonalspot': DynamicSchemeVariant.tonalSpot,
+      'monochrome': DynamicSchemeVariant.monochrome,
+      'neutral': DynamicSchemeVariant.neutral,
+      'vibrant': DynamicSchemeVariant.vibrant,
+      'expressive': DynamicSchemeVariant.expressive,
+      'fidelity': DynamicSchemeVariant.fidelity,
+    };
 
 /// 由环境变量 SN_THEME_DSV（或 SN_ENV_VARS 内的 THEME_DSV）解析出的
 /// DynamicSchemeVariant 覆盖。

@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // HTTP handlers（SafeServer v2.1 + v2.2 协议端点）
 //
 // 所有 handler 通过 vault 操作存储层，不直接接触文件系统。

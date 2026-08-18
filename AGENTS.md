@@ -14,7 +14,7 @@ Flutter 加密笔记应用，本地优先 + E2EE 多设备同步。
 - 查找工具和开发环境和软件包用 Everything Cli工具 `es.exe` 直接搜索，禁止大范围find
 
 ## 开发测试
-- 代码格式: 针对修改过的代码，运行 `dart format` 确保代码格式一致，禁止全仓库运行
+- 代码格式: 针对修改过的代码，运行 `dart format` 和 `dart pub run import_sorter:main` 确保代码格式一致，禁止全仓库运行
 - 普通测试: 改代码后运行 `flutter analyze` 和 `dart test packages\core\test` 和 `flutter test` 测试通过
 - 编译验证: 运行 `flutter build windows --debug` 验证编译无错误
 - 集成测试：修改UI代码后运行 flutter test integration_test/ -d windows

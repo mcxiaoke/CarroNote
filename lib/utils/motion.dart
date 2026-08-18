@@ -11,7 +11,6 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
 /// 动画时长 / 曲线令牌（P1-11）：跨页面动画节奏统一，禁止散落 150/250/300/500ms。

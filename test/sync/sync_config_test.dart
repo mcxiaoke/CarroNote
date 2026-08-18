@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 同步配置（SyncConfig / SyncBackendDraft / SyncService.testBackendConfig）
 // 单元测试。
 //
@@ -13,17 +22,13 @@
 //   - flutter_secure_storage 的 MethodChannel 用内存 Map 模拟，
 //     避免 MissingPluginException（注意它是 Error 而非 Exception，测不到会被抛出）。
 
-// Dart imports:
 import 'dart:io';
 
-// Flutter imports:
 import 'package:flutter/services.dart';
 
-// Package imports:
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Project imports:
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 

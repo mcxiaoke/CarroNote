@@ -11,10 +11,8 @@
 * See https://safenotes.dev for support or download.
 */
 
-// Flutter imports:
 import 'package:flutter/material.dart';
 
-// Project imports:
 import 'package:safenotes/utils/motion.dart';
 
 /// 笔记卡 hover/press 反馈包装（P0-3）。
