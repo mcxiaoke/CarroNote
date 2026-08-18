@@ -72,6 +72,7 @@ LANG_NAMES = {
     "ta": ("泰米尔语", True),
     "tr": ("土耳其语", True),
     "uk": ("乌克兰语", True),
+    "zh-TW": ("繁体中文（台湾），注意输入文本是简体中文、请转换为繁体中文（台湾用语），使用台灣慣用詞：登入/登出、設定、密碼、資料夾、儲存、軟體、網路、程式、資訊、密鑰", True),
 }
 
 
@@ -226,12 +227,15 @@ def main():
     tdir = args.translations_dir
     source = load_json(os.path.join(tdir, f"{args.source}.json"))
 
-    files = sorted(
+    existing = sorted(
         f[:-5] for f in os.listdir(tdir)
         if f.endswith(".json") and f[:-5] not in SKIP_LANGS
     )
     if args.lang:
-        files = [f for f in files if f in args.lang]
+        # 显式指定的语种, 即便对应 json 尚不存在(新建 locale)也要处理
+        files = [f for f in args.lang if f not in SKIP_LANGS]
+    else:
+        files = existing
 
     log(f"源语言: {args.source} ({len(source)} keys) | 目标语言数: {len(files)} | 模型: {args.model} | dry-run={args.dry_run}")
 
@@ -241,7 +245,8 @@ def main():
             log(f"⚠ {lang}: 未配置语种名映射, 跳过")
             continue
         target_name, supported = LANG_NAMES[lang]
-        d = load_json(os.path.join(tdir, f"{lang}.json"))
+        lang_path = os.path.join(tdir, f"{lang}.json")
+        d = load_json(lang_path) if os.path.exists(lang_path) else {}
         # 待翻译: 缺失的 key, 或值已存在但为空(空壳)
         todo = {k: source[k] for k in source if k not in d or not str(d.get(k, "")).strip()}
         tag = "✓官方支持" if supported else "⚠尽力翻译(非官方语种)"

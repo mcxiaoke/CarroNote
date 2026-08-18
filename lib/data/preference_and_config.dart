@@ -576,6 +576,7 @@ class SafeNotesConfig {
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),
     "简体中文": const Locale('zh', 'CN'),
+    "繁體中文": const Locale('zh', 'TW'),
     "Deutsch": const Locale('de'),
     "English": const Locale('en', 'US'),
     "Español": const Locale('es'),
@@ -592,6 +593,8 @@ class SafeNotesConfig {
 
   // set timeago local for all supported language
   static void setTimeagoLocale() {
+    // 注意: timeago 3.7.1 仅提供 ZhCnMessages, 无 ZhTwMessages,
+    // 故 zh_TW 未注册 timeago, 相对时间会回退为英文。如需繁体相对时间需升级 timeago 或自定义 Messages。
     timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
     timeago.setLocaleMessages('cs', timeago.CsMessages());
     timeago.setLocaleMessages('en', timeago.EnMessages());
