@@ -28,11 +28,11 @@ import 'package:path_provider/path_provider.dart';
 
 // Project imports:
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/dialogs/backup_password_input.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/widgets/app_dialogs.dart';
 
 class FileHandler {
   /// 备份导出数据源：笔记 JSON 数组（明文/加密两条路径共用，内容零差异）
@@ -209,13 +209,20 @@ class FileHandler {
     }
 
     // 2) 弹输入框，解密失败带错误提示重开
+    //    通用密码输入模板（showAppPassword，与全 app 密码输入同一入口）
     String? errorText;
     while (true) {
       if (!context.mounted) {
         return (records: const [], cancelled: true);
       }
-      final String? entered = await showBackupPasswordDialog(
-        context: context,
+      final String? entered = await showAppPassword(
+        context,
+        title: 'Import Data is Encrypted'.tr(),
+        message: 'Enter the passphrase of the device that generated this file.'
+            .tr(),
+        confirmLabel: 'Submit'.tr(),
+        cancelLabel: 'Cancel'.tr(),
+        placeholder: 'Encryption Phrase'.tr(),
         errorText: errorText,
       );
       if (entered == null) {
