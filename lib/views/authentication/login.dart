@@ -132,21 +132,34 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => Dialog.fullscreen(
-        child: PinUnlockPanel(
-          onAuthenticated: (passphrase) async {
-            // 先关闭覆盖层,再走统一登录流程(成功会 pushReplacement)
-            if (dialogContext.mounted) {
-              Navigator.of(dialogContext).pop();
-            }
-            await _login(passphrase);
-          },
-          onDismiss: () {
-            if (dialogContext.mounted) {
-              Navigator.of(dialogContext).pop();
-            }
-          },
-        ),
+      // 不再包 Dialog.fullscreen(那是一块无圆角无阴影的全屏矩形)。
+      // PinUnlockPanel 自带透明遮罩 + 居中圆角阴影卡片,遮罩由本 showDialog
+      // 的 barrier 提供。
+      builder: (dialogContext) => PinUnlockPanel(
+        onAuthenticated: (passphrase) async {
+          // PIN 验证通过后保持覆盖层(面板随即切换到加载圈)走统一登录校验,
+          // 登录期间(PBKDF2 解密约 1-2 秒)不再「先关覆盖层露出登录页」——
+          // 移动端此前会短暂闪现密码输入界面并伴随键盘弹起/收起。校验成功再
+          // 原地清除登录页与覆盖层直达 home。
+          final success = await _login(passphrase);
+          if (!dialogContext.mounted) return;
+          if (success) {
+            Navigator.of(dialogContext).pushNamedAndRemoveUntil(
+              '/home',
+              (route) => false,
+              arguments: widget.sessionStream,
+            );
+          } else {
+            // 极端情况:PIN 验证通过但进主页校验异常,关闭覆盖层退回登录页,
+            // 拉起键盘让用户改用 passphrase 重试。
+            Navigator.of(dialogContext).pop();
+          }
+        },
+        onDismiss: () {
+          if (dialogContext.mounted) {
+            Navigator.of(dialogContext).pop();
+          }
+        },
       ),
     );
   }
@@ -412,7 +425,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
     if (form.validate()) {
       final phrase = passPhraseController.text;
-      await _login(phrase);
+      final success = await _login(phrase);
+      if (success) await _pushHome();
     } else {
       _showError(snackMsgWrongEncryptionPhrase);
     }
@@ -429,9 +443,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///   3. 都失败 = 密码错误
   ///
   /// 防重入:_isLoggingIn 标志 + 按钮禁用,避免 PBKDF2 1-2 秒内连点
-  Future<void> _login(String passphrase) async {
+  ///
+  /// 返回是否登录成功。成功只负责会话初始化(见 [_onLoginSuccess])不再导航,
+  /// 导航由各调用方负责:按钮/生物识别走 [_pushHome],PIN 覆盖层原地清除路由。
+  Future<bool> _login(String passphrase) async {
     // 防重入:PBKDF2 1-2 秒内防止重复提交
-    if (_isLoggingIn) return;
+    if (_isLoggingIn) return false;
     setState(() => _isLoggingIn = true);
 
     try {
@@ -446,7 +463,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         );
         if (result.success) {
           await _onLoginSuccess(passphrase);
-          return;
+          return true;
         }
         // result.success == false:密码错误或 keyring 损坏,继续尝试远端
       }
@@ -458,7 +475,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         final remoteResult = await _tryVerifyPassphraseViaRemote(passphrase);
         if (remoteResult == RemoteVerifyResult.verified) {
           await _onLoginSuccess(passphrase);
-          return;
+          return true;
         }
         if (remoteResult == RemoteVerifyResult.unreachable) {
           // 网络不可达:不算密码错误
@@ -466,13 +483,14 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
             'Unable to verify password (network unavailable). Check your connection and try again.'
                 .tr(),
           );
-          return;
+          return false;
         }
         // remoteResult == wrongPassword:继续走失败流程
       }
 
       // 3. 密码错误
       _onLoginFailure();
+      return false;
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
     }
@@ -519,7 +537,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         ),
       );
     }
+    // 导航由调用方负责(普通登录 [_pushHome],PIN 覆盖层原地清除路由),不在
+    // 这里跳转 —— 否则 PIN 覆盖层保持时会把覆盖层也替换掉,留下登录页残路由。
+  }
 
+  /// 普通登录(按钮 / 生物识别)成功后的导航:替换当前登录页进入主界面。
+  Future<void> _pushHome() async {
     if (!mounted) return;
     await Navigator.pushReplacementNamed(
       context,
@@ -826,11 +849,14 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
         Log.auth.w('生物识别认证失败', error: e, stackTrace: st);
       }
-      if (authenticated) await _login(await BiometricAuth.authKey);
+      if (authenticated) {
+        final success = await _login(await BiometricAuth.authKey);
+        if (success) await _pushHome();
+      }
       if (authenticated) Log.auth.i('生物识别认证通过');
     }
-    // _login 内部会 pushReplacement 跳转主界面并销毁本页，await 返回后可能已
-    // unmounted；不判空直接 setState 会触发 "setState() called after dispose"
+    // 上面的 [_login] + [_pushHome] 成功后会跳转主界面并销毁本页，await 返回后
+    // 可能已 unmounted；不判空直接 setState 会触发 "setState() called after dispose"
     // 的 FATAL。Argon2id 为纯 Dart 派生（无原生加速），移动端耗时更长，该竞态
     // 窗口被放大，故必须守卫 mounted（生物识别登录路径专属修复）。
     if (!mounted) return authenticated;

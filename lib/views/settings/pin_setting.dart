@@ -13,8 +13,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/pin_auth.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/pin_keyboard.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -22,7 +24,7 @@ import 'package:safenotes/widgets/shad_settings_tiles.dart';
 ///
 /// 未启用:开关 → 打开进入设置流程(选长度 4/6/8 → 输入两次新 PIN)。
 /// 已启用:「Change PIN」(验证当前 PIN → 选长度 → 两次新 PIN)、
-/// 「Disable PIN Lock」(验证当前 PIN → 关闭)。
+/// 「Disable PIN Lock」(已登入则无条件直接关闭,无需验证当前 PIN)。
 class PinSetting extends StatefulWidget {
   const PinSetting({super.key});
 
@@ -95,12 +97,39 @@ class _PinSettingState extends State<PinSetting> {
             icon: LucideIcons.lockOpen,
             title: 'Disable PIN Lock'.tr(),
             destructive: true,
-            onTap: _busy ? () {} : () => _startFlow(_PinFlowMode.disable),
+            onTap: _busy ? () {} : () => _confirmDisable(),
           ),
         ],
       ]),
       const SizedBox(height: 12),
     ]);
+  }
+
+  /// 无条件关闭 PIN:用户已登入,无需验证当前 PIN 即可直接关闭
+  /// (关闭后回退到用主密码解锁,不降低安全性)。仅弹一次确认防误触。
+  ///
+  /// 确认框走 app 标准 M3 AlertDialog([showAppDestructive]):整卡圆角 + 阴影,
+  /// 取消=描边按钮、确认=破坏性红按钮,与删除/登出等危险操作保持一致。
+  Future<void> _confirmDisable() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final ok = await showAppDestructive(
+      context,
+      title: 'Disable PIN Lock'.tr(),
+      message:
+          'You are signed in. The PIN lock will be removed and you will use '
+                  'your passphrase to unlock.'
+              .tr(),
+      confirmLabel: 'Disable'.tr(),
+    );
+    if (!mounted) return;
+    if (ok == true) {
+      await PinAuth.disable();
+      if (mounted) {
+        showSnackBarMessage(context, 'PIN Lock disabled'.tr());
+      }
+    }
+    if (mounted) setState(() => _busy = false);
   }
 
   void _startFlow(_PinFlowMode mode) {
@@ -123,14 +152,14 @@ class _PinSettingState extends State<PinSetting> {
   }
 }
 
-enum _PinFlowMode { enable, change, disable }
+enum _PinFlowMode { enable, change }
 
 /// PIN 设置流程视图
 ///
 /// 步骤按模式组合:
 /// - enable:  选长度 → 输入新 PIN → 确认
 /// - change:  验证当前 PIN → 选长度 → 输入新 PIN → 确认
-/// - disable: 验证当前 PIN
+/// (disable 为无条件关闭,不走流程,见 [_PinSettingState._confirmDisable])
 class _PinFlow extends StatefulWidget {
   const _PinFlow({required this.mode, required this.onDone});
 
@@ -147,6 +176,7 @@ class _PinFlowState extends State<_PinFlow> {
   late _PinStep _step;
   int _length = PreferencesStorage.kPinDefaultLength;
   PinCharset _charset = PinCharset.digits;
+  bool _shuffle = false;
   String _firstPin = '';
   String? _errorText;
   bool _busy = false;
@@ -157,17 +187,24 @@ class _PinFlowState extends State<_PinFlow> {
     // 验证当前 PIN 时必须用已存策略;enable 模式可在选择步骤修改
     _length = PreferencesStorage.pinLength;
     _charset = PinCharset.fromIndex(PreferencesStorage.pinCharsetIndex);
+    _shuffle = PreferencesStorage.pinShuffleEnabled;
     _step = switch (widget.mode) {
       _PinFlowMode.enable => _PinStep.chooseLength,
-      _PinFlowMode.change || _PinFlowMode.disable => _PinStep.verifyCurrent,
+      _PinFlowMode.change => _PinStep.verifyCurrent,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    // PIN 输入步骤(验证/新建/确认)放开宽度上限,让手机横屏能触发 PinKeyboard
+    // 的宽屏布局(高度无限时按「宽度≥560」判定);长度/键盘类型选择保持紧凑
+    // (kDialogMaxWidthCompact)便于看清全部选项。
+    final bool pinEntry = _step != _PinStep.chooseLength;
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: kDialogMaxWidthCompact),
+        constraints: BoxConstraints(
+          maxWidth: pinEntry ? double.infinity : kDialogMaxWidthCompact,
+        ),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -273,6 +310,22 @@ class _PinFlowState extends State<_PinFlow> {
           ),
         ),
         const SizedBox(height: 24),
+        // 随机键序(防肩窥):每次打开键盘打乱键位顺序,默认关闭
+        KeyedSubtree(
+          key: const Key('ui-pin-setting-shuffle'),
+          child: shadSwitchTile(
+            context,
+            icon: LucideIcons.shuffle,
+            title: 'Random keypad order'.tr(),
+            description:
+                'Shuffle the keys each time to protect against '
+                        'shoulder-surfing.'
+                    .tr(),
+            value: _shuffle,
+            onChanged: (value) => setState(() => _shuffle = value),
+          ),
+        ),
+        const SizedBox(height: 24),
         ShadButton(
           width: double.infinity,
           onPressed: _busy
@@ -294,13 +347,13 @@ class _PinFlowState extends State<_PinFlow> {
   String _charsetTitle(PinCharset charset) => switch (charset) {
     PinCharset.digits => 'Digits'.tr(),
     PinCharset.alphanumeric => 'Digits & Letters'.tr(),
-    PinCharset.letters => 'Letters'.tr(),
+    PinCharset.letters => 'Full keyboard'.tr(),
   };
 
   String _charsetSubtitle(PinCharset charset) => switch (charset) {
     PinCharset.digits => '3×4 · 10 keys',
-    PinCharset.alphanumeric => '4×5 · 10 digits + 9 letters',
-    PinCharset.letters => '4×5 · 19 letters',
+    PinCharset.alphanumeric => '4×6 · 10 digits + 13 letters',
+    PinCharset.letters => '5×8 · 10 digits + 26 letters + 3 symbols',
   };
 
   // ── PIN 输入(验证当前 / 输入新 / 确认新)──
@@ -338,13 +391,24 @@ class _PinFlowState extends State<_PinFlow> {
           ],
         ),
         const SizedBox(height: 20),
-        PinKeyboard(
-          keys: _charset.keys,
-          columns: _charset.columns,
-          columnsWide: _charset.columnsWide,
-          enabled: !_busy,
-          onKey: _onDigit,
-          onBackspace: _onBackspace,
+        Focus(
+          autofocus: true,
+          onKeyEvent: _onHardwareKey,
+          child: PinKeyboard(
+            keys: _charset.keys,
+            columns: _charset.columns,
+            columnsWide: _charset.columnsWide,
+            // 移动端横屏:宽屏布局下按键会跑到上限 72,偏大;固定 48 更紧凑。
+            buttonSize:
+                !isDesktopPlatform &&
+                    MediaQuery.orientationOf(context) == Orientation.landscape
+                ? PinKeyboard.kMinButtonSize
+                : null,
+            shuffle: _shuffle,
+            enabled: !_busy,
+            onKey: _onDigit,
+            onBackspace: _onBackspace,
+          ),
         ),
         const SizedBox(height: 12),
         Center(
@@ -358,6 +422,17 @@ class _PinFlowState extends State<_PinFlow> {
   }
 
   String _currentInput = '';
+
+  /// 桌面端硬件键盘输入:委托给共享的 [handlePinKeyEvent]。
+  KeyEventResult _onHardwareKey(FocusNode node, KeyEvent event) {
+    return handlePinKeyEvent(
+      charsetKeys: _charset.keys,
+      enabled: !_busy,
+      onDigit: _onDigit,
+      onBackspace: _onBackspace,
+      event: event,
+    );
+  }
 
   void _onDigit(String digit) {
     if (_currentInput.length >= _length || _busy) return;
@@ -408,13 +483,6 @@ class _PinFlowState extends State<_PinFlow> {
       });
       return;
     }
-    if (widget.mode == _PinFlowMode.disable) {
-      await PinAuth.disable();
-      if (!mounted) return;
-      showSnackBarMessage(context, 'PIN Lock disabled'.tr());
-      widget.onDone();
-      return;
-    }
     setState(() {
       _step = _PinStep.chooseLength;
       _busy = false;
@@ -434,7 +502,7 @@ class _PinFlowState extends State<_PinFlow> {
     }
     await PinAuth.setPin(
       pin,
-      policy: PinPolicy(length: _length, charset: _charset),
+      policy: PinPolicy(length: _length, charset: _charset, shuffle: _shuffle),
     );
     if (!mounted) return;
     showSnackBarMessage(context, 'PIN Lock enabled'.tr());

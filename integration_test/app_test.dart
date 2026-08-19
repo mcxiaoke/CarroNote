@@ -51,6 +51,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:core/core.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:safenotes/main.dart' as safenotes;
+import 'package:safenotes/models/pin_auth.dart';
+import 'package:safenotes/utils/desktop_window.dart'
+    show kAppWindowInitialSize, getWindowSize, setWindowPosition, setWindowSize;
+import 'package:safenotes/widgets/pin_keyboard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 命名视口表。`null` 表示「原始默认窗口大小」（不特意 setSurfaceSize，直接用
@@ -66,7 +70,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// => density 3.0 => 890x400 dp，可加：'phone-land-890x400': Size(890, 400),
 const Map<String, Size?> _viewports = {
   'default-size': null, // 原始默认窗口大小，不特意设定
-  'compact-port-400x890': Size(400, 890), // 窄屏手机，最容易暴露 overflow
+  'compact-port-400x890': Size(400, 890), // 窄屏手机，竖屏
+  'compact-land-890x400': Size(890, 400), // 窄屏手机，横屏
 };
 
 /// 设置页 12 个导航 tile 的 key，按屏幕上从上到下的顺序。
@@ -277,6 +282,54 @@ Future<void> main() async {
     });
 
     testWidgets(
+      'pin: Use passphrase must not cover the PIN keypad across window sizes',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        // 直接写 PIN 凭据(已登录,getPass 可用),省去设置页 UI 流程。
+        await PinAuth.setPin('123456');
+        try {
+          for (final entry in _viewports.entries) {
+            final target = entry.value ?? kAppWindowInitialSize;
+            await setWindowSize(target);
+            await tester.pumpAndSettle();
+
+            // 锁定回登录页 → PIN 覆盖层自动弹出(PinUnlockPanel)。
+            await _openNavEntry(tester, const Key('ui-home-nav-lock'));
+            await _waitFor(
+              tester,
+              () => tester.any(find.byType(PinKeyboard)),
+            );
+
+            // 取键盘与「Use passphrase」按钮矩形,断言互不覆盖。
+            final keypad = find.byType(PinKeyboard);
+            final usePass = find.byKey(const Key('ui-pin-use-passphrase'));
+            await tester.ensureVisible(usePass);
+            await tester.pumpAndSettle();
+            final kbRect = tester.getRect(keypad);
+            final btnRect = tester.getRect(usePass);
+            expect(
+              kbRect.overlaps(btnRect),
+              isFalse,
+              reason: 'Use passphrase must not cover the PIN keypad '
+                  '(keypad=$kbRect, btn=$btnRect) @ ${entry.key}',
+            );
+
+            // 关闭覆盖层 → 用主密码回 home,为下一尺寸准备。
+            await tester.tap(usePass, warnIfMissed: false);
+            await tester.pumpAndSettle();
+            await _loginIfNeeded(tester);
+            await _backToHome(tester);
+          }
+          await setWindowSize(kAppWindowInitialSize);
+        } finally {
+          // 清理:PIN 破坏性影响后续测试,无论成败都关闭。
+          await PinAuth.disable();
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 4)),
+    );
+
+    testWidgets(
       'home: search filters notes and shows the no-result empty state',
       (WidgetTester tester) async {
         await _loginToHome(tester);
@@ -374,34 +427,43 @@ Future<void> main() async {
       });
     });
 
-    testWidgets('home: toggle note sort order without crash', (
+    testWidgets('home: sort menu popover opens with all preference toggles', (
       WidgetTester tester,
     ) async {
       await _loginToHome(tester);
       await _ensureMinNotes(tester, 2);
 
       await _forEachViewport(tester, (tester, size) async {
-        IconButton sortBtn() => tester.widget<IconButton>(
-          find.byKey(const Key('ui-home-toolbar-sort')),
-        );
-        final firstIcon = (sortBtn().icon as Icon).icon;
-
+        // 点击排序 icon 应弹出「排序/显示偏好」下拉菜单（不再翻转 icon）。
         await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
         await tester.pumpAndSettle();
         expect(
-          (sortBtn().icon as Icon).icon,
-          isNot(firstIcon),
-          reason: 'sort toggle should flip the button icon @ $size',
+          tester.takeException(),
+          isNull,
+          reason: 'popover overflow @ $size',
         );
-        expect(tester.takeException(), isNull, reason: 'overflow @ $size');
+        for (final key in const [
+          'ui-home-menu-newfirst',
+          'ui-home-menu-sortmodified',
+          'ui-home-menu-relativetime',
+          'ui-home-menu-compact',
+          'ui-home-menu-colorful',
+          'ui-home-menu-starredonly',
+        ]) {
+          expect(
+            find.byKey(Key(key)),
+            findsOneWidget,
+            reason: 'popover 缺少菜单项 $key @ $size',
+          );
+        }
 
-        // Toggle back to restore the original sort order.
+        // 再次点击收起 popover，回到干净的主界面。
         await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
         await tester.pumpAndSettle();
         expect(
-          (sortBtn().icon as Icon).icon,
-          firstIcon,
-          reason: 'sort toggle should toggle back @ $size',
+          find.byKey(const Key('ui-home-menu-newfirst')),
+          findsNothing,
+          reason: '再次点击应关闭 popover @ $size',
         );
       });
     });
@@ -1414,10 +1476,36 @@ Future<void> _forEachViewport(
     return;
   }
 
+  // 把窗口固定到已知屏幕位置，避免在各尺寸间缩放时左上角/位置漂移出屏。
+  await setWindowPosition(const Offset(100, 100));
+
   for (final entry in _viewports.entries) {
-    // null 表示原始默认窗口大小：不特意 resize，恢复 setSurfaceSize(null) 即可。
-    await tester.binding.setSurfaceSize(entry.value);
+    // 桌面：用 window_manager 真实缩放窗口，使 MediaQuery/约束随平台尺寸更新
+    //（setSurfaceSize 只改 View.physicalSize、不更新 MediaQuery）。
+    // null 表示恢复默认初始尺寸（对应 runner 启动时的 kAppWindowInitialSize）。
+    final size = entry.value;
+    final target = size ?? kAppWindowInitialSize;
+    await setWindowSize(target);
     await tester.pumpAndSettle();
+
+    // 核验窗口尺寸真的生效：打印实际尺寸，并断言与目标误差不超过 50（容忍
+    // 系统边框/DWM 缩放等造成的偏差）。若 resize 未生效会在这里即时报错，
+    // 而不是等到后续布局断言才暴露。
+    final Size? actual = await getWindowSize();
+    // ignore: avoid_print
+    print('[viewport ${entry.key}] 目标尺寸=$target, 实际窗口尺寸=$actual');
+    expect(
+      actual,
+      isNotNull,
+      reason: 'getWindowSize() 应返回桌面窗口实际尺寸 @ ${entry.key}',
+    );
+    expect(
+      (actual!.width - target.width).abs() <= 50 &&
+          (actual.height - target.height).abs() <= 50,
+      isTrue,
+      reason: 'setWindowSize 后窗口尺寸应接近目标 '
+          '(目标=$target, 实际=$actual) @ ${entry.key}',
+    );
 
     // After resizing, check home does not overflow at this size before we
     // drill into any sub-page.
@@ -1431,7 +1519,8 @@ Future<void> _forEachViewport(
     await _backToHome(tester); // next round starts from a clean home
   }
 
-  await tester.binding.setSurfaceSize(null); // restore the default window size
+  // restore the default window size
+  await setWindowSize(kAppWindowInitialSize);
   await tester.pumpAndSettle();
 }
 

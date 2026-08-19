@@ -27,10 +27,10 @@ enum PinCharset {
   /// 纯数字:10 键,3×4(1-9 + 0,0 居中)
   digits,
 
-  /// 数字+字母:10 数字 + 9 高频字母 E T A N R S H D C,4×5
+  /// 数字+字母:10 数字 + 13 字母(A–H,J–N,去易混 I),4×6;宽屏 6×4
   alphanumeric,
 
-  /// 纯字母:19 个高频字母 ETAON RISHD LFCMU GYPW,4×5
+  /// 精简版全键盘:10 数字 + 26 字母 + - . _ 共 39 键,5×8;桌面 8×5
   letters;
 
   static PinCharset fromIndex(int index) =>
@@ -40,7 +40,8 @@ enum PinCharset {
 /// PIN 字符集 → 键盘布局元数据(按键序列 + 列数)
 ///
 /// 按键序列中空字符串为占位格;删除键由 [PinKeyboard] 固定在网格末尾。
-/// 高频字母选取基于英文词频(ETAOIN SHRDLU 变体),便于记忆。
+/// 数字+字母键盘取字母表前 13 个(A–H,J–N),为 4×6 贴合主流手机 2:1 竖屏;
+/// 去掉与 1 / l 易混淆的 I。
 extension PinCharsetLayout on PinCharset {
   List<String> get keys => switch (this) {
     PinCharset.digits => const [
@@ -67,65 +68,98 @@ extension PinCharsetLayout on PinCharset {
       '8',
       '9',
       '0',
-      'E',
-      'T',
+      // 字母表最前的 A–H + J–N(跳过易与 1/l 混淆的 I)
       'A',
-      'N',
-      'R',
-      'S',
-      'H',
-      'D',
+      'B',
       'C',
+      'D',
+      'E',
+      'F',
+      'G',
+      'H',
+      'J',
+      'K',
+      'L',
+      'M',
+      'N',
     ],
     PinCharset.letters => const [
-      'E',
-      'T',
+      // 数字行 → 三个符号 → A-Z。行主序使 5列(窄屏)/8列(桌面)都整齐无占位。
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '0',
+      '-',
+      '.',
+      '_',
       'A',
-      'O',
-      'N',
-      'R',
-      'I',
-      'S',
-      'H',
-      'D',
-      'L',
-      'F',
+      'B',
       'C',
-      'M',
-      'U',
+      'D',
+      'E',
+      'F',
       'G',
-      'Y',
+      'H',
+      'I',
+      'J',
+      'K',
+      'L',
+      'M',
+      'N',
+      'O',
       'P',
+      'Q',
+      'R',
+      'S',
+      'T',
+      'U',
+      'V',
       'W',
+      'X',
+      'Y',
+      'Z',
     ],
   };
 
   int get columns => switch (this) {
     PinCharset.digits => 3,
-    PinCharset.alphanumeric => 5,
+    // 数字+字母:23 键 + 删除 = 24 格,4 列 → 6 行(贴合手机 2:1)
+    PinCharset.alphanumeric => 4,
+    // 精简全键盘:39 键 + 删除 = 40 格,5 列 → 8 行(无占位)
     PinCharset.letters => 5,
   };
 
-  /// 横屏时的列数(null = 保持 [columns])
+  /// 宽屏(横屏/桌面)时的列数(null = 保持 [columns])
   ///
-  /// 竖屏 4×5 / 横屏 5×4:横屏空间宽,改 4 列 5 行,按键更大更好点。
-  /// 纯数字保持 3×4 不变。
+  /// 窄屏 4列×6行 / 宽屏 6列×4行:窄屏竖排时列少行多、按键更大更好点,
+  /// 宽屏横向空间充足用 6 列少两行。纯数字保持 3×4 不变。
   int? get columnsWide => switch (this) {
     PinCharset.digits => null,
-    PinCharset.alphanumeric => 4,
-    PinCharset.letters => 4,
+    PinCharset.alphanumeric => 6,
+    // 精简全键盘桌面 8 列 → 5 行(贴近标准全键盘)
+    PinCharset.letters => 8,
   };
 }
 
-/// PIN 策略:长度 + 字符集
+/// PIN 策略:长度 + 字符集 + 随机键序
 class PinPolicy {
   const PinPolicy({
     this.length = PreferencesStorage.kPinDefaultLength,
     this.charset = PinCharset.digits,
+    this.shuffle = false,
   });
 
   final int length;
   final PinCharset charset;
+
+  /// 随机键序(防肩窥):每次打开键盘打乱键位。仅影响显示层,不影响验证。
+  final bool shuffle;
 }
 
 /// PIN Lock 认证 —— 与 [BiometricAuth] 平行的第二解锁方式
@@ -162,10 +196,11 @@ class PinAuth {
 
   static bool get isEnabled => PreferencesStorage.isPinAuthEnabled;
 
-  /// 当前生效的 PIN 策略(长度 + 字符集)
+  /// 当前生效的 PIN 策略(长度 + 字符集 + 随机键序)
   static PinPolicy get policy => PinPolicy(
     length: PreferencesStorage.pinLength,
     charset: PinCharset.fromIndex(PreferencesStorage.pinCharsetIndex),
+    shuffle: PreferencesStorage.pinShuffleEnabled,
   );
 
   /// 设置 / 修改 PIN
@@ -214,10 +249,12 @@ class PinAuth {
     // 5. 持久化策略与开关
     await PreferencesStorage.setPinLength(effective.length);
     await PreferencesStorage.setPinCharsetIndex(effective.charset.index);
+    await PreferencesStorage.setPinShuffleEnabled(effective.shuffle);
     await PreferencesStorage.setIsPinAuthEnabled(true);
     await PreferencesStorage.setPinFailedCount(0);
     Log.auth.i(
-      'PIN 凭据已更新: 长度=${effective.length} 字符集=${effective.charset.name}',
+      'PIN 凭据已更新: 长度=${effective.length} '
+      '字符集=${effective.charset.name} 随机键序=${effective.shuffle}',
     );
   }
 

@@ -6,6 +6,8 @@
 * terms of the GPL-3.0+ license.
 */
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:core/core.dart';
@@ -14,13 +16,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/pin_auth.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/widgets/pin_keyboard.dart';
+
+/// PIN 解锁卡片最大宽度:约屏宽的常宽面板,宽到足以触发 PinKeyboard 的宽屏布局
+/// (其宽度阈值 [PinKeyboard.kWideBreakpoint]=560),让 letters 全键盘在桌面用宽屏列数
+/// (如 8×5);横屏下也尽量撑宽,减少两侧大片空白。
+const double kPinOverlayMaxWidth = 720;
 
 /// 登录页 PIN 解锁覆盖层(与生物识别弹窗平行的快捷解锁方式)
 ///
-/// 由登录页以 `showDialog + Dialog.fullscreen` 全屏覆盖在登录界面之上,
-/// 与生物识别系统弹窗体验一致。包含:圆点输入指示 + [PinKeyboard] +
-/// 满位自动验证 + 「Use passphrase」退出入口。
+/// 由登录页以 `showDialog` 全屏遮罩弹出,呈现为带圆角 + 阴影的对话框卡片,
+/// 覆盖在登录界面之上(与生物识别系统弹窗体验一致)。包含:圆点输入指示 +
+/// [PinKeyboard] + 满位自动验证 + 「Use passphrase」退出入口。
 ///
 /// 连续失败达到阈值后自动关闭 PIN 并提示改用密码登录
 /// (见 docs/pin-lock-design.md §6)。
@@ -87,77 +95,170 @@ class _PinUnlockPanelState extends State<PinUnlockPanel> {
         ),
       );
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // 内容占可用空间 80%(键盘在下方自适应撑满剩余空间)
-        final maxW = constraints.maxWidth * 0.8;
-        final maxH = constraints.maxHeight * 0.8;
-        final charset = PinCharset.fromIndex(
-          PreferencesStorage.pinCharsetIndex,
-        );
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
-            child: Column(
-              children: [
-                Icon(
-                  LucideIcons.lock,
-                  size: 40,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'PIN Lock'.tr(),
-                  style: theme.textTheme.p.copyWith(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
+    // 桌面端允许用硬件键盘直接输入 PIN(autofocus 确保能收到物理按键)。
+    final charset = PinCharset.fromIndex(PreferencesStorage.pinCharsetIndex);
+    // 移动端横屏时空间很矮:隐藏装饰性 Icon 与「PIN Lock」标题,只保留
+    // 引导文案 + 进度圆点,把高度让给键盘(桌面端高度充足,保留头部)。
+    final bool compactHeader =
+        !isDesktopPlatform &&
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: Material(
+        type: MaterialType.transparency,
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 卡片高度封顶为可用高度减上下边距:卡片永不超出屏幕,顶部/底部圆角
+              // 始终完整可见。可滚动部分只在「键盘」区(见键盘的 Flexible),滚动时
+              // 不移动卡片本身,因此不会出现之前那种「滚一下圆角变直角/白角」。
+              final double cardMaxH = math.max(
+                120.0,
+                constraints.maxHeight - 48,
+              );
+              return Center(
+                child: Container(
+                  // 卡片带圆角 + 阴影 + 对话框表面色,不再是光板长方形。
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 24,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Enter your PIN'.tr(),
-                  style: TextStyle(
-                    color: theme.colorScheme.mutedForeground,
-                    fontSize: 13,
+                  constraints: BoxConstraints(
+                    maxWidth: kPinOverlayMaxWidth,
+                    maxHeight: cardMaxH,
                   ),
-                ),
-                const SizedBox(height: 20),
-                _buildDots(theme.colorScheme),
-                if (_errorText != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      _errorText!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: theme.colorScheme.destructive,
-                        fontSize: 13,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.30),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
                       ),
-                    ),
+                    ],
                   ),
-                // 键盘自适应撑满剩余空间(按键大小随窗口缩放)
-                Expanded(
-                  child: Center(
-                    child: PinKeyboard(
-                      keys: charset.keys,
-                      columns: charset.columns,
-                      columnsWide: charset.columnsWide,
-                      enabled: !_verifying,
-                      onKey: _onDigit,
-                      onBackspace: _onBackspace,
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 28,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!compactHeader) ...[
+                          // 图标与「PIN Lock」同一行,省下竖排的空间。
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                LucideIcons.lock,
+                                size: 28,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'PIN Lock'.tr(),
+                                style: theme.textTheme.p.copyWith(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        SizedBox(height: compactHeader ? 4 : 8),
+                        Text(
+                          'Enter your PIN'.tr(),
+                          style: TextStyle(
+                            color: theme.colorScheme.mutedForeground,
+                            fontSize: compactHeader ? 12 : 13,
+                          ),
+                        ),
+                        SizedBox(height: compactHeader ? 8 : 20),
+                        _buildDots(theme.colorScheme),
+                        // 固定高度的「状态提示」槽:错误文本出现/消失、验证中切换加载圈
+                        // 都不改变总高度,键盘位置稳定不上下跳。错误文本单行省略,防止
+                        // 换行撑高再加跳动。
+                        SizedBox(
+                          height: 24,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _verifying
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : _errorText == null
+                                ? null
+                                : Center(
+                                    child: Text(
+                                      _errorText!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.destructive,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        // 键盘区可伸缩:空间充足时键盘按自然尺寸(按宽屏/窄屏列数自适应),
+                        // 空间不足(如横屏+全键盘)时先收缩按键、再在卡片内部单独滚动,
+                        // 「Use passphrase」始终固定在下方,绝不压住键盘。
+                        // 移动端横屏(compactHeader)走流式布局:字符键顺序铺排、
+                        // 按宽度自动换行,不再依赖网格列数。
+                        Flexible(
+                          child: SingleChildScrollView(
+                            child: PinKeyboard(
+                              wrap: compactHeader,
+                              keys: charset.keys,
+                              columns: charset.columns,
+                              columnsWide: charset.columnsWide,
+                              shuffle: PreferencesStorage.pinShuffleEnabled,
+                              enabled: !_verifying,
+                              onKey: _onDigit,
+                              onBackspace: _onBackspace,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          key: const Key('ui-pin-use-passphrase'),
+                          onPressed: widget.onDismiss,
+                          child: Text('Use passphrase'.tr()),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                TextButton(
-                  onPressed: widget.onDismiss,
-                  child: Text('Use passphrase'.tr()),
-                ),
-              ],
-            ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  /// 桌面端硬件键盘输入处理:委托给共享的 [handlePinKeyEvent]。
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    return handlePinKeyEvent(
+      charsetKeys: PinCharset.fromIndex(
+        PreferencesStorage.pinCharsetIndex,
+      ).keys,
+      enabled: !_verifying,
+      onDigit: _onDigit,
+      onBackspace: _onBackspace,
+      event: event,
     );
   }
 
@@ -174,13 +275,15 @@ class _PinUnlockPanelState extends State<PinUnlockPanel> {
             height: 18,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: i < _pin.length
-                  ? hasError
-                        ? theme.destructive
-                        : theme.primary
-                  : Colors.transparent,
+              color: hasError
+                  ? (i < _pin.length ? theme.destructive : Colors.transparent)
+                  : (i < _pin.length ? theme.primary : Colors.transparent),
+              // 空心圆用「按键背景色」accent(= primaryContainer)描边:在卡片表面
+              // surfaceContainerHigh 上清晰可见;实心圆边框跟随填充,视觉上是一个点。
               border: Border.all(
-                color: hasError ? theme.destructive : theme.border,
+                color: hasError
+                    ? theme.destructive
+                    : (i < _pin.length ? theme.primary : theme.accent),
                 width: 1.5,
               ),
             ),

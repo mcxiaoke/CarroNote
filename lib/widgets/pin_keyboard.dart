@@ -9,8 +9,34 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:safenotes/models/pin_auth.dart';
+
+/// 桌面端硬件键盘输入 PIN 的共享处理函数(解锁覆盖层 / 设置 & 修改 PIN 界面共用)。
+///
+/// 物理键盘按下当前字符集([charsetKeys],即 `PinCharset.keys`)内的可见字符时调用
+/// [onDigit] 追加,Backspace 调用 [onBackspace];非字符集键、验证/忙态、无可见
+/// 字符的修饰键忽略。返回 [KeyEventResult.handled] 表示按键已被本处理器消费。
+KeyEventResult handlePinKeyEvent({
+  required List<String> charsetKeys,
+  required bool enabled,
+  required ValueChanged<String> onDigit,
+  required VoidCallback onBackspace,
+  required KeyEvent event,
+}) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  if (event.logicalKey == LogicalKeyboardKey.backspace) {
+    onBackspace();
+    return KeyEventResult.handled;
+  }
+  final char = event.character;
+  if (char == null || char.isEmpty) return KeyEventResult.ignored;
+  if (!enabled) return KeyEventResult.ignored;
+  if (!charsetKeys.contains(char)) return KeyEventResult.ignored;
+  onDigit(char);
+  return KeyEventResult.handled;
+}
 
 /// 自定义键盘(PIN Lock 用)
 ///
@@ -30,6 +56,9 @@ import 'package:safenotes/models/pin_auth.dart';
 ///
 /// 按键大小自适应:未显式传 [buttonSize] 时,按父约束宽度/高度计算,
 /// 键盘自动撑满可用空间(设置页与全屏 PIN 覆盖层通用)。
+///
+/// 按键直径硬限制 [kMinButtonSize]~[kMaxButtonSize]:小屏不溢出、
+/// 大屏(桌面)不无限放大。
 class PinKeyboard extends StatefulWidget {
   const PinKeyboard({
     super.key,
@@ -42,7 +71,17 @@ class PinKeyboard extends StatefulWidget {
     this.enabled = true,
     this.buttonSize,
     this.spacing = 12,
+    this.wrap = false,
   });
+
+  /// 自动布局时按键直径下限(触控可用,参见 [kMinButtonSize])
+  static const double kMinButtonSize = 48;
+
+  /// 自动布局时按键直径上限(桌面大屏不喧宾夺主,参见 [kMaxButtonSize])
+  static const double kMaxButtonSize = 72;
+
+  /// 高度不受约束(如 ListView / 设置页)时,宽度达到该值即视为宽屏
+  static const double kWideBreakpoint = 560;
 
   /// 数字/字母按键回调
   final ValueChanged<String> onKey;
@@ -70,6 +109,11 @@ class PinKeyboard extends StatefulWidget {
 
   /// 按键间距
   final double spacing;
+
+  /// 流式布局(横向 Flex / 自动换行):忽略 [columns]/[columnsWide],把字符键
+  /// 按顺序铺排、宽度不足时自动折行,删除键跟在末尾。适用于空间很矮的横屏
+  /// (键盘文字顺序摆放、自动换行),无需算网格列数。
+  final bool wrap;
 
   @override
   State<PinKeyboard> createState() => _PinKeyboardState();
@@ -109,12 +153,16 @@ class _PinKeyboardState extends State<PinKeyboard> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 横屏(宽 > 高)且配置了 columnsWide 时切换列数(如 4×5 → 5×4)
-        final columns =
-            widget.columnsWide != null &&
-                constraints.maxWidth > constraints.maxHeight
-            ? widget.columnsWide!
-            : widget.columns;
+        // 流式布局:字符键顺序铺排 + 自动换行,省去网格/列数计算。
+        if (widget.wrap) {
+          final size = widget.buttonSize ?? PinKeyboard.kMinButtonSize;
+          return _buildWrap(keys, size);
+        }
+        // 宽屏(横屏 / 桌面宽窗)时切到更多列更少行(如 4×5 → 5×4)。
+        // 高度不受约束(设置页 ListView 中)时退化为按宽度阈值判断。
+        final isWide =
+            widget.columnsWide != null && _isWideConstraints(constraints);
+        final columns = isWide ? widget.columnsWide! : widget.columns;
         final rowCount = (totalCells / columns).ceil();
         final gridSize = rowCount * columns;
 
@@ -128,7 +176,11 @@ class _PinKeyboardState extends State<PinKeyboard> {
           }
           rows.add(
             Padding(
-              padding: EdgeInsets.only(bottom: widget.spacing),
+              // 行间留白;最后一行不再吞掉底部 spacing,避免窄高容器按公式算好
+              // (rowCount*size + (rowCount-1)*spacing) 后仍被额外 padding 顶出溢出
+              padding: EdgeInsets.only(
+                bottom: r < rowCount - 1 ? widget.spacing : 0,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -146,8 +198,17 @@ class _PinKeyboardState extends State<PinKeyboard> {
     );
   }
 
+  /// 宽屏判定:高度有限时按宽 > 高(横屏 / 桌面宽窗);
+  /// 高度无限(ListView 内)时按宽度是否达到 [PinKeyboard.kWideBreakpoint]。
+  bool _isWideConstraints(BoxConstraints constraints) {
+    final maxH = constraints.maxHeight;
+    if (maxH.isFinite) return constraints.maxWidth > maxH;
+    return constraints.maxWidth >= PinKeyboard.kWideBreakpoint;
+  }
+
   /// 计算按键直径:显式传入优先;否则按「宽/高两个方向都放得下」取小者,
-  /// 并限制在 40~140 之间,避免小屏溢出或大屏无意义放大。
+  /// 并限制在 [PinKeyboard.kMinButtonSize]~[PinKeyboard.kMaxButtonSize]
+  /// 之间,避免小屏溢出或大屏(桌面)无意义放大。
   double _resolveButtonSize(
     BoxConstraints constraints,
     int rowCount,
@@ -159,7 +220,9 @@ class _PinKeyboardState extends State<PinKeyboard> {
     final byHeight = constraints.maxHeight.isFinite
         ? (constraints.maxHeight - widget.spacing * (rowCount - 1)) / rowCount
         : double.infinity;
-    return math.min(byWidth, byHeight).clamp(40.0, 140.0);
+    return math
+        .min(byWidth, byHeight)
+        .clamp(PinKeyboard.kMinButtonSize, PinKeyboard.kMaxButtonSize);
   }
 
   Widget _buildCell(int idx, int gridSize, List<String> keys, double size) {
@@ -172,37 +235,75 @@ class _PinKeyboardState extends State<PinKeyboard> {
     if (label.isEmpty && !isBackspace) {
       return SizedBox(width: size, height: size);
     }
+    return _buildKeyButton(label: label, isBackspace: isBackspace, size: size);
+  }
+
+  /// 流式布局:字符键按顺序铺排,宽度不足自动折行,删除键跟在末尾。
+  Widget _buildWrap(List<String> keys, double size) {
+    final children = <Widget>[
+      for (final k in keys)
+        if (k.isNotEmpty)
+          _buildKeyButton(label: k, isBackspace: false, size: size),
+      _buildKeyButton(label: '', isBackspace: true, size: size),
+    ];
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: widget.spacing,
+      runSpacing: widget.spacing,
+      children: children,
+    );
+  }
+
+  /// 单个圆形按键(字符键或删除键)。
+  Widget _buildKeyButton({
+    required String label,
+    required bool isBackspace,
+    required double size,
+  }) {
     final colors = Theme.of(context).colorScheme;
     final VoidCallback? onTap = widget.enabled
-        ? () => isBackspace ? widget.onBackspace() : widget.onKey(label)
+        ? () {
+            // 按键触感反馈:与系统键盘一致的轻触确认
+            HapticFeedback.lightImpact();
+            if (isBackspace) {
+              widget.onBackspace();
+            } else {
+              widget.onKey(label);
+            }
+          }
         : null;
     return Material(
-      color: Colors.transparent,
+      // 把有色的圆形背景直接作为 Material(shape: circle):InkWell 的点击高亮/波纹
+      // 才会画在有色表面之上(此前透明 Material + Container 圆底,点击无可见反馈)。
+      color: colors.primaryContainer,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         customBorder: const CircleBorder(),
+        // 点击变色:按下高亮 + 波纹用文字色轻微点缀
+        splashColor: colors.onPrimaryContainer.withValues(alpha: 0.16),
+        highlightColor: colors.onPrimaryContainer.withValues(alpha: 0.10),
         onTap: onTap,
-        child: Container(
+        child: SizedBox(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colors.primaryContainer,
-          ),
-          alignment: Alignment.center,
-          child: isBackspace
-              ? Icon(
-                  Icons.backspace_outlined,
-                  size: size * 0.38,
-                  color: colors.onPrimaryContainer,
-                )
-              : Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: size * 0.38,
-                    fontWeight: FontWeight.w500,
+          child: Center(
+            child: isBackspace
+                ? Icon(
+                    Icons.backspace_outlined,
+                    size: size * 0.38,
                     color: colors.onPrimaryContainer,
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: size * 0.38,
+                      fontWeight: FontWeight.w500,
+                      color: colors.onPrimaryContainer,
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
     );
