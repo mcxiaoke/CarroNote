@@ -16,9 +16,8 @@
 //
 // 复用 test_helpers 的真实 Keyring + 真实 SQLite（落在系统临时目录，用例间隔离）。
 //
-// 关键约束：登录/设置密码页在 build() 里会按软键盘显隐触发滚动动画，
-// flutter_test 中 autofocus 唤起模拟软键盘会让该动画永不收敛，导致 pumpAndSettle
-// 卡死。因此全程用 settle()（有限时长 pump）代替 pumpAndSettle。
+// 环境：initFullEnv 已关闭光标闪烁（EditableText.debugDeterministicCursor），
+// 登录/设置密码页的软键盘滚动动画可正常收敛，全程用 pumpAndSettle。
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -31,7 +30,7 @@ const String kSeedNoteBody = 'Body of the integration test note.';
 
 void main() {
   setUpAll(() async {
-    await initTestEnv();
+    await initFullEnv();
   });
 
   tearDown(() async {
@@ -59,12 +58,11 @@ void main() {
       );
       await tester.pump();
 
-      // 点击 Confirm（keyring 派生 ~1-2s + 转场，用有限时长 pump）。
-      // 日志 HTTP 服务器已在 initTestEnv 中关闭（不绑定 HttpServer），故此处
-      // 不会留下周期性 idle-timeout Timer；settle 的有限时长 pump 已足够排净
-      // 设置密码流程中的短生命周期 Timer（如 snackbar 2s 自动消失）。
+      // 点击 Confirm（keyring 派生 ~300ms + 转场）。
+      // 日志 HTTP 服务器已在 initFullEnv 中关闭（不绑定 HttpServer），故此处
+      // 不会留下周期性 idle-timeout Timer，pumpAndSettle 可正常收敛。
       await tester.tap(find.widgetWithText(ShadButton, 'Confirm'));
-      await settle(tester);
+      await tester.pumpAndSettle();
 
       // 应进入主界面（主屏在 ≥600px 视口下 AppBar 与 HomeSidebar 都会出现
       expect(find.text('CarroNote'), findsAtLeastNWidgets(1));
@@ -88,7 +86,7 @@ void main() {
         await tester.enterText(find.byType(ShadInputFormField), kTestPassword);
         await tester.pump();
         await tester.tap(find.widgetWithText(ShadButton, 'Login'));
-        await settle(tester);
+        await tester.pumpAndSettle();
 
         // 进入主界面且 seed 的笔记可见（主屏 AppBar 与 HomeSidebar 都会渲染
         expect(find.text('CarroNote'), findsAtLeastNWidgets(1));
@@ -106,8 +104,8 @@ void main() {
       await tester.enterText(find.byType(ShadInputFormField), 'wrong-pass-999');
       await tester.pump();
       await tester.tap(find.widgetWithText(ShadButton, 'Login'));
-      // 错误路径不派生 keyring，但仍有 snackbar 提示动画，用有限时长 pump
-      await settle(tester, steps: 8);
+      // 错误路径不派生 keyring，但仍有 snackbar 提示动画
+      await tester.pumpAndSettle();
 
       // 仍在登录页（Login 按钮与 Passphrase 输入框标签仍在）
       expect(find.widgetWithText(ShadButton, 'Login'), findsOneWidget);

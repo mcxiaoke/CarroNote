@@ -30,7 +30,7 @@ import 'test_helpers.dart';
 
 void main() {
   setUpAll(() async {
-    await initTestEnv();
+    await initLightEnv();
   });
 
   setUp(() async {
