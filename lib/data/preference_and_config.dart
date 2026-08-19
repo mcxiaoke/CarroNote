@@ -13,8 +13,8 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:easy_localization/easy_localization.dart';
 import 'package:core/core.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -46,6 +46,7 @@ class PreferencesStorage {
   static const _keyPinLength = 'pinLength';
   static const _keyPinCharsetIndex = 'pinCharsetIndex';
   static const _keyPinFailedCount = 'pinFailedCount';
+  static const _keyPinShuffleEnabled = 'pinShuffleEnabled';
   static const _keyIsCompactPreview = 'isCompactPreview';
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
   static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
@@ -62,6 +63,7 @@ class PreferencesStorage {
   static const _keyThemeGroupIndex = 'themeGroupIndex';
   static const _keyThemeColorIndex = 'themeColorIndex';
   static const _keyDevMode = 'devModeEnabled';
+  static const _keyIsSidebarCollapsed = 'isSidebarCollapsed';
 
   static Future init() async {
     _preferences = await SharedPreferences.getInstance();
@@ -365,8 +367,9 @@ class PreferencesStorage {
   // 设计见 docs/pin-lock-design.md
   // ──────────────────────────────────────────────
 
-  /// PIN 长度选项(默认 6 位,可选 4/8)
-  static const List<int> pinLengthOptions = [4, 6, 8];
+  /// PIN 长度选项(默认 6 位,可选 4/6/8/10;10 位之上复杂度收益递减,
+  /// PIN 是快捷解锁而非替代 master password,故封顶 10 位)
+  static const List<int> pinLengthOptions = [4, 6, 8, 10];
   static const int kPinDefaultLength = 6;
 
   static bool get isPinAuthEnabled =>
@@ -394,6 +397,16 @@ class PreferencesStorage {
     _logPrefChange('PIN 字符集', old, index);
   }
 
+  /// PIN 随机键序(防肩窥):每次打开键盘打乱键位顺序;默认关闭。
+  /// 仅影响显示层,不影响 PIN 判定(见 PinKeyboard.shuffle)。
+  static bool get pinShuffleEnabled =>
+      _preferences?.getBool(_keyPinShuffleEnabled) ?? false;
+  static Future<void> setPinShuffleEnabled(bool flag) async {
+    final old = _preferences?.getBool(_keyPinShuffleEnabled);
+    await _preferences?.setBool(_keyPinShuffleEnabled, flag);
+    _logPrefChange('PIN 随机键序', old, flag);
+  }
+
   /// PIN 连续失败计数(成功清零;达到 PinAuth.kPinMaxFailedAttempts 后
   /// 自动关闭 PIN 回退密码登录)
   static int get pinFailedCount =>
@@ -402,6 +415,15 @@ class PreferencesStorage {
     final old = _preferences?.getInt(_keyPinFailedCount);
     await _preferences?.setInt(_keyPinFailedCount, count);
     _logPrefChange('PIN 失败计数', old, count, important: false);
+  }
+
+  /// 桌面侧栏收起(折叠成仅图标) — 仅桌面端使用,移动端忽略
+  static bool get isSidebarCollapsed =>
+      _preferences?.getBool(_keyIsSidebarCollapsed) ?? false;
+  static Future<void> setIsSidebarCollapsed(bool flag) async {
+    final old = _preferences?.getBool(_keyIsSidebarCollapsed);
+    await _preferences?.setBool(_keyIsSidebarCollapsed, flag);
+    _logPrefChange('桌面侧栏收起', old, flag, important: false);
   }
 
   static bool get isCompactPreview =>

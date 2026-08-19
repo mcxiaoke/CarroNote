@@ -22,10 +22,10 @@
 // 不触碰 _notesCache / 笔记正文解密路径（若误走会破坏此排序契约）。
 
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:core/core.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'test_helpers.dart';
 

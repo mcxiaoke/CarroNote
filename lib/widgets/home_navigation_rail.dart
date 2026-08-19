@@ -33,6 +33,10 @@ import 'package:safenotes/widgets/shad_nav_items.dart';
 ///    本应用 Nord 主题下 NavigationRail 的默认前景色在亮/暗模式都不正确。
 /// 3. 固定宽度（默认 240），避免桌面端过窄。
 ///
+/// 收起模式：[isCollapsed] 为 true 时宽度收窄到 [kCollapsedWidth]，只显示
+/// 每个 item 的图标（文字走 tooltip，顶部也只显示 Logo），并在底栏提供
+/// 展开/收起切换按钮。
+///
 /// 断点策略（Material Design 3 / Flutter 官方桌面模板）：
 /// - Compact (< 600px)：用 Drawer（见 lib/widgets/drawer.dart）
 /// - Medium (600–1023px) / Expanded (≥ 1024px)：用本 Sidebar 常驻左侧
@@ -41,15 +45,25 @@ import 'package:safenotes/widgets/shad_nav_items.dart';
 /// Recently Deleted / Settings / Lock；动作（切换主题）与 Settings 子页
 /// （同步）及低频信息页（关于）统一收敛进 Settings 页。
 class HomeSidebar extends StatelessWidget {
+  /// 展开态宽度
+  static const double kExpandedWidth = 240;
+
+  /// 收起态宽度（仅能容纳图标）
+  static const double kCollapsedWidth = 72;
+
   final VoidCallback onSettingsCallback;
   final VoidCallback onDeletedNotesCallback;
   final VoidCallback onLockCallback;
+  final bool isCollapsed;
+  final VoidCallback onToggleCollapsed;
 
   const HomeSidebar({
     super.key,
     required this.onSettingsCallback,
     required this.onDeletedNotesCallback,
     required this.onLockCallback,
+    this.isCollapsed = false,
+    required this.onToggleCollapsed,
   });
 
   @override
@@ -64,66 +78,84 @@ class HomeSidebar extends StatelessWidget {
     final Color fg = colorScheme.onSurface;
     final Color bg = colorScheme.surfaceContainerLow;
     final Color divider = colorScheme.outlineVariant;
+    final bool collapsed = isCollapsed;
 
     Widget sideItem(IconData icon, String label, VoidCallback onTap) {
-      return shadNavMenuItem(context, icon: icon, label: label, onTap: onTap);
+      return shadNavMenuItem(
+        context,
+        icon: icon,
+        label: label,
+        collapsed: collapsed,
+        onTap: onTap,
+      );
     }
 
-    return SizedBox(
-      width: 240,
+    // 收起/展开切换按钮：收起的底栏只放这一个按钮
+    final Widget toggleButton = IconButton(
+      key: const Key('ui-home-sidebar-toggle'),
+      tooltip: collapsed ? 'Expand sidebar'.tr() : 'Collapse sidebar'.tr(),
+      icon: Icon(
+        collapsed ? LucideIcons.panelLeftOpen : LucideIcons.panelLeftClose,
+        size: 18,
+      ),
+      color: fg.withValues(alpha: 0.75),
+      onPressed: onToggleCollapsed,
+    );
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      width: collapsed ? kCollapsedWidth : kExpandedWidth,
       child: Material(
         color: bg,
         child: Column(
           children: [
-            // 顶部 Logo + 应用名 + 标语（与 Android Drawer 的 _drawerHeader 对齐）
+            // 顶部：展开态 Logo + 应用名 + 标语；收起态仅 Logo 居中
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Image.asset(
-                      SafeNotesConfig.appLogoPath,
-                      semanticLabel: SafeNotesConfig.appName,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+              padding: collapsed
+                  ? const EdgeInsets.symmetric(vertical: 14)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: collapsed
+                  ? const _SidebarLogo(center: true)
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          SafeNotesConfig.appName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: fg,
-                            fontFamily: uiFontFamily,
-                            fontFamilyFallback: uiFontFamilyFallback,
-                            fontWeight: FontWeight.bold,
-                            fontSize: AppTextSize.s16,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          SafeNotesConfig.appSlogan,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: fg.withValues(alpha: 0.65),
-                            fontFamily: uiFontFamily,
-                            fontFamilyFallback: uiFontFamilyFallback,
-                            fontSize: AppTextSize.s12,
+                        const _SidebarLogo(),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                SafeNotesConfig.appName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: fg,
+                                  fontFamily: uiFontFamily,
+                                  fontFamilyFallback: uiFontFamilyFallback,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: AppTextSize.s16,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                SafeNotesConfig.appSlogan,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: fg.withValues(alpha: 0.65),
+                                  fontFamily: uiFontFamily,
+                                  fontFamilyFallback: uiFontFamilyFallback,
+                                  fontSize: AppTextSize.s12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
             ),
             Divider(color: divider, height: 1),
             // 主入口（可滚动，防窗口过矮时溢出）
@@ -159,11 +191,42 @@ class HomeSidebar extends StatelessWidget {
                 ],
               ),
             ),
-            // 底部版本号 / 构建信息 / DEBUG 徽标（分多行小字，置底）
-            footer(context),
+            // 底部：展开态 = footer 版本信息 + 收起/展开按钮；收起态只留按钮
+            if (collapsed)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: toggleButton,
+              )
+            else ...[
+              footer(context),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6, top: 4),
+                child: Center(child: toggleButton),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+}
+
+/// 侧栏顶部 Logo（展开态左侧对齐，收起态居中）。
+class _SidebarLogo extends StatelessWidget {
+  final bool center;
+
+  const _SidebarLogo({this.center = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget logo = SizedBox(
+      width: 48,
+      height: 48,
+      child: Image.asset(
+        SafeNotesConfig.appLogoPath,
+        semanticLabel: SafeNotesConfig.appName,
+      ),
+    );
+    return center ? Center(child: logo) : logo;
   }
 }

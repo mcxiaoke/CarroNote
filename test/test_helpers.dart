@@ -38,7 +38,6 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/utils/notes_color.dart';
-
 import 'support/asset_loader.dart';
 
 export 'support/harness.dart' show initFullEnv, initLightEnv;

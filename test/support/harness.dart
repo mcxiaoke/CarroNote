@@ -40,7 +40,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:safenotes/src/logger/log_webserver.dart';
-
 import 'crypto.dart';
 
 /// 测试用「实时报告安全存储」通道与内存后端，避免 MissingPluginException。

@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:easy_localization/easy_localization.dart';
+
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/text_styles.dart';

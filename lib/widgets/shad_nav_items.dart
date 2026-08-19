@@ -22,6 +22,8 @@ import 'package:safenotes/utils/spacing.dart';
 /// - [label] 用 shadcn 文本主题，与设置页分区标题/设置项保持一致；
 /// - [destructive] 为 true 时图标与文字转为危险色（如登出）；
 /// - [trailing] 可选尾部控件（如开关）；
+/// - [collapsed] 为 true 时只显示居中图标（桌面侧栏收起态），
+///   点击区保持图标大小，hover 仍可反馈，label 走 tooltip；
 /// - 整行可点击，hover/highlight 由 Material + InkWell 提供（叠加在 ShadApp 之上）。
 Widget shadNavMenuItem(
   BuildContext context, {
@@ -29,6 +31,7 @@ Widget shadNavMenuItem(
   required String label,
   bool destructive = false,
   Widget? trailing,
+  bool collapsed = false,
   required VoidCallback onTap,
 }) {
   final theme = ShadTheme.of(context);
@@ -36,25 +39,26 @@ Widget shadNavMenuItem(
       ? theme.colorScheme.destructive
       : theme.colorScheme.primary;
 
-  return Material(
-    color: Colors.transparent,
-    borderRadius: BorderRadius.circular(10),
-    child: InkWell(
+  final Widget iconContainer = Container(
+    width: 34,
+    height: 34,
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+    ),
+    child: Icon(icon, size: AppIcon.sm, color: color),
+  );
+
+  final Widget item = collapsed
+      ? Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: iconContainer,
+          ),
+        )
+      : Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, size: AppIcon.sm, color: color),
-            ),
+            iconContainer,
             const SizedBox(width: 14),
             Expanded(
               child: Text(
@@ -64,8 +68,20 @@ Widget shadNavMenuItem(
             ),
             trailing ?? const SizedBox.shrink(),
           ],
-        ),
+        );
+
+  final Widget surface = Material(
+    color: Colors.transparent,
+    borderRadius: BorderRadius.circular(10),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: item,
       ),
     ),
   );
+  // 收起态只显示图标，hover 时用 tooltip 给出文字提示
+  return collapsed ? Tooltip(message: label, child: surface) : surface;
 }

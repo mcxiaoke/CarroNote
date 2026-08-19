@@ -20,8 +20,8 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/utils/text_direction_util.dart';
 import 'package:safenotes/utils/editor_text.dart';
+import 'package:safenotes/utils/text_direction_util.dart';
 
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;

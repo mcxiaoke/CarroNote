@@ -321,7 +321,12 @@ Widget shadInfoTile(
   );
 }
 
-/// 单个设置项的点击表面：圆角 hover/highlight 反馈。
+/// 单个设置项的点击表面：整行可点击，hover/ripple 反馈铺满整个 item 行。
+///
+/// 不给 InkWell/Material 设圆角：让外层 [shadSettingsCard] 的 ShadCard
+/// （`Clip.antiAlias` 默认）统一按卡片圆角裁剪。这样点击高亮的四角与卡片
+/// 四角/card 圆角完全重合，不会再出现「点击圆角 ≠ item 那一行」的错位
+/// （此前硬编码 radius 12 与 ShadCard 默认 radius 6 不一致）。
 class _TileSurface extends StatelessWidget {
   final VoidCallback onTap;
   final Widget child;
@@ -332,9 +337,7 @@ class _TileSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

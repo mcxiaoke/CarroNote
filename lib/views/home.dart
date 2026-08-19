@@ -78,6 +78,9 @@ class HomePageState extends State<HomePage> with RouteAware {
   bool isGridView = PreferencesStorage.isGridView;
   bool _routeSubscribed = false;
 
+  /// 桌面侧栏收起态(持久化,见 PreferencesStorage.isSidebarCollapsed)
+  bool _sidebarCollapsed = PreferencesStorage.isSidebarCollapsed;
+
   /// B4 修复：监听同步状态流，消费 SyncResult.requiresRelogin。
   /// 引擎检测到"他端改密码"（scenario-b：本地 MK 解不开远端包裹）时
   /// 强制弹窗并退出登录（v4 选项 B 定案，替代旧 passwordEpochMismatch 标志），
@@ -380,6 +383,8 @@ class HomePageState extends State<HomePage> with RouteAware {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       HomeSidebar(
+                        isCollapsed: _sidebarCollapsed,
+                        onToggleCollapsed: _toggleSidebarCollapsed,
                         onSettingsCallback: _navSettings,
                         onDeletedNotesCallback: _navDeletedNotes,
                         onLockCallback: _navLock,
@@ -392,6 +397,12 @@ class HomePageState extends State<HomePage> with RouteAware {
         );
       },
     );
+  }
+
+  /// 桌面侧栏收起/展开切换：持久化跨会话保留。
+  void _toggleSidebarCollapsed() {
+    setState(() => _sidebarCollapsed = !_sidebarCollapsed);
+    PreferencesStorage.setIsSidebarCollapsed(_sidebarCollapsed);
   }
 
   /// 主页主体内容（搜索框 + 笔记列表/网格），Compact 与桌面 Rail 模式共用。
