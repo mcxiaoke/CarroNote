@@ -42,6 +42,10 @@ class PreferencesStorage {
   static const _keyIsBiometricAuthEnabled = 'isBiometricAuthEnabled';
   static const _keyBiometricAttemptAllTimeCount =
       'biometricAttemptAllTimeCount';
+  static const _keyIsPinAuthEnabled = 'isPinAuthEnabled';
+  static const _keyPinLength = 'pinLength';
+  static const _keyPinCharsetIndex = 'pinCharsetIndex';
+  static const _keyPinFailedCount = 'pinFailedCount';
   static const _keyIsCompactPreview = 'isCompactPreview';
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
   static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
@@ -74,6 +78,7 @@ class PreferencesStorage {
     );
     Log.settings.d(
       '安全配置: 生物识别=$isBiometricAuthEnabled '
+      'PIN锁定=$isPinAuthEnabled PIN长度=$pinLength '
       '无操作锁定=$isInactivityTimeoutOn 锁定时长=${inactivityTimeout}s',
     );
     Log.settings.d(
@@ -355,6 +360,50 @@ class PreferencesStorage {
     _logPrefChange('生物识别累计次数', old, old + 1, important: false);
   }
 
+  // ──────────────────────────────────────────────
+  // PIN Lock(与生物识别平行的第二解锁方式)
+  // 设计见 docs/pin-lock-design.md
+  // ──────────────────────────────────────────────
+
+  /// PIN 长度选项(默认 6 位,可选 4/8)
+  static const List<int> pinLengthOptions = [4, 6, 8];
+  static const int kPinDefaultLength = 6;
+
+  static bool get isPinAuthEnabled =>
+      _preferences?.getBool(_keyIsPinAuthEnabled) ?? false;
+  static Future<void> setIsPinAuthEnabled(bool flag) async {
+    final old = _preferences?.getBool(_keyIsPinAuthEnabled);
+    await _preferences?.setBool(_keyIsPinAuthEnabled, flag);
+    _logPrefChange('PIN 锁定', old, flag);
+  }
+
+  static int get pinLength =>
+      _preferences?.getInt(_keyPinLength) ?? kPinDefaultLength;
+  static Future<void> setPinLength(int length) async {
+    final old = _preferences?.getInt(_keyPinLength);
+    await _preferences?.setInt(_keyPinLength, length);
+    _logPrefChange('PIN 长度', old, length);
+  }
+
+  /// PIN 字符集索引(0=digits,1=alphanumeric 预留,见 PinCharset)
+  static int get pinCharsetIndex =>
+      _preferences?.getInt(_keyPinCharsetIndex) ?? 0;
+  static Future<void> setPinCharsetIndex(int index) async {
+    final old = _preferences?.getInt(_keyPinCharsetIndex);
+    await _preferences?.setInt(_keyPinCharsetIndex, index);
+    _logPrefChange('PIN 字符集', old, index);
+  }
+
+  /// PIN 连续失败计数(成功清零;达到 PinAuth.kPinMaxFailedAttempts 后
+  /// 自动关闭 PIN 回退密码登录)
+  static int get pinFailedCount =>
+      _preferences?.getInt(_keyPinFailedCount) ?? 0;
+  static Future<void> setPinFailedCount(int count) async {
+    final old = _preferences?.getInt(_keyPinFailedCount);
+    await _preferences?.setInt(_keyPinFailedCount, count);
+    _logPrefChange('PIN 失败计数', old, count, important: false);
+  }
+
   static bool get isCompactPreview =>
       _preferences?.getBool(_keyIsCompactPreview) ?? false;
   static Future<void> setIsCompactPreview(bool flag) async {
@@ -578,8 +627,7 @@ class SafeNotesConfig {
       '/storage/emulated/0/Download/CarroNote/';
   static const String _mailToForFeedback =
       'https://github.com/mcxiaoke/CarroNote/issues';
-  static const String _sourceCodeUrl =
-      'https://github.com/mcxiaoke/CarroNote';
+  static const String _sourceCodeUrl = 'https://github.com/mcxiaoke/CarroNote';
   static const String _bugReportUrl =
       'https://github.com/mcxiaoke/CarroNote/issues';
   static const String _openSourceLicense =
@@ -628,6 +676,7 @@ class SafeNotesConfig {
   static String get appName {
     return 'AppName'.tr();
   }
+
   static String get appVersion => _appVersion;
   static int get appVersionCode => _appVersionCode;
   static String get bugReportUrl => _bugReportUrl;
@@ -636,6 +685,7 @@ class SafeNotesConfig {
   static String get openSourceLicense => _openSourceLicense;
   static String get playStoreUrl => _playStorUrl;
   static String get githubUrl => _githubUrl;
+
   /// 应用标语：跟随翻译（中文用中文文案，其它语言回落英文统一文案）。
   static String get appSlogan => 'AppSlogan'.tr();
   static String get appLogoPath => _appLogoPath;

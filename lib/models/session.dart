@@ -18,6 +18,7 @@ import 'package:local_session_timeout/local_session_timeout.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 
@@ -39,6 +40,11 @@ class Session {
     //   含他端改密后的重新登录。）
     if (PreferencesStorage.isBiometricAuthEnabled) {
       BiometricAuth.setAuthKey();
+    }
+    // PIN Lock 联动(与生物识别平行):用本次已验证的密码刷新 PIN 密码信封,
+    // 保证 PIN 解锁取回的密码始终等于当前有效密码(无需用户输入 PIN)。
+    if (PreferencesStorage.isPinAuthEnabled) {
+      PinAuth.refreshCredential();
     }
   }
 
@@ -82,6 +88,12 @@ class Session {
       BiometricAuth.setAuthKey();
     } else {
       Log.auth.d('生物识别未启用: 跳过认证凭据刷新');
+    }
+    if (PreferencesStorage.isPinAuthEnabled) {
+      Log.auth.i('PIN 锁定已启用: 同步刷新 PIN 密码信封');
+      PinAuth.refreshCredential();
+    } else {
+      Log.auth.d('PIN 锁定未启用: 跳过 PIN 凭据刷新');
     }
   }
 }

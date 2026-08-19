@@ -58,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _syncStatusValue;
   late String _backupValue;
   late String _biometricValue;
+  late String _pinValue;
   late String _inactivityValue;
   late String _languageValue;
 
@@ -94,6 +95,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
     _biometricValue = PreferencesStorage.isBiometricAuthEnabled
         ? 'On'.tr()
+        : 'Off'.tr();
+    _pinValue = PreferencesStorage.isPinAuthEnabled
+        ? 'On · {n} digits'.tr(
+            namedArgs: {'n': '${PreferencesStorage.pinLength}'},
+          )
         : 'Off'.tr();
     _inactivityValue = inactivityTimeoutValue();
     _languageValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
@@ -195,9 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: () async {
             await Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const EditorFontPicker(),
-              ),
+              MaterialPageRoute(builder: (_) => const EditorFontPicker()),
             );
             _refreshDisplayValues();
           },
@@ -286,6 +290,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: _biometricValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/biometricSetting');
+            _refreshDisplayValues();
+          },
+        ),
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-pin'),
+          icon: LucideIcons.key,
+          title: 'PIN Lock'.tr(),
+          value: _pinValue,
+          onTap: () async {
+            await Navigator.pushNamed(context, '/pinSetting');
             _refreshDisplayValues();
           },
         ),

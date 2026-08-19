@@ -34,6 +34,7 @@ import 'package:safenotes/views/settings/biometric_setting.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
 import 'package:safenotes/views/settings/language_setting.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
+import 'package:safenotes/views/settings/pin_setting.dart';
 import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
@@ -173,6 +174,9 @@ class RouteGenerator {
 
       case '/biometricSetting':
         return _buildRoute(const BiometricSetting(), settings);
+
+      case '/pinSetting':
+        return _buildRoute(const PinSetting(), settings);
 
       default:
         return _errorRoute(route: routeName);

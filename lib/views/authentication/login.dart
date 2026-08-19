@@ -35,6 +35,7 @@ import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/vault_backup.dart';
+import 'package:safenotes/views/authentication/pin_unlock_panel.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
@@ -115,6 +116,39 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         (widget.isKeyboardFocused ?? true)) {
       await _authenticate();
     }
+    // 生物识别登录成功会 pushReplacement 导航离开,页面已销毁时不再弹 PIN
+    if (!mounted) return;
+    // PIN 覆盖层:与生物识别平行,只要启用就弹出 —— 冷启动 / 空闲锁定 /
+    // 手动锁定后回到登录页行为一致(App Lock 语义:锁定回来必须解锁)。
+    // 注意:不能依赖 isKeyboardFocused(锁定导航传 false,见 main.dart logout)。
+    if (PreferencesStorage.isPinAuthEnabled) {
+      await _showPinLockOverlay();
+    }
+  }
+
+  /// 弹出 PIN 全屏覆盖层(见 docs/pin-lock-design.md §7.2)
+  Future<void> _showPinLockOverlay() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog.fullscreen(
+        child: PinUnlockPanel(
+          onAuthenticated: (passphrase) async {
+            // 先关闭覆盖层,再走统一登录流程(成功会 pushReplacement)
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+            await _login(passphrase);
+          },
+          onDismiss: () {
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+          },
+        ),
+      ),
+    );
   }
 
   @override
