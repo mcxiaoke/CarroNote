@@ -147,6 +147,38 @@ Widget shadNavigationTile(
   return key == null ? tile : KeyedSubtree(key: key, child: tile);
 }
 
+/// 动作型行（操作菜单 / 底部 sheet 用）：一个图标 + 一个文本，仅此两项。
+///
+/// 与 [shadNavigationTile] 的区别：这里是「立即执行的一次性动作」而非跳转，
+/// 因此不画右侧箭头、不留副标题位，图标也不套品牌色圆角容器（直接裸图标），
+/// 视觉更轻。[destructive] 为 true 时图标与文字统一转为危险色。
+Widget shadActionTile(
+  BuildContext context, {
+  Key? key,
+  required IconData icon,
+  required String title,
+  bool destructive = false,
+  required void Function() onTap,
+}) {
+  final theme = ShadTheme.of(context);
+  final color = destructive
+      ? theme.colorScheme.destructive
+      : theme.colorScheme.foreground;
+  final Widget tile = _TileSurface(
+    onTap: onTap,
+    child: Row(
+      children: [
+        Icon(icon, size: AppIcon.md, color: color),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(title, style: theme.textTheme.p.copyWith(color: color)),
+        ),
+      ],
+    ),
+  );
+  return key == null ? tile : KeyedSubtree(key: key, child: tile);
+}
+
 /// 开关型设置项（整行可点击切换，右侧 [ShadSwitch]）。
 Widget shadSwitchTile(
   BuildContext context, {

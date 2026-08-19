@@ -412,5 +412,13 @@
   "Keyboard Type": "键盘类型",
   "Digits": "纯数字",
   "Digits & Letters": "数字+字母",
-  "Letters": "纯字母"
+  "Letters": "纯字母",
+  "More": "更多",
+  "Copy all": "复制全文",
+  "Add star": "添加星标",
+  "Remove star": "取消星标",
+  "Delete note": "删除笔记",
+  "Copied to clipboard": "已复制到剪贴板",
+  "Starred": "已添加星标",
+  "Star removed": "已取消星标"
 }

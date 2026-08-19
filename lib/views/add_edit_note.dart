@@ -14,6 +14,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -32,6 +33,7 @@ import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
+import 'package:safenotes/widgets/note_actions_sheet.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 
 /// 未保存退出弹框的三种选择：保存 / 放弃 / 取消。
@@ -97,9 +99,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           appBar: AppBar(
             actions: [
               _previewToggle(),
-              // 仅编辑已有笔记时才提供删除；新建笔记尚无 id，不可删。
-              if (widget.note != null) _deleteButton(),
               buildButton(),
+              // 复制/星标/删除收进「更多」菜单，AppBar 只留预览与保存两个主操作。
+              // 仅编辑已有笔记时才提供：新建笔记尚无 id/uuid 落库，无从复制或删除。
+              if (widget.note != null) _moreButton(),
             ],
           ),
           body: _previewMode
@@ -185,32 +188,86 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
-  Widget _deleteButton() {
+  Widget _moreButton() {
     return IconButton(
-      icon: const Icon(LucideIcons.trash2),
-      tooltip: 'Delete'.tr(),
-      onPressed: () async {
-        if (widget.note == null) return;
-        Log.ui.i(
-          '用户点击删除笔记(编辑页), 弹出确认对话框 '
-          'uuid=${widget.note!.uuid}',
-        );
-        await showDeleteConfirmation(
-          context: context,
-          onConfirm: () async {
-            // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
-            setState(() => _isDeleting = true);
-            Log.note.i(
-              '用户确认删除笔记(移入回收站): '
-              'uuid=${widget.note!.uuid} id=${widget.note!.id}',
-            );
-            await NotesDatabase.instance.softDelete(widget.note!.id!);
-            // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
-            Log.sync.d('笔记软删除后触发自动同步');
-            SyncService.instance.autoSync();
-            await _closePage();
-          },
-        );
+      key: const Key('ui-note-button-more'),
+      tooltip: 'More'.tr(),
+      icon: const Icon(LucideIcons.ellipsisVertical),
+      onPressed: _onMorePressed,
+    );
+  }
+
+  /// 打开操作菜单：先读星标状态定文案，再按用户选择分派动作。
+  ///
+  /// 动作一律在 sheet 关闭之后执行（[showNoteActionsSheet] 只返回选择结果），
+  /// 这样删除确认框与 toast 都挂在本页 context 上，不会用到已销毁的 sheet。
+  Future<void> _onMorePressed() async {
+    final SafeNote? note = widget.note;
+    if (note == null) return;
+
+    // 无 meta 行即视为未加星：元数据是懒创建的，只有设置过才会有行。
+    final NoteMeta? meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
+    final bool pinned = meta?.pinned ?? false;
+    if (!mounted) return;
+
+    final NoteAction? action = await showNoteActionsSheet(
+      context,
+      pinned: pinned,
+    );
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case NoteAction.copyAll:
+        await _copyAll();
+      case NoteAction.toggleStar:
+        await _toggleStar(note, !pinned);
+      case NoteAction.delete:
+        await _deleteNote(note);
+    }
+  }
+
+  /// 复制全文到剪贴板：标题与正文之间空一行，空字段直接跳过不留空白。
+  ///
+  /// 复制的是编辑器当前内容（含未保存改动），与用户所见一致。
+  Future<void> _copyAll() async {
+    final List<String> parts = [
+      title.trim(),
+      description.trim(),
+    ].where((s) => s.isNotEmpty).toList();
+    final String text = parts.join('\n\n');
+    if (text.isEmpty) {
+      Log.ui.d('复制全文跳过: 内容为空');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    // 隐私：只记录长度，不记录内容
+    Log.ui.i('复制笔记全文: uuid=${widget.note?.uuid ?? "(新建)"} len=${text.length}');
+    if (mounted) showSnackBarMessage(context, 'Copied to clipboard'.tr());
+  }
+
+  /// 切换星标（本项目星标即置顶 pinned）。
+  ///
+  /// 只写 note_meta，不动笔记正文与 `updated_at`，因此不会触发正文重传。
+  Future<void> _toggleStar(SafeNote note, bool pinned) async {
+    await NotesDatabase.instance.setNotePinned(note.uuid, pinned);
+    Log.note.i('笔记星标切换: uuid=${note.uuid} pinned=$pinned');
+    if (!mounted) return;
+    showSnackBarMessage(context, pinned ? 'Starred'.tr() : 'Star removed'.tr());
+  }
+
+  Future<void> _deleteNote(SafeNote note) async {
+    Log.ui.i('用户点击删除笔记(编辑页), 弹出确认对话框 uuid=${note.uuid}');
+    await showDeleteConfirmation(
+      context: context,
+      onConfirm: () async {
+        // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
+        setState(() => _isDeleting = true);
+        Log.note.i('用户确认删除笔记(移入回收站): uuid=${note.uuid} id=${note.id}');
+        await NotesDatabase.instance.softDelete(note.id!);
+        // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
+        Log.sync.d('笔记软删除后触发自动同步');
+        SyncService.instance.autoSync();
+        await _closePage();
       },
     );
   }

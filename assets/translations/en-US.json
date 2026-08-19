@@ -412,5 +412,13 @@
   "Keyboard Type": "Keyboard Type",
   "Digits": "Digits",
   "Digits & Letters": "Digits & Letters",
-  "Letters": "Letters"
+  "Letters": "Letters",
+  "More": "More",
+  "Copy all": "Copy all",
+  "Add star": "Add star",
+  "Remove star": "Remove star",
+  "Delete note": "Delete note",
+  "Copied to clipboard": "Copied to clipboard",
+  "Starred": "Starred",
+  "Star removed": "Star removed"
 }

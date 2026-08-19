@@ -447,8 +447,7 @@ Future<void> main() async {
       await _createNote(tester, title, 'body');
       try {
         await _openNoteByTitle(tester, title);
-        await tester.tap(find.byIcon(LucideIcons.trash2));
-        await tester.pumpAndSettle();
+        await _tapEditorDelete(tester);
         await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
         await _waitFor(tester, () => _isHome(tester));
         // Clear the leftover search query (its text still matches the title).
@@ -1145,6 +1144,15 @@ Future<void> _openNoteByTitle(WidgetTester tester, String title) async {
   await tester.pumpAndSettle(); // open the editor (preview mode)
 }
 
+/// 在编辑页触发删除：AppBar 只留预览与保存，删除已收进「更多」底部菜单，
+/// 因此要先开 sheet 再点删除项。返回时停在删除确认弹框上（尚未确认）。
+Future<void> _tapEditorDelete(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('ui-note-button-more')));
+  await tester.pumpAndSettle(); // 底部操作 sheet 打开
+  await tester.tap(find.byKey(const Key('ui-note-action-delete')));
+  await tester.pumpAndSettle(); // sheet 关闭 + 弹出删除确认框
+}
+
 /// Deletes an existing note by its (unique) title, cleaning up the DB.
 ///
 /// Used after tests that create throwaway notes so the note count does not
@@ -1155,8 +1163,7 @@ Future<void> _deleteNoteByTitle(WidgetTester tester, String title) async {
   await _openNoteByTitle(tester, title);
   await _settle(tester); // 编辑器（预览态）完全就绪后再点删除
 
-  await tester.tap(find.byIcon(LucideIcons.trash2));
-  await tester.pumpAndSettle(); // destructive confirmation dialog
+  await _tapEditorDelete(tester);
   await _settle(tester); // 确认弹框动画走完
 
   await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
