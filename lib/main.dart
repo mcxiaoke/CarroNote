@@ -36,6 +36,7 @@ import 'package:safenotes/models/session.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/desktop_window.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -149,6 +150,9 @@ void _installGlobalErrorHandlers() {
 
 /// 应用主初始化流程
 Future<void> _bootstrap() async {
+  // 桌面端窗口管理（最小尺寸 + 居中）：必须在 runApp 之前就绪
+  await initDesktopWindowManager();
+
   // 桌面平台（Windows/macOS/Linux）初始化 sqflite_ffi
   // sqflite 原生只支持 Android/iOS，桌面端必须用 sqflite_common_ffi
   if (isDesktopPlatform) {

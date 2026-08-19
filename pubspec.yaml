@@ -46,6 +46,8 @@ dependencies:
   rename: ^3.0.2
   shared_preferences: ^2.0.6
   shared_preferences_platform_interface: ^2.4.2  # 自定义 prefs 存储后端（SharedPreferencesStorePlatform）
+  # 桌面端窗口管理（Windows/macOS/Linux）：最小尺寸限制、居中、程序化调整窗口
+  window_manager: 0.5.1
   sqflite: ^2.4.3
   sqflite_common: ^2.5.11
   sqflite_common_ffi: ^2.4.2  # 桌面端 SQLite（Windows/macOS/Linux 运行时 + 测试）
