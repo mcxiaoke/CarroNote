@@ -421,5 +421,12 @@
   "Copied to clipboard": "Copied to clipboard",
   "Starred": "Starred",
   "Star removed": "Star removed",
-  "Pinned": "Pinned"
+  "Pinned": "Pinned",
+  "Newest first": "Newest first",
+  "Starred only": "Starred only",
+  "Notes Preferences": "Notes Preferences",
+  "Edit Tags": "Edit Tags",
+  "Tags": "Tags",
+  "Separate tags with space, comma or semicolon.": "Separate tags with space, comma or semicolon.",
+  "Tags saved": "Tags saved"
 }

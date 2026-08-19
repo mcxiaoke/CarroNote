@@ -27,7 +27,8 @@ String humanTime({required DateTime time, required String localeString}) {
 
 /// 卡片时间戳展示：绝对或相对。
 ///
-/// [isRelative] 为 true 时，当天显示相对时间（"x 分钟前"），更早的日期显示绝对日期+时间；
+/// [isRelative] 为 true 时一律显示相对时间（"5 分钟前"、"3 天前"），
+/// 与设置项描述一致（Show note timestamps as relative, e.g. 5 minutes ago）；
 /// 为 false（默认）时始终显示绝对日期+时间（如 Aug 9, 2026 2:30 PM）。
 String noteTimeLabel({
   required DateTime time,
@@ -35,12 +36,7 @@ String noteTimeLabel({
   required bool isRelative,
 }) {
   if (isRelative) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(time.year, time.month, time.day);
-    if (today == date) {
-      return humanTime(time: time, localeString: localeString);
-    }
+    return humanTime(time: time, localeString: localeString);
   }
   return DateFormat.yMMMd().add_jm().format(time);
 }

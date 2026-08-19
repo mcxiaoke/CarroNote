@@ -191,7 +191,7 @@ class _PinnedBadge extends StatelessWidget {
           color: scheme.primary,
         ),
         alignment: Alignment.center,
-        child: Icon(LucideIcons.pin, size: 12, color: scheme.onPrimary),
+        child: Icon(LucideIcons.star, size: 12, color: scheme.onPrimary),
       ),
     );
   }

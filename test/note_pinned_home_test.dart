@@ -94,7 +94,7 @@ void main() {
       reason: '未置顶笔记不应显示星标角标',
     );
 
-    // 角标完整渲染：圆形背景不被卡片裁切，且用的是 pin 图标（不是 star）
+    // 角标完整渲染：圆形背景不被卡片裁切，且用的是 star 图
     final Rect cardRect = tester.getRect(firstNote);
     final Rect badgeRect = tester.getRect(badge);
     expect(
@@ -104,9 +104,9 @@ void main() {
       reason: '角标应完整落在卡片内，不得被裁切（曾因负偏移被裁成四分之一）',
     );
     expect(
-      find.descendant(of: badge, matching: find.byIcon(LucideIcons.pin)),
+      find.descendant(of: badge, matching: find.byIcon(LucideIcons.star)),
       findsOneWidget,
-      reason: '置顶角标应使用 pin 图标',
+      reason: '置顶角标应使用 star 图标',
     );
   }, timeout: const Timeout(Duration(seconds: 90)));
 }

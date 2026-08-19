@@ -26,10 +26,10 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
-import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
@@ -221,6 +221,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         await _copyAll();
       case NoteAction.toggleStar:
         await _toggleStar(note, !pinned);
+      case NoteAction.editTags:
+        await _editTags(note);
       case NoteAction.delete:
         await _deleteNote(note);
     }
@@ -253,6 +255,41 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     Log.note.i('笔记星标切换: uuid=${note.uuid} pinned=$pinned');
     if (!mounted) return;
     showSnackBarMessage(context, pinned ? 'Starred'.tr() : 'Star removed'.tr());
+  }
+
+  /// 编辑笔记标签：读现有标签预填，弹窗输入后按分隔符切分为标签集合并落库。
+  ///
+  /// 标签只写 note_meta（payload 加密），不动正文与 `updated_at`，
+  /// 不触发正文重传；数据库侧 [NoteMeta.normalizeTags] 已代为去空白/去重。
+  /// 简易输入对话框走 app_dialogs 的 M3 AlertDialog（[showAppInput]），
+  /// 避免 shadcn ShadDialog 在移动端标题上方留大空白的布局 bug。
+  Future<void> _editTags(SafeNote note) async {
+    final NoteMeta? meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
+    final List<String> initialTags = meta?.tags ?? const [];
+    if (!mounted) return;
+
+    final String? input = await showAppInput(
+      context,
+      title: 'Edit Tags'.tr(),
+      message: 'Separate tags with space, comma or semicolon.'.tr(),
+      hint: 'Tags'.tr(),
+      initialValue: initialTags.join(' '),
+      confirmLabel: 'Save'.tr(),
+    );
+    if (input == null || !mounted) return;
+
+    final List<String> tags = parseTagsInput(input);
+    await NotesDatabase.instance.setNoteTags(note.uuid, tags);
+    // 隐私：标签名本身即用户隐私，只记数量不记内容。
+    Log.note.i('笔记标签更新: uuid=${note.uuid} count=${tags.length}');
+    if (!mounted) return;
+    showSnackBarMessage(context, 'Tags saved'.tr());
+  }
+
+  /// 把用户输入的标签字符串切分为标签列表：按空格/英文逗号/中文逗号/分号/顿号
+  /// 分隔，其余（去空白、去重、丢空串）交由 [NoteMeta.normalizeTags] 处理。
+  static List<String> parseTagsInput(String raw) {
+    return NoteMeta.normalizeTags(raw.split(RegExp(r'[\s,，;；、]+')));
   }
 
   Future<void> _deleteNote(SafeNote note) async {

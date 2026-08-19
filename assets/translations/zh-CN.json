@@ -421,5 +421,12 @@
   "Copied to clipboard": "已复制到剪贴板",
   "Starred": "已添加星标",
   "Star removed": "已取消星标",
-  "Pinned": "已置顶"
+  "Pinned": "已置顶",
+  "Newest first": "新→旧",
+  "Starred only": "仅显示星标",
+  "Notes Preferences": "笔记偏好",
+  "Edit Tags": "编辑标签",
+  "Tags": "标签",
+  "Separate tags with space, comma or semicolon.": "多个标签用空格、逗号或分号分隔。",
+  "Tags saved": "标签已保存"
 }

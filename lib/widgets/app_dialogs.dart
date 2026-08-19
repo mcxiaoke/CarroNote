@@ -285,8 +285,34 @@ Future<String?> showAppPassword(
   );
 }
 
-/// 三选项对话框：典型场景是「未保存的更改 → 保存 / 放弃 / 取消」。
+/// 单行文本输入对话框（M3 AlertDialog）。
 ///
+/// 用于「编辑标签」「重命名」等简单文本输入场景。
+/// - [initialValue] 预填内容；[hint] 输入框的 label/占位文案
+/// - 返回 String = 用户输入（可为空串）；null = 取消
+Future<String?> showAppInput(
+  BuildContext context, {
+  required String title,
+  String? message,
+  String? hint,
+  String initialValue = '',
+  String? confirmLabel,
+  String? cancelLabel,
+}) {
+  return _showM3Dialog<String>(
+    context: context,
+    builder: (ctx) => _InputDialog(
+      title: title,
+      message: message,
+      hint: hint,
+      initialValue: initialValue,
+      confirmLabel: confirmLabel,
+      cancelLabel: cancelLabel,
+    ),
+  );
+}
+
+/// 三选项对话框：典型场景是「未保存的更改 → 保存 / 放弃 / 取消」。
 /// 返回 `AppThreeWayResult.cancel | discard | confirm`。
 /// 按钮：取消=OutlinedButton（最轻），放弃=OutlinedButton+error 文字（中），
 /// 确认=FilledButton（最重）。
@@ -427,6 +453,90 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             style: appDialogFilledAction(),
             onPressed: _submit,
             child: Text(widget.confirmLabel ?? 'Submit'.tr()),
+          ),
+        ]),
+      ],
+      constraints: kAppAlertConstraints,
+    );
+  }
+}
+
+/// 单行文本输入对话框（[showAppInput] 的实现）。
+///
+/// 与 [_PasswordDialog] 同构：M3 AlertDialog + TextField + 统一操作栏，
+/// 避免 shadcn ShadDialog 在移动端标题上方留大空白的布局 bug。
+class _InputDialog extends StatefulWidget {
+  final String title;
+  final String? message;
+  final String? hint;
+  final String initialValue;
+  final String? confirmLabel;
+  final String? cancelLabel;
+
+  const _InputDialog({
+    required this.title,
+    required this.message,
+    required this.hint,
+    required this.initialValue,
+    required this.confirmLabel,
+    required this.cancelLabel,
+  });
+
+  @override
+  State<_InputDialog> createState() => _InputDialogState();
+}
+
+class _InputDialogState extends State<_InputDialog> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(_ctrl.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.message != null) ...[
+            Text(widget.message!),
+            const SizedBox(height: 14),
+          ],
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: widget.hint ?? widget.title,
+              hintText: widget.hint,
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        appDialogActions(context, [
+          OutlinedButton(
+            key: const Key('ui-dialog-cancel'),
+            style: appDialogOutlineAction(),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(widget.cancelLabel ?? 'Cancel'.tr()),
+          ),
+          FilledButton(
+            key: const Key('ui-dialog-confirm'),
+            style: appDialogFilledAction(),
+            onPressed: _submit,
+            child: Text(widget.confirmLabel ?? 'OK'.tr()),
           ),
         ]),
       ],

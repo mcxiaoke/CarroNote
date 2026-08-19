@@ -50,6 +50,10 @@ import 'package:safenotes/widgets/search_widget.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 import 'package:safenotes/widgets/states.dart';
 
+/// 排序/显示偏好下拉菜单的固定宽度：足以容纳最长的开关项文字（含换行），
+/// 行内 icon 左对齐、文字左对齐、switch 右对齐，且不随内容占满。
+const double _kSortMenuWidth = 260;
+
 class HomePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
@@ -97,6 +101,12 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 搜索防抖（P1-6）：200ms 内连续输入只触发一次过滤，避免大笔记库卡顿。
   Timer? _debounceTimer;
 
+  /// 排序/显示偏好菜单控制器（AppBar 排序 icon 下拉）。
+  final ShadPopoverController _sortMenuController = ShadPopoverController();
+
+  /// 仅显示星标（纯内存开关，不持久化），叠加在排序与搜索之上。
+  bool _showStarredOnly = false;
+
   //bool isListner = false;
   @override
   void initState() {
@@ -131,6 +141,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     }
     _syncStateSub?.cancel();
     _debounceTimer?.cancel();
+    _sortMenuController.dispose();
     _notesListScroll.dispose();
     _notesGridScroll.dispose();
     // 注意：此处不停止日志 Web 服务器。
@@ -313,8 +324,10 @@ class HomePageState extends State<HomePage> with RouteAware {
           : keyOf(a).compareTo(keyOf(b));
     });
     setState(() {
-      allnotes = notes = tmpNotes;
+      allnotes = tmpNotes;
       _noteMeta = metaMap; // 供 2.2 卡片角标同步读取
+      // 刷新时保留「仅星标」内存筛选（搜索关键词在刷新时按旧行为清空）。
+      notes = _filterStarredOnly(tmpNotes);
     });
     // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
     Log.ui.i(
@@ -508,17 +521,126 @@ class HomePageState extends State<HomePage> with RouteAware {
   // }
 
   Widget _shortNotes() {
-    return IconButton(
-      key: const Key('ui-home-toolbar-sort'),
-      icon: !isNewFirst
-          ? Icon(LucideIcons.arrowUp)
-          : Icon(LucideIcons.arrowDown),
-      onPressed: () {
-        setState(() {
-          isNewFirst = !isNewFirst;
-          _sortAndStoreNotes();
-        });
-      },
+    return ShadPopover(
+      controller: _sortMenuController,
+      child: IconButton(
+        key: const Key('ui-home-toolbar-sort'),
+        icon: const Icon(LucideIcons.funnelPlus),
+        tooltip: 'Notes Preferences'.tr(),
+        onPressed: () => _sortMenuController.toggle(),
+      ),
+      popover: (context) =>
+          SizedBox(width: _kSortMenuWidth, child: _buildSortMenu(context)),
+    );
+  }
+
+  /// 排序/显示偏好下拉菜单：复用排序 icon（↑/↓ 表示新→旧方向），
+  /// 点击弹出开关列表，前几项与设置页共用同一持久化偏好，
+  /// 「仅显示星标」为纯内存开关（[_showStarredOnly]，不落盘）。
+  Widget _buildSortMenu(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    Widget row({
+      Key? key,
+      required IconData icon,
+      required String title,
+      required bool value,
+      required ValueChanged<bool> onChanged,
+    }) {
+      return KeyedSubtree(
+        key: key,
+        child: InkWell(
+          onTap: () => onChanged(!value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.foreground),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    // ShadPopover 会给内容包一层 DefaultTextStyle(textAlign: center)，
+                    // 必须显式左对齐，否则文字居中/换行时参差不齐。
+                    textAlign: TextAlign.start,
+                    style: theme.textTheme.p,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ShadSwitch(value: value, onChanged: onChanged),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row(
+          key: const Key('ui-home-menu-newfirst'),
+          icon: LucideIcons.arrowDown,
+          title: 'Newest first'.tr(),
+          value: isNewFirst,
+          onChanged: (v) {
+            setState(() => isNewFirst = v);
+            PreferencesStorage.setIsNewFirst(isNewFirst);
+            _sortAndStoreNotes();
+          },
+        ),
+        row(
+          key: const Key('ui-home-menu-sortmodified'),
+          icon: LucideIcons.arrowUpDown,
+          title: 'Sort by Modified Date'.tr(),
+          value: PreferencesStorage.isSortByModified,
+          onChanged: (v) {
+            // 排序字段切换走同一套排序入口（内部 setState 刷新列表）。
+            PreferencesStorage.setIsSortByModified(v);
+            _sortAndStoreNotes();
+          },
+        ),
+        row(
+          key: const Key('ui-home-menu-relativetime'),
+          icon: LucideIcons.clock,
+          title: 'Relative Time'.tr(),
+          value: PreferencesStorage.isRelativeTime,
+          onChanged: (v) {
+            PreferencesStorage.setIsRelativeTime(v);
+            setState(() {}); // 时间标签（相对/绝对）随偏好即时刷新
+          },
+        ),
+        row(
+          key: const Key('ui-home-menu-compact'),
+          icon: LucideIcons.shrink,
+          title: 'Compact Notes'.tr(),
+          value: PreferencesStorage.isCompactPreview,
+          onChanged: (v) {
+            PreferencesStorage.setIsCompactPreview(v);
+            setState(() {}); // 卡片/紧凑瓦片样式即时切换
+          },
+        ),
+        row(
+          key: const Key('ui-home-menu-colorful'),
+          icon: LucideIcons.brush,
+          title: 'Notes Color'.tr(),
+          value: PreferencesStorage.isColorful,
+          onChanged: (v) {
+            PreferencesStorage.setIsColorful(v);
+            setState(() {}); // 卡片底色即时切换
+          },
+        ),
+        row(
+          key: const Key('ui-home-menu-starredonly'),
+          icon: LucideIcons.star,
+          title: 'Starred only'.tr(),
+          value: _showStarredOnly,
+          onChanged: (v) {
+            setState(() => _showStarredOnly = v);
+            _applyViewFilter();
+          },
+        ),
+      ],
     );
   }
 
@@ -791,25 +913,37 @@ class HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
+  /// 仅显示星标（[_showStarredOnly] 生效时）从 [source] 中过滤出 pin 置顶的笔记。
+  ///
+  /// 用于刷新/排序后重算列表；搜索时则走 [_applyViewFilter] 把关键词叠加进来。
+  List<SafeNote> _filterStarredOnly(List<SafeNote> source) {
+    if (!_showStarredOnly) return source;
+    return source.where((n) => _noteMeta[n.uuid]?.pinned ?? false).toList();
+  }
+
+  /// 将「搜索关键词 + 仅星标」两个内存筛选合并应用到当前列表。
+  ///
+  /// 排序保持 [allnotes] 已有顺序（排序发生在 _sortAndStoreNotes），
+  /// 这里只负责过滤；[query] 在调用前由 [_searchNote] 写好。
+  void _applyViewFilter() {
+    final ql = query.trim().toLowerCase();
+    var result = allnotes;
+    if (ql.isNotEmpty) {
+      result = result.where((note) {
+        final titleLower = note.title.toLowerCase();
+        final descriptionLower = note.description.toLowerCase();
+        return titleLower.contains(ql) || descriptionLower.contains(ql);
+      }).toList();
+    }
+    setState(() => notes = _filterStarredOnly(result));
+  }
+
   void _searchNote(String query) {
     // 搜索防抖：200ms 内连续输入只执行最后一次过滤。
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 200), () {
-      final notes = allnotes.where((note) {
-        final titleLower = note.title.toLowerCase();
-        final descriptionLower = note.description.toLowerCase();
-        final queryLower = query.toLowerCase().trim();
-
-        return titleLower.contains(queryLower) ||
-            descriptionLower.contains(queryLower);
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          this.query = query;
-          this.notes = notes;
-        });
-      }
+      setState(() => this.query = query);
+      _applyViewFilter();
       // 只记录关键词长度与命中数，绝不记录关键词内容（可能含敏感信息）
       Log.ui.d(
         '笔记搜索: 关键词长度=${query.trim().length}, '
