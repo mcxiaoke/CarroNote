@@ -101,6 +101,15 @@ bool get isDesktopPlatform {
 /// 是否为 Web 平台（独立于桌面/移动之外的第三态）。
 bool get isWeb => kIsWeb;
 
+/// 是否处于「紧凑横屏」：移动端（Android / iOS）且设备当前为横屏。
+///
+/// 用于 PIN 键盘等场景——横屏下可用高度很矮，需要切到更紧凑的布局
+/// （隐藏装饰头部 / 改流式键盘 / 缩小按键）。桌面端高度充足、Web 走浏览器
+/// 自适应布局，二者恒为 false，调用方无需再重复写判定。
+bool isCompactLandscape(BuildContext context) =>
+    isMobilePlatform &&
+    MediaQuery.orientationOf(context) == Orientation.landscape;
+
 /// 是否为移动平台（Android / iOS）。
 ///
 /// Web 下恒为 false，因此桌面/移动/Web 三者互斥且覆盖常见运行场景。

@@ -398,12 +398,9 @@ class _PinFlowState extends State<_PinFlow> {
             keys: _charset.keys,
             columns: _charset.columns,
             columnsWide: _charset.columnsWide,
-            // 移动端横屏:宽屏布局下按键会跑到上限 72,偏大;固定 48 更紧凑。
-            buttonSize:
-                !isDesktopPlatform &&
-                    MediaQuery.orientationOf(context) == Orientation.landscape
-                ? PinKeyboard.kMinButtonSize
-                : null,
+            // 移动端横屏改用流式布局(与解锁覆盖层一致),最少两行避免数字键盘挤成一行。
+            wrap: isCompactLandscape(context),
+            wrapMinRows: 2,
             shuffle: _shuffle,
             enabled: !_busy,
             onKey: _onDigit,

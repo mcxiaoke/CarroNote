@@ -382,4 +382,70 @@ void main() {
       }
     });
   });
+
+  group('PinKeyboard wrap(紧凑横屏) 布局', () {
+    PinKeyboard buildWrap(PinCharset charset) {
+      return PinKeyboard(
+        wrap: true,
+        wrapMinRows: 2,
+        keys: charset.keys,
+        columns: charset.columns,
+        columnsWide: charset.columnsWide,
+        onKey: (_) {},
+        onBackspace: () {},
+      );
+    }
+
+    List<Row> _rows(WidgetTester tester) =>
+        tester.widgetList<Row>(
+          find.descendant(
+            of: find.byType(PinKeyboard),
+            matching: find.byType(Row),
+          ),
+        ).toList();
+
+    testWidgets('数字键盘横屏: 至少 2 行且末行左对齐, 不溢出', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 700,
+            height: 320,
+            child: buildWrap(PinCharset.digits),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 不溢出(此前会压成单行;现在强制 6+5 两行)
+      expect(tester.takeException(), isNull);
+      // 11 键(10 数字 + 删除)→ 每行最多 6 → 2 行
+      final rows = _rows(tester);
+      expect(rows.length, 2);
+      // 末行按键数 < 满行(5 < 6),即确有折行
+      expect(rows.last.children.length, lessThan(rows.first.children.length));
+    });
+
+    testWidgets('全键盘(letters)横屏: 按可用宽度自然折行, 不溢出且不止 2 行', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 700,
+            height: 320,
+            child: buildWrap(PinCharset.letters),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 关键回归:letters 40 键不能再被压成 2 行并横向溢出
+      expect(tester.takeException(), isNull);
+      // 700 宽约 11 个/行 → 4 行(而非 2 行)
+      final rows = _rows(tester);
+      expect(rows.length, greaterThan(2));
+      // 按键总数不变:39 键 + 删除 = 40
+      expect(_circleButtons(tester).length, 40);
+    });
+  });
 }

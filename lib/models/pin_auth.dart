@@ -84,7 +84,7 @@ extension PinCharsetLayout on PinCharset {
       'N',
     ],
     PinCharset.letters => const [
-      // 数字行 → 三个符号 → A-Z。行主序使 5列(窄屏)/8列(桌面)都整齐无占位。
+      // 数字行 → A-Z → 三个符号。行主序使 5列(窄屏)/8列(桌面)都整齐无占位。
       '1',
       '2',
       '3',
@@ -95,9 +95,6 @@ extension PinCharsetLayout on PinCharset {
       '8',
       '9',
       '0',
-      '-',
-      '.',
-      '_',
       'A',
       'B',
       'C',
@@ -124,6 +121,9 @@ extension PinCharsetLayout on PinCharset {
       'X',
       'Y',
       'Z',
+      '-',
+      '.',
+      '_',
     ],
   };
 

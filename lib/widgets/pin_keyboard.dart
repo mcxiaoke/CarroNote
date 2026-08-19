@@ -72,6 +72,7 @@ class PinKeyboard extends StatefulWidget {
     this.buttonSize,
     this.spacing = 12,
     this.wrap = false,
+    this.wrapMinRows = 1,
   });
 
   /// 自动布局时按键直径下限(触控可用,参见 [kMinButtonSize])
@@ -115,6 +116,12 @@ class PinKeyboard extends StatefulWidget {
   /// (键盘文字顺序摆放、自动换行),无需算网格列数。
   final bool wrap;
 
+  /// 流式布局([wrap] 为 true)时的最少行数,防止窄高空间(如横屏)把键盘压成
+  /// 单行——例如纯数字键盘(10 数字 + 删除)在宽横屏下若不受限会排成一行,
+  /// 设 [wrapMinRows]=2 即强制折成至少两行(6+5)。行数本就更多的键盘(letters)
+  /// 不受影响。
+  final int wrapMinRows;
+
   @override
   State<PinKeyboard> createState() => _PinKeyboardState();
 }
@@ -156,7 +163,7 @@ class _PinKeyboardState extends State<PinKeyboard> {
         // 流式布局:字符键顺序铺排 + 自动换行,省去网格/列数计算。
         if (widget.wrap) {
           final size = widget.buttonSize ?? PinKeyboard.kMinButtonSize;
-          return _buildWrap(keys, size);
+          return _buildWrap(keys, size, constraints.maxWidth);
         }
         // 宽屏(横屏 / 桌面宽窗)时切到更多列更少行(如 4×5 → 5×4)。
         // 高度不受约束(设置页 ListView 中)时退化为按宽度阈值判断。
@@ -164,7 +171,6 @@ class _PinKeyboardState extends State<PinKeyboard> {
             widget.columnsWide != null && _isWideConstraints(constraints);
         final columns = isWide ? widget.columnsWide! : widget.columns;
         final rowCount = (totalCells / columns).ceil();
-        final gridSize = rowCount * columns;
 
         final size = _resolveButtonSize(constraints, rowCount, columns);
         final rows = <Widget>[];
@@ -172,7 +178,7 @@ class _PinKeyboardState extends State<PinKeyboard> {
           final cells = <Widget>[];
           for (var c = 0; c < columns; c++) {
             final idx = r * columns + c;
-            cells.add(_buildCell(idx, gridSize, keys, size));
+            cells.add(_buildCell(idx, keys, size));
           }
           rows.add(
             Padding(
@@ -225,33 +231,85 @@ class _PinKeyboardState extends State<PinKeyboard> {
         .clamp(PinKeyboard.kMinButtonSize, PinKeyboard.kMaxButtonSize);
   }
 
-  Widget _buildCell(int idx, int gridSize, List<String> keys, double size) {
+  Widget _buildCell(int idx, List<String> keys, double size) {
     final isBackspace = idx == keys.length;
     // 字符键已排完且非删除键 → 空白占位(保持网格形状)
-    if (idx >= keys.length && !isBackspace) {
+    if (!isBackspace && idx >= keys.length) {
       return SizedBox(width: size, height: size);
     }
     final label = isBackspace ? '' : keys[idx];
-    if (label.isEmpty && !isBackspace) {
+    if (!isBackspace && label.isEmpty) {
       return SizedBox(width: size, height: size);
     }
     return _buildKeyButton(label: label, isBackspace: isBackspace, size: size);
   }
 
   /// 流式布局:字符键按顺序铺排,宽度不足自动折行,删除键跟在末尾。
-  Widget _buildWrap(List<String> keys, double size) {
+  ///
+  /// [wrapMinRows]<=1 或按键很少时走原生 [Wrap](所有行统一居中,含末行半行);
+  /// [wrapMinRows]>1 且按键较多时按「每行最多 [maxPerRow] 个」显式分行列排,
+  /// 满行居中、末行左对齐(像实体键盘那样,而不是把半行也居中)。
+  ///
+  /// [maxWidthAvail] 为父约束宽度(可能是无限),用于限制每行最多按键数,
+  /// 避免大键盘(letters 40 键)被 [wrapMinRows] 压成 2 行并横向溢出——
+  /// 每行上限取「按行数算」与「按可用宽度算」的较小者。
+  Widget _buildWrap(List<String> keys, double size, double maxWidthAvail) {
     final children = <Widget>[
       for (final k in keys)
         if (k.isNotEmpty)
           _buildKeyButton(label: k, isBackspace: false, size: size),
       _buildKeyButton(label: '', isBackspace: true, size: size),
     ];
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: widget.spacing,
-      runSpacing: widget.spacing,
-      children: children,
+    if (widget.wrapMinRows <= 1 || children.length <= widget.wrapMinRows) {
+      return Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: widget.spacing,
+        runSpacing: widget.spacing,
+        children: children,
+      );
+    }
+    // 每行最多按键数:既能保证至少 [wrapMinRows] 行(防数字键盘挤成 1 行),
+    // 又不超出可用宽度(防 letters 被挤成 2 行溢出)。
+    final byRows = (children.length / widget.wrapMinRows).ceil();
+    final byWidth = maxWidthAvail.isFinite && maxWidthAvail > 0
+        ? (maxWidthAvail / (size + widget.spacing)).floor()
+        : byRows;
+    final maxPerRow = math.min(byRows, math.max(1, byWidth));
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i += maxPerRow) {
+      final isLast = i + maxPerRow >= children.length;
+      final rowItems = children.sublist(
+        i,
+        math.min(i + maxPerRow, children.length),
+      );
+      rows.add(
+        Row(
+          mainAxisAlignment:
+              isLast ? MainAxisAlignment.start : MainAxisAlignment.center,
+          children: [
+            for (var c = 0; c < rowItems.length; c++) ...[
+              if (c > 0) SizedBox(width: widget.spacing),
+              rowItems[c],
+            ],
+          ],
+        ),
+      );
+    }
+    final maxWidth = maxPerRow * size + (maxPerRow - 1) * widget.spacing;
+    return Center(
+      child: SizedBox(
+        width: maxWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var r = 0; r < rows.length; r++) ...[
+              if (r > 0) SizedBox(height: widget.spacing),
+              rows[r],
+            ],
+          ],
+        ),
+      ),
     );
   }
 
