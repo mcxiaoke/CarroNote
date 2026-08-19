@@ -38,6 +38,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 import 'package:sqflite_common/sqflite.dart' show databaseFactory;
 
 // Project 导入
+import 'package:core/src/models/note_meta.dart';
 import 'package:core/src/models/safenote.dart';
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/logger/app_logger.dart';
@@ -48,7 +49,8 @@ const String tableMeta = 'sync_meta';
 ///
 /// notes 表的 title / description 是字段级加密的密文包络，DB Inspector 仅用于
 /// 排查本地库结构，无需展示这两列（既避免噪声，也遵循隐私红线不暴露笔记字段）。
-const Set<String> _inspectorHiddenColumns = {'title', 'description'};
+/// note_meta 表的 payload 同理（内含标签等用户输入文本的密文）。
+const Set<String> _inspectorHiddenColumns = {'title', 'description', 'payload'};
 
 /// 隐私红线：日志中**绝不允许**出现笔记标题 / 正文明文。
 ///
@@ -307,9 +309,25 @@ class NotesDatabase {
   /// 一并清空（见 [_invalidateCache]）。
   List<SafeNote>? _notesCache;
 
-  /// 使解密缓存整体失效（内容语义整体变化：reEncryptAllNotes* / close /
-  /// logout / 新数据库连接 时调用）。
-  void _invalidateCache() => _notesCache = null;
+  /// note_meta 的独立内存缓存（key = 笔记 uuid，仅含 deleted=0 的行）。
+  ///
+  /// **与 [_notesCache] 完全隔离**，这是本设计的核心收益：切换星标只
+  /// UPDATE 一行 + 只改本缓存一个 entry，[_notesCache] 分毫不动 →
+  /// **零笔记解密**。若把元数据塞进 notes 表或靠 JOIN 带出，点一次星标
+  /// 就会走 notes 的写路径进而可能触发全量重解密，是明显的性能倒退。
+  ///
+  /// 懒创建：note_meta 无对应行的笔记视为 [NoteMeta.defaults]，不占 entry。
+  Map<String, NoteMeta>? _metaCache;
+
+  /// 使解密缓存整体失效（笔记 + 笔记元数据）。
+  ///
+  /// 触发场景：reEncryptAllNotes* / close / logout / 新数据库连接。
+  /// 两份缓存一并清空——它们的明文都由同一把 dataKey 解出，
+  /// 失效条件完全一致，收口在一处可避免漏清其中之一。
+  void _invalidateCache() {
+    _notesCache = null;
+    _metaCache = null;
+  }
 
   /// 单条明文覆盖（按 uuid 插或替）。
   ///
@@ -486,6 +504,15 @@ class NotesDatabase {
     return SafeNote.fromJson(decrypted);
   }
 
+  /// 当前 schema 版本。
+  ///
+  /// 版本史：
+  ///   - v2/v3：含 synced_hash，无 synced_deleted
+  ///   - v4：新增 notes.synced_deleted 列（冲突判定 base 补全 deleted 维度）
+  ///   - v5：新增 note_meta 表（笔记级元数据：星标/标签/归档…）。
+  ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
+  static const int _schemaVersion = 5;
+
   Future<Database> _initDB(String filePath) async {
     final factory = dbFactoryOverride ?? databaseFactory;
     final dbPath = dbPathOverride ?? await factory.getDatabasesPath();
@@ -495,12 +522,12 @@ class NotesDatabase {
       final db = await factory.openDatabase(
         path,
         options: OpenDatabaseOptions(
-          version: 4,
+          version: _schemaVersion,
           onCreate: _createDB,
           onUpgrade: _onUpgrade,
         ),
       );
-      Log.db.i('数据库已打开: $path (version=4)');
+      Log.db.i('数据库已打开: $path (version=$_schemaVersion)');
       return db;
     } on Object catch (e, st) {
       Log.db.f('数据库打开失败: $path', error: e, stackTrace: st);
@@ -522,13 +549,55 @@ class NotesDatabase {
   @visibleForTesting
   static void setDatabaseForTesting(Database db) {
     _database = db;
-    instance._notesCache = null; // 替换为新数据库连接：旧解密缓存失效（实例字段）
+    // 替换为新数据库连接：旧解密缓存（笔记 + 元数据）全部失效（实例字段）
+    instance._invalidateCache();
   }
 
   /// 测试专用：createDB 回调（供 in-memory 数据库 onCreate 使用）
   @visibleForTesting
   static Future<void> createDBForTesting(Database db, int version) async {
     await _createDBStatic(db, version);
+  }
+
+  /// 创建 note_meta 表及其索引（幂等）
+  ///
+  /// **建表语句唯一副本**：`_createDBStatic` / `_createDB` / `_onUpgrade`
+  /// 三条建库路径全部调用此方法。notes 表的建表语句在前两处是重复的两份
+  /// （历史遗留，容易漏改一处导致 `no such table`），新表不再重复该模式。
+  ///
+  /// 全部 `IF NOT EXISTS`：既可用于新建库，也可用于老库升级，语义一致。
+  ///
+  /// ⚠️ [NoteMetaFields.uuid] **绝不能**写成
+  /// `REFERENCES $tableNotes(uuid) ON DELETE CASCADE`：
+  /// deleted=1 的行是墓碑，必须在 notes 行被硬删除后**继续存活**，
+  /// 才能在下次同步时告知远端"这条已删"。级联删除会摧毁墓碑机制。
+  /// uuid 仅为逻辑关联，一致性由应用层维护。
+  static Future<void> _createNoteMetaTable(DatabaseExecutor db) async {
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS $tableNoteMeta (
+      ${NoteMetaFields.id} INTEGER PRIMARY KEY AUTOINCREMENT,
+      ${NoteMetaFields.uuid} TEXT NOT NULL UNIQUE,
+      ${NoteMetaFields.pinned} INTEGER NOT NULL DEFAULT 0,
+      ${NoteMetaFields.archived} INTEGER NOT NULL DEFAULT 0,
+      ${NoteMetaFields.color} INTEGER,
+      ${NoteMetaFields.deleted} INTEGER NOT NULL DEFAULT 0,
+      ${NoteMetaFields.payload} TEXT,
+      ${NoteMetaFields.updatedAt} INTEGER NOT NULL,
+      ${NoteMetaFields.synced} INTEGER NOT NULL DEFAULT 0
+    )
+    ''');
+
+    // 索引：待上报墓碑查询 `WHERE deleted=1 AND synced=0`（同步用）
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_note_meta_synced '
+      'ON $tableNoteMeta(${NoteMetaFields.synced})',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_note_meta_deleted '
+      'ON $tableNoteMeta(${NoteMetaFields.deleted})',
+    );
+    // 不建 uuid 索引：UNIQUE 约束已隐含唯一索引，再建是冗余。
+    // 不建 pinned 索引：星标过滤在内存完成（全量行已进 _metaCache），无 SQL 消费者。
   }
 
   /// createDB 的静态实现（测试用）
@@ -565,9 +634,11 @@ class NotesDatabase {
     await db.execute(
       'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})',
     );
+
+    await _createNoteMetaTable(db);
   }
 
-  /// 创建新数据库（version 4 schema）
+  /// 创建新数据库（version 5 schema）
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
     CREATE TABLE $tableNotes (
@@ -604,6 +675,9 @@ class NotesDatabase {
     await db.execute(
       'CREATE INDEX idx_notes_synced ON $tableNotes(${NoteFields.synced})',
     );
+
+    // 笔记级元数据表（星标/标签/归档…），见 docs/feature-note-meta-design.md
+    await _createNoteMetaTable(db);
   }
 
   /// schema 升级回调（version 3 → 4：新增 synced_deleted 列）
@@ -633,6 +707,15 @@ class NotesDatabase {
         'INTEGER NOT NULL DEFAULT 0',
       );
       Log.db.i('已添加列: ${NoteFields.syncedDeleted}');
+    }
+    // v4 → v5：新增 note_meta 表（笔记级元数据）
+    //
+    // 风险远低于 v3→v4 的 ALTER TABLE：CREATE TABLE IF NOT EXISTS 幂等，
+    // **完全不 touch notes 表数据**，失败也不会损坏既有笔记。
+    // 无需回填——新表为空 + 元数据行懒创建（读取时无行即视为全默认值）。
+    if (oldVersion < 5) {
+      await _createNoteMetaTable(db);
+      Log.db.i('已创建表: $tableNoteMeta');
     }
   }
 
@@ -1032,10 +1115,13 @@ class NotesDatabase {
       );
       if (deleted > 0) {
         await _addPurgedUuidInTxn(txn, uuid);
+        // 元数据转为墓碑（同一事务）：告知远端"这条已删"，并擦除标签明文
+        await _markNoteMetaDeletedInTxn(txn, uuid);
       }
     });
 
     _removeCacheEntry(id: id); // 笔记被删除：从缓存移除该条目
+    _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
 
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i(
@@ -1062,10 +1148,13 @@ class NotesDatabase {
       );
       if (deleted > 0) {
         await _addPurgedUuidInTxn(txn, uuid);
+        // 元数据转为墓碑（同一事务），理由同 hardDelete
+        await _markNoteMetaDeletedInTxn(txn, uuid);
       }
     });
     if (deleted > 0) {
       _removeCacheEntry(uuid: uuid); // 笔记被删除：从缓存移除该条目
+      _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -1081,6 +1170,7 @@ class NotesDatabase {
 
     var deleted = 0;
     final removedIds = <int>[];
+    final removedUuids = <String>[];
     await db.transaction((txn) async {
       final maps = await txn.query(
         tableNotes,
@@ -1090,6 +1180,7 @@ class NotesDatabase {
       if (maps.isEmpty) return;
       for (final row in maps) {
         removedIds.add(row[NoteFields.id] as int);
+        removedUuids.add(row[NoteFields.uuid] as String);
       }
       deleted = await txn.delete(
         tableNotes,
@@ -1097,14 +1188,19 @@ class NotesDatabase {
         whereArgs: [1],
       );
       // 删行 + 写 purged 列表同一事务（B4：防止墓碑从远端复活）
-      for (final row in maps) {
-        await _addPurgedUuidInTxn(txn, row[NoteFields.uuid] as String);
+      for (final uuid in removedUuids) {
+        await _addPurgedUuidInTxn(txn, uuid);
+        // 元数据转为墓碑（同一事务），理由同 hardDelete
+        await _markNoteMetaDeletedInTxn(txn, uuid);
       }
     });
 
     if (deleted > 0) {
       for (final id in removedIds) {
         _removeCacheEntry(id: id); // 笔记已删除：从缓存移除
+      }
+      for (final uuid in removedUuids) {
+        _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
       }
       // 不可恢复的破坏性操作，必须留痕
       Log.note.w('批量永久删除笔记（回收站清空，不可恢复）rows=$deleted');
@@ -1256,6 +1352,11 @@ class NotesDatabase {
       // 2. 读取所有笔记（含墓碑），此时返回的是明文 SafeNote 对象
       final notes = await readAllNotesIncludingDeleted();
 
+      // 2b. 用 oldKey 解出 note_meta.payload 明文。
+      //     **必须与笔记一同迁移**：payload 与 title/description 用同一把
+      //     dataKey，若只重加密笔记而漏掉 payload，迁移后标签将永久无法解密。
+      final metaPayloads = await _readMetaPayloadsPlain(db);
+
       // 3. 临时切换 dataKey 为 newKey，准备加密
       _dataKey = Uint8List.fromList(newKey);
 
@@ -1266,6 +1367,15 @@ class NotesDatabase {
         final row = await _toEncryptedRow(note);
         // 保留 id 和 uuid 用于 UPDATE WHERE 条件
         encryptedRows.add({'where_uuid': note.uuid, 'row': row});
+      }
+
+      // 4b. 用 newKey 重新加密 note_meta.payload
+      final encryptedMeta = <String, String>{};
+      for (final entry in metaPayloads.entries) {
+        encryptedMeta[entry.key] = await _encryptField(
+          _metaAad(entry.key),
+          entry.value,
+        );
       }
 
       // 5. 在事务中一次性写入所有新密文（atomic）
@@ -1280,6 +1390,16 @@ class NotesDatabase {
             whereArgs: [uuid],
           );
         }
+        // note_meta.payload 与笔记同事务写入：要么一起成功，要么一起回滚，
+        // 不会出现「笔记已用新 key、元数据仍是旧 key」的半迁移状态。
+        for (final entry in encryptedMeta.entries) {
+          await txn.update(
+            tableNoteMeta,
+            {NoteMetaFields.payload: entry.value},
+            where: '${NoteMetaFields.uuid} = ?',
+            whereArgs: [entry.key],
+          );
+        }
       });
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
@@ -1288,7 +1408,10 @@ class NotesDatabase {
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
-      Log.db.i('全库重加密完成: ${notes.length} 条笔记, 耗时 ${ms}ms');
+      Log.db.i(
+        '全库重加密完成: ${notes.length} 条笔记, '
+        '${encryptedMeta.length} 条元数据 payload, 耗时 ${ms}ms',
+      );
       return notes.length;
     } catch (e, st) {
       // 失败时恢复 _dataKey 为原始值（可能是 oldKey 或 originalDataKey）
@@ -1649,6 +1772,237 @@ class NotesDatabase {
   /// 生成 manifest version 的 meta key
   static String _manifestVersionKey(String providerKey) =>
       'manifest_version:$providerKey';
+
+  // ──────────────────────────────────────────────
+  // note_meta 表 CRUD（笔记级元数据：星标/标签/归档…）
+  // ──────────────────────────────────────────────
+  //
+  // 设计文档：docs/feature-note-meta-design.md
+  //
+  // 三条硬性规则（违反会造成性能倒退或数据损坏）：
+  //   1. 本区块**绝不触碰** notes 表、[_notesCache]、notes.updated_at、
+  //      notes.content_hash —— 元数据变更不得触发笔记正文 blob 重传。
+  //   2. 元数据自己的 LWW 锚点是 note_meta.updated_at，脏标记是 synced。
+  //   3. payload 是密文，日志与诊断输出**绝不打印**其内容（标签名即隐私）。
+
+  /// note_meta.payload 的 AAD 域分隔符。
+  ///
+  /// 用 `meta:<uuid>` 而非裸 uuid，使元数据密文与 notes 表 title/description
+  /// 的密文处于**不同 AAD 域**——即便有人把 payload 密文塞进 title 列也解不开。
+  /// 与 journal 用 `journal-aad` 做域分隔同属既有模式（见 crypto.dart:368）。
+  static String _metaAad(String uuid) => 'meta:$uuid';
+
+  /// 读取全部笔记元数据（key = 笔记 uuid），命中缓存时跳过查询与解密。
+  ///
+  /// 只返回 `deleted=0` 的行：`deleted=1` 是墓碑（§4），仅供同步上报，
+  /// 不参与 UI 展示。返回副本，调用方修改不影响缓存。
+  ///
+  /// 无对应行的笔记视为 [NoteMeta.defaults]（懒创建），调用方按
+  /// `map[uuid] ?? NoteMeta.defaults(uuid)` 取值。
+  Future<Map<String, NoteMeta>> readAllNoteMeta() async {
+    final cached = _metaCache;
+    if (cached != null) return Map.of(cached);
+
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNoteMeta,
+      where: '${NoteMetaFields.deleted} = 0',
+    );
+
+    final map = <String, NoteMeta>{};
+    for (final row in rows) {
+      final meta = await _decodeMetaRow(row);
+      if (meta != null) map[meta.uuid] = meta;
+    }
+    _metaCache = map;
+    Log.db.i('加载笔记元数据: ${map.length} 条');
+    return Map.of(map);
+  }
+
+  /// 读取单条笔记元数据；无记录时返回 null（调用方自行退化为默认值）。
+  Future<NoteMeta?> getNoteMeta(String uuid) async {
+    final cached = _metaCache;
+    if (cached != null) return cached[uuid];
+
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNoteMeta,
+      where: '${NoteMetaFields.uuid} = ? AND ${NoteMetaFields.deleted} = 0',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return _decodeMetaRow(rows.first);
+  }
+
+  /// 解密并解析一行 note_meta；整行不可用时返回 null。
+  ///
+  /// **容错优先**：payload 解密/解析失败只降级为"无 payload"（保留 pinned
+  /// 等明文列）并留警告日志，**不抛异常**。元数据永远是次要数据，单行损坏
+  /// 不该让笔记列表加载失败——对比 purgedUuids 整个 JSON 损坏就中止整条
+  /// 同步链路的旧缺陷（设计文档 §4.1），这里刻意选择相反的取舍。
+  Future<NoteMeta?> _decodeMetaRow(Map<String, dynamic> row) async {
+    final uuid = row[NoteMetaFields.uuid] as String?;
+    if (uuid == null || uuid.isEmpty) {
+      Log.db.w('note_meta 行缺少 uuid，跳过');
+      return null;
+    }
+
+    final encrypted = row[NoteMetaFields.payload] as String?;
+    String? plaintext;
+    if (encrypted != null && encrypted.isNotEmpty) {
+      try {
+        plaintext = await _decryptField(_metaAad(uuid), encrypted);
+      } on Object catch (e) {
+        // 不打印 payload 内容，只记 uuid 与异常类型
+        Log.db.w('note_meta payload 解密失败，降级为空 payload: uuid=$uuid ($e)');
+        plaintext = null;
+      }
+    }
+    return NoteMeta.fromRow(row, decryptedPayload: plaintext);
+  }
+
+  /// 写入笔记元数据（按 uuid upsert），并同步更新 [_metaCache]。
+  ///
+  /// 调用方负责设置 [NoteMeta.updatedAt] 与 [NoteMeta.synced]；
+  /// 便捷方法 [setNotePinned] / [setNoteTags] 已代为处理。
+  ///
+  /// **不碰 notes 表与 [_notesCache]**（本区块规则 1）。
+  Future<NoteMeta> upsertNoteMeta(NoteMeta meta) async {
+    final db = await instance.database;
+
+    final plaintext = meta.encodePayload();
+    final encrypted = (plaintext == null || plaintext.isEmpty)
+        ? null
+        : await _encryptField(_metaAad(meta.uuid), plaintext);
+
+    // id 由 AUTOINCREMENT 分配；replace 在 uuid 冲突时删旧行插新行，
+    // 故不带入旧 id（id 无外部语义，仅供诊断）。
+    final row = meta.copyWith(id: null).toRow(encryptedPayload: encrypted);
+    row.remove(NoteMetaFields.id);
+    await db.insert(
+      tableNoteMeta,
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    _upsertMetaCacheEntry(meta);
+    Log.db.i(
+      'note_meta 已写入: uuid=${meta.uuid} pinned=${meta.pinned} '
+      'tags=${meta.tags.length} updatedAt=${meta.updatedAt}',
+    );
+    return meta;
+  }
+
+  /// 更新 [_metaCache] 单个 entry（墓碑行从缓存移除）。
+  void _upsertMetaCacheEntry(NoteMeta meta) {
+    final cache = _metaCache;
+    if (cache == null) return; // 缓存未建：下次读取自然重建（已含本条）
+    if (meta.deleted) {
+      cache.remove(meta.uuid);
+    } else {
+      cache[meta.uuid] = meta;
+    }
+  }
+
+  /// 设置星标/置顶，返回写入后的元数据。
+  ///
+  /// 星标与置顶在本项目是**同一概念**（`pinned`）：置顶影响首页排序，
+  /// 侧栏「仅看星标」按同一字段过滤。
+  Future<NoteMeta> setNotePinned(String uuid, bool pinned) async {
+    final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);
+    return upsertNoteMeta(
+      current.copyWith(
+        uuid: uuid,
+        pinned: pinned,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: false, // 待上传（阶段 4 的 items.meta 同步消费）
+      ),
+    );
+  }
+
+  /// 设置标签（自动规范化：去空白 / 丢空串 / 去重），返回写入后的元数据。
+  Future<NoteMeta> setNoteTags(String uuid, Iterable<String> tags) async {
+    final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);
+    return upsertNoteMeta(
+      current.copyWith(
+        uuid: uuid,
+        tags: NoteMeta.normalizeTags(tags),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: false,
+      ),
+    );
+  }
+
+  /// 聚合全部已使用过的标签（去重后按字母序）。
+  ///
+  /// 供侧栏「按标签过滤」的标签选择列表使用。标签在 payload 内加密，
+  /// SQL 无法反查，故只能内存聚合——当前架构下不是问题（全量行已在缓存）。
+  Future<List<String>> readAllTags() async {
+    final metas = await readAllNoteMeta();
+    final tags = <String>{};
+    for (final meta in metas.values) {
+      tags.addAll(meta.tags);
+    }
+    final sorted = tags.toList()..sort();
+    return sorted;
+  }
+
+  /// 事务版：写入元数据墓碑（供 hardDelete* 在同一事务内调用）。
+  ///
+  /// 与 [_addPurgedUuidInTxn] 同处一个事务：删行与写墓碑要么同时成功、
+  /// 要么同时回滚，堵住「笔记已删但墓碑未写」导致远端复活的窗口。
+  ///
+  /// 墓碑行 payload 置 NULL——**顺带彻底擦除该笔记的标签明文**，
+  /// 永久删除的笔记不该在本地留下任何用户输入文本。
+  ///
+  /// 注意：本方法**不更新** [_metaCache]（事务可能回滚）。
+  /// 缓存由调用方在事务成功后经 [_removeMetaCacheEntry] 清理。
+  Future<void> _markNoteMetaDeletedInTxn(Transaction txn, String uuid) async {
+    await txn.insert(tableNoteMeta, {
+      NoteMetaFields.uuid: uuid,
+      NoteMetaFields.pinned: 0,
+      NoteMetaFields.archived: 0,
+      NoteMetaFields.color: null,
+      NoteMetaFields.deleted: 1,
+      NoteMetaFields.payload: null,
+      NoteMetaFields.updatedAt: DateTime.now().millisecondsSinceEpoch,
+      NoteMetaFields.synced: 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 从 [_metaCache] 移除条目（笔记被硬删除后调用）。
+  void _removeMetaCacheEntry(String uuid) => _metaCache?.remove(uuid);
+
+  /// 用**当前** dataKey 解出所有非空 payload 的明文（uuid → payload 明文）。
+  ///
+  /// 仅供 [reEncryptAllNotes] 的 dataKey 迁移使用：迁移必须同时覆盖
+  /// note_meta.payload，否则换 key 后标签永久无法解密。
+  ///
+  /// 含墓碑行（墓碑 payload 为 NULL，天然被 `IS NOT NULL` 过滤掉）。
+  /// 解密失败的行**跳过**——留着旧密文不动，避免用新 key 覆盖出
+  /// 二次损坏；只记警告，不中断迁移（笔记正文迁移优先级更高）。
+  Future<Map<String, String>> _readMetaPayloadsPlain(Database db) async {
+    final rows = await db.query(
+      tableNoteMeta,
+      columns: [NoteMetaFields.uuid, NoteMetaFields.payload],
+      where: '${NoteMetaFields.payload} IS NOT NULL',
+    );
+
+    final out = <String, String>{};
+    for (final row in rows) {
+      final uuid = row[NoteMetaFields.uuid] as String?;
+      final encrypted = row[NoteMetaFields.payload] as String?;
+      if (uuid == null || uuid.isEmpty) continue;
+      if (encrypted == null || encrypted.isEmpty) continue;
+      try {
+        out[uuid] = await _decryptField(_metaAad(uuid), encrypted);
+      } on Object catch (e) {
+        Log.db.w('note_meta payload 解密失败，迁移时跳过该行: uuid=$uuid ($e)');
+      }
+    }
+    return out;
+  }
 
   // ──────────────────────────────────────────────
   // 导出（backup 功能）
