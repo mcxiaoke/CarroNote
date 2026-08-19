@@ -40,6 +40,11 @@ class NoteCardBody extends StatelessWidget {
   final int titleMaxLines;
   final int bodyMaxLines;
 
+  /// 置顶/星标状态：置顶的卡片右上角显示星标角标。
+  ///
+  /// 只读标记，不承载任何写操作（写只走 setNotePinned，见红线 1/2）。
+  final bool pinned;
+
   const NoteCardBody({
     super.key,
     required this.note,
@@ -47,6 +52,7 @@ class NoteCardBody extends StatelessWidget {
     this.isCompact = false,
     this.titleMaxLines = 2,
     this.bodyMaxLines = 3,
+    this.pinned = false,
   });
 
   @override
@@ -89,17 +95,25 @@ class NoteCardBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          sanitize(note.title),
-          textDirection: getTextDirecton(note.title),
-          style: AppText.body.copyWith(
-            fontWeight: FontWeight.bold,
-            color: fontColor,
-            fontFamily: uiFontFamily,
-            fontFamilyFallback: uiFontFamilyFallback,
-          ),
-          maxLines: titleMaxLines,
-          overflow: TextOverflow.ellipsis,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                sanitize(note.title),
+                textDirection: getTextDirecton(note.title),
+                style: AppText.body.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: fontColor,
+                  fontFamily: uiFontFamily,
+                  fontFamilyFallback: uiFontFamilyFallback,
+                ),
+                maxLines: titleMaxLines,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (pinned) ...[const SizedBox(width: AppSpace.xs), _PinnedBadge()],
+          ],
         ),
         const SizedBox(height: AppSpace.xs),
         Text(
@@ -126,18 +140,25 @@ class NoteCardBody extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AutoSizeText(
-          sanitize(previewText),
-          textDirection: getTextDirecton(previewText),
-          style: AppText.body.copyWith(
-            fontWeight: FontWeight.bold,
-            color: fontColor,
-            fontFamily: uiFontFamily,
-            fontFamilyFallback: uiFontFamilyFallback,
-          ),
-          minFontSize: 15,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: AutoSizeText(
+                sanitize(previewText),
+                style: AppText.body.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: fontColor,
+                  fontFamily: uiFontFamily,
+                  fontFamilyFallback: uiFontFamilyFallback,
+                ),
+                minFontSize: 15,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (pinned) ...[const SizedBox(width: AppSpace.xs), _PinnedBadge()],
+          ],
         ),
         const SizedBox(height: AppSpace.xs),
         Text(
@@ -146,6 +167,32 @@ class NoteCardBody extends StatelessWidget {
           style: AppText.label.copyWith(color: fontColor),
         ),
       ],
+    );
+  }
+}
+
+/// 置顶角标（标题行末尾）。
+///
+/// 纯展示：不响应点击，置顶的切换只能通过编辑页「更多」菜单完成。
+class _PinnedBadge extends StatelessWidget {
+  const _PinnedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Pinned'.tr(),
+      child: Container(
+        key: const Key('ui-note-pinned-badge'),
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: scheme.primary,
+        ),
+        alignment: Alignment.center,
+        child: Icon(LucideIcons.pin, size: 12, color: scheme.onPrimary),
+      ),
     );
   }
 }

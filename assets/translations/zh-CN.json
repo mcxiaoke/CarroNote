@@ -420,5 +420,6 @@
   "Delete note": "删除笔记",
   "Copied to clipboard": "已复制到剪贴板",
   "Starred": "已添加星标",
-  "Star removed": "已取消星标"
+  "Star removed": "已取消星标",
+  "Pinned": "已置顶"
 }

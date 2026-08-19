@@ -23,14 +23,21 @@ import 'package:safenotes/widgets/note_card_body.dart';
 class NoteTileWidget extends StatelessWidget {
   final SafeNote note;
   final int index;
+  final bool pinned;
 
-  const NoteTileWidget({super.key, required this.note, required this.index});
+  const NoteTileWidget({
+    super.key,
+    required this.note,
+    required this.index,
+    this.pinned = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return NoteCardBody(
       note: note,
       index: index,
+      pinned: pinned,
       titleMaxLines: 1,
       bodyMaxLines: 2,
     );

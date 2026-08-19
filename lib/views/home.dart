@@ -65,6 +65,12 @@ class HomePageState extends State<HomePage> with RouteAware {
   bool isLoading = false;
   String query = '';
   bool isNewFirst = PreferencesStorage.isNewFirst;
+
+  /// 笔记元数据全量快照（key = note uuid），由 [_sortAndStoreNotes] 维护。
+  ///
+  /// 独立于 `_notesCache`（db 层 _metaCache），置顶排序只叠加 pinned 维度，
+  /// 不触碰笔记正文缓存——切换置顶零解密（设计文档 §7.1、红线 5）。
+  Map<String, NoteMeta> _noteMeta = const {};
   bool isGridView = PreferencesStorage.isGridView;
   bool _routeSubscribed = false;
 
@@ -292,16 +298,23 @@ class HomePageState extends State<HomePage> with RouteAware {
     final sortByModified = PreferencesStorage.isSortByModified;
     DateTime keyOf(SafeNote n) =>
         sortByModified ? n.modifiedTime : n.createdTime;
-    List<SafeNote> tmpNotes;
-    if (isNewFirst) {
-      tmpNotes = await NotesDatabase.instance.readAllNotes()
-        ..sort((a, b) => keyOf(b).compareTo(keyOf(a)));
-    } else {
-      tmpNotes = await NotesDatabase.instance.readAllNotes()
-        ..sort((a, b) => keyOf(a).compareTo(keyOf(b)));
-    }
+    // 读取元数据快照（pinned 维度），用于置顶排序与卡片角标。
+    // 命中 _metaCache 时零解密；与 _notesCache 完全隔离（红线 5）。
+    final metaMap = await NotesDatabase.instance.readAllNoteMeta();
+    final tmpNotes = await NotesDatabase.instance.readAllNotes();
+    // 两级排序：置顶(starr)恒在最前；同级内部再按原时间键排序。
+    // 保持 PreferencesStorage.isSortByModified / isNewFirst 语义不变。
+    tmpNotes.sort((a, b) {
+      final int pa = (metaMap[a.uuid]?.pinned ?? false) ? 1 : 0;
+      final int pb = (metaMap[b.uuid]?.pinned ?? false) ? 1 : 0;
+      if (pa != pb) return pb.compareTo(pa); // pinned 优先
+      return isNewFirst
+          ? keyOf(b).compareTo(keyOf(a))
+          : keyOf(a).compareTo(keyOf(b));
+    });
     setState(() {
       allnotes = notes = tmpNotes;
+      _noteMeta = metaMap; // 供 2.2 卡片角标同步读取
     });
     // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
     Log.ui.i(
@@ -686,11 +699,27 @@ class HomePageState extends State<HomePage> with RouteAware {
           key: Key('ui-home-note-$index'),
           child: PreferencesStorage.isCompactPreview
               ? (grid
-                    ? NoteCardWidgetCompact(note: note, index: colorIndex)
-                    : NoteTileWidgetCompact(note: note, index: colorIndex))
+                    ? NoteCardWidgetCompact(
+                        note: note,
+                        index: colorIndex,
+                        pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                      )
+                    : NoteTileWidgetCompact(
+                        note: note,
+                        index: colorIndex,
+                        pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                      ))
               : (grid
-                    ? NoteCardWidget(note: note, index: colorIndex)
-                    : NoteTileWidget(note: note, index: colorIndex)),
+                    ? NoteCardWidget(
+                        note: note,
+                        index: colorIndex,
+                        pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                      )
+                    : NoteTileWidget(
+                        note: note,
+                        index: colorIndex,
+                        pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                      )),
         ),
       ),
       openBuilder: (context, closeAction) => AddEditNotePage(
