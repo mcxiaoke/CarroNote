@@ -31,7 +31,7 @@ class AppText {
   );
 
   /// 正文（笔记正文 / 卡片标题 / 按钮文字 16）
-  static const TextStyle body = TextStyle(fontSize: 16, height: 1.2);
+  static const TextStyle body = TextStyle(fontSize: 16, height: 1.4);
 
   /// 小号正文（对话框正文 / 编辑器正文 / 描述文字 14）
   static const TextStyle bodySmall = TextStyle(fontSize: 14, height: 1.4);
