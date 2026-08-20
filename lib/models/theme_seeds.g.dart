@@ -58,6 +58,16 @@ class AppThemeSeeds {
       nameEn: 'Default',
       colors: [
         ColorSeedItem(
+          name: '中性白',
+          nameEn: 'Mono White',
+          color: Color(0xFFF0F0F0),
+        ),
+        ColorSeedItem(
+          name: '中性黑',
+          nameEn: 'Mono Black',
+          color: Color(0xFF303030),
+        ),
+        ColorSeedItem(
           name: '奶油黄',
           nameEn: 'Cream Yellow',
           color: Color(0xFFFBDD82),
@@ -103,7 +113,6 @@ class AppThemeSeeds {
           nameEn: 'Midnight Blue',
           color: Color(0xFF38598B),
         ),
-        ColorSeedItem(name: '蓝色', nameEn: 'Blue', color: Color(0xFF2563EB)),
         ColorSeedItem(name: '湖蓝', nameEn: 'Sky Blue', color: Color(0xFF0284C7)),
         ColorSeedItem(name: '深青色', nameEn: 'Cyan', color: Color(0xFF0891B2)),
         ColorSeedItem(
@@ -122,17 +131,6 @@ class AppThemeSeeds {
         ColorSeedItem(name: '苔藓绿', nameEn: 'Moss', color: Color(0xFF5E7D4E)),
         ColorSeedItem(name: '橄榄绿', nameEn: 'Olive', color: Color(0xFF71864A)),
         ColorSeedItem(name: '鼠尾草绿', nameEn: 'Sage', color: Color(0xFF87A884)),
-        ColorSeedItem(
-          name: '冷银灰',
-          nameEn: 'Silver Gray',
-          color: Color(0xFF9CA3AF),
-        ),
-        ColorSeedItem(name: '炭灰', nameEn: 'Charcoal', color: Color(0xFF374151)),
-        ColorSeedItem(
-          name: '纯黑',
-          nameEn: 'Pure Black',
-          color: Color(0xFF000000),
-        ),
       ],
     ),
     ColorSeedGroup(

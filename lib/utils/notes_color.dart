@@ -14,8 +14,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/app_theme.dart';
 
 class NotesColor extends ChangeNotifier {
   // 浅色模式下卡片底色提亮比例：原主题色与白色混合，避免深色卡片在浅色界面下显得过重。
@@ -45,12 +47,14 @@ class NotesColor extends ChangeNotifier {
 
   /// 关闭彩色时的卡片底色：surfaceContainerHighest 上叠加 14% 品牌主色。
   ///
-  /// 注意：页面背景（scaffoldBackgroundColor）就是 surfaceContainerLow，
-  /// 若卡片也基于 surfaceContainerLow，会与背景融为一体（Android 上几乎不可见）。
-  /// 用高一档的 surfaceContainerHighest，保证卡片与背景有明确区分、且带品牌色相。
+  /// - 单色（中性灰度）主题：直接用 surfaceContainerLowest——素净扁平，与页面背景
+  ///   （surfaceContainerLow）明确拉开一档对比，且无品牌色相干扰。
+  /// - 彩色主题：surfaceContainerHighest 上叠加 14% 品牌主色，保证卡片与背景有区分
+  ///   且带品牌色相（页面背景是 surfaceContainerLow，同档会融为一体）。
   static Color _neutralCardColor(BuildContext? context) {
     if (context == null) return const Color(0xFFA7BEAE); // 兜底（无 context 时）
     final scheme = Theme.of(context).colorScheme;
+    if (isMonochromeMode) return scheme.surfaceBright;
     return Color.alphaBlend(
       scheme.primary.withValues(alpha: _brandTintAmount),
       scheme.surfaceContainerHighest,
@@ -62,6 +66,23 @@ class NotesColor extends ChangeNotifier {
   /// 与主界面卡片未选择彩色时的颜色完全一致，跟随当前主题 seed 色计算。
   static Color neutralCardColor(BuildContext context) =>
       _neutralCardColor(context);
+
+  /// 通用笔记卡边框：把「是否描边 + 颜色 + 粗细」收敛到一个入口，调用方自行决定。
+  ///
+  /// - [outline]：是否显示边框；
+  /// - [color]：边框色（调用方传入，如单色模式用 scheme.primary）；
+  /// - [width]：边框粗细（逻辑像素），默认 1。
+  /// 不显示时返回 [ShadBorder.none]，与原行为一致；显示时返回四边同色的 [ShadBorder.all]。
+  /// 放在卡片外观模块里，与 [_neutralCardColor] 同源，便于统一治理。
+  static ShadBorder cardBorder({
+    required bool outline,
+    required Color color,
+    double width = 1,
+  }) {
+    return outline
+        ? ShadBorder.all(color: color, width: width)
+        : ShadBorder.none;
+  }
 
   void toggleColor() {
     PreferencesStorage.setIsColorful(!PreferencesStorage.isColorful);

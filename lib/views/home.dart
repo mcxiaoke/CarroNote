@@ -362,7 +362,7 @@ class HomePageState extends State<HomePage> with RouteAware {
             key: const Key('ui-home-screen'),
             drawer: isCompact ? _buildDrawer(context) : null,
             appBar: AppBar(
-              title: Text(SafeNotesConfig.appName, style: appBarTitle),
+              // title: Text(SafeNotesConfig.appName, style: appBarTitle),
               actions: isLoading
                   ? null
                   : [

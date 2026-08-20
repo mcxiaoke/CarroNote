@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/seed_scheme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
@@ -42,6 +43,10 @@ class ShadThemes {
       seed,
       Brightness.light,
     );
+    final bool neutral = isNeutralSeed(seed);
+    // 中性主题的强调色板：用品牌 seed 经 fromSeed 生成自适应 M3 色板（纯内存计算，
+    // 极快），取 primary 系用于 ShadCN 填充按钮/Switch；Slate 中性基底不变。
+    final ColorScheme brandScheme = buildSeedColorScheme(kNeutralBrandPrimary, brightness);
 
     // 中性基底沿用 Slate（背景/卡片/边框等不随品牌色走，保持页面观感稳定），
     // 品牌相关色全部映射到 M3 色板。
@@ -95,15 +100,25 @@ class ShadThemes {
       // primaryContainer——outline/link 按钮的文字就是拿 primary 当前景色的，
       // 那样会让它们变成浅色而压不住浅背景。所以只在此处单独覆盖填充按钮。
       primaryButtonTheme: ShadButtonTheme(
-        backgroundColor: m3.primaryContainer,
-        foregroundColor: m3.onPrimaryContainer,
+        backgroundColor: neutral ? brandScheme.primaryContainer : m3.primaryContainer,
+        foregroundColor: neutral ? brandScheme.onPrimaryContainer : m3.onPrimaryContainer,
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
       destructiveButtonTheme: ShadButtonTheme(
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
+      // 描边色改用主色 primary（替代默认 colorScheme.input 的中性灰边框），
+      // 仅作用于 outline 变体（不影响 primary/secondary/ghost 变体）。
       outlineButtonTheme: ShadButtonTheme(
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        // decoration: ShadDecoration(
+        //   border: ShadBorder.all(
+        //     color: m3.primary,
+        //     width: 1,
+        //     radius: BorderRadius.circular(8),
+        //     padding: const EdgeInsets.all(1),
+        //   ),
+        // ),
       ),
       secondaryButtonTheme: ShadButtonTheme(
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -116,7 +131,8 @@ class ShadThemes {
       // —— 同属中性色，但暗色下更柔和、层次更清晰。
       switchTheme: ShadSwitchTheme(
         uncheckedTrackColor: m3.surfaceContainerHighest,
-        thumbColor: scheme.background,
+        thumbColor: neutral ? brandScheme.onPrimaryContainer : scheme.background,
+        checkedTrackColor: neutral ? brandScheme.primaryContainer : m3.primary,
       ),
       // 对话框背景：用 M3 的 surfaceContainerHigh，与 app_dialogs 里系统 M3
       // AlertDialog 的默认表面（colorScheme.surfaceContainerHigh）保持一致；

@@ -66,7 +66,7 @@ class SearchWidgetState extends State<SearchWidget> {
     // 亮色/暗色统一用 surfaceContainerHighest（浅亮灰/深灰容器），
     // 与页面背景 surfaceContainerLow 拉开对比，保证搜索框有清晰背景色块；
     // 亮色不再用与页面同色的 surfaceContainerLow（会"融化"在页面里，看起来没背景）。
-    final Color boxColor = colorScheme.surfaceContainerHighest;
+    final Color boxColor = colorScheme.surface;
 
     return Container(
       // P1-14：高度走 AppShape.searchHeight（48），与 ShadInput 48 对齐。

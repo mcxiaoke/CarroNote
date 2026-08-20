@@ -35,7 +35,9 @@ String noteTimeLabel({
   required String localeString,
   required bool isRelative,
 }) {
-  if (isRelative) {
+  // isRelative 为 true 时，若时间在7天内则显示相对时间，否则显示绝对时间。
+  if (isRelative &&
+      time.isAfter(DateTime.now().subtract(const Duration(days: 7)))) {
     return humanTime(time: time, localeString: localeString);
   }
   return DateFormat.yMMMd().add_jm().format(time);

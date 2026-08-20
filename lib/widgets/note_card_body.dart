@@ -19,6 +19,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/spacing.dart';
@@ -57,12 +58,20 @@ class NoteCardBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 取色与字体色：与外壳 ShadCard backgroundColor 保持一致（纯计算，重复调用无副作用）。
+    // 取色与字体色：底色与 OpenContainer 的 closedColor 取同一来源（纯计算，重复调用无副作用）。
     final Color color = NotesColor.getNoteColor(
       notIndex: index,
       context: context,
     );
     final Color fontColor = getFontColorForBackground(color);
+    // 单色（中性灰度）主题下，给卡片叠加一圈 primary 描边，使素净卡片与背景有边界：
+    // 是否描边、颜色、粗细都由 NotesColor.cardBorder 统一封装，调用方按需传入。
+    final ColorScheme cardScheme = Theme.of(context).colorScheme;
+    final ShadBorder cardBorder = NotesColor.cardBorder(
+      outline: isMonochromeMode && !PreferencesStorage.isColorful,
+      color: cardScheme.outline,
+      width: 1,
+    );
 
     // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间，
     // 否则标题下的时间戳与列表顺序对不上（看起来"错乱"）。
@@ -74,18 +83,36 @@ class NoteCardBody extends StatelessWidget {
       isRelative: PreferencesStorage.isRelativeTime,
     );
 
-    return ShadCard(
-      backgroundColor: color,
-      padding: AppSpace.cardPadding,
-      radius: BorderRadius.circular(AppShape.cardRadius),
-      border: ShadBorder.none,
-      // 关闭默认 lg 阴影：浅色背景下，ShadShadows.lg（offset(0,10)+blur 15）
-      // 在卡片底部内侧形成一条明显的灰色阴影边，看起来像一条"线"。
-      // 设计令牌基调是扁平（去掉 BackdropFilter/去除双系统阴影），故关阴影。
-      shadows: const [],
-      child: isCompact
-          ? _buildCompact(fontColor, time)
-          : _buildFull(fontColor, time),
+    // 最外层即卡片本体：用完全可控的 Container 承载底色 + 描边 + 圆角，
+    // 不再依赖 ShadCard 内部 MainAxisSize.min 的 Container——它会在被网格
+    // 行对齐拉高的 cell 中只缩到内容高度，导致描边只包住内容、未包住整张卡
+    //（即"outline 没包裹全部 card"）。
+    // LayoutBuilder + minHeight：网格(SliverAlignedGrid)对同行短卡施加紧约束
+    //（行高 H），此时 minHeight=H 让卡片撑满整格、描边包裹全卡；列表(ListView)
+    // 为松约束、高度随内容，minHeight=0 退化为内容高度。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : 0.0;
+        return Container(
+          constraints: BoxConstraints(
+            minWidth: double.infinity,
+            minHeight: minHeight,
+          ),
+          width: double.infinity,
+          padding: AppSpace.cardPadding,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(AppShape.cardRadius),
+            border: cardBorder.toBorder(),
+          ),
+          // 扁平化：Container/BoxDecoration 默认无阴影，契合整体设计令牌。
+          child: isCompact
+              ? _buildCompact(fontColor, time)
+              : _buildFull(fontColor, time),
+        );
+      },
     );
   }
 
