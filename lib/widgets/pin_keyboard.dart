@@ -59,6 +59,18 @@ KeyEventResult handlePinKeyEvent({
 ///
 /// 按键直径硬限制 [kMinButtonSize]~[kMaxButtonSize]:小屏不溢出、
 /// 大屏(桌面)不无限放大。
+/// 按键外观样式。
+///
+/// - [filled]  实心(默认):圆底 + 反色字/图标,沿用既有 Material 着色逻辑。
+/// - [outline] 空心:透明圆底 + 描边圆环,字/图标与描边同色,点击高亮为同色半透明。
+enum PinKeyStyle {
+  /// 实心圆底(默认)
+  filled,
+
+  /// 空心描边圆环
+  outline,
+}
+
 class PinKeyboard extends StatefulWidget {
   const PinKeyboard({
     super.key,
@@ -73,6 +85,9 @@ class PinKeyboard extends StatefulWidget {
     this.spacing = 12,
     this.wrap = false,
     this.wrapMinRows = 1,
+    this.keyStyle = PinKeyStyle.filled,
+    this.keyColor,
+    this.keyBorderWidth,
   });
 
   /// 自动布局时按键直径下限(触控可用,参见 [kMinButtonSize])
@@ -121,6 +136,19 @@ class PinKeyboard extends StatefulWidget {
   /// 设 [wrapMinRows]=2 即强制折成至少两行(6+5)。行数本就更多的键盘(letters)
   /// 不受影响。
   final int wrapMinRows;
+
+  /// 按键外观:[PinKeyStyle.filled] 实心(默认)、[PinKeyStyle.outline] 空心。
+  /// 两种模式都可配合 [keyColor] 自定义主色,做到空心/实心自由切换 + 换色。
+  final PinKeyStyle keyStyle;
+
+  /// 自定义主色。为 null 时跟随主题:
+  /// [PinKeyStyle.filled] 用 colorScheme.primaryContainer 作圆底、onPrimaryContainer
+  /// 作字;[PinKeyStyle.outline] 用 colorScheme.primary 作描边与字。
+  /// 传入时统一使用它:[filled] 作圆底并自动取反色字;[outline] 作描边与字。
+  final Color? keyColor;
+
+  /// 空心([PinKeyStyle.outline])模式下的描边宽度;仅在该模式生效,默认 1.5。
+  final double? keyBorderWidth;
 
   @override
   State<PinKeyboard> createState() => _PinKeyboardState();
@@ -285,8 +313,9 @@ class _PinKeyboardState extends State<PinKeyboard> {
       );
       rows.add(
         Row(
-          mainAxisAlignment:
-              isLast ? MainAxisAlignment.start : MainAxisAlignment.center,
+          mainAxisAlignment: isLast
+              ? MainAxisAlignment.start
+              : MainAxisAlignment.center,
           children: [
             for (var c = 0; c < rowItems.length; c++) ...[
               if (c > 0) SizedBox(width: widget.spacing),
@@ -314,12 +343,43 @@ class _PinKeyboardState extends State<PinKeyboard> {
   }
 
   /// 单个圆形按键(字符键或删除键)。
+  ///
+  /// 样式与配色解析:
+  /// - [PinKeyStyle.filled] 空心场景无关:圆底 + 反色字。未自定义主色时沿用
+  ///   theme 的 primaryContainer / onPrimaryContainer;自定义 [keyColor] 时用它
+  ///   作圆底,并按底色的亮度自动取黑/白作为反色字。
+  /// - [PinKeyStyle.outline] 空心:透明圆底 + 指定描边的圆环,字/图标与描边
+  ///   同色([keyColor] 或 theme 的 primary)。
   Widget _buildKeyButton({
     required String label,
     required bool isBackspace,
     required double size,
   }) {
     final colors = Theme.of(context).colorScheme;
+    final bool outline = widget.keyStyle == PinKeyStyle.outline;
+    final Color? customColor = widget.keyColor;
+
+    // 背景色 / 前景(字/图标与描边)色 / 描边宽度
+    final Color bgColor;
+    final Color fgColor;
+    final double borderWidth;
+    if (outline) {
+      bgColor = Colors.transparent;
+      fgColor = customColor ?? colors.primary;
+      borderWidth = widget.keyBorderWidth ?? 1.5;
+    } else if (customColor != null) {
+      bgColor = customColor;
+      fgColor =
+          ThemeData.estimateBrightnessForColor(customColor) == Brightness.dark
+          ? Colors.white
+          : Colors.black;
+      borderWidth = 0;
+    } else {
+      bgColor = colors.primaryContainer;
+      fgColor = colors.onPrimaryContainer;
+      borderWidth = 0;
+    }
+
     final VoidCallback? onTap = widget.enabled
         ? () {
             // 按键触感反馈:与系统键盘一致的轻触确认
@@ -334,33 +394,45 @@ class _PinKeyboardState extends State<PinKeyboard> {
     return Material(
       // 把有色的圆形背景直接作为 Material(shape: circle):InkWell 的点击高亮/波纹
       // 才会画在有色表面之上(此前透明 Material + Container 圆底,点击无可见反馈)。
-      color: colors.primaryContainer,
+      color: bgColor,
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        // 点击变色:按下高亮 + 波纹用文字色轻微点缀
-        splashColor: colors.onPrimaryContainer.withValues(alpha: 0.16),
-        highlightColor: colors.onPrimaryContainer.withValues(alpha: 0.10),
-        onTap: onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Center(
-            child: isBackspace
-                ? Icon(
-                    Icons.backspace_outlined,
-                    size: size * 0.38,
-                    color: colors.onPrimaryContainer,
-                  )
-                : Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: size * 0.38,
-                      fontWeight: FontWeight.w500,
-                      color: colors.onPrimaryContainer,
+      child: Container(
+        // 空心模式:叠加一圈描边圆环;实心模式无边框。
+        // 用 tightFor 锁死按钮总尺寸 = size:描边 Border.all 落于内部,不向外增宽,
+        // 保证 filled/outline 布局尺寸完全一致(否则每键 +2*borderWidth 会溢出)。
+        constraints: BoxConstraints.tightFor(width: size, height: size),
+        decoration: outline
+            ? BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: fgColor, width: borderWidth),
+              )
+            : null,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          // 点击变色:按下高亮 + 波纹用前景色轻微点缀
+          splashColor: fgColor.withValues(alpha: 0.16),
+          highlightColor: fgColor.withValues(alpha: 0.10),
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Center(
+              child: isBackspace
+                  ? Icon(
+                      Icons.backspace_outlined,
+                      size: size * 0.38,
+                      color: fgColor,
+                    )
+                  : Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: size * 0.38,
+                        fontWeight: FontWeight.w500,
+                        color: fgColor,
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
       ),

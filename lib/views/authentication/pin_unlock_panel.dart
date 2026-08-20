@@ -112,10 +112,7 @@ class _PinUnlockPanelState extends State<PinUnlockPanel> {
             // 卡片高度封顶为可用高度减上下边距:卡片永不超出屏幕,顶部/底部圆角
             // 始终完整可见。可滚动部分只在「键盘」区(见键盘的 Flexible),滚动时
             // 不移动卡片本身,因此不会出现之前那种「滚一下圆角变直角/白角」。
-            final double cardMaxH = math.max(
-              120.0,
-              constraints.maxHeight - 32,
-            );
+            final double cardMaxH = math.max(120.0, constraints.maxHeight - 32);
             return Center(
               child: Container(
                 // 卡片带圆角 + 阴影 + 对话框表面色,不再是光板长方形。
@@ -266,6 +263,8 @@ class _PinUnlockPanelState extends State<PinUnlockPanel> {
                             enabled: !_verifying,
                             onKey: _onDigit,
                             onBackspace: _onBackspace,
+                            keyStyle: PinKeyStyle.outline,
+                            keyColor: theme.colorScheme.primary,
                           ),
                         ),
                       ),

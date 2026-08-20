@@ -405,6 +405,8 @@ class _PinFlowState extends State<_PinFlow> {
             enabled: !_busy,
             onKey: _onDigit,
             onBackspace: _onBackspace,
+            keyStyle: PinKeyStyle.outline,
+            keyColor: theme.colorScheme.primary,
           ),
         ),
         const SizedBox(height: 12),

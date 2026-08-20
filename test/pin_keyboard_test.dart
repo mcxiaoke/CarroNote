@@ -278,14 +278,8 @@ void main() {
       final keys = PinCharset.letters.keys;
       expect(keys.length, 39);
       // 10 数字 + 26 字母 + - . _
-      expect(
-        keys.where((k) => RegExp(r'[0-9]').hasMatch(k)).length,
-        10,
-      );
-      expect(
-        keys.where((k) => RegExp(r'[A-Z]').hasMatch(k)).length,
-        26,
-      );
+      expect(keys.where((k) => RegExp(r'[0-9]').hasMatch(k)).length, 10);
+      expect(keys.where((k) => RegExp(r'[A-Z]').hasMatch(k)).length, 26);
       expect(keys.where((k) => '-._'.contains(k)).length, 3);
 
       final rows = tester
@@ -396,13 +390,14 @@ void main() {
       );
     }
 
-    List<Row> _rows(WidgetTester tester) =>
-        tester.widgetList<Row>(
+    List<Row> _rows(WidgetTester tester) => tester
+        .widgetList<Row>(
           find.descendant(
             of: find.byType(PinKeyboard),
             matching: find.byType(Row),
           ),
-        ).toList();
+        )
+        .toList();
 
     testWidgets('数字键盘横屏: 至少 2 行且末行左对齐, 不溢出', (tester) async {
       await tester.pumpWidget(
@@ -425,9 +420,7 @@ void main() {
       expect(rows.last.children.length, lessThan(rows.first.children.length));
     });
 
-    testWidgets('全键盘(letters)横屏: 按可用宽度自然折行, 不溢出且不止 2 行', (
-      tester,
-    ) async {
+    testWidgets('全键盘(letters)横屏: 按可用宽度自然折行, 不溢出且不止 2 行', (tester) async {
       await tester.pumpWidget(
         _wrap(
           SizedBox(
@@ -446,6 +439,202 @@ void main() {
       expect(rows.length, greaterThan(2));
       // 按键总数不变:39 键 + 删除 = 40
       expect(_circleButtons(tester).length, 40);
+    });
+  });
+
+  group('PinKeyboard 样式 (filled / outline / keyColor)', () {
+    PinKeyboard build({
+      PinKeyStyle? style,
+      Color? keyColor,
+      double? keyBorderWidth,
+    }) {
+      return PinKeyboard(
+        keys: PinCharset.digits.keys,
+        columns: PinCharset.digits.columns,
+        keyStyle: style ?? PinKeyStyle.filled,
+        keyColor: keyColor,
+        keyBorderWidth: keyBorderWidth,
+        onKey: (_) {},
+        onBackspace: () {},
+      );
+    }
+
+    // 所有圆形 Material(不限背景是否透明;outline 的 Material 背景是 transparent)
+    List<Material> _circleMats(WidgetTester tester) => tester
+        .widgetList<Material>(
+          find.byWidgetPredicate(
+            (w) => w is Material && w.shape is CircleBorder,
+          ),
+        )
+        .toList();
+
+    // 空心装饰:PinKeyboard 内带 BoxShape.circle 且描边非空白的 Container
+    List<Container> _outlineRings(WidgetTester tester) {
+      final rings = <Container>[];
+      for (final c in tester.widgetList<Container>(
+        find.descendant(
+          of: find.byType(PinKeyboard),
+          matching: find.byType(Container),
+        ),
+      )) {
+        final d = c.decoration;
+        if (d is BoxDecoration &&
+            d.shape == BoxShape.circle &&
+            d.border != null) {
+          rings.add(c);
+        }
+      }
+      return rings;
+    }
+
+    testWidgets('outline 与 filled 按钮尺寸完全一致, 窄屏不溢出', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 400,
+            height: 800,
+            child: build(style: PinKeyStyle.filled),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final filledSizes = _circleMats(
+        tester,
+      ).map((m) => tester.getSize(find.byWidget(m))).toSet();
+
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 400,
+            height: 800,
+            child: build(style: PinKeyStyle.outline),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final outlineSizes = _circleMats(
+        tester,
+      ).map((m) => tester.getSize(find.byWidget(m))).toSet();
+      final ex = tester.takeException();
+
+      // 核心回归:outline 每键若向外扩 borderWidth 会比 filled 大 → 触发溢出。
+      expect(ex, isNull, reason: 'outline 不应溢出');
+      expect(outlineSizes, filledSizes, reason: 'outline 按钮尺寸必须与 filled 完全一致');
+    });
+
+    testWidgets('outline: 背景透明 + 有描边圆环 + 描边用前景色', (tester) async {
+      const teal = Color(0xFF00897B);
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 400,
+            height: 800,
+            child: build(style: PinKeyStyle.outline, keyColor: teal),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final m in _circleMats(tester)) {
+        expect(m.color, Colors.transparent, reason: '空心底应为透明');
+      }
+      final rings = _outlineRings(tester);
+      expect(rings, isNotEmpty);
+      for (final r in rings) {
+        final border = (r.decoration! as BoxDecoration).border! as Border;
+        expect(border.top.color, teal, reason: '描边色应取 keyColor');
+        expect(border.top.width, closeTo(1.5, 0.01), reason: '默认描边宽 1.5');
+      }
+    });
+
+    testWidgets('keyBorderWidth 自定义描边宽度生效', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 400,
+            height: 800,
+            child: build(
+              style: PinKeyStyle.outline,
+              keyColor: const Color(0xFF000000),
+              keyBorderWidth: 3.5,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final rings = _outlineRings(tester);
+      expect(rings, isNotEmpty);
+      final border =
+          (rings.first.decoration! as BoxDecoration).border! as Border;
+      expect(border.top.width, closeTo(3.5, 0.01));
+    });
+
+    testWidgets('filled + 深色 keyColor: 以 keyColor 为圆底, 字取白色', (tester) async {
+      const dark = Color(0xFF1B1B1B);
+      await tester.pumpWidget(
+        _wrap(SizedBox(width: 400, height: 800, child: build(keyColor: dark))),
+      );
+      await tester.pumpAndSettle();
+
+      // 亮度估算基准
+      expect(ThemeData.estimateBrightnessForColor(dark), Brightness.dark);
+      // 圆底用 keyColor(非透明,能被 _circleMats 抓到)
+      final mats = _circleMats(tester).map((m) => m.color).toSet();
+      expect(mats, contains(dark));
+      // 深底 → 白色字
+      final colors = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byType(PinKeyboard),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((t) => t.style!.color)
+          .toSet();
+      expect(colors, contains(Colors.white));
+    });
+
+    testWidgets('filled + 浅色 keyColor: 字取黑色', (tester) async {
+      const light = Color(0xFFFFF3E0);
+      await tester.pumpWidget(
+        _wrap(SizedBox(width: 400, height: 800, child: build(keyColor: light))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(ThemeData.estimateBrightnessForColor(light), Brightness.light);
+      final colors = tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byType(PinKeyboard),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((t) => t.style!.color)
+          .toSet();
+      expect(colors, contains(Colors.black));
+    });
+
+    testWidgets('outline 未传 keyColor 时描边与字用主题 primary', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 400,
+            height: 800,
+            child: build(style: PinKeyStyle.outline),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final rings = _outlineRings(tester);
+      expect(rings, isNotEmpty);
+      final primary = Theme.of(
+        tester.element(find.byType(PinKeyboard)),
+      ).colorScheme.primary;
+      final border =
+          (rings.first.decoration! as BoxDecoration).border! as Border;
+      expect(border.top.color, primary);
     });
   });
 }
