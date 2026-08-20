@@ -36,12 +36,7 @@ class EditorText {
   static const int defaultIndex = 1;
 
   /// 档位显示名（与 [bodySizes] 一一对应，供滑块 label / 设置入口 value 使用）。
-  static const List<String> _names = [
-    'Small',
-    'Standard',
-    'Large',
-    'Extra Large',
-  ];
+  static const List<String> _names = ['Small', 'Standard', 'Large', 'Extra'];
 
   /// 把任意索引夹紧到合法范围，避免越界崩溃。
   static int _clamp(int i) => i.clamp(0, bodySizes.length - 1);
@@ -95,6 +90,6 @@ class EditorText {
   static TextStyle titleOf(int i, AppFontType type) =>
       _style(titleSizeOf(i), true, type);
 
-  /// 档位显示名（本地化）：Small / Standard / Large / Extra Large。
+  /// 档位显示名（本地化）：Small / Standard / Large / Extra。
   static String labelOf(int i) => _names[_clamp(i)].tr();
 }

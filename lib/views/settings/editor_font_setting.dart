@@ -13,15 +13,14 @@
  * - 无取消键，返回即放弃本地改动。
  *
  * 控件选型：
- * - 字体类型：一排横向三个单选（衬线 / 非衬线 / 等宽），选中即应用该字体；
- * - 字体大小：一排横向四个单选（小 / 标准 / 大 / 特大），命中区域大、触感明确，
- *   比滑块在真机上更易用；原生 ShadRadioGroup 的 Wrap 不撑满，这里改用横向
- *   axis 让其呈单行排布。
+ * - 字体类型：一排横向三个分段按钮（衬线 / 非衬线 / 等宽），选中即应用该字体；
+ * - 字体大小：一排横向四个分段按钮（小 / 标准 / 大 / 特大），命中区域大、触感明确，
+ *   比滑块在真机上更易用；均使用 Material 原生 SegmentedButton
+ *   （expandedInsets 撑满整行、单选中、showSelectedIcon 关闭避免勾选图标挤压文案）。
  *
- * 关键：字体类型/大小各自用「自己持有的 ShadRadioController」作为唯一数据源，
- * 选中态与预览区都读 controller.value。这样避免 ShadRadioGroup 在 rebuild 时
- * 用 initialValue 回写内部 controller（didUpdateWidget）导致与本地态失同步、
- * 反复进出后预览不更新的问题（参考 export_backup_dialog 的同款用法）。
+ * 关键：字体类型/大小各自用「本地 int 状态 _fontTypeIndex / _fontSizeIndex」作为
+ * 唯一数据源，选中态与预览区都读它，onSelectionChanged 直接 setState 更新。
+ * 无需外部 controller，自然避免 rebuild 时 initialValue 回写导致的失同步问题。
  *
  * 顶部预览区用 AppName（标题行）+ AppSlogan（正文行），实时跟随选择；
  * 两行均用 StrutStyle 按「最大档位字号」预留行高，切换档位时文字字号变化
@@ -50,47 +49,27 @@ class FontStylePicker extends StatefulWidget {
 }
 
 class _FontStylePickerState extends State<FontStylePicker> {
-  // 各自持有 ShadRadioController 作为「唯一数据源」：
-  // 选中态（radio 圆点）与预览区都直接读 controller.value，避免与本地暂存态失同步。
-  late final ShadRadioController<int> _fontTypeCtrl;
-  late final ShadRadioController<int> _fontSizeCtrl;
+  // 本地选择状态，作为「唯一数据源」。
+  late int _fontTypeIndex;
+  late int _fontSizeIndex;
 
   @override
   void initState() {
     super.initState();
-    _fontTypeCtrl = ShadRadioController<int>(value: EditorText.fontType.index);
-    _fontSizeCtrl = ShadRadioController<int>(
-      value: PreferencesStorage.editorFontSizeIndex,
-    );
-    _fontTypeCtrl.addListener(_onSelectionChanged);
-    _fontSizeCtrl.addListener(_onSelectionChanged);
+    _fontTypeIndex = EditorText.fontType.index;
+    _fontSizeIndex = PreferencesStorage.editorFontSizeIndex;
   }
 
-  /// 任一选择变化只需触发 rebuild，预览区直接读 controller.value 即可跟随。
-  void _onSelectionChanged() {
-    if (mounted) setState(() {});
-  }
+  /// 当前待应用的字体类型。
+  AppFontType get _pendingFontType => AppFontType.values[_fontTypeIndex];
 
-  @override
-  void dispose() {
-    _fontTypeCtrl.removeListener(_onSelectionChanged);
-    _fontSizeCtrl.removeListener(_onSelectionChanged);
-    _fontTypeCtrl.dispose();
-    _fontSizeCtrl.dispose();
-    super.dispose();
-  }
-
-  /// 当前待应用的字体类型（读控制器，唯一数据源）。
-  AppFontType get _pendingFontType =>
-      AppFontType.values[_fontTypeCtrl.value ?? EditorText.fontType.index];
-
-  /// 当前待应用的字体大小档位（读控制器，唯一数据源）。
-  int get _pendingIndex => _fontSizeCtrl.value ?? EditorText.defaultIndex;
+  /// 当前待应用的字体大小档位。
+  int get _pendingIndex => _fontSizeIndex;
 
   /// 是否有「待应用」的改动：字体类型或字体大小任一 ≠ 已保存值才允许 Apply。
   bool get _hasPendingChange =>
-      _fontTypeCtrl.value != EditorText.fontType.index ||
-      _fontSizeCtrl.value != PreferencesStorage.editorFontSizeIndex;
+      _fontTypeIndex != EditorText.fontType.index ||
+      _fontSizeIndex != PreferencesStorage.editorFontSizeIndex;
 
   /// 应用所选：写入持久化，通知主题重建（全局字体类型生效），然后返回上一级。
   void _apply() {
@@ -103,6 +82,20 @@ class _FontStylePickerState extends State<FontStylePicker> {
         Navigator.of(context).pop();
       }
     });
+  }
+
+  /// 字体类型选择回调。
+  void _onFontTypeChanged(Set<int> selection) {
+    if (selection.isNotEmpty) {
+      setState(() => _fontTypeIndex = selection.first);
+    }
+  }
+
+  /// 字体大小选择回调。
+  void _onFontSizeChanged(Set<int> selection) {
+    if (selection.isNotEmpty) {
+      setState(() => _fontSizeIndex = selection.first);
+    }
   }
 
   @override
@@ -162,6 +155,50 @@ class _FontStylePickerState extends State<FontStylePicker> {
     }
   }
 
+  /// 构建字体类型选项列表。
+  List<ButtonSegment<int>> _fontTypeItems() {
+    return [
+      for (final t in AppFontType.values)
+        ButtonSegment(
+          value: t.index,
+          label: Text(
+            _fontTypeLabel(t),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+    ];
+  }
+
+  /// 构建字体大小选项列表。
+  List<ButtonSegment<int>> _fontSizeItems() {
+    return [
+      for (var i = 0; i < EditorText.bodySizes.length; i++)
+        ButtonSegment(
+          value: i,
+          label: Text(
+            EditorText.labelOf(i),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+    ];
+  }
+
+  /// Material SegmentedButton 的统一样式：与自绘 SegmentedGroup 视觉接近——
+  /// 选中段填充主题主色、未选段透明，整组圆角边框。
+  static ButtonStyle _segmentStyle(ShadThemeData theme) {
+    return SegmentedButton.styleFrom(
+      // backgroundColor: Colors.transparent,
+      // foregroundColor: theme.colorScheme.foreground,
+      // selectedBackgroundColor: theme.colorScheme.primary,
+      // selectedForegroundColor: theme.colorScheme.primaryForeground,
+      side: BorderSide(color: theme.colorScheme.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      // padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    );
+  }
+
   /// 顶部预览：标题行 AppName + 正文行 AppSlogan，实时跟随字体类型与大小；
   /// 标签区分 Current（=已保存）/ Preview（=选择中）。
   Widget _preview(BuildContext context, ShadThemeData theme) {
@@ -210,8 +247,8 @@ class _FontStylePickerState extends State<FontStylePicker> {
     );
   }
 
-  /// 字体类型选择区：一排横向三个单选（衬线 / 非衬线 / 等宽），
-  /// 选中态由 [_fontTypeCtrl] 驱动，Apply 才写入。
+  /// 字体类型选择区：一排横向三个分段按钮（衬线 / 非衬线 / 等宽），
+  /// 选中态由 [_fontTypeIndex] 驱动，Apply 才写入。
   Widget _fontTypeCard(BuildContext context, ShadThemeData theme) {
     return ShadCard(
       padding: const EdgeInsets.all(16),
@@ -223,26 +260,21 @@ class _FontStylePickerState extends State<FontStylePicker> {
             style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          ShadRadioGroup<int>(
-            controller: _fontTypeCtrl,
-            axis: Axis.horizontal,
-            spacing: 8,
-            items: [
-              for (final t in AppFontType.values)
-                ShadRadio<int>(
-                  value: t.index,
-                  radioPadding: EdgeInsets.zero,
-                  label: Text(_fontTypeLabel(t)),
-                ),
-            ],
+          SegmentedButton<int>(
+            segments: _fontTypeItems(),
+            selected: {_fontTypeIndex},
+            onSelectionChanged: _onFontTypeChanged,
+            showSelectedIcon: false,
+            expandedInsets: EdgeInsets.zero,
+            style: _segmentStyle(theme),
           ),
         ],
       ),
     );
   }
 
-  /// 字体大小选择区：一排横向四个单选（小 / 标准 / 大 / 特大），
-  /// 选中态由 [_fontSizeCtrl] 驱动，副标题显示该档正文字号数值。
+  /// 字体大小选择区：一排横向四个分段按钮（小 / 标准 / 大 / 特大），
+  /// 选中态由 [_fontSizeIndex] 驱动。
   Widget _fontSizeCard(BuildContext context, ShadThemeData theme) {
     return ShadCard(
       padding: const EdgeInsets.all(16),
@@ -254,22 +286,13 @@ class _FontStylePickerState extends State<FontStylePicker> {
             style: theme.textTheme.p.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          ShadRadioGroup<int>(
-            controller: _fontSizeCtrl,
-            axis: Axis.horizontal,
-            spacing: 8,
-            items: [
-              for (var i = 0; i < EditorText.bodySizes.length; i++)
-                ShadRadio<int>(
-                  value: i,
-                  radioPadding: EdgeInsets.zero,
-                  // px 与名称同行显示，保证单行、与 radio 圆点垂直居中对齐
-                  // （若用 sublabel 会变成两行，圆点按两行整体居中导致文字偏上）。
-                  label: Text(
-                    '${EditorText.labelOf(i)}  ${EditorText.bodySizeOf(i).toInt()}',
-                  ),
-                ),
-            ],
+          SegmentedButton<int>(
+            segments: _fontSizeItems(),
+            selected: {_fontSizeIndex},
+            onSelectionChanged: _onFontSizeChanged,
+            showSelectedIcon: false,
+            expandedInsets: EdgeInsets.zero,
+            style: _segmentStyle(theme),
           ),
         ],
       ),
