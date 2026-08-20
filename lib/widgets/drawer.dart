@@ -119,8 +119,6 @@ class HomeDrawerState extends State<HomeDrawer> {
                 ),
               ),
             ),
-            // 底部版本号 / 构建信息 / DEBUG 徽标（分多行小字，置底不随内容滚动）
-            footer(context),
           ],
         ),
       ),

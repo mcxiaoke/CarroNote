@@ -198,7 +198,6 @@ class HomeSidebar extends StatelessWidget {
                 child: toggleButton,
               )
             else ...[
-              footer(context),
               Padding(
                 padding: const EdgeInsets.only(bottom: 6, top: 4),
                 child: Center(child: toggleButton),

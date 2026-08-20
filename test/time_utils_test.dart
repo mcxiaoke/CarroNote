@@ -18,8 +18,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safenotes/utils/time_utils.dart';
 
 void main() {
-  test('开启相对时间：多天前的笔记也应显示相对时间', () {
-    final old = DateTime.now().subtract(const Duration(days: 10));
+  test('开启相对时间：5前的笔记应显示相对时间', () {
+    final old = DateTime.now().subtract(const Duration(days: 5));
     final label = noteTimeLabel(
       time: old,
       localeString: 'en_US',
@@ -28,12 +28,26 @@ void main() {
     expect(
       label.toLowerCase(),
       contains('ago'),
-      reason: '10 天前的笔记应显示相对时间（含 ago），实际: $label',
+      reason: '5前的笔记也应显示相对时间（含 ago），实际: $label',
+    );
+  });
+
+  test('开启相对时间：10前的笔记应显示绝对时间', () {
+    final old = DateTime.now().subtract(const Duration(days: 10));
+    final label = noteTimeLabel(
+      time: old,
+      localeString: 'en_US',
+      isRelative: true,
+    );
+    expect(
+      label.toLowerCase(),
+      isNot(contains('ago')),
+      reason: '10天前的笔记应显示绝对时间（不 ago），实际: $label',
     );
   });
 
   test('关闭相对时间：始终显示绝对日期+时间', () {
-    final old = DateTime.now().subtract(const Duration(days: 10));
+    final old = DateTime.now().subtract(const Duration(days: 3));
     final label = noteTimeLabel(
       time: old,
       localeString: 'en_US',
