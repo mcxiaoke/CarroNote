@@ -707,7 +707,7 @@ class SafeNotesConfig {
     timeago.setLocaleMessages('uk', timeago.UkMessages());
   }
 
-  /// 应用显示名：跟随系统语言（中文 萝笺 / 其它 CarroNote）；
+  /// 应用显示名
   static String get appName {
     return 'AppName'.tr();
   }

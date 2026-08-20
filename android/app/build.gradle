@@ -76,7 +76,7 @@ android {
            // appLabel 改由 src/debug/res/values*/strings.xml
        }
        release {
-           // appLabel 由 src/main/res/values*/strings.xml 按系统语言提供（萝笺/蘿箋/CarroNote）
+           // appLabel 由 src/main/res/values*/strings.xml 按系统语言提供
            signingConfig signingConfigs.release
        }
 

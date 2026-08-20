@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Traditional Chinese (Taiwan) launcher label -->
-    <string name="appLabel">蘿箋</string>
+    <string name="appLabel">CarroNote</string>
 </resources>
