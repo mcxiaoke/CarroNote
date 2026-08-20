@@ -50,6 +50,7 @@ class PreferencesStorage {
   static const _keyIsCompactPreview = 'isCompactPreview';
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
   static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
+  static const _keyFontFamilyTypeIndex = 'fontFamilyTypeIndex';
   static const _keyIsRelativeTime = 'isRelativeTime';
   static const _keyIsSortByModified = 'isSortByModified';
   static const _keyIsDimTheme = 'isDimTheme';
@@ -456,6 +457,18 @@ class PreferencesStorage {
     final old = editorFontSizeIndex;
     await _preferences?.setInt(_keyEditorFontSizeIndex, index);
     _logPrefChange('编辑器字体大小', old, index);
+  }
+
+  /// 全局字体类型索引（[AppFontType] 序：0=非衬线 / 1=衬线 / 2=等宽）。
+  ///
+  /// 默认 0 = 非衬线（沿用平台原生无衬线字体，保持现状）。读取方用夹紧防越界。
+  static int get fontFamilyTypeIndex =>
+      _preferences?.getInt(_keyFontFamilyTypeIndex) ?? 0;
+
+  static Future<void> setFontFamilyTypeIndex(int index) async {
+    final old = fontFamilyTypeIndex;
+    await _preferences?.setInt(_keyFontFamilyTypeIndex, index);
+    _logPrefChange('字体类型', old, index);
   }
 
   static bool get isRelativeTime =>

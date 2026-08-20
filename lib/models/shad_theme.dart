@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/models/seed_scheme.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 
 class ShadThemes {
   static ShadThemeData build(Color seed, Brightness brightness) {
@@ -64,6 +65,9 @@ class ShadThemes {
     return ShadThemeData(
       brightness: brightness,
       colorScheme: scheme,
+      // 全局字体：覆盖 shadcn 默认 Geist，使「字体类型」设置对整个 App（含
+      // ShadXxx 组件）生效。family 为 null（移动/Web 非衬线）时回落到 shadcn 默认族。
+      textTheme: ShadTextTheme(family: uiFontFamily),
       // 统一按钮高度为 48（手指触控标准，桌面/移动端一致）：
       // 只覆盖 regular，sm/lg/icon 保持 shadcn 默认（ShadApp 内 merge 保底），
       // 因此所有未显式指定 size 的 ShadButton 都会统一变 48，无需逐个改。

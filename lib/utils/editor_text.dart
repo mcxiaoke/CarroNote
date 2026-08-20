@@ -55,16 +55,25 @@ class EditorText {
   /// 已保存档位的索引（供编辑/预览页使用，Apply 后重建才变）。
   static int get index => _clamp(PreferencesStorage.editorFontSizeIndex);
 
-  /// 构造一个带正确字号与平台字体族的 [TextStyle]。
+  /// 已保存的全局字体类型（供编辑/预览页使用，与 App 全局一致）。
+  static AppFontType get fontType =>
+      AppFontType.values[PreferencesStorage.fontFamilyTypeIndex.clamp(
+        0,
+        AppFontType.values.length - 1,
+      )];
+
+  /// 构造一个带正确字号与字体族的 [TextStyle]。
   ///
   /// [isTitle] 为 true 复用 [AppText.title]（已 bold）的层级，否则复用
-  /// [AppText.body]；仅覆盖 [fontSize]，行高/字重/字体族保持原有语义。
-  static TextStyle _style(double size, bool isTitle) {
+  /// [AppText.body]；仅覆盖 [fontSize]，行高/字重保持原有语义。
+  /// [type] 为指定字体类型（不传则用已保存的全局字体类型）。
+  static TextStyle _style(double size, bool isTitle, [AppFontType? type]) {
     final base = isTitle ? AppText.title : AppText.body;
+    final t = type ?? fontType;
     return base.copyWith(
       fontSize: size,
-      fontFamily: uiFontFamily,
-      fontFamilyFallback: uiFontFamilyFallback,
+      fontFamily: appFontFamilyFor(t),
+      fontFamilyFallback: appFontFallbackFor(t),
     );
   }
 
@@ -78,11 +87,13 @@ class EditorText {
 
   // ---- 本地 pending 版本（设置页预览区，实时跟随滑块）----
 
-  /// 设置页预览区正文样式（读本地 pending 档位）。
-  static TextStyle bodyOf(int i) => _style(bodySizeOf(i), false);
+  /// 设置页预览区正文样式（读本地 pending 档位 + 字体类型）。
+  static TextStyle bodyOf(int i, AppFontType type) =>
+      _style(bodySizeOf(i), false, type);
 
-  /// 设置页预览区标题样式（读本地 pending 档位）。
-  static TextStyle titleOf(int i) => _style(titleSizeOf(i), true);
+  /// 设置页预览区标题样式（读本地 pending 档位 + 字体类型）。
+  static TextStyle titleOf(int i, AppFontType type) =>
+      _style(titleSizeOf(i), true, type);
 
   /// 档位显示名（本地化）：Small / Standard / Large / Extra Large。
   static String labelOf(int i) => _names[_clamp(i)].tr();

@@ -45,6 +45,9 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isDarkMode => themeMode == ThemeMode.dark;
 
+  /// 外部偏好（如全局字体类型）变更后，主动触发主题树重建，使全 App 生效。
+  void notifyThemeChanged() => notifyListeners();
+
   void setIsDarkMode(bool isDark) {
     themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
     PreferencesStorage.setIsThemeDark(isDark);

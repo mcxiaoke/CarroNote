@@ -191,17 +191,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
-        // 编辑器字体大小：进入独立子页（预览 + 滑块 + Apply）。
+        // 字体样式：进入独立子页（预览 + 字体类型/大小单选 + Apply）。
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-editorfont'),
+          key: const Key('ui-setting-item-fontstyle'),
           icon: LucideIcons.type,
-          title: 'Font size'.tr(),
-          value: EditorText.labelOf(PreferencesStorage.editorFontSizeIndex),
+          title: 'Font style'.tr(),
+          value: _fontTypeValue(),
           onTap: () async {
             await Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const EditorFontPicker()),
+              MaterialPageRoute(builder: (_) => const FontStylePicker()),
             );
             _refreshDisplayValues();
           },
@@ -320,11 +320,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: LucideIcons.monitorOff,
           title: 'Secure Display'.tr(),
           description:
-              'When turned on, the content on the screen is treated as secure, '
-                      'blocking background snapshots and preventing it from '
-                      'appearing in screenshots or from being viewed on '
-                      'non-secure displays.'
-                  .tr(),
+              '${'When turned on, the content on the screen is treated as secure, '
+                  'blocking background snapshots and preventing it from '
+                  'appearing in screenshots or from being viewed on '
+                  'non-secure displays.'
+              .tr()} '
+              '${'Note: on Android 13 and above, for privacy the recent-tasks '
+                  'thumbnail is always hidden even when this is off.'
+              .tr()}',
           value: _isFlagSecure,
           onChanged: (v) {
             PreferencesStorage.setIsFlagSecure(v);
@@ -424,6 +427,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PreferencesStorage.themeColorIndex,
     );
     return isZh ? seed.name : seed.nameEn;
+  }
+
+  /// 字体样式入口的展示值（当前全局字体类型）。
+  String _fontTypeValue() {
+    final t = EditorText.fontType;
+    return switch (t) {
+      AppFontType.serif => 'Serif'.tr(),
+      AppFontType.sans => 'Sans-serif'.tr(),
+      AppFontType.mono => 'Monospace'.tr(),
+    };
   }
 
   String inactivityTimeoutValue() {
