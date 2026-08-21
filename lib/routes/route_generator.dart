@@ -62,10 +62,7 @@ class RouteGenerator {
             settings,
           );
         }
-        return _errorRoute(
-          route: routeName,
-          argsType: 'StreamController<SessionState>',
-        );
+        return _errorRoute(route: routeName, argsType: 'SessionArguments');
 
       case '/signup':
         if (args is SessionArguments) {
@@ -77,10 +74,7 @@ class RouteGenerator {
             settings,
           );
         }
-        return _errorRoute(
-          route: routeName,
-          argsType: 'StreamController<SessionState>',
-        );
+        return _errorRoute(route: routeName, argsType: 'SessionArguments');
 
       case '/authwall':
         if (args is SessionArguments) {
@@ -92,10 +86,7 @@ class RouteGenerator {
             settings,
           );
         }
-        return _errorRoute(
-          route: routeName,
-          argsType: 'StreamController<SessionState>',
-        );
+        return _errorRoute(route: routeName, argsType: 'SessionArguments');
 
       case '/home':
         if (args is StreamController<SessionState>) {
@@ -128,7 +119,7 @@ class RouteGenerator {
             settings,
           );
         }
-        return _errorRoute(route: routeName, argsType: 'SafeNotes');
+        return _errorRoute(route: routeName, argsType: 'AddEditNoteArguments');
 
       case '/backup':
         return _buildRoute(const BackupSetting(), settings);

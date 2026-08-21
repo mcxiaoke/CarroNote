@@ -209,15 +209,19 @@ class ScheduledTask {
   }
 
   static Future<bool> iosBackup({String? customFileName}) async {
-    final String dir = await resolveBackupDirectory();
-    String? validChosenDirectory = dir;
+    try {
+      final String dir = await resolveBackupDirectory();
 
-    if (validChosenDirectory.isNotEmpty) {
+      if (dir.isEmpty) {
+        Log.backup.w('iOS 备份跳过：应用文档目录路径为空');
+        return false;
+      }
+
       String jsonOutputContent = await FileHandler.encryptedOutputBackupContent(
         password: PhraseHandler.getPass,
       );
       final String fileName = customFileName ?? SafeNotesConfig.backupFileName;
-      final jsonFile = File(p.join(validChosenDirectory, fileName));
+      final jsonFile = File(p.join(dir, fileName));
 
       jsonFile.writeAsStringSync(jsonOutputContent);
       Log.backup.i(
@@ -227,10 +231,12 @@ class ScheduledTask {
 
       await PreferencesStorage.setLastBackupTime();
       await PreferencesStorage.setIsBackupNeeded(false);
-    } else {
-      Log.backup.w('iOS 备份跳过：应用文档目录路径为空');
+      return true;
+    } catch (err, st) {
+      lastBackupError = _simplifyBackupError(err);
+      Log.backup.e('iOS 备份写入失败: $lastBackupError', error: err, stackTrace: st);
+      return false;
     }
-    return true;
   }
 
   /// 桌面端（Windows/Linux/macOS）本地备份

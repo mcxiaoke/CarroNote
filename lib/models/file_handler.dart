@@ -179,7 +179,7 @@ class FileHandler {
   }
 
   void destroyImportCredentials() {
-    ImportPassPhraseHandler.setImportPassPhrase("null");
+    ImportPassPhraseHandler.setImportPassPhrase(null);
     ImportPassPhraseHandler.setImportPassPhraseHash(null);
   }
 
@@ -393,7 +393,11 @@ class FileHandler {
       // 评审 #10：主线程同步读任意大文件会卡 UI（甚至整机冻结几十秒），
       // 改为后台 isolate 异步读取。
       return await File(path!).readAsString();
-    } catch (e) {
+    } on FileSystemException catch (e) {
+      Log.backup.w('getFileAsString 文件系统异常', error: e);
+      return "unrecognized";
+    } on Object catch (e, st) {
+      Log.backup.w('getFileAsString 读取异常', error: e, stackTrace: st);
       return "unrecognized";
     }
   }

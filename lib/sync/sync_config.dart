@@ -206,13 +206,15 @@ class SyncConfig {
     try {
       _webdavPasswordCache =
           await _secureStorage.read(key: _keyWebdavPassword) ?? '';
-    } on Exception {
+    } on Exception catch (e) {
+      Log.sync.w('预加载 WebDAV 密码失败', error: e);
       _webdavPasswordCache = '';
     }
     try {
       _safeServerTokenCache =
           await _secureStorage.read(key: _keySafeServerToken) ?? '';
-    } on Exception {
+    } on Exception catch (e) {
+      Log.sync.w('预加载 SafeServer Token 失败', error: e);
       _safeServerTokenCache = '';
     }
   }

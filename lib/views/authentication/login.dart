@@ -842,7 +842,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       PreferencesStorage.incrementBiometricAttemptAllTimeCount();
       try {
         authenticated = await auth.authenticate(
-          localizedReason: 'Login using your biometric credential',
+          localizedReason: 'Login using your biometric credential'.tr(),
           persistAcrossBackgrounding: true,
         );
       } catch (e, st) {

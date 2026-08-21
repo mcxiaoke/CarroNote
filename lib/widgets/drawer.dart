@@ -132,60 +132,55 @@ class HomeDrawerState extends State<HomeDrawer> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final double logoHightWidth = constraints.maxWidth * 0.25;
-          return InkWell(
-            onTap: () {},
-            child: Container(
-              padding: (const EdgeInsets.symmetric(vertical: 6)),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Center(
-                    child: SizedBox(
-                      width: logoHightWidth,
-                      height: logoHightWidth,
-                      child: Image.asset(
-                        logoPath,
-                        semanticLabel: SafeNotesConfig.appName,
-                      ),
+          return Container(
+            padding: (const EdgeInsets.symmetric(vertical: 6)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Center(
+                  child: SizedBox(
+                    width: logoHightWidth,
+                    height: logoHightWidth,
+                    child: Image.asset(
+                      logoPath,
+                      semanticLabel: SafeNotesConfig.appName,
                     ),
                   ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: logoNameGap),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AutoSizeText(
-                            officialAppName,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: logoNameGap),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AutoSizeText(
+                          officialAppName,
+                          maxLines: 1,
+                          minFontSize: 8,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily,
+                            fontFamilyFallback: uiFontFamilyFallback,
+                            fontWeight: FontWeight.bold,
+                            fontSize: appNameFontSize,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: AutoSizeText(
+                            appSlogan,
                             maxLines: 1,
                             minFontSize: 8,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily,
-                              fontFamilyFallback: uiFontFamilyFallback,
-                              fontWeight: FontWeight.bold,
-                              fontSize: appNameFontSize,
-                            ),
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: appSloganFontSize),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: AutoSizeText(
-                              appSlogan,
-                              maxLines: 1,
-                              minFontSize: 8,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: appSloganFontSize,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },

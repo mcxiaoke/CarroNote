@@ -435,6 +435,9 @@ void onAppUpdate() async {
       '${PreferencesStorage.appVersionCode} → '
       '${SafeNotesConfig.appVersionCode}',
     );
+    // 先同步写入版本号，再做异步备份：避免备份期间进程被杀死后重复执行
+    PreferencesStorage.setAppVersionCodeToCurrent();
+
     if (PreferencesStorage.isBackupOn) {
       try {
         if (await handleBackupPermissionAndLocation()) {
@@ -444,8 +447,5 @@ void onAppUpdate() async {
         Log.backup.e('升级后自动备份失败', error: e, stackTrace: st);
       }
     }
-
-    // insure onAppUpdate is run once each update
-    PreferencesStorage.setAppVersionCodeToCurrent();
   }
 }

@@ -162,7 +162,9 @@ class NoteCardBody extends StatelessWidget {
 
   /// 紧凑模式：AutoSizeText 单块（标题或摘要）+ 时间。
   Widget _buildCompact(Color fontColor, String time) {
-    final previewText = note.title == ' ' ? note.abstractText : note.title;
+    final previewText = note.title.trim().isEmpty
+        ? note.abstractText
+        : note.title;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,

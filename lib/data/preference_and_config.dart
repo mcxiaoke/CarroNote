@@ -660,7 +660,7 @@ class ImportPassPhraseHandler {
   static String? importPassPhrase;
   static String? importPassPhraseHash;
   static String? getImportPassPhrase() => importPassPhrase;
-  static void setImportPassPhrase(String imPhrase) =>
+  static void setImportPassPhrase(String? imPhrase) =>
       importPassPhrase = imPhrase;
 
   static String? getImportPassPhraseHash() => importPassPhraseHash;

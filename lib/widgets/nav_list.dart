@@ -164,7 +164,7 @@ class _NavListState extends State<NavList> {
                 label: tag,
                 collapsed: true,
                 onTap: widget.onTagSelected == null
-                    ? () {}
+                    ? null
                     : () => widget.onTagSelected!(tag),
               ),
             ),

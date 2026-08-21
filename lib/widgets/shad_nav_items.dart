@@ -32,7 +32,7 @@ Widget shadNavMenuItem(
   bool destructive = false,
   Widget? trailing,
   bool collapsed = false,
-  required VoidCallback onTap,
+  VoidCallback? onTap,
 }) {
   final theme = ShadTheme.of(context);
   final color = destructive
