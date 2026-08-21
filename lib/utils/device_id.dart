@@ -39,6 +39,8 @@ import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入
 
+import 'package:core/core.dart' show kDebugMode;
+
 /// 设备 ID 提供者
 ///
 /// 单例模式，首次调用时缓存结果，避免重复查询系统 API。
@@ -103,20 +105,21 @@ class DeviceIdProvider {
   /// 查询系统 API 获取设备 ID
   Future<String> _queryDeviceId() async {
     final deviceInfo = DeviceInfoPlugin();
+    final prefix = kDebugMode ? "dev-" : "";
 
     if (isAndroid) {
       final info = await deviceInfo.androidInfo;
-      return 'android-${info.id}';
+      return '${prefix}android-${info.id}';
     }
 
     if (isIOS) {
       final info = await deviceInfo.iosInfo;
-      return 'ios-${info.identifierForVendor}';
+      return '${prefix}ios-${info.identifierForVendor}';
     }
 
     if (Platform.isWindows) {
       final info = await deviceInfo.windowsInfo;
-      return 'windows-${info.deviceId}';
+      return '${prefix}windows-${info.deviceId}';
     }
 
     if (Platform.isMacOS) {
@@ -124,17 +127,17 @@ class DeviceIdProvider {
       // systemGUID 可能为 null，兜底用 computerName + model
       final guid = info.systemGUID;
       if (guid != null && guid.isNotEmpty) {
-        return 'macos-$guid';
+        return '${prefix}macos-$guid';
       }
-      return 'macos-${info.computerName}-${info.model}';
+      return '${prefix}macos-${info.computerName}-${info.model}';
     }
 
     if (Platform.isLinux) {
       final info = await deviceInfo.linuxInfo;
-      return 'linux-${info.machineId}';
+      return '${prefix}linux-${info.machineId}';
     }
 
     // 兜底：未知平台
-    return 'unknown-${DateTime.now().millisecondsSinceEpoch}';
+    return '${prefix}unknown-${DateTime.now().millisecondsSinceEpoch}';
   }
 }

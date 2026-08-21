@@ -16,7 +16,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/pin_auth.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/widgets/pin_keyboard.dart';
 
 /// PIN 解锁卡片最大宽度:约屏宽的常宽面板,宽到足以触发 PinKeyboard 的宽屏布局

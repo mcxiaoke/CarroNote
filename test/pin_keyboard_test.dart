@@ -390,7 +390,7 @@ void main() {
       );
     }
 
-    List<Row> _rows(WidgetTester tester) => tester
+    List<Row> findRows(WidgetTester tester) => tester
         .widgetList<Row>(
           find.descendant(
             of: find.byType(PinKeyboard),
@@ -414,7 +414,7 @@ void main() {
       // 不溢出(此前会压成单行;现在强制 6+5 两行)
       expect(tester.takeException(), isNull);
       // 11 键(10 数字 + 删除)→ 每行最多 6 → 2 行
-      final rows = _rows(tester);
+      final rows = findRows(tester);
       expect(rows.length, 2);
       // 末行按键数 < 满行(5 < 6),即确有折行
       expect(rows.last.children.length, lessThan(rows.first.children.length));
@@ -460,7 +460,7 @@ void main() {
     }
 
     // 所有圆形 Material(不限背景是否透明;outline 的 Material 背景是 transparent)
-    List<Material> _circleMats(WidgetTester tester) => tester
+    List<Material> findCircleMats(WidgetTester tester) => tester
         .widgetList<Material>(
           find.byWidgetPredicate(
             (w) => w is Material && w.shape is CircleBorder,
@@ -469,7 +469,7 @@ void main() {
         .toList();
 
     // 空心装饰:PinKeyboard 内带 BoxShape.circle 且描边非空白的 Container
-    List<Container> _outlineRings(WidgetTester tester) {
+    List<Container> findOutlineRings(WidgetTester tester) {
       final rings = <Container>[];
       for (final c in tester.widgetList<Container>(
         find.descendant(
@@ -498,7 +498,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final filledSizes = _circleMats(
+      final filledSizes = findCircleMats(
         tester,
       ).map((m) => tester.getSize(find.byWidget(m))).toSet();
 
@@ -540,7 +540,7 @@ void main() {
       for (final m in _circleMats(tester)) {
         expect(m.color, Colors.transparent, reason: '空心底应为透明');
       }
-      final rings = _outlineRings(tester);
+      final rings = findOutlineRings(tester);
       expect(rings, isNotEmpty);
       for (final r in rings) {
         final border = (r.decoration! as BoxDecoration).border! as Border;
@@ -564,7 +564,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final rings = _outlineRings(tester);
+      final rings = findOutlineRings(tester);
       expect(rings, isNotEmpty);
       final border =
           (rings.first.decoration! as BoxDecoration).border! as Border;
@@ -627,7 +627,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final rings = _outlineRings(tester);
+      final rings = findOutlineRings(tester);
       expect(rings, isNotEmpty);
       final primary = Theme.of(
         tester.element(find.byType(PinKeyboard)),
