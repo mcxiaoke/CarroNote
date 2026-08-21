@@ -42,6 +42,12 @@ class AppText {
     fontWeight: FontWeight.w500,
     letterSpacing: 0.2,
   );
+
+  static const TextStyle labelMini = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w400,
+    letterSpacing: 0.2,
+  );
 }
 
 /// 纯字号刻度：仅统一「字号数字」来源，不附加字体/字重/字距等样式。

@@ -69,7 +69,7 @@ class NoteCardBody extends StatelessWidget {
     final ColorScheme cardScheme = Theme.of(context).colorScheme;
     final ShadBorder cardBorder = NotesColor.cardBorder(
       outline: isMonochromeMode && !PreferencesStorage.isColorful,
-      color: cardScheme.outline,
+      color: cardScheme.outlineVariant,
       width: 1,
     );
 
@@ -130,7 +130,7 @@ class NoteCardBody extends StatelessWidget {
                 sanitize(note.title),
                 textDirection: getTextDirecton(note.title),
                 style: AppText.body.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
                   color: fontColor,
                   fontFamily: uiFontFamily,
                   fontFamilyFallback: uiFontFamilyFallback,
@@ -146,7 +146,7 @@ class NoteCardBody extends StatelessWidget {
         Text(
           time,
           textDirection: getTextDirecton(time),
-          style: AppText.label.copyWith(color: fontColor),
+          style: AppText.labelMini.copyWith(color: fontColor),
         ),
         const SizedBox(height: AppSpace.sm),
         Text(
@@ -174,7 +174,7 @@ class NoteCardBody extends StatelessWidget {
               child: AutoSizeText(
                 sanitize(previewText),
                 style: AppText.body.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
                   color: fontColor,
                   fontFamily: uiFontFamily,
                   fontFamilyFallback: uiFontFamilyFallback,
@@ -191,7 +191,7 @@ class NoteCardBody extends StatelessWidget {
         Text(
           time,
           textDirection: getTextDirecton(time),
-          style: AppText.label.copyWith(color: fontColor),
+          style: AppText.labelMini.copyWith(color: fontColor),
         ),
       ],
     );

@@ -296,7 +296,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                     children: [
                       Icon(
                         _tagsExpanded ? Icons.expand_more : Icons.chevron_right,
-                        size: AppIcon.sm,
+                        size: AppIcon.md,
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(width: 4),
@@ -304,7 +304,7 @@ class HomeDrawerState extends State<HomeDrawer> {
                         'Tags'.tr(),
                         style: theme.textTheme.muted.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontSize: AppTextSize.s12,
+                          fontSize: AppTextSize.s16,
                           color: theme.colorScheme.primary,
                         ),
                       ),

@@ -306,7 +306,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
                           _tagsExpanded
                               ? Icons.expand_more
                               : Icons.chevron_right,
-                          size: AppIcon.sm,
+                          size: AppIcon.md,
                           color: theme.colorScheme.primary,
                         ),
                         const SizedBox(width: 2),
@@ -314,7 +314,7 @@ class _HomeSidebarState extends State<HomeSidebar> {
                           'Tags'.tr(),
                           style: theme.textTheme.muted.copyWith(
                             fontWeight: FontWeight.w600,
-                            fontSize: AppTextSize.s12,
+                            fontSize: AppTextSize.s16,
                             color: theme.colorScheme.primary,
                           ),
                         ),
