@@ -141,9 +141,9 @@ class NoteEditorState {
         fresh.syncedHash != null &&
         original!.syncedHash != fresh.syncedHash) {
       Log.note.w(
-        '编辑期间 syncedHash 已更新: uuid=${original!.uuid.substring(0, 8)} '
-        'original=${original!.syncedHash!.substring(0, 8)}… '
-        'fresh=${fresh.syncedHash!.substring(0, 8)}… '
+        '编辑期间 syncedHash 已更新: uuid=${original!.uuid} '
+        'original=${original!.syncedHash} '
+        'fresh=${fresh.syncedHash} '
         '(使用 fresh 值避免回退)',
       );
     }

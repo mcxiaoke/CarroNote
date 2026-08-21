@@ -1084,9 +1084,9 @@ class NotesDatabase {
           oldSyncedHash != newSyncedHash &&
           newSyncedHash != note.contentHash) {
         Log.note.w(
-          'updateNote syncedHash 回退: uuid=${note.uuid.substring(0, 8)} '
-          '${oldSyncedHash.substring(0, 8)}… → ${newSyncedHash.substring(0, 8)}… '
-          '(expected ${note.contentHash.substring(0, 8)}…)',
+          'updateNote syncedHash 回退: uuid=${_hashBrief(note.uuid)} '
+          '${_hashBrief(oldSyncedHash)} → ${_hashBrief(newSyncedHash)} '
+          '(expected ${_hashBrief(note.contentHash)})',
         );
       }
 
