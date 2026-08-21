@@ -97,9 +97,11 @@ class _PinUnlockPanelState extends State<PinUnlockPanel> {
     }
     // 桌面端允许用硬件键盘直接输入 PIN(autofocus 确保能收到物理按键)。
     final charset = PinCharset.fromIndex(PreferencesStorage.pinCharsetIndex);
-    // 移动端横屏时空间很矮:隐藏装饰性 Icon 与「PIN Lock」标题,只保留
-    // 引导文案 + 进度圆点,把高度让给键盘(桌面端高度充足,保留头部)。
-    final bool compactHeader = isCompactLandscape(context);
+    // 空间很矮时（移动横屏 / 桌面被拉矮的窗口）隐藏装饰 Icon 与「PIN Lock」标题，
+    // 只保留引导文案 + 进度圆点 + 使用密码，把高度让给键盘；桌面窗口可自由 resize，
+    // 也会出现矮横屏（如 890x400），因此不再依赖 isCompactLandscape（仅移动平台），
+    // 改为高度低于阈值即启用紧凑布局。
+    final bool compactHeader = MediaQuery.sizeOf(context).height < 560;
     return Focus(
       autofocus: true,
       onKeyEvent: _onKeyEvent,

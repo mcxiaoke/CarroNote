@@ -20,9 +20,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/text_styles.dart';
-import 'package:safenotes/widgets/shad_nav_items.dart';
+import 'package:safenotes/widgets/nav_list.dart';
 
 /// 桌面端常驻侧边栏（Sidebar），对应移动端 Drawer 的同一组入口。
 ///
@@ -96,9 +95,6 @@ class HomeSidebar extends StatefulWidget {
 }
 
 class _HomeSidebarState extends State<HomeSidebar> {
-  /// 标签组是否展开（点击组 header 折叠/展开）。
-  bool _tagsExpanded = true;
-
   @override
   Widget build(BuildContext context) {
     // 订阅 ThemeProvider：主题切换后本侧栏的颜色随之刷新。
@@ -112,16 +108,6 @@ class _HomeSidebarState extends State<HomeSidebar> {
     final Color bg = colorScheme.surfaceContainerLow;
     final Color divider = colorScheme.outlineVariant;
     final bool collapsed = widget.isCollapsed;
-
-    Widget sideItem(IconData icon, String label, VoidCallback onTap) {
-      return shadNavMenuItem(
-        context,
-        icon: icon,
-        label: label,
-        collapsed: collapsed,
-        onTap: onTap,
-      );
-    }
 
     // 收起/展开切换按钮：收起的底栏只放这一个按钮
     final Widget toggleButton = IconButton(
@@ -193,65 +179,23 @@ class _HomeSidebarState extends State<HomeSidebar> {
                     ),
             ),
             Divider(color: divider, height: 1),
-            // 主入口（可滚动，防窗口过矮时溢出）
+            // 导航主体（Notes / Starred / 标签组 / 回收站 / Settings / Lock）交由共享
+            // NavList 统一渲染，避免与移动端 Drawer 重复；可滚动，防窗口过矮时溢出。
             Expanded(
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  // 「笔记」入口：回到全部笔记（清除星标/标签过滤）。
-                  KeyedSubtree(
-                    key: const Key('ui-home-nav-notes'),
-                    child: sideItem(
-                      LucideIcons.stickyNote,
-                      'Notes'.tr(),
-                      widget.onAllNotesCallback,
-                    ),
-                  ),
-                  // 星标笔记入口（与移动端 Drawer 一致：OnNotes / Starred 同属上方主入口组）。
-                  if (widget.onStarredCallback != null)
-                    KeyedSubtree(
-                      key: const Key('ui-home-nav-starred'),
-                      child: sideItem(
-                        LucideIcons.star,
-                        'Starred Notes'.tr(),
-                        widget.onStarredCallback!,
-                      ),
-                    ),
-                  // 分割线：标签组与上方主入口、下方回收站/设置/锁定分隔。
-                  Divider(color: divider, height: 16),
-                  _buildTagGroup(
-                    context,
+                  NavList(
                     collapsed: collapsed,
-                    sideItemBuilder: sideItem,
-                  ),
-                  // 回收站/设置/锁定/收起按钮：紧跟标签组下方，随列表滚动（不再固定
-                  // 底部），避免手机横屏这种矮窗下顶部可用空间被固定底栏挤压。
-                  Divider(color: divider, height: 16),
-                  // 回收站（原最近删除）：紧贴设置上方。
-                  KeyedSubtree(
-                    key: const Key('ui-home-nav-deleted'),
-                    child: sideItem(
-                      LucideIcons.trash2,
-                      'Trash'.tr(),
-                      widget.onDeletedNotesCallback,
-                    ),
-                  ),
-                  KeyedSubtree(
-                    key: const Key('ui-home-nav-settings'),
-                    child: sideItem(
-                      LucideIcons.settings,
-                      'Settings'.tr(),
-                      widget.onSettingsCallback,
-                    ),
-                  ),
-                  // 锁定：紧跟在设置之下。
-                  KeyedSubtree(
-                    key: const Key('ui-home-nav-lock'),
-                    child: sideItem(
-                      LucideIcons.lock,
-                      'Lock'.tr(),
-                      widget.onLockCallback,
-                    ),
+                    onNotesCallback: widget.onAllNotesCallback,
+                    onStarredCallback: widget.onStarredCallback,
+                    onDeletedNotesCallback: widget.onDeletedNotesCallback,
+                    onSettingsCallback: widget.onSettingsCallback,
+                    onLockCallback: widget.onLockCallback,
+                    tags: widget.tags,
+                    activeTag: widget.activeTag,
+                    onTagSelected: widget.onTagSelected,
+                    onManageTags: widget.onManageTags,
                   ),
                   // 底部：展开态 = 收起/展开按钮；收起态只留按钮。
                   if (collapsed)
@@ -270,81 +214,6 @@ class _HomeSidebarState extends State<HomeSidebar> {
           ],
         ),
       ),
-    );
-  }
-
-  /// 标签组：header（展开态显示「标签」名 + 折叠箭头 + 编辑图标）+ 每个标签一行。
-  ///
-  /// [sideItemBuilder] 复用主入口的导航项外观（收起态自动退化图标）。收起态隐藏
-  /// header，只留图标以适配窄侧栏。点击 header 折叠/展开标签列表。
-  Widget _buildTagGroup(
-    BuildContext context, {
-    required bool collapsed,
-    required Widget Function(IconData, String, VoidCallback) sideItemBuilder,
-  }) {
-    final theme = ShadTheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (!collapsed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 8, 2),
-            child: InkWell(
-              key: const Key('ui-home-tag-header'),
-              onTap: () => setState(() => _tagsExpanded = !_tagsExpanded),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _tagsExpanded
-                              ? Icons.expand_more
-                              : Icons.chevron_right,
-                          size: AppIcon.md,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          'Tags'.tr(),
-                          style: theme.textTheme.muted.copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontSize: AppTextSize.s16,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (widget.onManageTags != null)
-                      IconButton(
-                        key: const Key('ui-home-tag-edit'),
-                        tooltip: 'Manage Tags'.tr(),
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(LucideIcons.pencil, size: 18),
-                        color: theme.colorScheme.primary,
-                        onPressed: widget.onManageTags,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        if (_tagsExpanded)
-          for (final tag in widget.tags)
-            KeyedSubtree(
-              key: Key('ui-home-nav-tag-$tag'),
-              child: sideItemBuilder(
-                LucideIcons.tag,
-                tag,
-                widget.onTagSelected == null
-                    ? () {}
-                    : () => widget.onTagSelected!(tag),
-              ),
-            ),
-      ],
     );
   }
 }

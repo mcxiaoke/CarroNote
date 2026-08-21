@@ -1079,6 +1079,10 @@ Future<void> _loginIfNeeded(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await _settle(tester); // 输入完成后再点登录
 
+  // 矮横屏（如 compact-land-890x400）下登录按钮可能在表单滚动区视口外，
+  // 先滚动到可见再点，否则 tap 落空导致登录不触发、_isHome 断言失败。
+  await tester.ensureVisible(find.byKey(const Key('loginButton')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('loginButton')));
   // Login is async (argon2 keyring unlock, ~1-2s of pure compute that
   // schedules no frames), so pumpAndSettle can return before navigation to
@@ -1349,6 +1353,10 @@ Future<void> _openSettings(WidgetTester tester) async {
 Future<void> _openNavEntry(WidgetTester tester, Key key) async {
   if (tester.any(find.byKey(key))) {
     // Desktop / wide: a persistent sidebar exposes the entry.
+    // 矮横屏（如 compact-land-890x400，宽度 890→走桌面 sidebar）下侧栏是
+    // 可滚动 ListView，底部入口可能在视口外，先滚动到可见再点。
+    await tester.ensureVisible(find.byKey(key));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(key));
   } else {
     // Compact: open the navigation drawer, then tap the entry inside it.
@@ -1357,6 +1365,9 @@ Future<void> _openNavEntry(WidgetTester tester, Key key) async {
     await tester.pumpAndSettle();
     await _settle(tester); // 抽屉开启动画完全走完再点入口
     expect(find.byKey(key), findsWidgets);
+    // 抽屉导航是 SingleChildScrollView，矮屏下底部入口可能滚出视口。
+    await tester.ensureVisible(find.byKey(key));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(key));
   }
 
