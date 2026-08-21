@@ -66,7 +66,7 @@ ColorScheme buildSeedColorScheme(Color seed, Brightness brightness) {
     return ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
-      dynamicSchemeVariant: DynamicSchemeVariant.monochrome,
+      dynamicSchemeVariant: DynamicSchemeVariant.neutral,
     );
   }
   return ColorScheme.fromSeed(seedColor: seed, brightness: brightness);

@@ -11,13 +11,15 @@
 * See https://safenotes.dev for support or download.
 */
 
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
+
+// 对比度工具（contrastRatio / getFontColorForBackground）已抽到 contrast.dart，
+// 此处 re-export 以保住既有调用方（笔记卡 / 回收站 / 测试）的 import 路径不变。
+export 'package:safenotes/utils/contrast.dart';
 
 class NotesColor extends ChangeNotifier {
   // 浅色模式下卡片底色提亮比例：原主题色与白色混合，避免深色卡片在浅色界面下显得过重。
@@ -90,20 +92,7 @@ class NotesColor extends ChangeNotifier {
   }
 }
 
-/// 按 WCAG 对比度反推字体色（P1-12）：不再用手调阈值 `0.179`，
-/// 选黑/白中对比度更高者（数学上对任意背景色 ≥ ~4.55:1）。
-Color getFontColorForBackground(Color background) {
-  final blackContrast = contrastRatio(Colors.black, background);
-  final whiteContrast = contrastRatio(Colors.white, background);
-  return blackContrast >= whiteContrast ? Colors.black : Colors.white;
-}
-
-/// WCAG 相对对比度：(L1+0.05)/(L2+0.05)。测试与外部复用。
-double contrastRatio(Color a, Color b) {
-  final l1 = a.computeLuminance();
-  final l2 = b.computeLuminance();
-  return (math.max(l1, l2) + 0.05) / (math.min(l1, l2) + 0.05);
-}
+// contrastRatio / getFontColorForBackground 已移至 lib/utils/contrast.dart（见顶部 export）。
 
 class NotesColorTheme {
   final String prefix;

@@ -66,13 +66,17 @@ class _NoteCardPressFeedbackState extends State<NoteCardPressFeedback> {
         child: Stack(
           children: [
             widget.child,
-            // 遮罩层：AnimatedContainer 只过渡颜色变化，避免无谓 rebuild。
-            AnimatedContainer(
-              duration: AppMotion.fast,
-              curve: AppMotion.standard,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(widget.radius),
-                color: overlayColor,
+            // 遮罩层：用 Positioned.fill 铺满整张卡，避免非 Positioned 子控件在
+            // 松约束（列表模式）下塌缩成 0 高度、导致按压反馈不可见。
+            // AnimatedContainer 仍只过渡颜色变化，避免无谓 rebuild。
+            Positioned.fill(
+              child: AnimatedContainer(
+                duration: AppMotion.fast,
+                curve: AppMotion.standard,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(widget.radius),
+                  color: overlayColor,
+                ),
               ),
             ),
           ],

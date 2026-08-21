@@ -20,51 +20,57 @@
 // （暗色模式下 primary 自动提亮、文字自动变深），保证任何主题色下按钮/开关/
 // 选中项都清晰可读，无需手调 —— 这正是「主题色自适应」的意义。
 //
-// 中性灰度 seed 走 monochrome 变体（方案 A+C，见 seed_scheme.dart），避免被染成
-// 任意彩色；明暗跟随全局暗色开关，与彩色 seed 行为一致。两端共用 buildSeedColorScheme。
+// 中性灰度 seed 走 neutral 变体（见 seed_scheme.dart），明暗跟随全局暗色开关，
+// 与彩色 seed 行为一致。两端共用 buildSeedColorScheme。
 
 import 'package:flutter/material.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/seed_scheme.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 class ShadThemes {
   static ShadThemeData build(Color seed, Brightness brightness) {
-    // M3 算法：为当前 seed 生成明暗自适应的完整色板（含 onPrimary/onSecondary/
-    // onError 等对比前景色）。中性 seed 走 monochrome（色度 0），对比度仍由算法保证。
-    final m3 = buildSeedColorScheme(seed, brightness);
-    // 危险/错误色恒定用「亮色板」的 error：暗色模式下 M3 会把 error 提亮成
-    // 浅粉（与 primary 被提亮同理），不符合红色危险语义；亮色板的 error 才是
-    // 用户认知里的红色（如 #ba1a1a + 白字），亮/暗两种模式观感一致。
-    final ColorScheme errorScheme = buildSeedColorScheme(
-      seed,
-      Brightness.light,
-    );
-    final bool neutral = isNeutralSeed(seed);
-    // 中性主题的强调色板：用品牌 seed 经 fromSeed 生成自适应 M3 色板（纯内存计算，
-    // 极快），取 primary 系用于 ShadCN 填充按钮/Switch；Slate 中性基底不变。
-    final ColorScheme brandScheme = buildSeedColorScheme(kNeutralBrandPrimary, brightness);
+    // ── 色板生成（固定 2 次 fromSeed） ──────────────────────────────
+    // 主色板：当前 seed + 当前明暗 → Shad 控件中 primary/secondary/accent/ring/selection
+    // 等品牌相关色的来源。
+    final ColorScheme base = buildSeedColorScheme(seed, brightness);
+
+    // 亮色板：当前 seed + 固定 light → 提供稳定亮色色值：
+    // 暗色模式下 M3 会把 error 提亮成浅粉（与 primary 被提亮同理），不符合红色危险语义；
+    // 亮色板的 error 保持用户认知里的红色（如 #ba1a1a + 白字），亮/暗两种模式观感一致。
+    final ColorScheme light = buildSeedColorScheme(seed, Brightness.light);
+
+    // ── 语义化色值提取（与 app_theme.dart 命名对齐，消除跨文件困惑） ──
+
+    // 填充控件色（ShadButton / ShadSwitch）：统一用主色板 primaryContainer。
+    // 中性 seed 已改用 DynamicSchemeVariant.neutral，色阶自带辨识度，无需品牌色板兜底。
+    final Color filledBtnBg = base.primaryContainer;
+    final Color filledBtnFg = base.onPrimaryContainer;
+
+    // 错误色：固定用亮色板的 error，避免暗色下被提亮成浅粉。
+    final Color errorColor = light.error;
+    final Color onErrorColor = light.onError;
 
     // 中性基底沿用 Slate（背景/卡片/边框等不随品牌色走，保持页面观感稳定），
     // 品牌相关色全部映射到 M3 色板。
     final scheme =
         (brightness == Brightness.light
-                ? const ShadSlateColorScheme.light()
-                : const ShadSlateColorScheme.dark())
+                ? const ShadNeutralColorScheme.light()
+                : const ShadNeutralColorScheme.dark())
             .copyWith(
-              primary: m3.primary,
-              primaryForeground: m3.onPrimary,
-              secondary: m3.secondary,
-              secondaryForeground: m3.onSecondary,
-              accent: m3.primaryContainer,
-              accentForeground: m3.onPrimaryContainer,
-              destructive: errorScheme.error,
-              destructiveForeground: errorScheme.onError,
-              ring: m3.primary,
-              selection: m3.primary.withValues(alpha: 0.2),
+              primary: base.primary,
+              primaryForeground: base.onPrimary,
+              secondary: base.secondary,
+              secondaryForeground: base.onSecondary,
+              accent: base.primaryContainer,
+              accentForeground: base.onPrimaryContainer,
+              destructive: errorColor,
+              destructiveForeground: onErrorColor,
+              ring: base.primary,
+              selection: base.primary.withValues(alpha: 0.2),
+              card: base.surfaceBright,
             );
 
     return ShadThemeData(
@@ -92,16 +98,16 @@ class ShadThemes {
       inputTheme: ShadInputTheme(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: ShadDecoration(color: m3.surfaceContainer),
+        decoration: ShadDecoration(color: base.surfaceContainer),
       ),
       // 按钮文字随 48 高度放大一档（14→16），与 Material 按钮视觉一致；link 保持原样。
-      // 填充主按钮：背景用 primaryContainer（如奶油色），文字用
-      // onPrimaryContainer（深色）。注意不能把全局 colorScheme.primary 改成
-      // primaryContainer——outline/link 按钮的文字就是拿 primary 当前景色的，
-      // 那样会让它们变成浅色而压不住浅背景。所以只在此处单独覆盖填充按钮。
+      // 填充主按钮：背景用 primaryContainer，文字用 onPrimaryContainer。
+      // 注意不能把全局 colorScheme.primary 改成 primaryContainer——outline/link 按钮的
+      // 文字就是拿 primary 当前景色的，那样会让它们变成浅色而压不住浅背景。
+      // 所以只在此处单独覆盖填充按钮。
       primaryButtonTheme: ShadButtonTheme(
-        backgroundColor: neutral ? brandScheme.primaryContainer : m3.primaryContainer,
-        foregroundColor: neutral ? brandScheme.onPrimaryContainer : m3.onPrimaryContainer,
+        backgroundColor: filledBtnBg,
+        foregroundColor: filledBtnFg,
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
       destructiveButtonTheme: ShadButtonTheme(
@@ -113,7 +119,7 @@ class ShadThemes {
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         // decoration: ShadDecoration(
         //   border: ShadBorder.all(
-        //     color: m3.primary,
+        //     color: base.primary,
         //     width: 1,
         //     radius: BorderRadius.circular(8),
         //     padding: const EdgeInsets.all(1),
@@ -130,9 +136,9 @@ class ShadThemes {
       // 偏重）。改用 M3 的 surfaceContainerHighest（暗色 #33353a、亮色 #e1e2e9）
       // —— 同属中性色，但暗色下更柔和、层次更清晰。
       switchTheme: ShadSwitchTheme(
-        uncheckedTrackColor: m3.surfaceContainerHighest,
-        thumbColor: neutral ? brandScheme.onPrimaryContainer : scheme.background,
-        checkedTrackColor: neutral ? brandScheme.primaryContainer : m3.primary,
+        uncheckedTrackColor: base.surfaceContainerHighest,
+        thumbColor: scheme.background,
+        checkedTrackColor: base.primary,
       ),
       // 对话框背景：用 M3 的 surfaceContainerHigh，与 app_dialogs 里系统 M3
       // AlertDialog 的默认表面（colorScheme.surfaceContainerHigh）保持一致；
@@ -140,10 +146,10 @@ class ShadThemes {
       // 自动适配，绝不刺眼的纯白纯黑。覆盖后，桌面 ShadDialog
       // （导出备份弹窗、各类 showAppDialog 弹窗）默认即使用此背景。
       primaryDialogTheme: ShadDialogTheme(
-        backgroundColor: m3.surfaceContainerHigh,
+        backgroundColor: base.surfaceContainerHigh,
       ),
       alertDialogTheme: ShadDialogTheme(
-        backgroundColor: m3.surfaceContainerHigh,
+        backgroundColor: base.surfaceContainerHigh,
       ),
     );
   }

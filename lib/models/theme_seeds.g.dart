@@ -60,7 +60,7 @@ class AppThemeSeeds {
         ColorSeedItem(
           name: '中性白',
           nameEn: 'Mono White',
-          color: Color(0xFFF3F3F3),
+          color: Color(0xFFF4F2F5),
         ),
         ColorSeedItem(
           name: '中性黑',
