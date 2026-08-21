@@ -73,7 +73,7 @@ class NoteFormWidget extends StatelessWidget {
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: null,
-      textDirection: getTextDirecton(title!),
+      textDirection: getTextDirecton(title ?? ''),
       initialValue: title,
       enableInteractiveSelection: true,
       // P1-19：编辑器标题走 EditorText.title（档位标题尺寸，默认 20 bold），
@@ -111,7 +111,7 @@ class NoteFormWidget extends StatelessWidget {
       maxLines: null,
       minLines: 1,
       initialValue: description,
-      textDirection: getTextDirecton(description!),
+      textDirection: getTextDirecton(description ?? ''),
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
       // 编辑器正文走 EditorText.body（档位正文字尺寸，默认 16），编辑态纯文本。

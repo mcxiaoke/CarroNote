@@ -43,9 +43,7 @@ class BiometricAuth {
     if (value.isEmpty) return '';
 
     // 只记录是否命中及长度，绝不记录凭据内容（隐私红线）
-    Log.auth.d(
-      '读取生物识别凭据: ${value.isEmpty ? "为空(未设置或已清除)" : "已存在 (长度=${value.length})"}',
-    );
+    Log.auth.d('读取生物识别凭据: 已存在 (长度=${value.length})');
 
     if (value.startsWith(_wrappedPrefix)) {
       // v1：解包出明文密码用于后续登录（Keyring 解锁需要原始密码）

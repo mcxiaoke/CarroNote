@@ -19,6 +19,7 @@
 
 import 'dart:io' show Platform;
 
+import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 
 /// 通用环境变量容器（SN_ENV_VARS）的解析结果，懒加载缓存，进程内只解析一次。
@@ -76,8 +77,7 @@ DynamicSchemeVariant? get themeDynamicSchemeVariantOverride {
   final variant = _dsvByName[raw.toLowerCase()];
   if (variant == null) {
     // 非法值：不阻断启动，仅告警并回退默认。
-    // ignore: avoid_print
-    print('[env] 忽略非法 SN_THEME_DSV="$raw"，回退默认 DynamicSchemeVariant');
+    Log.app.w('忽略非法 SN_THEME_DSV="$raw"，回退默认 DynamicSchemeVariant');
   }
   return variant;
 }

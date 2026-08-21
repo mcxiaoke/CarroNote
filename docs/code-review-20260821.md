@@ -23,36 +23,12 @@
 | 高8 | 明文口令驻留内存 | **搁置** — `PhraseHandler._passphrase` 仍为静态 String，架构性改造暂搁置 |
 | B-M3 | 401 与 5xx 混为一谈 | **仍存在** — 401 仍抛 `BackendUnavailableException`，未新增 `AuthenticationException` |
 | B-M5 | 非 manifest 响应无大小上限 | **部分改善** — manifest/journal 已加 `checkRemoteReadSize`；`getBlob` 仍未加 |
-| B-H2 | WebDAV purgeOrphans 路径校验不一致 | **仍存在** — `purgeOrphans` 用 `length == 64` 宽松校验，`listOrphanBlobs` 用 `^[a-f0-9]{64}\.` 严格正则 |
-| 低 | safenote.dart 头注释"本地存储为明文" | **仍存在** — `safenote.dart:15` 注释过时 |
-| 低 | SafeNote.toString() 含 title 明文 | **仍存在** — `safenote.dart:297-300` |
-| 低 | passphrase_util Zxcvbnm 每次新建 | **仍存在** — `passphrase_util.dart:33` |
 | 低 | device_id 未知平台用时间戳 | **仍存在** — `device_id.dart:138` |
 | 低 | note_widget.dart 死参数+死代码 | **仍存在** — `sessionStateStream` 死参数、`computeMaxLine` 注释死代码 |
 
 ---
 
-## 二、新发现 — 高优先级
-
-### H-05 日志服务器无认证暴露数据库与偏好
-
-`lib/src/logger/log_webserver.dart:148,529-576`
-
-服务器绑定 `0.0.0.0`（局域网可访问），以下端点**无任何认证**即可访问：
-
-- `/api/download/db`：下载完整加密数据库文件（可离线暴力破解）
-- `/api/db?table=X`：查看任意表结构和行数据
-- `/api/download/sp`：下载全部 SharedPreferences
-- `/api/prefs`：JSON 格式偏好数据
-- `/diagnostics`：完整同步诊断快照
-
-文件头注释声称"不含敏感凭据"，但数据库下载端点直接暴露了加密数据库文件。
-
-→ Release 模式下默认禁用所有 `/api/download/*` 和 `/api/db?table=` 端点；或加 token 认证（启动时生成一次性 token）。
-
----
-
-## 三、新发现 — 中优先级
+## 二、新发现 — 中优先级
 
 ### M-03 readAllNotesIncludingDeleted 缓存重建竞态
 
@@ -70,10 +46,9 @@
 
 → 在 `clearDataKey()` 之前等待"编辑器空闲"信号。
 
-### M-13 死代码：Style.buttonTextStyle / launchUrlInapp / 公开 State 类
+### M-13 死代码：Style.buttonTextStyle / 公开 State 类
 
 - `lib/utils/styles.dart:20-24`：`Style.buttonTextStyle` 全项目无调用。
-- `lib/utils/url_launcher.dart:22-26`：`launchUrlInapp` 全项目无调用。
 - `lib/widgets/drawer.dart:62`：`HomeDrawerState` 公开但无外部引用。
 - `lib/dialogs/export_backup_dialog.dart:78`：`ExportBackupDialogState` 同上。
 - `lib/widgets/search_widget.dart:35`：`SearchWidgetState` 同上。
@@ -82,39 +57,25 @@
 
 ---
 
-## 四、新发现 — 低优先级
+## 三、新发现 — 低优先级
 
 ### 安全与正确性
 
-- **L-01** `safenote.dart:15,186,229`：头注释"本地存储为明文"已过时（实为字段级加密），多处注释误导。→ 更新注释。
-- **L-02** `safenote.dart:297-300`：`SafeNote.toString()` 含 `title="$title"` 明文，违反日志隐私红线。→ 改为 `title="<redacted>"`。
-- **L-03** `crypto.dart:130`：`kBackupAad` 常量值 `backup-v1` 与注释"v2 起改为 backup-v2"表述容易误解。→ 改注释为"未来 v2 版本可改为"。
 - **L-04** `database_handler.dart:2042-2047`：`exportAll` 不导出墓碑，重新导入后删除状态无法恢复；`.toString()` 冗余。→ 如需保留墓碑改用 `readAllNotesIncludingDeleted()`。
 - **L-05** `database_handler.dart:157-173`：`cachedNoteSummaries` 返回解密标题明文，供 WebServer 使用。→ 确认 WebServer 有鉴权或改为返回标题长度。
-- **L-06** `sync_models.dart:1063`：`headerLen < 0` 不可达条件（uint32 解码非负）。→ 移除死分支。
-- **L-07** `keyring.dart:711`：指纹比较用 `!=` 而非常数时间比较，与代码库约定不一致。→ 使用 `SyncCrypto.bytesEqual`。
 - **L-08** `sync_engine.dart:1907-1912`：LWW 冲突解决依赖设备本地时间，时钟不准确时可能选错胜者。→ 同步诊断面板增加时钟偏差检测。
 - **L-09** `journal.dart:975-984`：`fetchRemoteEntries` 对远端对象名无格式校验。→ 用正则过滤。
 - **L-10** `journal.dart:919,929`：`syncToRemote` 读取本地文件无大小限制。→ 读取前检查 `file.length()`。
-- **L-11** `url_launcher.dart:18,24`：抛裸字符串而非 Exception 对象。→ 改为 `throw Exception(...)`。
 - **L-12** `url_launcher.dart:16-26`：无 URI scheme 校验。→ 显式校验 scheme 白名单。
 - **L-13** `cache_manager.dart:21-22`：`dir.deleteSync(recursive: true)` 后立即 `dir.create()`，非原子操作且可能影响其他组件。→ 遍历目录内文件逐个删除。
 
 ### 代码质量与可维护性
 
-- **L-14** `passphrase_util.dart:33`：`Zxcvbnm` 每次调用新建实例，加载整本字典，键入即卡。→ 缓存单例。
 - **L-15** `device_id.dart:138`：未知平台用时间戳当 deviceId，每次启动都变。→ 生成随机 UUID 并持久化。
 - **L-16** `app_logger.dart:190-191`：`List.removeAt(0)` 触发 O(n) 元素移动。→ 改用 `Queue` 或环形缓冲。
-- **L-17** `env_config.dart:80`：使用 `print()` 而非 `Log` 系统。→ 替换为 `Log.app.w`。
-- **L-18** `biometric_auth.dart:46-48`：日志三元表达式存在死分支（`value.isEmpty` 在前面已 return）。→ 简化日志。
 - **L-19** `editor_state.dart:20-23`：`original`/`title`/`description` 为静态字段，无法支持多窗口/分屏编辑。→ 长期迁移为 Provider 实例。
 - **L-20** `note_widget.dart`：`sessionStateStream` 死参数（声明 required 但从未使用）；`computeMaxLine` 28 行注释死代码。→ 删除。
-- **L-21** `note_widget.dart:76,114`：`title!` / `description!` 强制解包可空参数。→ 改为 `title ?? ''` 或类型改 `String`。
-- **L-22** `time_utils.dart:30-32 vs 38-42`：文档说"为 true 时一律显示相对时间"，实际 7 天内相对、超过绝对。→ 修正文档。
-- **L-23** `snack_message.dart:21 vs 45`：文档说"错误类 6 秒"，实际 3 秒。→ 统一。
-- **L-24** `search_widget.dart:145,110`：注释掉的代码残留。→ 删除。
 - **L-25** `note_widget.dart:73`：`autofocus: true` 在编辑已有笔记时也自动聚焦标题框。→ 作为参数传入。
-- **L-26** `sync_diagnostics_page.dart:934`：硬编码字体族 `Consolas`（Windows 专属）。→ 改为 `monospace`。
 - **L-27** `sync_diagnostics_page.dart`：`_buildKVRow` 三处近似重复（:229/:505/:670）。→ 提取共享 Widget。
 - **L-28** `login.dart:865`：魔法数字 `5` 控制生物识别挑战间隔。→ 提取为命名常量。
 - **L-29** `login.dart:220` / `set_passphrase.dart:191` / `change_passphrase.dart:106`：`scrollToBottomIfOnScreenKeyboard` 三处重复。→ 提取为 mixin。
@@ -137,23 +98,21 @@
 
 ---
 
-## 五、架构层面建议（优先级排序）
+## 四、架构层面建议（优先级排序）
 
-1. **日志服务器安全加固（H-05）**：Release 模式禁用 `/api/download/*` 端点，或加 token 认证。这是唯一可能导致用户数据被局域网攻击者直接获取的漏洞。
+1. **异常分类体系完善**：401 与 5xx 分离（B-M3），`getBlob` 响应加大小上限（B-M5）。异常分类准确是同步引擎可靠重试的前提。
 
-2. **异常分类体系完善**：401 与 5xx 分离（B-M3），`getBlob` 响应加大小上限（B-M5）。异常分类准确是同步引擎可靠重试的前提。
+2. **缓存一致性修复**：缓存重建竞态（M-03）+ `getPendingReuploadUuids` 静默失败链路，共同构成缓存层的数据一致性风险。
 
-3. **缓存一致性修复**：缓存重建竞态（M-03）+ `getPendingReuploadUuids` 静默失败链路，共同构成缓存层的数据一致性风险。
+3. **logout 与在途保存竞态（M-08）**：登出时 `clearDataKey()` 前需等待编辑器空闲，否则在途保存会因无 dataKey 加密失败。
 
-4. **logout 与在途保存竞态（M-08）**：登出时 `clearDataKey()` 前需等待编辑器空闲，否则在途保存会因无 dataKey 加密失败。
+4. **死代码清理（M-13）**：`note_widget.dart` 死参数/死代码、`Style.buttonTextStyle` 死代码、公开 State 类改 private。降低维护成本。
 
-5. **死代码清理（M-13）**：`note_widget.dart` 死参数/死代码、`Style.buttonTextStyle`/`launchUrlInapp` 死代码、公开 State 类改 private。降低维护成本。
-
-6. **长期改造（维持搁置）**：明文口令驻留内存（高8）、编辑器静态态迁移为 Provider（L-19）。
+5. **长期改造（维持搁置）**：明文口令驻留内存（高8）、编辑器静态态迁移为 Provider（L-19）。
 
 ---
 
-## 六、测试覆盖评估
+## 五、测试覆盖评估
 
 | 层级 | 文件数 | 覆盖评估 |
 |------|--------|----------|
@@ -170,7 +129,7 @@
 
 ---
 
-## 七、依赖健康度
+## 六、依赖健康度
 
 `flutter pub outdated` 显示 29 个包有更新版本，均为 minor/patch 升级，无 breaking change：
 
@@ -186,18 +145,17 @@
 
 ---
 
-## 八、发现汇总
+## 七、发现汇总
 
 | 严重程度 | 数量 | 编号 |
 |----------|------|------|
-| 高（仍未修复） | 1 | H-05 |
 | 中（仍未修复） | 3 | M-03、M-08、M-13 |
-| 低（仍未修复） | 39 | L-01 ~ L-39 |
-| 旧报告仍未修复 | 9 | 高8、B-M3、B-M5、B-H2、低优先级 5 项 |
+| 低（仍未修复） | 24 | L-04/05/08/09/10/12/13/15/16/19/20/25/27~39 |
+| 旧报告仍未修复 | 5 | 高8、B-M3、B-M5、低优先级 2 项 |
 
 ---
 
-## 九、设计亮点（正面确认）
+## 八、设计亮点（正面确认）
 
 以下设计经审查确认正确，值得保留：
 

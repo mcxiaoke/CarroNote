@@ -18,7 +18,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// 信息提示（P2-3）：统一走 ShadSonner/ShadToast。
 ///
 /// 桌面端宽度由 ShadSonner 自动约束（≥md 断点 maxWidth 420）；
-/// 信息类 3 秒，错误类 6 秒（[showErrorToast]）。
+/// 信息类 3 秒，错误类 3 秒（[showErrorToast]）。
 /// ShadSonner 不可用时（如 showDialog 内 context 不在 Sonner 子树），
 /// 降级到 Material ScaffoldMessenger 避免提示无声消失。
 void showSnackBarMessage(BuildContext context, String? message) {

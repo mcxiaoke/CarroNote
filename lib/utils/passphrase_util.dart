@@ -14,6 +14,9 @@
 import 'package:zxcvbnm/languages/en.dart' as en;
 import 'package:zxcvbnm/zxcvbnm.dart';
 
+/// Zxcvbnm 单例缓存，避免每次调用重新加载字典
+Zxcvbnm? _zxcvbnmCache;
+
 /// 使用 zxcvbnm（基于 Dropbox zxcvbn 算法）评估密码强度。
 ///
 /// 返回 0.0~1.0 之间的归一化分数，兼容旧接口：
@@ -30,7 +33,7 @@ import 'package:zxcvbnm/zxcvbnm.dart';
 /// 归一化公式：normalized = (score + 1) / 5，将 [0,4] 映射到 [0.2, 1.0]
 double estimateBruteforceStrength(String passphrase) {
   // 使用英语字典（包含常见密码、常见人名、Wikipedia 常用词）
-  final zxcvbnm = Zxcvbnm(dictionaries: en.dictionaries);
+  final zxcvbnm = _zxcvbnmCache ??= Zxcvbnm(dictionaries: en.dictionaries);
   final result = zxcvbnm(passphrase);
 
   // 将 0-4 的整数 score 归一化到 0.0-1.0

@@ -931,7 +931,7 @@ class _LogsTabState extends State<_LogsTab> {
         entry.formattedLine,
         style: TextStyle(
           fontSize: AppTextSize.s12,
-          fontFamily: 'Consolas',
+          fontFamily: 'monospace',
           color: color,
           height: 1.4,
         ),
