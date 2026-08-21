@@ -83,10 +83,10 @@ class NoteCardBody extends StatelessWidget {
       isRelative: PreferencesStorage.isRelativeTime,
     );
 
-    // 最外层即卡片本体：用完全可控的 Container 承载底色 + 描边 + 圆角，
-    // 不再依赖 ShadCard 内部 MainAxisSize.min 的 Container——它会在被网格
-    // 行对齐拉高的 cell 中只缩到内容高度，导致描边只包住内容、未包住整张卡
-    //（即"outline 没包裹全部 card"）。
+    // 最外层即卡片本体：Container 仅承载描边 + 圆角 + 内边距，填充保持透明，
+    // 让底层 OpenContainer 的 closedColor（= 同色 cardColor）透出作为卡片底色，
+    // 从而父级 Material 的 ink 墨色（按下 splash/highlight，来自全局 secondary）
+    // 能画在底色之上、不被不透明 Container 盖住（见 note_card_press_feedback.dart）。
     // LayoutBuilder + minHeight：网格(SliverAlignedGrid)对同行短卡施加紧约束
     //（行高 H），此时 minHeight=H 让卡片撑满整格、描边包裹全卡；列表(ListView)
     // 为松约束、高度随内容，minHeight=0 退化为内容高度。
@@ -103,7 +103,7 @@ class NoteCardBody extends StatelessWidget {
           width: double.infinity,
           padding: AppSpace.cardPadding,
           decoration: BoxDecoration(
-            color: color,
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(AppShape.cardRadius),
             border: cardBorder.toBorder(),
           ),

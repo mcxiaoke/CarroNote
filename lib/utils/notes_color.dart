@@ -39,27 +39,45 @@ class NotesColor extends ChangeNotifier {
     final base = isColorful
         ? lightColors[notIndex % lightColors.length]
         : _neutralCardColor(context);
-    // 仅浅色模式提亮；暗黑模式保持原色不变，避免浅色卡片在深色背景上刺眼/违和。
-    if (PreferencesStorage.isThemeDark) return base;
-    // 关闭彩色时底色已是浅品牌色（不透明），再提亮 40% 会与背景融为一体。
+    if (PreferencesStorage.isThemeDark) {
+      // 暗黑模式：原调配色多为浅/亮色（黄、薄荷、近白等），直接铺在深色背景上
+      // 会过亮刺眼。将彩色卡与深色背景混合压暗，保留色相差异的同时回到舒适明度；
+      // 非彩色卡已在上游(_neutralCardColor)按背景微调，此处原样返回即可。
+      if (!isColorful) return base;
+      final darkBase = context != null
+          ? Theme.of(context).colorScheme.surfaceContainerLow
+          : const Color(0xFF121212);
+      return Color.alphaBlend(base.withValues(alpha: 0.5), darkBase);
+    }
+    // 浅色模式：彩色卡提亮 40% 融入浅色界面；非彩色底色已按背景微调，原样返回。
     return isColorful
         ? (Color.lerp(base, Colors.white, _lightenAmount) ?? base)
         : base;
   }
 
-  /// 关闭彩色时的卡片底色：surfaceContainerHighest 上叠加 14% 品牌主色。
+  /// 关闭彩色时的卡片底色：以页面背景(surfaceContainerLow)为基准，向正确方向微调一档。
   ///
-  /// - 单色（中性灰度）主题：直接用 surfaceContainerLowest——素净扁平，与页面背景
-  ///   （surfaceContainerLow）明确拉开一档对比，且无品牌色相干扰。
-  /// - 彩色主题：surfaceContainerHighest 上叠加 14% 品牌主色，保证卡片与背景有区分
-  ///   且带品牌色相（页面背景是 surfaceContainerLow，同档会融为一体）。
+  /// 原实现用 surfaceContainerHighest(彩色主题)/surfaceBright(单色主题) 作为底色，
+  /// 但这两档在 M3 容器色阶里与页面背景(surfaceContainerLow)的相对明暗会**随亮度反转**：
+  ///   浅色 → 卡片比背景更暗 → 显得太沉闷；
+  ///   深色 → 卡片比背景更亮 → 显得太刺眼。
+  /// 这正是「明亮模式太暗 / 深色模式太亮、且与笔记颜色开关无关」的根因。
+  ///
+  /// 现改为显式方向混合：
+  /// - 浅色：向白色混合少量 → 卡片比背景略亮、干净不沉；
+  /// - 深色：向黑色混合少量 → 卡片比背景略暗、柔和刺眼；
+  /// 单色主题不叠加品牌色，仅保留这一档微调；彩色主题再叠 14% 品牌主色带出品相。
   static Color _neutralCardColor(BuildContext? context) {
     if (context == null) return const Color(0xFFA7BEAE); // 兜底（无 context 时）
     final scheme = Theme.of(context).colorScheme;
-    if (isMonochromeMode) return scheme.surfaceBright;
+    final bg = scheme.surfaceContainerLow; // 与首页 scaffold 背景同源
+    final base = PreferencesStorage.isThemeDark
+        ? Color.alphaBlend(Colors.black.withValues(alpha: 0.08), bg)
+        : Color.alphaBlend(Colors.white.withValues(alpha: 0.06), bg);
+    if (isMonochromeMode) return base;
     return Color.alphaBlend(
       scheme.primary.withValues(alpha: _brandTintAmount),
-      scheme.surfaceContainerHighest,
+      base,
     );
   }
 

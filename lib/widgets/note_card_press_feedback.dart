@@ -5,25 +5,19 @@
 * You may use, distribute and modify this code under the
 * terms of the GPL-3.0+ license.
 *
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
-*
 * See https://safenotes.dev for support or download.
 */
 
 import 'package:flutter/material.dart';
 
-import 'package:safenotes/utils/motion.dart';
-
-/// 笔记卡 hover/press 反馈包装（P0-3）。
+/// 笔记卡 hover/press 反馈包装（P0-3 重构为 Material ink）。
 ///
-/// 在 [child]（不透明卡片）之上叠一层半透明黑/白遮罩：
-/// - hover：5% 遮罩 + 手型光标（桌面）；
-/// - press：10% 遮罩。
-/// 手势（onTap）由外层 OpenContainer 的 action 传入，避免与卡片内部
-/// GestureDetector 竞争手势（InkWell 的 ripple 会被不透明卡片盖住，
-/// 故不用 InkWell）。
-class NoteCardPressFeedback extends StatefulWidget {
+/// 直接复用父级 Material（OpenContainer 的 closedColor）的 ink 系统：
+/// 按下 splash / 高亮 highlight / hover 颜色均继承自全局 ThemeData
+/// （app_theme 已设为 secondary），与设置项等其它 InkWell 行为一致。
+/// 卡片底色由 NoteCardBody 透传（背景色由 OpenContainer 的 closedColor 承载，
+/// 此处 Container 仅保留描边/圆角且填充透明），墨色得以画在底色之上、不被盖住。
+class NoteCardPressFeedback extends StatelessWidget {
   final VoidCallback onTap;
   final Widget child;
   final double radius;
@@ -36,52 +30,12 @@ class NoteCardPressFeedback extends StatefulWidget {
   });
 
   @override
-  State<NoteCardPressFeedback> createState() => _NoteCardPressFeedbackState();
-}
-
-class _NoteCardPressFeedbackState extends State<NoteCardPressFeedback> {
-  bool _hovered = false;
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double overlayAlpha = _pressed ? 0.10 : (_hovered ? 0.05 : 0.0);
-    final overlayColor = (isDark ? Colors.white : Colors.black).withValues(
-      alpha: overlayAlpha,
-    );
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() {
-        _hovered = false;
-        _pressed = false;
-      }),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
-        child: Stack(
-          children: [
-            widget.child,
-            // 遮罩层：用 Positioned.fill 铺满整张卡，避免非 Positioned 子控件在
-            // 松约束（列表模式）下塌缩成 0 高度、导致按压反馈不可见。
-            // AnimatedContainer 仍只过渡颜色变化，避免无谓 rebuild。
-            Positioned.fill(
-              child: AnimatedContainer(
-                duration: AppMotion.fast,
-                curve: AppMotion.standard,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(widget.radius),
-                  color: overlayColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return InkWell(
+      onTap: onTap,
+      mouseCursor: SystemMouseCursors.click,
+      borderRadius: BorderRadius.circular(radius),
+      child: child,
     );
   }
 }
