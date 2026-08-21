@@ -47,7 +47,15 @@ import 'dart:typed_data';
 // 仅取用所需符号，避免命名冲突（Mac / Hmac / SecretKey 等）。
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart'
-    show AesGcm, Argon2id, Hmac, Mac, Pbkdf2, SecretBox, SecretKey;
+    show
+        AesGcm,
+        Argon2id,
+        Hmac,
+        Mac,
+        Pbkdf2,
+        SecretBox,
+        SecretBoxAuthenticationError,
+        SecretKey;
 
 // 项目导入
 import 'package:core/src/sync/sync_error.dart';
@@ -209,7 +217,7 @@ class SyncCrypto {
       hashLength: _keyLength,
     );
     final key = await algo.deriveKey(
-      secretKey: SecretKey(password.codeUnits),
+      secretKey: SecretKey(utf8.encode(password)),
       nonce: salt,
     );
     return Uint8List.fromList(await key.extractBytes());
@@ -553,7 +561,10 @@ class SyncCrypto {
         'AES-GCM 解密失败: 信封 ${envelope.length} 字节, '
         'AAD ${aad.length} 字节 (密钥不匹配/AAD 不符/数据损坏): $e',
       );
-      throw wrapDecryptionError(e);
+      throw wrapDecryptionError(
+        e,
+        isTagError: e is SecretBoxAuthenticationError,
+      );
     }
   }
 

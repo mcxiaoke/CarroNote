@@ -323,24 +323,19 @@ class SyncDecryptionException implements Exception {
 
 /// 把 pointycastle 的解密失败包装为 [SyncDecryptionException]
 ///
-/// 供 crypto.dart 的 `_aesGcmDecrypt` 调用：
-/// ```dart
-/// try {
-///   return cipher.process(ctAndTag);
-/// } on InvalidTag catch (e) {
-///   throw _wrapInvalidTag(e, aadId);
-/// } on Object catch (e, st) {
-///   throw SyncDecryptionException('AES-GCM 解密异常: $e', aadId: aadId);
-/// }
-/// ```
+/// 供 crypto.dart 的 `_aesGcmDecrypt` 调用，将底层解密异常包装为
+/// [SyncDecryptionException]。
 ///
-/// 注意：pointycastle 的 InvalidTag 继承自 Error，所以必须用 `on Object`
-/// 在最底层捕获一次，包装为 Exception 后向上抛出，让上层能用 `on Exception`
-/// 系列精确捕获。这是消除引擎层 `on Object` 兜底的关键。
-SyncDecryptionException wrapDecryptionError(Object error, {String? aadId}) {
-  // pointycastle 的 InvalidTag
-  final typeName = error.runtimeType.toString();
-  if (typeName == 'InvalidTag' || error.toString().contains('InvalidTag')) {
+/// [isTagError] 由调用方判断 `e is SecretBoxAuthenticationError` 后传入，
+/// 避免在此处做字符串匹配——项目使用 `package:cryptography` 而非 pointycastle，
+/// GCM 认证失败抛 `SecretBoxAuthenticationError`，旧代码检查的 `InvalidTag`
+/// 在所有构建模式下均不匹配。
+SyncDecryptionException wrapDecryptionError(
+  Object error, {
+  String? aadId,
+  required bool isTagError,
+}) {
+  if (isTagError) {
     return SyncDecryptionException('GCM 认证标签验证失败（密钥错误或数据被篡改）', aadId: aadId);
   }
   return SyncDecryptionException('AES-GCM 解密失败: $error', aadId: aadId);

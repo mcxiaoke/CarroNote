@@ -663,7 +663,7 @@ class Journal {
       'deviceId': deviceId,
       'entries': _entries.map((e) => e.toJson()).toList(),
     });
-    final tmp = File('$_logPath.tmp');
+    final tmp = File('$_logPath.tmp-${DateTime.now().microsecondsSinceEpoch}');
     await tmp.writeAsString(payload, flush: true);
     await tmp.rename(_logPath);
   }

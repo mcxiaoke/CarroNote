@@ -42,6 +42,7 @@ import 'package:core/src/models/note_meta.dart';
 import 'package:core/src/models/safenote.dart';
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/logger/app_logger.dart';
+import 'package:core/src/sync/sync_error.dart';
 
 const String tableMeta = 'sync_meta';
 
@@ -472,10 +473,12 @@ class NotesDatabase {
       final envelope = base64.decode(fieldValue);
       final bytes = await SyncCrypto.open(dataKey, uuid, envelope);
       return utf8.decode(bytes);
+    } on SyncDecryptionException {
+      // 解密失败：dataKey 不匹配或数据损坏，保留原始异常类型向上传递
+      rethrow;
     } catch (e) {
-      // 解密失败：dataKey 不匹配或数据损坏
-      // 抛异常而不是返回原始值，避免静默错误
-      throw DataKeyNotSetException('解密失败：dataKey 不匹配或数据损坏 - $e');
+      // 其他异常（如 base64 解码失败）仍包装为可捕获的异常
+      throw SyncDecryptionException('字段解密失败: $e', aadId: uuid);
     }
   }
 
@@ -796,9 +799,10 @@ class NotesDatabase {
         }
       });
       // 事务提交成功后再更新缓存（插入执行中缓存不参与，避免读到半状态）
-      for (final entry in rows) {
-        _upsertCacheEntry(entry.note);
-      }
+      // M-02 修复：事务内 insert 返回的自增 id 未回填到缓存条目，
+      // 后续 readNote(id)/softDelete(id) 会因 id==null 失败。
+      // 此处直接失效缓存，下次读取时从 DB 重建（含正确 id）。
+      _invalidateCache();
       Log.note.i(
         '事务批量新增完成: 实际插入 ${rows.length}/${notes.length} 条'
         '笔记（导入，跳过 $skipped 条）',
@@ -1439,6 +1443,7 @@ class NotesDatabase {
   ///
   /// 在**同一个 SQLite 事务**内完成：
   ///   1. 全库重加密（oldKey 解密 → newKey 加密 → 逐行 UPDATE）
+  ///      含 note_meta.payload 重加密，防止换 key 后标签永久丢失
   ///   2. keyring 账本 upsert（[keyringJson]：新包裹/新纪元）
   ///   3. （可选）blob 待重传标记（[markBlobReupload]：dataKey 真变时）
   ///
@@ -1469,6 +1474,11 @@ class NotesDatabase {
       // 1. 用 oldKey 读取所有笔记（自动解密为明文）
       final notes = await readAllNotesIncludingDeleted();
 
+      // 1b. 用 oldKey 解出 note_meta.payload 明文。
+      //     **必须与笔记一同迁移**：payload 与 title/description 用同一把
+      //     dataKey，若只重加密笔记而漏掉 payload，迁移后标签将永久无法解密。
+      final metaPayloads = await _readMetaPayloadsPlain(db);
+
       // 2. 临时切换 dataKey 为 newKey，准备加密
       _dataKey = Uint8List.fromList(newKey);
 
@@ -1477,6 +1487,15 @@ class NotesDatabase {
       for (final note in notes) {
         final row = await _toEncryptedRow(note);
         encryptedRows.add({'where_uuid': note.uuid, 'row': row});
+      }
+
+      // 3b. 用 newKey 重新加密 note_meta.payload
+      final encryptedMeta = <String, String>{};
+      for (final entry in metaPayloads.entries) {
+        encryptedMeta[entry.key] = await _encryptField(
+          _metaAad(entry.key),
+          entry.value,
+        );
       }
 
       // 4. 需标记重传的 uuid（dataKey 真变时：非墓碑全部标记）
@@ -1510,6 +1529,16 @@ class NotesDatabase {
             MetaFields.value: jsonEncode(reuploadUuids),
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
+        // note_meta.payload 与笔记同事务写入：要么一起成功，要么一起回滚，
+        // 不会出现「笔记已用新 key、元数据仍是旧 key」的半迁移状态。
+        for (final entry in encryptedMeta.entries) {
+          await txn.update(
+            tableNoteMeta,
+            {NoteMetaFields.payload: entry.value},
+            where: '${NoteMetaFields.uuid} = ?',
+            whereArgs: [entry.key],
+          );
+        }
       });
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
@@ -1518,7 +1547,10 @@ class NotesDatabase {
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
-      Log.db.i('原子化迁移完成: ${notes.length} 条笔记, 耗时 ${ms}ms');
+      Log.db.i(
+        '原子化迁移完成: ${notes.length} 条笔记, '
+        '${encryptedMeta.length} 条元数据 payload, 耗时 ${ms}ms',
+      );
       return notes.length;
     } catch (e, st) {
       _dataKey = originalDataKey;
@@ -1648,7 +1680,8 @@ class NotesDatabase {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
       return list.map((e) => e as String).toSet();
-    } on Exception {
+    } on Exception catch (e) {
+      Log.db.w('blobReuploadPending JSON 解析失败，返回空集合', error: e);
       return {};
     }
   }
@@ -1705,7 +1738,8 @@ class NotesDatabase {
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       return map.map((k, v) => MapEntry(k, v as int));
-    } on Object {
+    } on Object catch (e) {
+      Log.db.w('gcOrphanCandidates JSON 解析失败，返回空集合', error: e);
       return {};
     }
   }
