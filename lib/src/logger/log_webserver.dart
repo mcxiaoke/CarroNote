@@ -46,6 +46,7 @@
  *
  * 安全性：
  *   - 仅绑定 0.0.0.0（局域网可访问），不做公网暴露
+ *   - 每次启动生成随机 6 位数字 token，所有请求必须携带 ?token=xxx（URL query 或 header）
  *   - 不含敏感凭据（密码 / Token / 明文笔记），诊断快照已过滤
  */
 
@@ -54,6 +55,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show Random;
 
 import 'package:flutter/services.dart';
 
@@ -110,6 +112,10 @@ class LogWebServer {
   int _port = 0;
   int get port => _port;
 
+  /// 启动时随机生成的 6 位数字 token，所有请求必须携带（URL ?token= 或 header）
+  String? _token;
+  String? get token => _token;
+
   /// 是否正在运行
   bool get isRunning => _server != null;
 
@@ -158,6 +164,9 @@ class LogWebServer {
       throw Exception('无法绑定端口 $port~${port + 9}: $lastError');
     }
 
+    // 生成随机 6 位数字 token，每次启动都不同
+    _token = (Random.secure().nextInt(900000) + 100000).toString();
+
     // 订阅日志流，实时推送给所有 WebSocket 客户端
     _logSub = AppLogBuffer.instance.stream.listen((entry) {
       _broadcastToWebsockets(entry.formattedLine);
@@ -173,8 +182,8 @@ class LogWebServer {
     final addrs = await localAddresses();
     Log.web.i(
       '日志 Web 服务器已启动: '
-      '${addrs.map((a) => 'http://$a:$_port').join(', ')}'
-      '${addrs.isEmpty ? '端口 $_port' : ''}',
+      '${addrs.map((a) => 'http://$a:$_port/?token=$_token').join(', ')}'
+      '${addrs.isEmpty ? '端口 $_port (token=$_token)' : ''}',
     );
 
     return _port;
@@ -199,6 +208,7 @@ class LogWebServer {
     await _server?.close(force: true);
     _server = null;
     _port = 0;
+    _token = null;
     Log.web.i('日志 Web 服务器已停止');
   }
 
@@ -212,6 +222,15 @@ class LogWebServer {
     if (request.method == 'OPTIONS') {
       _setCors(request.response);
       request.response.statusCode = HttpStatus.noContent;
+      await request.response.close();
+      return;
+    }
+    // Token 认证：所有请求必须携带正确 token（URL query 或 header）
+    if (!_checkToken(request)) {
+      _setCors(request.response);
+      request.response
+        ..statusCode = HttpStatus.forbidden
+        ..write('Forbidden: invalid or missing token');
       await request.response.close();
       return;
     }
@@ -274,6 +293,13 @@ class LogWebServer {
         // 响应已关闭，忽略
       }
     }
+  }
+
+  /// 校验请求 token（URL ?token= 参数或 HTTP header `token`）
+  bool _checkToken(HttpRequest request) {
+    final token =
+        request.uri.queryParameters['token'] ?? request.headers.value('token');
+    return token != null && token == _token;
   }
 
   /// 统一设置 CORS 响应头（允许任意来源，便于 dashboard 独立部署后跨域访问）
@@ -354,8 +380,13 @@ class LogWebServer {
   Future<void> _serveDashboard(HttpRequest request) async {
     request.response.headers.contentType = ContentType.html;
     try {
+      final html = await rootBundle.loadString('assets/web/dashboard.html');
+      // 注入 token 供 dashboard JS 使用
       request.response.write(
-        await rootBundle.loadString('assets/web/dashboard.html'),
+        html.replaceFirst(
+          '<script>',
+          '<script>window.__TOKEN__="${_token ?? ""}";',
+        ),
       );
     } on Object catch (e, st) {
       Log.web.e('读取 dashboard.html 失败', error: e, stackTrace: st);
@@ -637,13 +668,14 @@ class LogWebServer {
   <input type="text" id="filter" placeholder="关键字过滤..." oninput="render()">
   <label><input type="checkbox" id="autoScroll" checked><span id="autoScrollLabel">自动滚动</span></label>
   <button onclick="clearLogs()">清空显示</button>
-  <button onclick="location.href='/logfile'">下载日志文件</button>
-  <button onclick="window.open('/diagnostics','_blank')">同步诊断</button>
+  <button onclick="location.href='/logfile?token='+token">下载日志文件</button>
+  <button onclick="window.open('/diagnostics?token='+token,'_blank')">同步诊断</button>
   <button onclick="toggleConn()" id="connBtn">暂停</button>
 </div>
 <div class="header tags" id="tagBar"></div>
 <div id="logContainer"></div>
 <script>
+const token = new URLSearchParams(location.search).get('token') || '';
 let ws = null;
 let paused = false;
 let allLines = [];
@@ -655,7 +687,7 @@ let hiddenTags = new Set();
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(proto + '//' + location.host + '/stream');
+  ws = new WebSocket(proto + '//' + location.host + '/stream?token=' + encodeURIComponent(token));
   ws.onopen = () => {
     setStatus('已连接', 'connected');
     document.getElementById('connBtn').textContent = '暂停';

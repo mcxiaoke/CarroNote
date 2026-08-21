@@ -95,7 +95,9 @@
 <script>
 var hostEl = document.getElementById('host');
 hostEl.value = location.host;
-function api(p){ return fetch('http://'+hostEl.value+p, {mode:'cors'}).then(function(r){ return r.json(); }); }
+var __tok = window.__TOKEN__ || '';
+function withToken(url){ var sep=url.indexOf('?')>=0?'&':'?'; return url+sep+'token='+encodeURIComponent(__tok); }
+function api(p){ return fetch('http://'+hostEl.value+withToken(p), {mode:'cors'}).then(function(r){ return r.json(); }); }
 
 // 触发一组下载：用隐藏 iframe 拉取（服务端已设 Content-Disposition: attachment），
 // 避免 window.open 多开被浏览器弹窗拦截，也不会离开当前面板。
@@ -103,7 +105,7 @@ function dlSet(paths){
   paths.forEach(function(p){
     var f = document.createElement('iframe');
     f.style.display = 'none';
-    f.src = 'http://'+hostEl.value+'/'+p;
+    f.src = 'http://'+hostEl.value+'/'+withToken(p);
     document.body.appendChild(f);
     setTimeout(function(){ if(f.parentNode) f.parentNode.removeChild(f); }, 6000);
   });
@@ -247,7 +249,7 @@ var knownTags=new Set(), hiddenTags=new Set();
 function connectLogs(){
   if(logWs) return;
   var proto = location.protocol==='https:' ? 'wss:' : 'ws:';
-  logWs = new WebSocket(proto+'//'+hostEl.value+'/stream');
+  logWs = new WebSocket(proto+'//'+hostEl.value+withToken('/stream'));
   logWs.onopen = function(){ setConn('Connected','on'); document.getElementById('connBtn').textContent='Pause'; logPaused=false; };
   logWs.onmessage = function(e){
     if(logPaused) return;

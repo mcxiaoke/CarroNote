@@ -1008,10 +1008,11 @@ class _WebServerTabState extends State<_WebServerTab> {
     }
     final ip = await _getLocalIp();
     final port = LogWebServer.instance.port;
+    final token = LogWebServer.instance.token ?? '';
     setState(() {
       _statusText =
-          'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
-              .tr(namedArgs: {'ip': ip, 'port': '$port'});
+          'Running\nLAN: http://{ip}:{port}/?token={token}\nLocal: http://localhost:{port}/?token={token}'
+              .tr(namedArgs: {'ip': ip, 'port': '$port', 'token': token});
     });
   }
 
@@ -1025,10 +1026,11 @@ class _WebServerTabState extends State<_WebServerTab> {
         final port = await LogWebServer.instance.start();
         // 获取本机 IP
         final ip = await _getLocalIp();
+        final token = LogWebServer.instance.token ?? '';
         setState(() {
           _statusText =
-              'Running\nLAN access: http://{ip}:{port}\nLocal access: http://localhost:{port}'
-                  .tr(namedArgs: {'ip': ip, 'port': '$port'});
+              'Running\nLAN: http://{ip}:{port}/?token={token}\nLocal: http://localhost:{port}/?token={token}'
+                  .tr(namedArgs: {'ip': ip, 'port': '$port', 'token': token});
         });
       } on Object catch (e) {
         setState(
@@ -1169,7 +1171,7 @@ class _WebServerTabState extends State<_WebServerTab> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Security note: the server binds 0.0.0.0, so any device on the same LAN can access it. Logs do not contain sensitive information such as passwords/tokens. Currently in debug stage, the server starts automatically with the sync service; release builds will default to off.'
+                  'Security note: the server binds 0.0.0.0. A random 6-digit token is generated on each start; all requests must include ?token=xxx. Logs do not contain sensitive information. Currently in debug stage, the server starts automatically; release builds will default to off.'
                       .tr(),
                   style: TextStyle(
                     fontSize: AppTextSize.s12,
