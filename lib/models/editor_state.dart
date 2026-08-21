@@ -109,18 +109,37 @@ class NoteEditorState {
     await NotesDatabase.instance.storeNote(note);
   }
 
+  /// 保存用户编辑后的笔记内容。
+  ///
+  /// **syncedHash 刷新修复（2026-08-21）**：
+  ///
+  /// `original` 是进入编辑页时设置的静态引用，在编辑期间不会被更新。
+  /// 若同步引擎在此期间完成了同步（`markSyncedForUuids` 把 DB 中的
+  /// `synced_hash` 刷新为新收敛值），`original.syncedHash` 仍是旧值。
+  /// 直接 `original!.copyWith(...)` 会把过时的 `syncedHash` 写回数据库，
+  /// 覆盖同步引擎已正确更新的 base 值，导致下次同步误判为「双方都偏离 base」
+  /// → 产生虚假冲突副本。
+  ///
+  /// 修复：保存前从数据库读取最新 `syncedHash`，确保 base 值不被编辑路径回退。
+  /// 详见 `docs/conflict-stale-syncedhash-20260821.md`。
   Future updateNote() async {
     Log.note.i(
       '保存编辑后的笔记: uuid=${original!.uuid} '
       'len=${title.length}+${description.length}',
     );
     final now = DateTime.now();
+
+    // 从数据库读取最新的 syncedHash / syncedDeleted，避免编辑期间同步引擎
+    // 更新了 base 值但 original 静态引用仍持有旧值导致回退覆盖。
+    final fresh = await NotesDatabase.instance.readNoteByUuid(original!.uuid);
     final note = original!.copyWith(
       title: title,
       description: description,
       contentHash: SafeNote.computeHash(title, description),
       updatedAt: now.millisecondsSinceEpoch,
       synced: false,
+      syncedHash: fresh?.syncedHash,
+      syncedDeleted: fresh?.syncedDeleted,
     );
 
     // 版本捕获：保存旧内容快照（覆盖前）
