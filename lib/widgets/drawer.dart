@@ -358,16 +358,9 @@ class HomeDrawerState extends State<HomeDrawer> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(LucideIcons.tag, size: AppIcon.sm, color: color),
-                ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
+                Icon(LucideIcons.tag, size: AppIcon.sm, color: color),
+                const SizedBox(width: 22),
                 Expanded(
                   child: Text(
                     tag,

@@ -217,58 +217,56 @@ class _HomeSidebarState extends State<HomeSidebar> {
                         widget.onStarredCallback!,
                       ),
                     ),
-                  // 分割线：标签组与上方主入口、下方设置/锁定分隔。
+                  // 分割线：标签组与上方主入口、下方回收站/设置/锁定分隔。
                   Divider(color: divider, height: 16),
                   _buildTagGroup(
                     context,
                     collapsed: collapsed,
                     sideItemBuilder: sideItem,
                   ),
+                  // 回收站/设置/锁定/收起按钮：紧跟标签组下方，随列表滚动（不再固定
+                  // 底部），避免手机横屏这种矮窗下顶部可用空间被固定底栏挤压。
+                  Divider(color: divider, height: 16),
+                  // 回收站（原最近删除）：紧贴设置上方。
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-deleted'),
+                    child: sideItem(
+                      LucideIcons.trash2,
+                      'Trash'.tr(),
+                      widget.onDeletedNotesCallback,
+                    ),
+                  ),
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-settings'),
+                    child: sideItem(
+                      LucideIcons.settings,
+                      'Settings'.tr(),
+                      widget.onSettingsCallback,
+                    ),
+                  ),
+                  // 锁定：紧跟在设置之下。
+                  KeyedSubtree(
+                    key: const Key('ui-home-nav-lock'),
+                    child: sideItem(
+                      LucideIcons.lock,
+                      'Lock'.tr(),
+                      widget.onLockCallback,
+                    ),
+                  ),
+                  // 底部：展开态 = 收起/展开按钮；收起态只留按钮。
+                  if (collapsed)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: toggleButton,
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6, top: 4),
+                      child: Center(child: toggleButton),
+                    ),
                 ],
               ),
             ),
-            // 回收站/设置/锁定固定在侧栏底部（不进可滚动 ListView）：保证在任意窗口高度下
-            // 始终可见可达。新增星标/标签组后内容上移，若放 ListView 会在矮窗口滚出
-            // 折叠区（懒构建）导致导航入口「找不到」。
-            Divider(color: divider, height: 16),
-            // 回收站（原最近删除）：紧贴设置上方，与设置/锁定同属底部导航区。
-            KeyedSubtree(
-              key: const Key('ui-home-nav-deleted'),
-              child: sideItem(
-                LucideIcons.trash2,
-                'Trash'.tr(),
-                widget.onDeletedNotesCallback,
-              ),
-            ),
-            KeyedSubtree(
-              key: const Key('ui-home-nav-settings'),
-              child: sideItem(
-                LucideIcons.settings,
-                'Settings'.tr(),
-                widget.onSettingsCallback,
-              ),
-            ),
-            // 锁定：紧跟在设置之下，不置底（与移动端 Drawer 布局一致）。
-            KeyedSubtree(
-              key: const Key('ui-home-nav-lock'),
-              child: sideItem(
-                LucideIcons.lock,
-                'Lock'.tr(),
-                widget.onLockCallback,
-              ),
-            ),
-            // 底部：展开态 = footer 版本信息 + 收起/展开按钮；收起态只留按钮
-            if (collapsed)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: toggleButton,
-              )
-            else ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6, top: 4),
-                child: Center(child: toggleButton),
-              ),
-            ],
           ],
         ),
       ),

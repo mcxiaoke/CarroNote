@@ -358,7 +358,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     // 隐私：标签名本身即用户隐私，只记数量不记内容。
     Log.note.i('笔记标签更新: uuid=${note.uuid} count=${tags.length}');
     if (!mounted) return;
-    setState(() => _meta = _meta?.copyWith(tags: tags));
+    // 重新读取元数据再 setState，确保底部标签即时刷新为最新值。
+    final refreshed = await NotesDatabase.instance.getNoteMeta(note.uuid);
+    if (!mounted) return;
+    setState(() => _meta = refreshed);
     showSnackBarMessage(context, 'Tags saved'.tr());
   }
 
@@ -441,13 +444,13 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               description,
               style: _editorLikeStyle(context, EditorText.body()),
             ),
-          // 标签展示到**正文最底部**（不放标题下方），偏右 chip 排布。
+          // 标签展示到**正文最底部**（不放标题下方），靠左 chip 排布。
           if (_tags.isNotEmpty) ...[
             const SizedBox(height: 12),
             Align(
-              alignment: Alignment.centerRight,
+              alignment: Alignment.centerLeft,
               child: Wrap(
-                alignment: WrapAlignment.end,
+                alignment: WrapAlignment.start,
                 spacing: 6,
                 runSpacing: 6,
                 children: [
