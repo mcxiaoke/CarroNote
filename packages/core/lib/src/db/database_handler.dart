@@ -1054,6 +1054,20 @@ class NotesDatabase {
     _checkNotMigrating();
     final db = await instance.database;
     try {
+      // P0-log：syncedHash 变更追踪
+      // UI 编辑路径若误写旧 syncedHash（覆盖同步引擎已更新的 base），
+      // 会导致下次同步误判为冲突。此处对比写入前后的 syncedHash 值。
+      final oldRow = await db.query(
+        tableNotes,
+        columns: [NoteFields.syncedHash],
+        where: '${NoteFields.id} = ?',
+        whereArgs: [note.id],
+        limit: 1,
+      );
+      final oldSyncedHash = oldRow.isNotEmpty
+          ? oldRow.first[NoteFields.syncedHash] as String?
+          : null;
+
       final rows = await db.update(
         tableNotes,
         await _toEncryptedRow(note),
@@ -1061,9 +1075,26 @@ class NotesDatabase {
         whereArgs: [note.id],
       );
       _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
+
+      // P0-log：若 syncedHash 被回退（新值 ≠ 旧值且新值 ≠ null 且新值 ≠ contentHash）
+      // 说明 UI 路径可能写入了过时的 base，发出 WARN
+      final newSyncedHash = note.syncedHash;
+      if (oldSyncedHash != null &&
+          newSyncedHash != null &&
+          oldSyncedHash != newSyncedHash &&
+          newSyncedHash != note.contentHash) {
+        Log.note.w(
+          'updateNote syncedHash 回退: uuid=${note.uuid.substring(0, 8)} '
+          '${oldSyncedHash.substring(0, 8)}… → ${newSyncedHash.substring(0, 8)}… '
+          '(expected ${note.contentHash.substring(0, 8)}…)',
+        );
+      }
+
       Log.note.i(
         '修改笔记 uuid=${note.uuid} id=${note.id} '
         'hash=${_hashBrief(note.contentHash)} '
+        'synced=${note.synced ? 1 : 0} '
+        'syncedHash=${_hashBrief(note.syncedHash)} '
         'len=${note.title.length}+${note.description.length} rows=$rows',
       );
       return rows;

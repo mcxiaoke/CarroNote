@@ -132,6 +132,22 @@ class NoteEditorState {
     // 从数据库读取最新的 syncedHash / syncedDeleted，避免编辑期间同步引擎
     // 更新了 base 值但 original 静态引用仍持有旧值导致回退覆盖。
     final fresh = await NotesDatabase.instance.readNoteByUuid(original!.uuid);
+
+    // P0-log：检测 syncedHash 是否在编辑期间被同步引擎更新过
+    // 若 original.syncedHash ≠ fresh.syncedHash，说明编辑期间发生了同步，
+    // fresh 值才是正确的 base。修复前这里会用 original 的旧值导致回退。
+    if (original!.syncedHash != null &&
+        fresh != null &&
+        fresh.syncedHash != null &&
+        original!.syncedHash != fresh.syncedHash) {
+      Log.note.w(
+        '编辑期间 syncedHash 已更新: uuid=${original!.uuid.substring(0, 8)} '
+        'original=${original!.syncedHash!.substring(0, 8)}… '
+        'fresh=${fresh.syncedHash!.substring(0, 8)}… '
+        '(使用 fresh 值避免回退)',
+      );
+    }
+
     final note = original!.copyWith(
       title: title,
       description: description,

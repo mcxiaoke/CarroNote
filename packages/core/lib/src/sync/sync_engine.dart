@@ -65,6 +65,12 @@ import 'package:core/src/sync/keyring.dart';
 /// 状态：持有 keyring 引用（用于 dataKey 迁移）。
 /// 线程安全：SyncService 通过互斥锁保证同一时间只有一个 sync() 在执行。
 class SyncEngine {
+  /// 安全截断字符串用于日志显示（防止测试中短 hash 越界）
+  static String _short(String? s, [int len = 8]) {
+    if (s == null || s.isEmpty) return 'null';
+    return s.length > len ? '${s.substring(0, len)}…' : s;
+  }
+
   /// 远端后端
   final SyncBackend backend;
 
@@ -213,7 +219,7 @@ class SyncEngine {
         final delay = baseDelay * (1 << (attempt - 1)); // 200ms, 400ms
         Log.sync.w(
           'blob $opName 临时不可用，${delay.inMilliseconds}ms 后重试 '
-          '(attempt=$attempt/$maxAttempts, hash=${hash.substring(0, 8)}…)',
+          '(attempt=$attempt/$maxAttempts, hash=${_short(hash)})',
           error: e,
         );
         await Future<void>.delayed(delay);
@@ -304,7 +310,6 @@ class SyncEngine {
             message: 'dataKey 迁移完成，重新同步',
           ),
         );
-        Log.sync.i('⇄ migrate dataKey 迁移完成，重新同步');
         // 继续重试（不计入乐观锁冲突次数）
         if (migrationAttempts >= maxRetries) {
           return SyncResult.failure(
@@ -512,6 +517,7 @@ class SyncEngine {
     // Step 1: GET 远端 manifest
     final remoteResponse = await backend.getManifest();
     // P3-log：manifest GET 结果（debug 级，稳态噪音治理）
+    // version 在 header 解析后补打（见下方 remoteHeader 获取后）
     Log.sync.d(
       'GET manifest empty=${remoteResponse.ciphertext.isEmpty} '
       'etag=${remoteResponse.etag.isEmpty ? "-" : "present"} '
@@ -559,6 +565,23 @@ class SyncEngine {
       if (schemaReject != null) {
         return SyncResult.failure(schemaReject, attempts: attempt);
       }
+
+      // P0-log：远端 manifest version（排查多端竞争的关键指标）
+      Log.sync.d(
+        'GET manifest version=${remoteHeader.version} '
+        'fp=${_short(remoteHeader.dataKeyFingerprint)}',
+      );
+
+      // P0-journal：同步轮次 start 边界
+      // 携带 attempt + 远端 version/fp，为 journal 中后续事件提供时序锚点
+      journal.append(
+        type: JournalEventType.syncRound,
+        phase: JournalPhase.start,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note:
+            'attempt=$attempt remoteVersion=${remoteHeader.version} '
+            'fp=${_short(remoteHeader.dataKeyFingerprint)}',
+      );
 
       // 1b. v4（epoch 消除 §8.2[I]）：用 header.dataKeyFingerprint 精确判定
       // 「dataKey 是否相同」，替代旧「keyVersion 守卫 + 本地 MK 解不开 + items
@@ -681,6 +704,15 @@ class SyncEngine {
               '（远端 keyVersion=${remoteHeader.keyVersion} >= 本地 '
               '${keyring.keyVersion}），中止同步强制重登录',
             );
+            // P1-journal：scenario-b 留痕，便于多端密码变更排查
+            journal.append(
+              type: JournalEventType.syncRound,
+              phase: JournalPhase.failed,
+              dataKeyEpoch: keyring.dataKeyEpoch,
+              note:
+                  'scenario-b: remote keyVersion=${remoteHeader.keyVersion} '
+                  '>= local ${keyring.keyVersion}, requiresRelogin=true',
+            );
             return SyncResult.failure(
               '检测到同步密码已在其他设备修改，请退出登录并使用新密码重新登录'
               '（本地笔记未丢失，未同步的更改已保留）',
@@ -774,6 +806,17 @@ class SyncEngine {
     // manifest 后再安全清理（next sync 时 remoteManifest != null）。
     final bool skipGc = remoteManifest == null;
 
+    // P0-journal：同步轮次 start 边界（空 manifest 路径）
+    // 远端 manifest 为空时上面的 start journal 不会执行，在此补一条
+    if (skipGc) {
+      journal.append(
+        type: JournalEventType.syncRound,
+        phase: JournalPhase.start,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note: 'attempt=$attempt remoteManifest=empty',
+      );
+    }
+
     // Step 2: 构建本地 manifest（纪元不匹配时整体用远端密钥纪元）
     final localManifest = await _buildLocalManifest();
 
@@ -825,14 +868,23 @@ class SyncEngine {
       // P0-1：远端 manifest 为空时跳过 GC（见上方 skipGc 说明）
       if (!skipGc) await _gcOrphanBlobs(merged);
 
+      // P0-journal：同步轮次 done 边界（skip-PUT 路径）
+      final skipConflicts = _countActions(actions, SyncActionType.conflict);
+      journal.append(
+        type: JournalEventType.syncRound,
+        phase: JournalPhase.done,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note:
+            'attempt=$attempt skipPut=true conflicts=$skipConflicts '
+            'version=${merged.header.version}',
+      );
+
       return SyncResult.success(
         uploaded: 0,
         downloaded: 0,
         deleted: 0,
-        skipped:
-            _countActions(actions, SyncActionType.skip) +
-            _countActions(actions, SyncActionType.conflict),
-        conflicts: _countActions(actions, SyncActionType.conflict),
+        skipped: _countActions(actions, SyncActionType.skip) + skipConflicts,
+        conflicts: skipConflicts,
         actions: actions,
         attempts: attempt,
         failedNoteUuids: _failedUuids(actions),
@@ -882,6 +934,23 @@ class SyncEngine {
     // 永久残留、无重试路径）。
     await database.removePendingReuploadUuids(reuploadedOk);
 
+    // P0-journal：同步轮次 done 边界
+    // 携带本轮统计，与 start 配对，构成完整的 sync 轮次边界
+    // 必须在 _uploadJournal() 之前追加，否则本轮远端副本会缺少这条
+    final uploaded = _countActions(actions, SyncActionType.upload);
+    final downloaded = _countActions(actions, SyncActionType.download);
+    final deleted = _countActions(actions, SyncActionType.delete);
+    final conflicts = _countActions(actions, SyncActionType.conflict);
+    journal.append(
+      type: JournalEventType.syncRound,
+      phase: JournalPhase.done,
+      dataKeyEpoch: keyring.dataKeyEpoch,
+      note:
+          'attempt=$attempt uploaded=$uploaded downloaded=$downloaded '
+          'deleted=$deleted conflicts=$conflicts '
+          'version=${merged.header.version}',
+    );
+
     // P2 journal §3.3-4 / §3.6c：同步成功后把本地 journal 的加密副本推到远端。
     // 这是 journal「第二数据源」角色的落地点：本机沙盒被清、manifest 损坏时，
     // 仍能从远端 journal 还原出 keyState 与操作序列。失败不阻断同步。
@@ -889,12 +958,10 @@ class SyncEngine {
 
     // 统计结果
     return SyncResult.success(
-      uploaded: _countActions(actions, SyncActionType.upload),
-      downloaded: _countActions(actions, SyncActionType.download),
-      deleted: _countActions(actions, SyncActionType.delete),
-      skipped:
-          _countActions(actions, SyncActionType.skip) +
-          _countActions(actions, SyncActionType.conflict),
+      uploaded: uploaded,
+      downloaded: downloaded,
+      deleted: deleted,
+      skipped: _countActions(actions, SyncActionType.skip) + conflicts,
       conflicts: _countActions(actions, SyncActionType.conflict),
       actions: actions,
       attempts: attempt,
@@ -1422,6 +1489,14 @@ class SyncEngine {
     Manifest? remote,
     List<SyncAction> actions,
   ) async {
+    // P1-log：合并入口摘要（核心合并逻辑此前零日志，是诊断盲区）
+    Log.sync.d(
+      '_mergeAndTransfer start: '
+      'local=${local.items.length} '
+      'remote=${remote?.items.length ?? 0} '
+      'purged=${(await database.getPurgedUuids()).length}',
+    );
+
     // M1 修复：读取待清理的 uuid 列表（用户硬删除的笔记）
     final purgedUuids = await database.getPurgedUuids();
     final purgedSet = purgedUuids.toSet();
@@ -1577,6 +1652,12 @@ class SyncEngine {
             // Fast-forward：本地单边变更（编辑或删除），远端未动
             // 直接上传覆盖，不记 conflict。_uploadNote 内部对墓碑/普通笔记
             // 分别记 delete/upload action；失败时保留旧条目进 merged（P1 修复）。
+            Log.sync.d(
+              'fast-forward local: uuid=${_short(uuid)} '
+              'base=${_short(base)} local=${_short(localItem.hash)} '
+              'remote=${_short(remoteItem.hash)} '
+              'deleted=${localItem.deleted}',
+            );
             if (localNote != null) {
               if (await _uploadNote(localNote, actions)) {
                 mergedItems[uuid] = localItem;
@@ -1592,6 +1673,12 @@ class SyncEngine {
             // Fast-forward：远端单边变更，本地未动
             // 直接下载覆盖，不记 conflict。_downloadNote 内部对远端墓碑/普通
             // 笔记分别记 delete/download action；失败时保留远端条目（D3 修复）。
+            Log.sync.d(
+              'fast-forward remote: uuid=${_short(uuid)} '
+              'base=${_short(base)} local=${_short(localItem.hash)} '
+              'remote=${_short(remoteItem.hash)} '
+              'deleted=${remoteItem.deleted}',
+            );
             final outcome = await _downloadNote(uuid, remoteItem, actions);
             if (outcome is _DownloadHealed) {
               mergedItems[uuid] = outcome.healedItem;
@@ -1604,6 +1691,18 @@ class SyncEngine {
             // 真冲突：双方都偏离 base，或 base==null（保守退化）
             // 沿用原 LWW + shouldPreserveCopy + conflict action 逻辑
             final winner = _resolveConflict(localItem, remoteItem);
+            // P0-log：冲突判定三元组（排查虚假冲突的关键证据）
+            // base/local/remote 三值若 base 不同于 local 且不同于 remote，
+            // 说明双方都改过（真冲突）；若 base==remote 但仍判冲突，
+            // 说明 syncedHash 被错误回退（虚假冲突）
+            Log.sync.w(
+              '⚡ conflict uuid=$uuid '
+              'base=${_short(base)} '
+              'local=${_short(localItem.hash)} '
+              'remote=${_short(remoteItem.hash)} '
+              'localChanged=$localChanged remoteChanged=$remoteChanged '
+              '→ ${winner == localItem ? "local won" : "remote won"}',
+            );
             // 保留副本四条缺一不可：
             //   1. 本地偏离 base（本地确实改过）
             //   2. 远端偏离 base（远端确实改过）—— 与 1 合起来才是「双方都改」的真并发
@@ -1659,11 +1758,14 @@ class SyncEngine {
               SyncAction(
                 type: SyncActionType.conflict,
                 uuid: uuid,
-                message: winner == localItem
-                    ? 'local won (LWW: local newer'
-                          '${shouldPreserveCopy ? ', remote preserved as copy' : ''})'
-                    : 'remote won (LWW: remote newer'
-                          '${shouldPreserveCopy ? ', local preserved as copy' : ''})',
+                hash: winner.hash,
+                message:
+                    '${winner == localItem ? "local won" : "remote won"} '
+                    '(LWW: ${winner == localItem ? "local" : "remote"} newer'
+                    '${shouldPreserveCopy ? ', copy preserved' : ''}) '
+                    'base=${_short(base)} '
+                    'local=${_short(localItem.hash)} '
+                    'remote=${_short(remoteItem.hash)}',
               ),
             );
           }
@@ -1689,6 +1791,13 @@ class SyncEngine {
         dataKeyCreatedBy: deviceId,
       ),
       items: mergedItems,
+    );
+    // P1-log：合并出口摘要（与入口配对，诊断合并结果）
+    Log.sync.d(
+      '_mergeAndTransfer done: merged=${mergedItems.length} '
+      'actions=${actions.length} '
+      'reuploadedOk=${reuploadedOk.length} '
+      'purged=${purgedSet.length}',
     );
     return (merged: manifest, reuploadedOk: reuploadedOk);
   }
@@ -2163,6 +2272,21 @@ class SyncEngine {
         // 内容 hash 与 manifest 记录不符：blob 内容被篡改/错位（能解密但内容不对）。
         // 这不是密钥问题，不走 _handleDownloadFailure 的自愈/失败流程；
         // 按原 HEAD 行为记为 skip 并保留远端条目供下次重试（M7 回归契约）。
+        Log.sync.w(
+          'blob 内容 hash 校验失败: uuid=$uuid '
+          'expected=${_short(item.hash)} '
+          'actual=${_short(actualHash)}',
+        );
+        journal.append(
+          type: JournalEventType.noteHeal,
+          phase: JournalPhase.failed,
+          uuid: uuid,
+          hash: item.hash,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note:
+              'blob hash mismatch: expected=${_short(item.hash)} '
+              'actual=${_short(actualHash)} (content tampered)',
+        );
         _addAction(
           actions,
           SyncAction(
@@ -2213,7 +2337,7 @@ class SyncEngine {
       // 不应中断整次同步。转交自愈逻辑处理（本地有明文则重传覆盖，否则记录失败）。
       Log.sync.w(
         'downloadNote: blob 解密失败，进入自愈流程 '
-        'uuid=$uuid hash=${item.hash.substring(0, 8)}…',
+        'uuid=$uuid hash=${_short(item.hash)}',
         error: e,
         stackTrace: st,
       );
@@ -2450,6 +2574,30 @@ class SyncEngine {
       }
       // 否则：同步期间被编辑（当前 ≠ merged 快照）→ 跳过，下次同步重传
     }
+    // P0-log + P0-journal：converged 中每个笔记的 syncedHash 刷新值
+    // 排查虚假冲突的关键：若某笔记的 syncedHash 未被正确刷新到收敛值，
+    // 下次同步会误判为冲突。只对 syncedHash 实际发生变化的条目打日志和
+    // journal（避免稳态噪音）。
+    for (final note in localNotes) {
+      if (!converged.contains(note.uuid)) continue;
+      final item = merged.items[note.uuid];
+      if (item != null && note.syncedHash != item.hash) {
+        final oldHash = _short(note.syncedHash);
+        final newHash = _short(item.hash);
+        Log.sync.d(
+          'markSynced: uuid=${_short(note.uuid)} '
+          'syncedHash $oldHash → $newHash',
+        );
+        journal.append(
+          type: JournalEventType.noteUpsert,
+          uuid: note.uuid,
+          hash: item.hash,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note: 'markSynced: syncedHash $oldHash → $newHash',
+        );
+      }
+    }
+
     await database.markSyncedForUuids(converged);
 
     // M1 修复：清理已从远端 manifest 移除的 uuid
@@ -2616,7 +2764,6 @@ class SyncEngine {
       // 评审 #16：外层用 on Object（与全文解密兜底一致），
       // 防止非 Exception 的 Error（如 RangeError/FormatException）中断同步主流程
       Log.sync.w('_gcOrphanBlobs: 整体 GC 失败（下次同步重试）', error: e);
-      Log.sync.w('_gcOrphanBlobs: 整体 GC 失败（下次同步重试）', error: e);
     }
   }
 
@@ -2732,7 +2879,7 @@ class SyncEngine {
     final uuid = action.uuid.isNotEmpty ? action.uuid : '-';
     // hash 截断前 8 位，足够辨识又避免日志过长
     final hash = action.hash != null && action.hash!.isNotEmpty
-        ? '${action.hash!.substring(0, 8)}…'
+        ? _short(action.hash)
         : '';
     final msg = action.message ?? '';
     final hashPart = hash.isNotEmpty ? ' hash=$hash' : '';

@@ -144,7 +144,15 @@ enum JournalEventType {
   /// PUT manifest 时 ETag 不匹配（他端先 PUT 了）会抛 ConflictException，
   /// 引擎回到 Step 1 重新拉取并重试。记录重试次数与最终是否成功，便于
   /// 诊断「频繁冲突重试」类问题（多设备高并发写入竞争）。
-  syncOptimisticLockRetry('sync.optimisticLockRetry');
+  syncOptimisticLockRetry('sync.optimisticLockRetry'),
+
+  /// 同步轮次边界（start/done）
+  ///
+  /// 记录每次 _syncOnce 的开始和结束。start 携带 attempt + 远端 manifest
+  /// version/fp；done 携带本轮统计（uploaded/downloaded/deleted/conflicts/
+  /// skipped）。排查多端竞争和虚假冲突时，sync 边界是定位时序的关键锚点——
+  /// 没有 sync start/end 就无法判断 journal 中其他事件的归属轮次。
+  syncRound('sync.round');
 
   const JournalEventType(this.wire);
 
