@@ -2195,6 +2195,11 @@ class SyncEngine {
       if (existing == null) {
         await database.storeNote(note);
       } else {
+        // 版本捕获：同步覆盖前保存本地内容快照
+        // contentHash 去重由 saveVersion 内部处理，内容未变时自动跳过
+        if (!existing.deleted) {
+          await database.saveVersion(existing);
+        }
         await database.updateNoteByUuid(note);
       }
 

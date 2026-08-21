@@ -72,6 +72,7 @@ Future main() async {
     (error, stack) {
       // Zone 级未捕获异常：走到这里说明没有任何 try/catch 处理它
       Log.app.f('未捕获的异步异常', error: error, stackTrace: stack);
+      if (kDebugMode) throw error; // debug 重抛，让问题暴露
     },
   );
 }
@@ -144,7 +145,7 @@ void _installGlobalErrorHandlers() {
   // 平台层 / engine 未捕获错误（返回 true 表示已处理，避免进程崩溃）
   PlatformDispatcher.instance.onError = (error, stack) {
     Log.app.f('平台层未捕获异常', error: error, stackTrace: stack);
-    return true;
+    return !kDebugMode; // debug 返回 false 让引擎继续默认处理;
   };
 }
 
@@ -157,8 +158,8 @@ Future<void> _bootstrap() async {
   // sqflite 原生只支持 Android/iOS，桌面端必须用 sqflite_common_ffi
   if (isDesktopPlatform) {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-
+    // Use OrNull to silently alter the default factory behavior
+    databaseFactoryOrNull = databaseFactoryFfi;
     // 桌面端：把数据库目录从 sqflite_ffi 默认的「CWD 相对路径
     // .dart_tool/sqflite_common_ffi/databases」改为应用支持目录
     // （getApplicationSupportDirectory → %APPDATA%\<app>）。

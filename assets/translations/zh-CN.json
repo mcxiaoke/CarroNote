@@ -458,5 +458,15 @@
   "No tags yet": "暂无标签",
   "Filtering by": "按以下条件过滤",
   "Clear filter": "清除过滤",
-  "Tag manager hint": "输入标签名后点击打勾按钮确认。"
+  "Tag manager hint": "输入标签名后点击打勾按钮确认。",
+  "Version History": "历史版本",
+  "No version history yet": "暂无历史版本",
+  "Versions are saved automatically when you edit.": "编辑笔记时会自动保存版本。",
+  "No differences from current version": "与当前版本无差异",
+  "Restore to this version": "恢复到此版本",
+  "Unlock note to restore": "解锁笔记后可恢复",
+  "Restore successful": "恢复成功",
+  "Content": "正文",
+  "Current content will be replaced. A version of the current content will be saved automatically.": "当前内容将被替换，系统会自动保存当前内容的版本。",
+  "Show diff": "显示差异"
 }

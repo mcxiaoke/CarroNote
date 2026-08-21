@@ -71,6 +71,9 @@ dependencies:
   awesome_extensions: ^2.1.1
   flutter_svg: ^2.3.0
 
+  # 笔记历史版本 diff 计算（Myers 算法，纯 Dart 无原生依赖）
+  diff_match_patch: ^0.4.1
+
 
 dev_dependencies:
   flutter_test:

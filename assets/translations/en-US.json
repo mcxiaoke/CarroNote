@@ -458,5 +458,15 @@
   "No tags yet": "No tags yet",
   "Filtering by": "Filtering by",
   "Clear filter": "Clear filter",
-  "Tag manager hint": "Add a name, then press the check button to confirm."
+  "Tag manager hint": "Add a name, then press the check button to confirm.",
+  "Version History": "Version History",
+  "No version history yet": "No version history yet",
+  "Versions are saved automatically when you edit.": "Versions are saved automatically when you edit.",
+  "No differences from current version": "No differences from current version",
+  "Restore to this version": "Restore to this version",
+  "Unlock note to restore": "Unlock note to restore",
+  "Restore successful": "Restore successful",
+  "Content": "Content",
+  "Current content will be replaced. A version of the current content will be saved automatically.": "Current content will be replaced. A version of the current content will be saved automatically.",
+  "Show diff": "Show diff"
 }

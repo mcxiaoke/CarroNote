@@ -122,6 +122,11 @@ class NoteEditorState {
       updatedAt: now.millisecondsSinceEpoch,
       synced: false,
     );
+
+    // 版本捕获：保存旧内容快照（覆盖前）
+    // contentHash 去重由 saveVersion 内部处理，无修改时自动跳过
+    await NotesDatabase.instance.saveVersion(original!);
+
     await NotesDatabase.instance.updateNote(note);
   }
 }

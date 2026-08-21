@@ -39,6 +39,7 @@ import 'package:sqflite_common/sqflite.dart' show databaseFactory;
 
 // Project 导入
 import 'package:core/src/models/note_meta.dart';
+import 'package:core/src/models/note_version.dart';
 import 'package:core/src/models/safenote.dart';
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/logger/app_logger.dart';
@@ -515,7 +516,9 @@ class NotesDatabase {
   ///   - v5：新增 note_meta 表（笔记级元数据：星标/标签/归档…）。
   ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
   ///   - v6：note_meta 新增 `locked` 明文列（笔记锁定只读标志）。
-  static const int _schemaVersion = 6;
+  ///   - v7：新增 note_versions 表（笔记历史版本，字段级加密，不参与同步）。
+  ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
+  static const int _schemaVersion = 7;
 
   Future<Database> _initDB(String filePath) async {
     final factory = dbFactoryOverride ?? databaseFactory;
@@ -605,6 +608,35 @@ class NotesDatabase {
     // 不建 pinned 索引：星标过滤在内存完成（全量行已进 _metaCache），无 SQL 消费者。
   }
 
+  /// 创建 note_versions 表及其索引（幂等）
+  ///
+  /// 与 [_createNoteMetaTable] 同模式：建表语句唯一副本，
+  /// `_createDBStatic` / `_createDB` / `_onUpgrade` 三条路径全部调用此方法。
+  ///
+  /// ⚠️ [NoteVersionFields.noteUuid] **不设** SQL 外键约束：
+  /// 与 note_meta 表策略一致——墓碑硬删除后版本行先存活、由应用层清理。
+  static Future<void> _createNoteVersionsTable(DatabaseExecutor db) async {
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS $tableNoteVersions (
+      ${NoteVersionFields.id} INTEGER PRIMARY KEY AUTOINCREMENT,
+      ${NoteVersionFields.noteUuid} TEXT NOT NULL,
+      ${NoteVersionFields.title} TEXT NOT NULL,
+      ${NoteVersionFields.description} TEXT NOT NULL,
+      ${NoteVersionFields.contentHash} TEXT NOT NULL,
+      ${NoteVersionFields.savedAt} INTEGER NOT NULL
+    )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_versions_uuid '
+      'ON $tableNoteVersions(${NoteVersionFields.noteUuid})',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_versions_uuid_time '
+      'ON $tableNoteVersions(${NoteVersionFields.noteUuid}, '
+      '${NoteVersionFields.savedAt} DESC)',
+    );
+  }
+
   /// createDB 的静态实现（测试用）
   static Future<void> _createDBStatic(Database db, int version) async {
     await db.execute('''
@@ -641,6 +673,7 @@ class NotesDatabase {
     );
 
     await _createNoteMetaTable(db);
+    await _createNoteVersionsTable(db);
   }
 
   /// 创建新数据库（version 5 schema）
@@ -683,6 +716,9 @@ class NotesDatabase {
 
     // 笔记级元数据表（星标/标签/归档…），见 docs/feature-note-meta-design.md
     await _createNoteMetaTable(db);
+
+    // 笔记历史版本表，见 docs/feature-note-version-history-design.md
+    await _createNoteVersionsTable(db);
   }
 
   /// schema 升级回调（version 3 → 4：新增 synced_deleted 列）
@@ -730,6 +766,14 @@ class NotesDatabase {
         '${NoteMetaFields.locked} INTEGER NOT NULL DEFAULT 0',
       );
       Log.db.i('已添加列: ${NoteMetaFields.locked}');
+    }
+    // v6 → v7：新增 note_versions 表（笔记历史版本）
+    //
+    // 与 v5 创建 note_meta 同样零风险：CREATE TABLE IF NOT EXISTS 幂等，
+    // **完全不 touch notes 表数据**，失败也不会损坏既有笔记。
+    if (oldVersion < 7) {
+      await _createNoteVersionsTable(db);
+      Log.db.i('已创建表: $tableNoteVersions');
     }
   }
 
@@ -1057,6 +1101,186 @@ class NotesDatabase {
     }
   }
 
+  // ──────────────────────────────────────────────
+  // 笔记历史版本 CRUD（title/description 自动加解密，与 notes 表一致）
+  // ──────────────────────────────────────────────
+
+  /// 每条笔记保留的最大版本数（FIFO 清理阈值）
+  static const int kMaxVersionsPerNote = 50;
+
+  /// 保存笔记内容的版本快照
+  ///
+  /// 在笔记内容被覆盖之前调用（editor_state.updateNote 和
+  /// sync_engine._downloadNote），保存旧内容快照。
+  ///
+  /// contentHash 去重：如果最新版本的 contentHash 与当前相同则跳过，
+  /// 避免无修改的保存产生重复版本。
+  /// 超过 [kMaxVersionsPerNote] 时自动 FIFO 清理最旧版本。
+  Future<void> saveVersion(SafeNote note) async {
+    _checkNotMigrating();
+    final db = await instance.database;
+
+    // 去重：查最新版本的 content_hash
+    final latest = await db.rawQuery(
+      'SELECT ${NoteVersionFields.contentHash} FROM $tableNoteVersions '
+      'WHERE ${NoteVersionFields.noteUuid} = ? '
+      'ORDER BY ${NoteVersionFields.savedAt} DESC LIMIT 1',
+      [note.uuid],
+    );
+    if (latest.isNotEmpty &&
+        latest.first[NoteVersionFields.contentHash] == note.contentHash) {
+      Log.note.d('版本内容与最新版本相同, 跳过 uuid=${note.uuid}');
+      return;
+    }
+
+    // 加密 + 插入
+    final row = <String, dynamic>{
+      NoteVersionFields.noteUuid: note.uuid,
+      NoteVersionFields.title: await _encryptField(note.uuid, note.title),
+      NoteVersionFields.description: await _encryptField(
+        note.uuid,
+        note.description,
+      ),
+      NoteVersionFields.contentHash: note.contentHash,
+      NoteVersionFields.savedAt: DateTime.now().millisecondsSinceEpoch,
+    };
+    await db.insert(tableNoteVersions, row);
+
+    Log.note.i(
+      '保存版本快照 uuid=${note.uuid} '
+      'hash=${_hashBrief(note.contentHash)} '
+      'len=${note.title.length}+${note.description.length}',
+    );
+
+    // 超限清理
+    await _pruneVersions(note.uuid);
+  }
+
+  /// 读取笔记的所有历史版本（按 saved_at DESC，最新在前）
+  Future<List<NoteVersion>> readVersions(String noteUuid) async {
+    _checkNotMigrating();
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNoteVersions,
+      where: '${NoteVersionFields.noteUuid} = ?',
+      whereArgs: [noteUuid],
+      orderBy: '${NoteVersionFields.savedAt} DESC',
+    );
+    final versions = <NoteVersion>[];
+    for (final row in rows) {
+      final decrypted = Map<String, dynamic>.from(row);
+      final uuid = row[NoteVersionFields.noteUuid] as String? ?? '';
+      decrypted[NoteVersionFields.title] = await _decryptField(
+        uuid,
+        row[NoteVersionFields.title] as String? ?? '',
+      );
+      decrypted[NoteVersionFields.description] = await _decryptField(
+        uuid,
+        row[NoteVersionFields.description] as String? ?? '',
+      );
+      versions.add(NoteVersion.fromJson(decrypted));
+    }
+    Log.note.d('读取版本列表 uuid=$noteUuid count=${versions.length}');
+    return versions;
+  }
+
+  /// 读取单个版本（按 id，解密后返回）
+  Future<NoteVersion?> readVersion(int versionId) async {
+    _checkNotMigrating();
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNoteVersions,
+      where: '${NoteVersionFields.id} = ?',
+      whereArgs: [versionId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    final uuid = row[NoteVersionFields.noteUuid] as String? ?? '';
+    final decrypted = Map<String, dynamic>.from(row);
+    decrypted[NoteVersionFields.title] = await _decryptField(
+      uuid,
+      row[NoteVersionFields.title] as String? ?? '',
+    );
+    decrypted[NoteVersionFields.description] = await _decryptField(
+      uuid,
+      row[NoteVersionFields.description] as String? ?? '',
+    );
+    return NoteVersion.fromJson(decrypted);
+  }
+
+  /// 恢复指定版本的内容到笔记
+  ///
+  /// 恢复前会先保存当前笔记内容作为新版本（确保可撤销恢复）。
+  /// 恢复后笔记标记为未同步（synced=false），触发 autoSync 上传。
+  Future<void> restoreVersion(int versionId, SafeNote current) async {
+    _checkNotMigrating();
+
+    // 1. 读取版本内容（解密）
+    final version = await readVersion(versionId);
+    if (version == null) {
+      throw Exception('Version not found: $versionId');
+    }
+
+    // 2. 保存当前内容为新版本（撤销安全网）
+    await saveVersion(current);
+
+    // 3. 将版本内容写回笔记（作为新编辑）
+    final restored = current.copyWith(
+      title: version.title,
+      description: version.description,
+      contentHash: version.contentHash,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      synced: false,
+    );
+    await updateNote(restored);
+
+    Log.note.i(
+      '恢复版本: note_uuid=${current.uuid} version_id=$versionId '
+      'hash=${_hashBrief(version.contentHash)}',
+    );
+  }
+
+  /// 删除指定笔记的所有历史版本
+  ///
+  /// 用于笔记硬删除（墓碑 GC）时清理版本数据。
+  Future<int> deleteVersionsForNote(String noteUuid) async {
+    final db = await instance.database;
+    final rows = await db.delete(
+      tableNoteVersions,
+      where: '${NoteVersionFields.noteUuid} = ?',
+      whereArgs: [noteUuid],
+    );
+    if (rows > 0) {
+      Log.note.d('清理版本数据 uuid=$noteUuid count=$rows');
+    }
+    return rows;
+  }
+
+  /// FIFO 清理：超出 [kMaxVersionsPerNote] 时删除最旧版本
+  Future<void> _pruneVersions(String noteUuid) async {
+    final db = await instance.database;
+    final countRow = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM $tableNoteVersions '
+      'WHERE ${NoteVersionFields.noteUuid} = ?',
+      [noteUuid],
+    );
+    final count = (countRow.first['c'] as int?) ?? 0;
+
+    if (count <= kMaxVersionsPerNote) return;
+
+    final excess = count - kMaxVersionsPerNote;
+    await db.rawDelete(
+      'DELETE FROM $tableNoteVersions WHERE _id IN ('
+      '  SELECT _id FROM $tableNoteVersions '
+      '  WHERE ${NoteVersionFields.noteUuid} = ? '
+      '  ORDER BY ${NoteVersionFields.savedAt} ASC LIMIT ?'
+      ')',
+      [noteUuid, excess],
+    );
+    Log.note.d('清理旧版本 uuid=$noteUuid 删除=$excess条 保留=${count - excess}条');
+  }
+
   /// 软删除笔记（标记为墓碑，不真正删除行）
   Future<int> softDelete(int id) async {
     final db = await instance.database;
@@ -1170,6 +1394,8 @@ class NotesDatabase {
     if (deleted > 0) {
       _removeCacheEntry(uuid: uuid); // 笔记被删除：从缓存移除该条目
       _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
+      // 清理该笔记的所有历史版本（磁盘回收）
+      await deleteVersionsForNote(uuid);
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -1419,7 +1645,15 @@ class NotesDatabase {
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
 
-      // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
+      // 6. 清空版本表（首期待定项，见 docs/feature-note-version-history-design.md §8.4）
+      //    版本表中的密文用 oldKey 加密，无法用 newKey 解密。
+      //    首期方案：直接清空，丢弃历史版本。后续可实现 _reEncryptAllVersions。
+      final deletedVersions = await db.delete(tableNoteVersions);
+      if (deletedVersions > 0) {
+        Log.db.w('密钥迁移: 已清空 $deletedVersions 条历史版本（旧密钥加密）');
+      }
+
+      // 7. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;

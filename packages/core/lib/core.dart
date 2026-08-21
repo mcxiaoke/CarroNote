@@ -17,6 +17,7 @@ export 'src/db/database_handler.dart';
 export 'src/logger/app_logger.dart';
 export 'src/models/backup_file.dart';
 export 'src/models/note_meta.dart';
+export 'src/models/note_version.dart';
 export 'src/models/parse_import.dart';
 export 'src/models/safenote.dart';
 export 'src/ports.dart';

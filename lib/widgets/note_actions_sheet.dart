@@ -21,7 +21,14 @@ import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 /// 笔记操作菜单里可选的动作。
-enum NoteAction { copyAll, toggleStar, toggleLock, editTags, delete }
+enum NoteAction {
+  copyAll,
+  toggleStar,
+  toggleLock,
+  editTags,
+  versionHistory,
+  delete,
+}
 
 /// 弹出笔记操作菜单，返回用户选择的动作；点遮罩或返回键关闭时返回 null。
 ///
@@ -113,6 +120,14 @@ class _NoteActionsSheet extends StatelessWidget {
                   icon: LucideIcons.tags,
                   title: 'Edit Tags'.tr(),
                   onTap: () => Navigator.of(context).pop(NoteAction.editTags),
+                ),
+                shadActionTile(
+                  context,
+                  key: const Key('ui-note-action-history'),
+                  icon: LucideIcons.history,
+                  title: 'Version History'.tr(),
+                  onTap: () =>
+                      Navigator.of(context).pop(NoteAction.versionHistory),
                 ),
                 shadActionTile(
                   context,

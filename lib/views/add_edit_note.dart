@@ -36,6 +36,7 @@ import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_actions_sheet.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/tag_editor.dart';
+import 'package:safenotes/views/version_history_page.dart';
 
 /// 未保存退出弹框的三种选择：保存 / 放弃 / 取消。
 
@@ -280,6 +281,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         await _toggleLock(note, !locked);
       case NoteAction.editTags:
         await _editTags(note);
+      case NoteAction.versionHistory:
+        await _openVersionHistory(note);
       case NoteAction.delete:
         await _deleteNote(note);
     }
@@ -363,6 +366,21 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     if (!mounted) return;
     setState(() => _meta = refreshed);
     showSnackBarMessage(context, 'Tags saved'.tr());
+  }
+
+  /// 打开版本历史页面，返回后刷新编辑页状态（恢复操作可能改变了笔记内容）。
+  Future<void> _openVersionHistory(SafeNote note) async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => VersionHistoryPage(note: note)));
+    // 返回后重新从数据库加载笔记（恢复操作可能改变了内容）
+    if (mounted) {
+      final updated = await NotesDatabase.instance.readNoteByUuid(note.uuid);
+      if (updated != null && mounted) {
+        NoteEditorState.setState(updated, updated.title, updated.description);
+        setState(() {});
+      }
+    }
   }
 
   Future<void> _deleteNote(SafeNote note) async {

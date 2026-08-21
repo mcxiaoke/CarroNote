@@ -58,6 +58,9 @@ _local_temp/
 
 #Sync reference servers (not committed, for local testing only)
 
+
+.tmp/
+.temp/
 temp/
 tmp/
 server/nodejs/data/
