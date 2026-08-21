@@ -38,7 +38,11 @@ void main() {
 
   /// 单屏里放一个按钮，点击后弹出操作菜单并把结果经 [Completer] 回传。
   /// 返回已打开的 completer.future，供断言用户选择；sheet 在返回前已 pump 完成。
-  Future<Completer<NoteAction?>> openSheet(WidgetTester tester, bool pinned) async {
+  Future<Completer<NoteAction?>> openSheet(
+    WidgetTester tester,
+    bool pinned, {
+    bool locked = false,
+  }) async {
     final completer = Completer<NoteAction?>();
     await tester.pumpWidget(
       wrapScreen(
@@ -51,6 +55,7 @@ void main() {
                   final action = await showNoteActionsSheet(
                     context,
                     pinned: pinned,
+                    locked: locked,
                   );
                   completer.complete(action);
                 },
@@ -90,6 +95,29 @@ void main() {
     await tester.tap(find.byKey(const Key('ui-note-action-copy')));
     final action = await completer.future.timeout(const Duration(seconds: 5));
     expect(action, NoteAction.copyAll);
+  });
+
+  testWidgets('锁定项：未锁定时显示「Lock note」，点击返回 toggleLock', (WidgetTester tester) async {
+    final completer = await openSheet(tester, false, locked: false);
+
+    expect(find.byKey(const Key('ui-note-action-lock')), findsOneWidget);
+    expect(find.text('Lock note'), findsOneWidget);
+    expect(find.text('Unlock note'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('ui-note-action-lock')));
+    final action = await completer.future.timeout(const Duration(seconds: 5));
+    expect(action, NoteAction.toggleLock);
+  });
+
+  testWidgets('已锁定时：锁定项显示「Unlock note」且用 lockOpen 图标', (WidgetTester tester) async {
+    final completer = await openSheet(tester, false, locked: true);
+
+    expect(find.text('Unlock note'), findsOneWidget);
+    expect(find.text('Lock note'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('ui-note-action-lock')));
+    final action = await completer.future.timeout(const Duration(seconds: 5));
+    expect(action, NoteAction.toggleLock);
   });
 
   testWidgets('已置顶：星标项文案为「取消星标」且用 starOff 图标', (WidgetTester tester) async {

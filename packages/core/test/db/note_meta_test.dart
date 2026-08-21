@@ -54,6 +54,24 @@ Future<void> _createV4Schema(Database db, int version) async {
   await db.execute('CREATE INDEX idx_notes_synced ON safe_notes(synced)');
 }
 
+/// 合成 v5 库建表：notes + sync_meta + note_meta（**无 locked 列**，模拟 v5 老库）。
+Future<void> _createV5Schema(Database db, int version) async {
+  await _createV4Schema(db, version);
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS note_meta (
+      _id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT NOT NULL UNIQUE,
+      pinned INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      color INTEGER,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      payload TEXT,
+      updated_at INTEGER NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0
+    )
+  ''');
+}
+
 /// 经生产 `database` getter 重新打开 [dir] 下的 safenotes_sync.db，
 /// 触发真实 onUpgrade 流程（v4→v5 创建 note_meta）。
 Future<Database> _reopenViaProduction(String dir) async {
@@ -147,6 +165,29 @@ void main() {
 
       final read = await database.getNoteMeta(uuid);
       expect(read!.tags, ['工作', '读书']);
+    });
+
+    test('setNoteLocked 写入可读回，且不触碰 pinned', () async {
+      const uuid = 'lock-uuid-1';
+      final written = await database.setNoteLocked(uuid, true);
+      expect(written.locked, isTrue);
+      expect(written.pinned, isFalse);
+      expect(written.updatedAt, greaterThan(0));
+
+      final read = await database.getNoteMeta(uuid);
+      expect(read, isNotNull);
+      expect(read!.locked, isTrue);
+
+      // 解锁后读回为 false
+      await database.setNoteLocked(uuid, false);
+      expect((await database.getNoteMeta(uuid))!.locked, isFalse);
+    });
+
+    test('locked 为默认值时 isDefault 为真', () {
+      final m = NoteMeta.defaults('x');
+      expect(m.locked, isFalse);
+      expect(m.isDefault, isTrue);
+      expect(m.copyWith(locked: true).isDefault, isFalse);
     });
 
     test('payload 加解密往返：标签名密文落盘、读取还原', () async {
@@ -260,6 +301,62 @@ void main() {
       database.setDataKey(SyncCrypto.generateDataKey());
       await database.setNotePinned('legacy-note-1', true);
       expect((await database.getNoteMeta('legacy-note-1'))?.pinned, isTrue);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // B2. 合成 v5 → v6 升级（note_meta 补 locked 列）
+  // ──────────────────────────────────────────────
+  group('v5 → v6 升级（note_meta 补 locked 列）', () {
+    late String dir;
+
+    setUp(() async {
+      final tmp = await Directory.systemTemp.createTemp('note_meta_v5_');
+      dir = tmp.path;
+      final path = '$dir${Platform.pathSeparator}safenotes_sync.db';
+      final v5 = await openDatabase(
+        path,
+        version: 5,
+        onCreate: _createV5Schema,
+      );
+      await v5.insert('note_meta', {
+        'uuid': 'legacy-meta-1',
+        'pinned': 1,
+        'archived': 0,
+        'deleted': 0,
+        'updated_at': 123,
+        'synced': 0,
+      });
+      await v5.close();
+
+      await _reopenViaProduction(dir);
+      database = NotesDatabase.instance;
+    });
+
+    tearDown(() async {
+      await database.close();
+      NotesDatabase.dbPathOverride = null;
+      await Directory(dir).delete(recursive: true);
+    });
+
+    test('升级后 note_meta 含 locked 列，老行默认 0', () async {
+      final db = await NotesDatabase.instance.database;
+      final cols = await db.rawQuery('PRAGMA table_info(note_meta)');
+      final names = cols.map((c) => c['name']).toSet();
+      expect(names, contains('locked'));
+
+      final rows = await db.query(
+        'note_meta',
+        where: 'uuid = ?',
+        whereArgs: ['legacy-meta-1'],
+      );
+      expect(rows.first['locked'], 0);
+    });
+
+    test('升级后可写 locked 并读回', () async {
+      database.setDataKey(SyncCrypto.generateDataKey());
+      await database.setNoteLocked('legacy-meta-1', true);
+      expect((await database.getNoteMeta('legacy-meta-1'))?.locked, isTrue);
     });
   });
 

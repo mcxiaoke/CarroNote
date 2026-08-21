@@ -511,7 +511,8 @@ class NotesDatabase {
   ///   - v4：新增 notes.synced_deleted 列（冲突判定 base 补全 deleted 维度）
   ///   - v5：新增 note_meta 表（笔记级元数据：星标/标签/归档…）。
   ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
-  static const int _schemaVersion = 5;
+  ///   - v6：note_meta 新增 `locked` 明文列（笔记锁定只读标志）。
+  static const int _schemaVersion = 6;
 
   Future<Database> _initDB(String filePath) async {
     final factory = dbFactoryOverride ?? databaseFactory;
@@ -578,6 +579,7 @@ class NotesDatabase {
       ${NoteMetaFields.id} INTEGER PRIMARY KEY AUTOINCREMENT,
       ${NoteMetaFields.uuid} TEXT NOT NULL UNIQUE,
       ${NoteMetaFields.pinned} INTEGER NOT NULL DEFAULT 0,
+      ${NoteMetaFields.locked} INTEGER NOT NULL DEFAULT 0,
       ${NoteMetaFields.archived} INTEGER NOT NULL DEFAULT 0,
       ${NoteMetaFields.color} INTEGER,
       ${NoteMetaFields.deleted} INTEGER NOT NULL DEFAULT 0,
@@ -716,6 +718,15 @@ class NotesDatabase {
     if (oldVersion < 5) {
       await _createNoteMetaTable(db);
       Log.db.i('已创建表: $tableNoteMeta');
+    } else if (oldVersion < 6) {
+      // v5 → v6：note_meta 表已存在（旧表无 locked 列），仅补列。
+      // 注意：仅当旧库已有 note_meta 时才 ALTER，否则第一次建表已含 locked，
+      // 重复 ADD COLUMN 会报 duplicate column name。
+      await db.execute(
+        'ALTER TABLE $tableNoteMeta ADD COLUMN '
+        '${NoteMetaFields.locked} INTEGER NOT NULL DEFAULT 0',
+      );
+      Log.db.i('已添加列: ${NoteMetaFields.locked}');
     }
   }
 
@@ -1921,6 +1932,21 @@ class NotesDatabase {
     );
   }
 
+  /// 设置锁定（只读）标记，返回写入后的元数据。
+  ///
+  /// 与 [setNotePinned] 同构：只写 note_meta，不动笔记正文与 `updated_at`。
+  Future<NoteMeta> setNoteLocked(String uuid, bool locked) async {
+    final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);
+    return upsertNoteMeta(
+      current.copyWith(
+        uuid: uuid,
+        locked: locked,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: false,
+      ),
+    );
+  }
+
   /// 设置标签（自动规范化：去空白 / 丢空串 / 去重），返回写入后的元数据。
   Future<NoteMeta> setNoteTags(String uuid, Iterable<String> tags) async {
     final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);
@@ -1962,6 +1988,7 @@ class NotesDatabase {
     await txn.insert(tableNoteMeta, {
       NoteMetaFields.uuid: uuid,
       NoteMetaFields.pinned: 0,
+      NoteMetaFields.locked: 0,
       NoteMetaFields.archived: 0,
       NoteMetaFields.color: null,
       NoteMetaFields.deleted: 1,

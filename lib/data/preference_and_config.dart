@@ -65,6 +65,39 @@ class PreferencesStorage {
   static const _keyThemeColorIndex = 'themeColorIndex';
   static const _keyDevMode = 'devModeEnabled';
   static const _keyIsSidebarCollapsed = 'isSidebarCollapsed';
+  static const _keyManagedTags = 'managedTags';
+
+  /// 抽屉「标签」组的默认标签。
+  ///
+  /// 用户可在标签 group header 的编辑入口中增删。注意：这是"展示/过滤用"
+  /// 的标签池，与笔记级 payload 里的标签是两回事（见 feature-note-lock-tags-design）。
+  static const List<String> kDefaultManagedTags = ['个人', '工作', '灵感'];
+
+  /// 管理标签池（抽屉标签组 + 编辑标签 chip 候选池的来源）。
+  static List<String> get managedTags =>
+      _preferences?.getStringList(_keyManagedTags) ?? kDefaultManagedTags;
+
+  static Future<void> setManagedTags(List<String> tags) async {
+    final normalized = NoteMeta.normalizeTags(tags);
+    final old = managedTags;
+    await _preferences?.setStringList(_keyManagedTags, normalized);
+    _logPrefChange('管理标签', old, normalized, important: false);
+  }
+
+  /// 向管理标签池追加一个标签（已存在则忽略），供新增标签后同步到抽屉。
+  static Future<void> addManagedTag(String tag) async {
+    final normalized = NoteMeta.normalizeTags([tag]);
+    if (normalized.isEmpty) return;
+    final current = managedTags;
+    if (current.contains(normalized.first)) return;
+    await setManagedTags([...current, normalized.first]);
+  }
+
+  static Future<void> removeManagedTag(String tag) async {
+    final current = managedTags;
+    if (!current.contains(tag)) return;
+    await setManagedTags(current.where((t) => t != tag).toList());
+  }
 
   static Future init() async {
     _preferences = await SharedPreferences.getInstance();

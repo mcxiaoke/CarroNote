@@ -35,6 +35,7 @@ import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_actions_sheet.dart';
 import 'package:safenotes/widgets/note_widget.dart';
+import 'package:safenotes/widgets/tag_editor.dart';
 
 /// 未保存退出弹框的三种选择：保存 / 放弃 / 取消。
 
@@ -66,6 +67,18 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   // 已确认关闭（保存/放弃/删除），用于让 PopScope 放行 pop，避免退出弹框死循环。
   bool _allowClose = false;
 
+  /// 当前笔记的元数据快照（星标/锁定/标签），异步加载。
+  ///
+  /// 锁定语义依赖它：`locked == true` 时页面强制只读预览。加载完成前视作未锁定，
+  /// 避免首帧卡住；锁定笔记在加载完成后切换为只读。
+  NoteMeta? _meta;
+
+  /// 是否锁定（只读）。锁定后隐藏 编辑/保存 入口，仅展示预览。
+  bool get _isLocked => _meta?.locked ?? false;
+
+  /// 当前标签列表（用于预览页标题下方浮层展示）。
+  List<String> get _tags => _meta?.tags ?? const [];
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +88,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     description = description == ' ' ? '' : description;
     // 新建笔记默认进入编辑模式，已有笔记打开后默认预览。
     _previewMode = widget.note != null;
+    if (widget.note != null) {
+      _loadMeta();
+    }
     NoteEditorState.setSaveAttempted(false);
     // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
     Log.ui.i(
@@ -82,6 +98,15 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       'uuid=${widget.note?.uuid ?? "(未生成)"} '
       'len=${title.length}+${description.length}',
     );
+  }
+
+  /// 异步读取笔记元数据（星标/锁定/标签），加载完成后驱动锁定语义与预览标签。
+  Future<void> _loadMeta() async {
+    final note = widget.note;
+    if (note == null || !mounted) return;
+    final meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
+    if (!mounted) return;
+    setState(() => _meta = meta);
   }
 
   @override
@@ -98,14 +123,18 @@ class AddEditNotePageState extends State<AddEditNotePage> {
           resizeToAvoidBottomInset: false,
           appBar: AppBar(
             actions: [
-              _previewToggle(),
-              buildButton(),
-              // 复制/星标/删除收进「更多」菜单，AppBar 只留预览与保存两个主操作。
+              // 锁定笔记只读：AppBar 顶部用「已锁定」文本指示，正文布局不被改动。
+              if (_isLocked) _lockedIndicator(),
+              // 锁定笔记隐藏「编辑/预览」切换与「保存」，仅保留操作菜单，
+              // 供复制 / 星标 / 解锁 / 标签 / 删除使用。
+              if (!_isLocked) _previewToggle(),
+              if (!_isLocked) buildButton(),
+              // 复制/星标/锁定/标签/删除收进「更多」菜单，AppBar 只留预览与保存两个主操作。
               // 仅编辑已有笔记时才提供：新建笔记尚无 id/uuid 落库，无从复制或删除。
               if (widget.note != null) _moreButton(),
             ],
           ),
-          body: _previewMode
+          body: (_isLocked || _previewMode)
               ? _buildPreview(context)
               : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
                 // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
@@ -188,6 +217,28 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
+  /// 锁定笔记的 AppBar 指示：锁图标 + 「已锁定」文本，不改动标题/正文布局。
+  Widget _lockedIndicator() {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        key: const Key('ui-note-locked-indicator'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.lock, size: 16, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            'Locked'.tr(),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _moreButton() {
     return IconButton(
       key: const Key('ui-note-button-more'),
@@ -205,14 +256,18 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     final SafeNote? note = widget.note;
     if (note == null) return;
 
-    // 无 meta 行即视为未加星：元数据是懒创建的，只有设置过才会有行。
+    // 无 meta 行即视为未加星/未锁定：元数据是懒创建的，只有设置过才会有行。
+    // 优先用已加载的 _meta；为避免状态漂移再查一枚最新值（星标/锁定/标签）。
     final NoteMeta? meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
-    final bool pinned = meta?.pinned ?? false;
     if (!mounted) return;
+    setState(() => _meta = meta);
+    final bool pinned = meta?.pinned ?? false;
+    final bool locked = meta?.locked ?? false;
 
     final NoteAction? action = await showNoteActionsSheet(
       context,
       pinned: pinned,
+      locked: locked,
     );
     if (!mounted || action == null) return;
 
@@ -221,6 +276,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         await _copyAll();
       case NoteAction.toggleStar:
         await _toggleStar(note, !pinned);
+      case NoteAction.toggleLock:
+        await _toggleLock(note, !locked);
       case NoteAction.editTags:
         await _editTags(note);
       case NoteAction.delete:
@@ -254,42 +311,55 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     await NotesDatabase.instance.setNotePinned(note.uuid, pinned);
     Log.note.i('笔记星标切换: uuid=${note.uuid} pinned=$pinned');
     if (!mounted) return;
+    setState(() => _meta = _meta?.copyWith(pinned: pinned));
     showSnackBarMessage(context, pinned ? 'Starred'.tr() : 'Star removed'.tr());
   }
 
-  /// 编辑笔记标签：读现有标签预填，弹窗输入后按分隔符切分为标签集合并落库。
+  /// 切换锁定（只读）。锁定后本页刷新为只读预览；解锁后恢复可编辑。
+  ///
+  /// 只写 note_meta，不动笔记正文与 `updated_at`。
+  Future<void> _toggleLock(SafeNote note, bool locked) async {
+    await NotesDatabase.instance.setNoteLocked(note.uuid, locked);
+    Log.note.i('笔记锁定切换: uuid=${note.uuid} locked=$locked');
+    if (!mounted) return;
+    setState(() => _meta = _meta?.copyWith(locked: locked));
+    // 解锁后回到预览态（不自动进入编辑，避免误触）；锁定态恒为只读预览。
+    if (!locked) {
+      setState(() => _previewMode = true);
+    }
+    showSnackBarMessage(
+      context,
+      locked ? 'Note locked'.tr() : 'Note unlocked'.tr(),
+    );
+  }
+
+  /// 编辑笔记标签：打开全屏标签编辑页（见 [pushTagEditor]），行首勾选归属当前笔记。
   ///
   /// 标签只写 note_meta（payload 加密），不动正文与 `updated_at`，
-  /// 不触发正文重传；数据库侧 [NoteMeta.normalizeTags] 已代为去空白/去重。
-  /// 简易输入对话框走 app_dialogs 的 M3 AlertDialog（[showAppInput]），
-  /// 避免 shadcn ShadDialog 在移动端标题上方留大空白的布局 bug。
+  /// 不触发正文重传；新增标签同步进全局管理标签池（抽屉「标签」组来源）。
   Future<void> _editTags(SafeNote note) async {
     final NoteMeta? meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
     final List<String> initialTags = meta?.tags ?? const [];
     if (!mounted) return;
 
-    final String? input = await showAppInput(
+    final TagEditorResult? result = await pushTagEditor(
       context,
       title: 'Edit Tags'.tr(),
-      message: 'Separate tags with space, comma or semicolon.'.tr(),
-      hint: 'Tags'.tr(),
-      initialValue: initialTags.join(' '),
-      confirmLabel: 'Save'.tr(),
+      pool: PreferencesStorage.managedTags,
+      selected: initialTags,
+      selectionMode: true,
     );
-    if (input == null || !mounted) return;
+    if (result == null || !mounted) return;
 
-    final List<String> tags = parseTagsInput(input);
+    final tags = NoteMeta.normalizeTags(result.selected);
     await NotesDatabase.instance.setNoteTags(note.uuid, tags);
+    // 用返回的完整标签池覆盖全局管理池（含新增与删除），抽屉里立即可见。
+    await PreferencesStorage.setManagedTags(result.pool);
     // 隐私：标签名本身即用户隐私，只记数量不记内容。
     Log.note.i('笔记标签更新: uuid=${note.uuid} count=${tags.length}');
     if (!mounted) return;
+    setState(() => _meta = _meta?.copyWith(tags: tags));
     showSnackBarMessage(context, 'Tags saved'.tr());
-  }
-
-  /// 把用户输入的标签字符串切分为标签列表：按空格/英文逗号/中文逗号/分号/顿号
-  /// 分隔，其余（去空白、去重、丢空串）交由 [NoteMeta.normalizeTags] 处理。
-  static List<String> parseTagsInput(String raw) {
-    return NoteMeta.normalizeTags(raw.split(RegExp(r'[\s,，;；、]+')));
   }
 
   Future<void> _deleteNote(SafeNote note) async {
@@ -371,6 +441,30 @@ class AddEditNotePageState extends State<AddEditNotePage> {
               description,
               style: _editorLikeStyle(context, EditorText.body()),
             ),
+          // 标签展示到**正文最底部**（不放标题下方），偏右 chip 排布。
+          if (_tags.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in _tags)
+                    Chip(
+                      key: Key('ui-note-tag-$tag'),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      label: Text(
+                        tag,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

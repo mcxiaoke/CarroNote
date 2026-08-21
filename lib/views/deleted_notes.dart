@@ -75,7 +75,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     return Scaffold(
       key: const Key('ui-deleted-screen'),
       appBar: AppBar(
-        title: Text('Recently Deleted'.tr(), style: appBarTitle),
+        title: Text('Trash'.tr(), style: appBarTitle),
         actions: [
           if (_deletedNotes.isNotEmpty)
             IconButton(

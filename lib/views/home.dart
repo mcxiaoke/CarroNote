@@ -49,6 +49,7 @@ import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 import 'package:safenotes/widgets/states.dart';
+import 'package:safenotes/widgets/tag_editor.dart';
 
 /// 排序/显示偏好下拉菜单的固定宽度：足以容纳最长的开关项文字（含换行），
 /// 行内 icon 左对齐、文字左对齐、switch 右对齐，且不随内容占满。
@@ -109,6 +110,9 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   /// 仅显示星标（纯内存开关，不持久化），叠加在排序与搜索之上。
   bool _showStarredOnly = false;
+
+  /// 按标签过滤（纯内存，不持久化）。非空时仅展示含该标签的笔记。
+  String? _activeTag;
 
   //bool isListner = false;
   @override
@@ -329,8 +333,8 @@ class HomePageState extends State<HomePage> with RouteAware {
     setState(() {
       allnotes = tmpNotes;
       _noteMeta = metaMap; // 供 2.2 卡片角标同步读取
-      // 刷新时保留「仅星标」内存筛选（搜索关键词在刷新时按旧行为清空）。
-      notes = _filterStarredOnly(tmpNotes);
+      // 刷新时保留「仅星标/按标签」内存筛选（搜索关键词在刷新时按旧行为清空）。
+      notes = _applyMetaFilters(tmpNotes);
     });
     // 界面数据装载结果：条数 + 排序方式（用户排障最常需要的两项）
     Log.ui.i(
@@ -366,6 +370,9 @@ class HomePageState extends State<HomePage> with RouteAware {
               actions: isLoading
                   ? null
                   : [
+                      // 过滤态指示：处于星标/标签过滤时显示当前过滤条件，可一键清除。
+                      if (_showStarredOnly || _activeTag != null)
+                        _filterIndicator(),
                       //_DevSessionListner(),
                       _syncStatusButton(),
                       _diagnosticsButton(),
@@ -385,8 +392,14 @@ class HomePageState extends State<HomePage> with RouteAware {
                       HomeSidebar(
                         isCollapsed: _sidebarCollapsed,
                         onToggleCollapsed: _toggleSidebarCollapsed,
+                        onAllNotesCallback: _clearFilters,
                         onSettingsCallback: _navSettings,
                         onDeletedNotesCallback: _navDeletedNotes,
+                        onStarredCallback: _enableStarredFilter,
+                        tags: PreferencesStorage.managedTags,
+                        activeTag: _activeTag,
+                        onTagSelected: _enableTagFilter,
+                        onManageTags: _manageTags,
                         onLockCallback: _navLock,
                       ),
                       Expanded(child: _homeBody()),
@@ -729,6 +742,8 @@ class HomePageState extends State<HomePage> with RouteAware {
     return HomeDrawer(
       onNotesCallback: () {
         Navigator.of(context).pop();
+        // 抽屉点「笔记」回到全部笔记：清除星标/标签过滤。
+        _clearFilters();
       },
       onSettingsCallback: () {
         Navigator.of(context).pop();
@@ -738,10 +753,43 @@ class HomePageState extends State<HomePage> with RouteAware {
         Navigator.of(context).pop();
         _navDeletedNotes();
       },
+      onStarredCallback: () {
+        Navigator.of(context).pop();
+        _enableStarredFilter();
+      },
+      tags: PreferencesStorage.managedTags,
+      activeTag: _activeTag,
+      onTagSelected: (tag) {
+        Navigator.of(context).pop();
+        _enableTagFilter(tag);
+      },
+      onManageTags: () {
+        Navigator.of(context).pop();
+        _manageTags();
+      },
       onLockCallback: () {
         _navLock();
       },
     );
+  }
+
+  /// 打开标签管理页（抽屉/侧栏标签组 header 编辑入口），保存后刷新抽屉列表。
+  Future<void> _manageTags() async {
+    final result = await pushTagEditor(
+      context,
+      title: 'Manage Tags'.tr(),
+      pool: PreferencesStorage.managedTags,
+      selected: const [],
+      selectionMode: false,
+    );
+    if (result == null || !mounted) return;
+    await PreferencesStorage.setManagedTags(result.pool);
+    // 若当前正按某被删标签过滤，则清除过滤回到全部。
+    if (_activeTag != null && !result.pool.contains(_activeTag)) {
+      _clearFilters();
+    } else {
+      if (mounted) setState(() {});
+    }
   }
 
   // ---- 桌面 Rail 与移动 Drawer 共用的导航动作（不带 pop，pop 由 Drawer 负责） ----
@@ -924,15 +972,23 @@ class HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  /// 仅显示星标（[_showStarredOnly] 生效时）从 [source] 中过滤出 pin 置顶的笔记。
+  /// 应用「仅星标 + 按标签」两个元数据内存筛选，返回过滤后的列表。
   ///
   /// 用于刷新/排序后重算列表；搜索时则走 [_applyViewFilter] 把关键词叠加进来。
-  List<SafeNote> _filterStarredOnly(List<SafeNote> source) {
-    if (!_showStarredOnly) return source;
-    return source.where((n) => _noteMeta[n.uuid]?.pinned ?? false).toList();
+  List<SafeNote> _applyMetaFilters(List<SafeNote> source) {
+    Iterable<SafeNote> result = source;
+    if (_showStarredOnly) {
+      result = result.where((n) => _noteMeta[n.uuid]?.pinned ?? false);
+    }
+    if (_activeTag != null && _activeTag!.isNotEmpty) {
+      result = result.where(
+        (n) => (_noteMeta[n.uuid]?.tags ?? const []).contains(_activeTag),
+      );
+    }
+    return result.toList();
   }
 
-  /// 将「搜索关键词 + 仅星标」两个内存筛选合并应用到当前列表。
+  /// 将「搜索关键词 + 仅星标/按标签」内存筛选合并应用到当前列表。
   ///
   /// 排序保持 [allnotes] 已有顺序（排序发生在 _sortAndStoreNotes），
   /// 这里只负责过滤；[query] 在调用前由 [_searchNote] 写好。
@@ -946,7 +1002,56 @@ class HomePageState extends State<HomePage> with RouteAware {
         return titleLower.contains(ql) || descriptionLower.contains(ql);
       }).toList();
     }
-    setState(() => notes = _filterStarredOnly(result));
+    setState(() => notes = _applyMetaFilters(result));
+  }
+
+  // ---- 星标 / 标签过滤动作（抽屉、侧栏入口调用） ----
+
+  /// 进入「仅看星标」过滤：清除标签过滤，只保留星标。
+  void _enableStarredFilter() {
+    setState(() {
+      _showStarredOnly = true;
+      _activeTag = null;
+    });
+    _applyViewFilter();
+  }
+
+  /// 进入指定标签过滤：清除星标过滤，只保留含该标签的笔记。
+  void _enableTagFilter(String tag) {
+    setState(() {
+      _activeTag = tag;
+      _showStarredOnly = false;
+    });
+    _applyViewFilter();
+  }
+
+  /// 清除当前过滤（星标与标签都不限）。
+  void _clearFilters() {
+    if (!_showStarredOnly && _activeTag == null) return;
+    setState(() {
+      _showStarredOnly = false;
+      _activeTag = null;
+    });
+    _applyViewFilter();
+  }
+
+  /// AppBar 过滤态指示：显示当前过滤条件（「星标」或标签名）为**纯文本**（title 样式）。
+  ///
+  /// 不支持点击清除——清除过滤须在侧栏/抽屉点「笔记」回到全部笔记
+  /// （对应 [_clearFilters] 由 onAllNotesCallback 触发）。
+  Widget _filterIndicator() {
+    final String label = _activeTag ?? 'Starred only'.tr();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Center(
+        child: Text(
+          label,
+          key: const Key('ui-home-filter-indicator'),
+          style: Theme.of(context).textTheme.titleMedium,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
   }
 
   void _searchNote(String query) {

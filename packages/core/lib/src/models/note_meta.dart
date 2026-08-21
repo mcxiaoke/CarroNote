@@ -44,6 +44,7 @@ class NoteMetaFields {
     id,
     uuid,
     pinned,
+    locked,
     archived,
     color,
     deleted,
@@ -57,6 +58,12 @@ class NoteMetaFields {
 
   /// 星标/置顶（本项目二者合并为同一概念）
   static const String pinned = 'pinned';
+
+  /// 锁定：笔记只读不可编辑（明文列，与 pinned 同级的布尔标志）。
+  ///
+  /// 只是决定编辑页是否可写，不泄露用户内容语义，故明文存储。
+  /// 作为本地行为标志随元数据一起 upsert，同步机制无需改动。
+  static const String locked = 'locked';
 
   /// 归档（区别于 deleted，本期建列不接 UI）
   static const String archived = 'archived';
@@ -98,6 +105,10 @@ class NoteMeta {
   final int? id;
   final String uuid;
   final bool pinned;
+
+  /// 锁定只读标记，见 [NoteMetaFields.locked]
+  final bool locked;
+
   final bool archived;
   final int? color;
 
@@ -125,6 +136,7 @@ class NoteMeta {
     this.id,
     required this.uuid,
     this.pinned = false,
+    this.locked = false,
     this.archived = false,
     this.color,
     this.deleted = false,
@@ -155,6 +167,7 @@ class NoteMeta {
   /// 否则他端的旧值会在下次合并时把本端的"取消"覆盖回去。
   bool get isDefault =>
       !pinned &&
+      !locked &&
       !archived &&
       color == null &&
       !deleted &&
@@ -165,6 +178,7 @@ class NoteMeta {
     int? id,
     String? uuid,
     bool? pinned,
+    bool? locked,
     bool? archived,
     int? color,
     bool? clearColor,
@@ -177,6 +191,7 @@ class NoteMeta {
     id: id ?? this.id,
     uuid: uuid ?? this.uuid,
     pinned: pinned ?? this.pinned,
+    locked: locked ?? this.locked,
     archived: archived ?? this.archived,
     color: (clearColor ?? false) ? null : (color ?? this.color),
     deleted: deleted ?? this.deleted,
@@ -259,6 +274,7 @@ class NoteMeta {
     if (id != null) NoteMetaFields.id: id,
     NoteMetaFields.uuid: uuid,
     NoteMetaFields.pinned: pinned ? 1 : 0,
+    NoteMetaFields.locked: locked ? 1 : 0,
     NoteMetaFields.archived: archived ? 1 : 0,
     NoteMetaFields.color: color,
     NoteMetaFields.deleted: deleted ? 1 : 0,
@@ -279,6 +295,7 @@ class NoteMeta {
       id: row[NoteMetaFields.id] as int?,
       uuid: row[NoteMetaFields.uuid] as String? ?? '',
       pinned: (row[NoteMetaFields.pinned] as int?) == 1,
+      locked: (row[NoteMetaFields.locked] as int?) == 1,
       archived: (row[NoteMetaFields.archived] as int?) == 1,
       color: row[NoteMetaFields.color] as int?,
       deleted: (row[NoteMetaFields.deleted] as int?) == 1,
@@ -295,7 +312,7 @@ class NoteMeta {
   /// 只输出计数与非敏感标志位。与 database_handler 的日志约定一致。
   @override
   String toString() =>
-      'NoteMeta(uuid: $uuid, pinned: $pinned, archived: $archived, '
-      'deleted: $deleted, tags: ${tags.length}, extra: ${extra.length}, '
-      'updatedAt: $updatedAt, synced: $synced)';
+      'NoteMeta(uuid: $uuid, pinned: $pinned, locked: $locked, '
+      'archived: $archived, deleted: $deleted, tags: ${tags.length}, '
+      'extra: ${extra.length}, updatedAt: $updatedAt, synced: $synced)';
 }
