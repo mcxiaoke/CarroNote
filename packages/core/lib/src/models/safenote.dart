@@ -12,7 +12,7 @@
  *
  * 改造说明（fork 同步版）：
  *   - 新增 uuid / contentHash / deleted / updatedAt / synced 字段
- *   - 本地存储改为明文（同步时加密为 envelope 上传到后端）
+ *   - 本地存储为字段级加密（title/description 用 dataKey 加密），同步时加密为 envelope 上传到后端
  *   - 软删除（deleted=1 表示墓碑，不真正删除行）
  *   - contentHash 用于 manifest 比对和 blob 寻址
  */
@@ -295,7 +295,7 @@ class SafeNote {
 
   @override
   String toString() =>
-      'SafeNote(id=$id, uuid=$uuid, title="$title", hash=$contentHash, '
+      'SafeNote(id=$id, uuid=$uuid, title=<redacted>, hash=$contentHash, '
       'deleted=$deleted, updatedAt=$updatedAt, synced=$synced, '
       'syncedHash=$syncedHash)';
 }

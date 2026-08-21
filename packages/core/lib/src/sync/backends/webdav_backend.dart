@@ -646,7 +646,8 @@ class WebDavBackend implements SyncBackend {
           href.split('/').where((s) => s.isNotEmpty).last,
         );
         final dot = name.indexOf('.');
-        if (dot > 0 && name.substring(0, dot).length == 64) {
+        if (dot == 64 &&
+            RegExp(r'^[a-f0-9]{64}$').hasMatch(name.substring(0, dot))) {
           final ts = int.tryParse(name.substring(dot + 1));
           if (ts != null && ts < cutoff) {
             try {

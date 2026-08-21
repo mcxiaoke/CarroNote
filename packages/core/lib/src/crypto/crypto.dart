@@ -133,8 +133,8 @@ const int kBackupFormatVersion = 1;
 /// 备份 AAD 域分隔常量（domain separator）
 ///
 /// 仅用于分隔「备份密文」与其它 GCM 消费方（如同步 blob），**不做防篡改
-/// 绑定**（GCM tag 天然覆盖完整性）。v2 起改为 `backup-v2` 即可防止 v1
-/// 密文被误用，常量随代码演进硬编码，无需写入文件头。
+/// 绑定**（GCM tag 天然覆盖完整性）。未来若需版本升级可改为 `backup-v2`，
+/// 常量随代码演进硬编码，无需写入文件头。
 const String kBackupAad = 'backup-v1';
 
 /// 备份 KDF 算法名称（写入 snbak 文件头的 `enc.kdf.algorithm` 字段）

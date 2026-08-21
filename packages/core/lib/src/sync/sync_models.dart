@@ -1060,7 +1060,7 @@ class ManifestCrypto {
     final headerLen = _decodeUint32(bytes, 8);
     final itemsStart = _kFixedHeaderLen + headerLen;
     final pubHashStart = bytes.length - _kPubHashLen;
-    if (headerLen < 0 || itemsStart > pubHashStart) {
+    if (itemsStart > pubHashStart) {
       throw ManifestAuthException(
         'headerLen 越界：headerLen=$headerLen，文件长度=${bytes.length}，'
         'itemsStart=$itemsStart，pubHashStart=$pubHashStart',

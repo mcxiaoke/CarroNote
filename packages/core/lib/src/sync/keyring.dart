@@ -708,7 +708,10 @@ class Keyring {
     required String remoteKeyFingerprint,
   }) async {
     final mk = await _deriveMk(password, kdf: remoteKdf);
-    if (SyncCrypto.computeKeyFingerprint(mk) != remoteKeyFingerprint) {
+    if (!SyncCrypto.bytesEqual(
+      Uint8List.fromList(utf8.encode(SyncCrypto.computeKeyFingerprint(mk))),
+      Uint8List.fromList(utf8.encode(remoteKeyFingerprint)),
+    )) {
       Log.crypto.i(
         '远端密码判别: 指纹不匹配(场景 c, 远端与本地密码不同) '
         'remoteFp=${_fpBrief(remoteKeyFingerprint)}',
