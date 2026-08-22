@@ -468,5 +468,19 @@
   "Restore successful": "恢复成功",
   "Content": "正文",
   "Current content will be replaced. A version of the current content will be saved automatically.": "当前内容将被替换，系统会自动保存当前内容的版本。",
-  "Show diff": "显示差异"
+  "Show diff": "显示差异",
+  "Test": "测试",
+  "These operations are destructive and take effect immediately, only for debugging and testing.": "以下操作具有破坏性且立即生效，仅用于调试测试。",
+  "Clear Logs": "清空日志",
+  "Clear Journal": "清空 Journal",
+  "Clear Database": "清空数据库",
+  "Clear all log files and in-memory buffer?": "清空全部日志文件和内存缓冲？",
+  "Clear the local journal? Recovery history will be lost.": "清空本地 journal？崩溃恢复历史将丢失。",
+  "Logs cleared ({count} files)": "日志已清空（删除 {count} 个文件）",
+  "Journal cleared": "Journal 已清空",
+  "Failed: {error}": "操作失败: {error}",
+  "Exported to {path}": "已导出到 {path}",
+  "Export failed: {error}": "导出失败: {error}",
+  "Delete ALL local data (notes, keys, database)? The app will exit.": "删除全部本地数据（笔记、密钥、数据库）？应用将退出。",
+  "Local data reset": "本地数据已重置"
 }

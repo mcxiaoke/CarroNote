@@ -23,6 +23,8 @@ dependencies:
     path: packages/core
 
   after_layout: ^1.2.0
+  # ZIP 打包（日志 Web 服务器 /api/download/all 调试数据导出）
+  archive: ^4.0.9
   auto_size_text: ^3.0.0
   crypto: ^3.0.3
   device_info_plus: ^12.0.0

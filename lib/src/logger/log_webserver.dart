@@ -43,6 +43,7 @@
  *   GET /api/download/db      → 下载本地数据库文件（.db）
  *   GET /api/download/sp      → 下载 SharedPreferences（JSON）
  *   GET /api/download/journal → 下载 Journal（JSON）
+ *   GET /api/download/all     → 全部调试数据打包 ZIP（日志+数据库+SP+Journal+诊断）
  *
  * 安全性：
  *   - 仅绑定 0.0.0.0（局域网可访问），不做公网暴露
@@ -57,6 +58,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' show Random;
 
+import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 
 import 'package:core/core.dart';
@@ -270,6 +272,9 @@ class LogWebServer {
           break;
         case '/api/download/journal':
           await _serveDownloadJournal(request);
+          break;
+        case '/api/download/all':
+          await _serveDownloadAll(request);
           break;
         case '/stream':
           await _upgradeToWebSocket(request);
@@ -547,7 +552,12 @@ class LogWebServer {
     String mime,
   ) async {
     _setCors(request.response);
-    request.response.headers.contentType = ContentType.parse(mime);
+    // 显式指定 UTF-8：ContentType.parse 无 charset 时 write() 默认按 Latin1
+    // 编码，内容含中文（如 managedTags）会抛 "Contains invalid characters."
+    final parsed = ContentType.parse(mime);
+    request.response.headers.contentType = parsed.charset == null
+        ? ContentType(parsed.primaryType, parsed.subType, charset: 'utf-8')
+        : parsed;
     request.response.headers.add(
       'Content-Disposition',
       'attachment; filename="$filename"',
@@ -577,6 +587,8 @@ class LogWebServer {
         'Content-Disposition',
         'attachment; filename="$name"',
       );
+      // 显式声明 Content-Length，避免 chunked 编码导致下载工具挂起
+      request.response.headers.contentLength = bytes.length;
       request.response.add(bytes);
       await request.response.close();
     } on Object catch (e) {
@@ -604,6 +616,86 @@ class LogWebServer {
       jsonEncode(dump),
       'application/json',
     );
+  }
+
+  /// 下载全部调试数据（ZIP 打包：日志文件 + 数据库 + SP + Journal + 诊断快照）
+  ///
+  /// 单个成员读取失败不影响整体，对应条目以错误文本占位，方便定位问题。
+  Future<void> _serveDownloadAll(HttpRequest request) async {
+    final archive = Archive();
+    void addBytes(String name, List<int> bytes) {
+      archive.add(ArchiveFile.bytes(name, bytes));
+    }
+
+    // 日志文件（含已滚出内存的历史）
+    try {
+      await AppLogFile.flush();
+      final files = await AppLogFile.listFiles();
+      for (final f in files) {
+        try {
+          addBytes('logs/${p.basename(f.path)}', await f.readAsBytes());
+        } on Object catch (e) {
+          addBytes('logs/${p.basename(f.path)}.error.txt', utf8.encode('$e'));
+        }
+      }
+    } on Object catch (e) {
+      addBytes('logs/error.txt', utf8.encode('列出日志文件失败: $e'));
+    }
+
+    // 本地数据库
+    try {
+      final dbPath = await NotesDatabase.instance.dbFilePath();
+      if (await File(dbPath).exists()) {
+        addBytes(p.basename(dbPath), await File(dbPath).readAsBytes());
+      } else {
+        addBytes('database.error.txt', utf8.encode('数据库文件不存在: $dbPath'));
+      }
+    } on Object catch (e) {
+      addBytes('database.error.txt', utf8.encode('读取数据库失败: $e'));
+    }
+
+    // SharedPreferences 快照
+    addBytes(
+      'shared_preferences.json',
+      utf8.encode(jsonEncode(PreferencesStorage.dumpAll())),
+    );
+
+    // Journal 转储
+    try {
+      addBytes(
+        'journal.json',
+        utf8.encode(jsonEncode(await SyncService.instance.getJournalDump())),
+      );
+    } on Object catch (e) {
+      addBytes('journal.error.txt', utf8.encode('获取 Journal 失败: $e'));
+    }
+
+    // 同步诊断快照（纯文本）
+    try {
+      addBytes(
+        'diagnostics.txt',
+        utf8.encode(await SyncService.instance.exportAllLogsAsText()),
+      );
+    } on Object catch (e) {
+      addBytes('diagnostics.error.txt', utf8.encode('获取诊断快照失败: $e'));
+    }
+
+    final zipBytes = ZipEncoder().encode(archive);
+    final name =
+        'safenotes_export_'
+        '${DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-')}.zip';
+
+    _setCors(request.response);
+    request.response.headers.contentType = ContentType('application', 'zip');
+    request.response.headers.add(
+      'Content-Disposition',
+      'attachment; filename="$name"',
+    );
+    // 显式声明 Content-Length：否则 HTTP/1.1 走 chunked 编码，
+    // 部分下载工具（IDM 等）无法感知结束而一直挂起
+    request.response.headers.contentLength = zipBytes.length;
+    request.response.add(zipBytes);
+    await request.response.close();
   }
 
   // ──────────────────────────────────────────────

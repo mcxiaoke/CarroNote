@@ -10,21 +10,21 @@
 /*
  * 同步调试面板（E1）
  *
- * 五个 Tab 面板：
- *   1. 状态：同步子系统诊断快照（含后端/Keyring/设备信息，可复制）
- *   2. 同步结果：最近一次同步的详细统计和失败笔记
- *   3. 操作记录：SyncAction 列表（含结构化错误详情）
- *   4. 日志：实时日志查看器（logcat 风格，可过滤/复制/导出/清空）
- *   5. Web 服务器：启动/停止 HTTP 日志服务器（移动端远程查看用）
- *   6. 测试：PBKDF2 vs Argon2id 性能对比基准
+ * 四个 Tab 面板：
+ *   1. 状态：同步子系统诊断快照（含后端/Keyring/设备信息，可复制），
+ *      底部以纯文本展示最近一次同步结果
+ *   2. 日志：实时日志查看器（logcat 风格，可过滤/复制/导出/清空）
+ *   3. Web 服务器：启动/停止 HTTP 日志服务器（移动端远程查看用）
+ *   4. 测试：危险调试操作（清空日志 / journal / 数据库）
  *
- * 所有面板的信息均可复制，日志支持导出为文本文件。
+ * 所有面板的信息均可复制，日志支持导出到系统下载目录。
  */
 
 // Dart 导入
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitType;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,6 +34,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/authwall.dart' show AppBootState;
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -84,18 +86,6 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
             child: Text('Status'.tr()),
           ),
           ShadTab<String>(
-            value: 'sync',
-            expandContent: true,
-            content: _SyncResultTab(),
-            child: Text('Sync Results'.tr()),
-          ),
-          ShadTab<String>(
-            value: 'actions',
-            expandContent: true,
-            content: _ActionsTab(),
-            child: Text('Actions'.tr()),
-          ),
-          ShadTab<String>(
             value: 'logs',
             expandContent: true,
             content: _LogsTab(),
@@ -106,6 +96,12 @@ class _SyncDiagnosticsPageState extends State<SyncDiagnosticsPage> {
             expandContent: true,
             content: _WebServerTab(onUpdate: () => setState(() {})),
             child: Text('Web Server'.tr()),
+          ),
+          ShadTab<String>(
+            value: 'test',
+            expandContent: true,
+            content: const _TestTab(),
+            child: Text('Test'.tr()),
           ),
         ],
       ),
@@ -199,11 +195,58 @@ class _StatusTab extends StatelessWidget {
           _KV('Memory Buffer Entries'.tr(), snapshot.logBufferCount.toString()),
         ]),
         const SizedBox(height: 16),
+        // 最近一次同步结果（纯文本，原"同步结果"tab 数据并入此处）
+        Text(
+          'Latest Sync Result'.tr(),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: SelectableText(
+            _lastResultPlainText(snapshot),
+            style: TextStyle(
+              fontSize: AppTextSize.s12,
+              fontFamily: 'monospace',
+              height: 1.4,
+              color: snapshot.lastResultSuccess == true
+                  ? _semSuccess(context)
+                  : snapshot.lastResultSuccess == false
+                  ? _semDanger(context)
+                  : _semNeutral(context),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         ShadButton.raw(
           variant: ShadButtonVariant.outline,
           leading: const Icon(LucideIcons.download),
           child: Text('Export Diagnostics + Logs'.tr()),
-          onPressed: () => _exportLogs(context),
+          onPressed: () async {
+            try {
+              final path = await SyncService.instance.exportAllLogsToFile();
+              if (context.mounted) {
+                showSnackBarMessage(
+                  context,
+                  'Exported to {path}'.tr(namedArgs: {'path': path}),
+                );
+              }
+            } on Object catch (e) {
+              if (context.mounted) {
+                showSnackBarMessage(
+                  context,
+                  'Export failed: {error}'.tr(namedArgs: {'error': '$e'}),
+                );
+              }
+            }
+          },
         ),
       ],
     );
@@ -253,11 +296,26 @@ class _StatusTab extends StatelessWidget {
     );
   }
 
-  Future<void> _exportLogs(BuildContext context) async {
-    final text = await SyncService.instance.exportAllLogsAsText();
-    if (context.mounted) {
-      _copyToClipboard(context, text, 'Diagnostics + logs copied'.tr());
-    }
+  /// 最近一次同步结果 → 纯文本块（原"同步结果"tab 数据）
+  String _lastResultPlainText(SyncDiagnosticsSnapshot s) {
+    if (s.lastResultSuccess == null) return 'No sync results yet'.tr();
+    final failed = s.lastResultFailedNoteUuids;
+    final actionCount = s.lastResultActions?.length ?? 0;
+    return [
+      'Success: ${s.lastResultSuccess}',
+      'Attempts: ${s.lastResultAttempts ?? "N/A"}',
+      'RequiresRelogin: ${s.lastResultRequiresRelogin ?? false}',
+      'Uploaded/Downloaded/Deleted: '
+          '${s.lastResultUploaded ?? 0}/${s.lastResultDownloaded ?? 0}/'
+          '${s.lastResultDeleted ?? 0}',
+      'Conflicts/Migrated/Skipped: '
+          '${s.lastResultConflicts ?? 0}/${s.lastResultMigrated ?? 0}/'
+          '${s.lastResultSkipped ?? 0}',
+      'Actions: $actionCount',
+      'Error: ${s.lastResultErrorMessage ?? "-"}',
+      'FailedNotes(${failed?.length ?? 0}): '
+          '${(failed == null || failed.isEmpty) ? "-" : failed.join(", ")}',
+    ].join('\n');
   }
 }
 
@@ -269,439 +327,7 @@ class _KV {
 }
 
 // ──────────────────────────────────────────────
-// Tab 2: 同步结果
-// ──────────────────────────────────────────────
-
-class _SyncResultTab extends StatefulWidget {
-  @override
-  State<_SyncResultTab> createState() => _SyncResultTabState();
-}
-
-class _SyncResultTabState extends State<_SyncResultTab> {
-  /// 失败 UUID 折叠展示（P3-20）：默认只显示前 5 条，可展开/收起，
-  /// 避免同步失败条数很多时诊断页被长列表淹没。
-  static const int _collapsedUuidCount = 5;
-  bool _showAllUuids = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final snapshot = SyncService.instance.getDiagnosticsSnapshot();
-    final hasResult = snapshot.lastResultSuccess != null;
-
-    if (!hasResult) {
-      return Center(child: Text('No sync results yet'.tr()));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Latest Sync Result'.tr(),
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const Divider(),
-        _buildKVRow(
-          context,
-          'Success'.tr(),
-          snapshot.lastResultSuccess!.toString(),
-          color: snapshot.lastResultSuccess!
-              ? _semSuccess(context)
-              : _semDanger(context),
-        ),
-        _buildKVRow(
-          context,
-          'Retry Count'.tr(),
-          snapshot.lastResultAttempts?.toString() ?? 'N/A',
-        ),
-        const SizedBox(height: 12),
-        Text('Statistics'.tr(), style: Theme.of(context).textTheme.titleSmall),
-        _buildStatGrid(context, snapshot),
-        const SizedBox(height: 12),
-        _buildKVRow(
-          context,
-          'Requires Relogin'.tr(),
-          snapshot.lastResultRequiresRelogin?.toString() ?? 'N/A',
-          color: (snapshot.lastResultRequiresRelogin ?? false)
-              ? _semDanger(context)
-              : null,
-        ),
-        if (snapshot.lastResultErrorMessage != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Error Message'.tr(),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _semDanger(context).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: SelectableText(
-              snapshot.lastResultErrorMessage!,
-              style: TextStyle(
-                fontSize: AppTextSize.s12,
-                color: _semDanger(context),
-              ),
-            ),
-          ),
-        ],
-        if (snapshot.lastResultFailedNoteUuids != null &&
-            snapshot.lastResultFailedNoteUuids!.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Failed Notes ({count})'.tr(
-              namedArgs: {
-                'count': '${snapshot.lastResultFailedNoteUuids!.length}',
-              },
-            ),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          ..._failedUuidRows(context, snapshot.lastResultFailedNoteUuids!),
-          if (snapshot.lastResultFailedNoteUuids!.length > _collapsedUuidCount)
-            TextButton(
-              onPressed: () => setState(() => _showAllUuids = !_showAllUuids),
-              child: Text(
-                _showAllUuids
-                    ? 'Show less'.tr()
-                    : 'Show all ({count})'.tr(
-                        namedArgs: {
-                          'count':
-                              '${snapshot.lastResultFailedNoteUuids!.length}',
-                        },
-                      ),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-
-  /// 失败 UUID 行列表：折叠时只取前 [_collapsedUuidCount] 条。
-  List<Widget> _failedUuidRows(BuildContext context, List<String> uuids) {
-    final shown = _showAllUuids
-        ? uuids
-        : uuids.take(_collapsedUuidCount).toList();
-    return [
-      for (final uuid in shown)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: SelectableText(
-            uuid,
-            style: TextStyle(
-              fontSize: AppTextSize.s12,
-              color: _semWarning(context),
-            ),
-          ),
-        ),
-    ];
-  }
-
-  Widget _buildStatGrid(
-    BuildContext context,
-    SyncDiagnosticsSnapshot snapshot,
-  ) {
-    final stats = [
-      (
-        'Upload'.tr(),
-        snapshot.lastResultUploaded ?? 0,
-        LucideIcons.upload,
-        _semInfo(context),
-      ),
-      (
-        'Download'.tr(),
-        snapshot.lastResultDownloaded ?? 0,
-        LucideIcons.download,
-        _semSuccess(context),
-      ),
-      (
-        'Delete'.tr(),
-        snapshot.lastResultDeleted ?? 0,
-        LucideIcons.trash2,
-        _semDanger(context),
-      ),
-      (
-        'Conflicts'.tr(),
-        snapshot.lastResultConflicts ?? 0,
-        LucideIcons.triangleAlert,
-        _semWarning(context),
-      ),
-      (
-        'Migrated'.tr(),
-        snapshot.lastResultMigrated ?? 0,
-        LucideIcons.arrowLeftRight,
-        _semInfo(context),
-      ),
-      (
-        'Skipped'.tr(),
-        snapshot.lastResultSkipped ?? 0,
-        LucideIcons.skipForward,
-        _semNeutral(context),
-      ),
-    ];
-    // 用 LayoutBuilder + Wrap 取代固定 childAspectRatio 的 GridView：
-    // 窄屏下固定宽高比会让单元格高度不足以容纳内容，导致 RenderFlex 底部溢出。
-    // 这里按可用宽度计算每列宽度，单元格高度由内容自适应，杜绝溢出。
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const crossAxisCount = 3;
-        const spacing = 8.0;
-        final chipWidth =
-            (constraints.maxWidth - spacing * (crossAxisCount - 1)) /
-            crossAxisCount;
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: stats.map((s) {
-            final (label, count, icon, color) = s;
-            return SizedBox(
-              width: chipWidth,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: color.withValues(alpha: 0.3)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(icon, size: 16, color: color),
-                        const SizedBox(width: 4),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: AppTextSize.s12,
-                            color: color,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: AppTextSize.s20,
-                        fontWeight: FontWeight.bold,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildKVRow(
-    BuildContext context,
-    String key,
-    String value, {
-    Color? color,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              key,
-              style: TextStyle(
-                color: _semNeutral(context),
-                fontSize: AppTextSize.s12,
-              ),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: TextStyle(fontSize: AppTextSize.s12, color: color),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────
-// Tab 3: 操作记录
-// ──────────────────────────────────────────────
-
-class _ActionsTab extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final snapshot = SyncService.instance.getDiagnosticsSnapshot();
-    // 过滤掉 skip 类型：skip 量大且无实际信息价值，
-    // 只显示有意义的操作（上传/下载/删除/冲突/修复/失败/迁移）
-    final allActions = snapshot.lastResultActions ?? [];
-    final actions = allActions.where((a) => a.type != 'skip').toList();
-
-    if (actions.isEmpty) {
-      return Center(child: Text('No actions yet'.tr()));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: actions.length,
-      itemBuilder: (context, index) {
-        final action = actions[index];
-        return _buildActionCard(context, action);
-      },
-    );
-  }
-
-  Widget _buildActionCard(BuildContext context, SyncActionInfo action) {
-    final isError = action.type == 'uploadFailed' || action.type == 'corrupt';
-    final isHeal = action.type == 'heal';
-    final isConflict = action.type == 'conflict';
-
-    Color? color;
-    IconData icon;
-    if (isError) {
-      color = _semDanger(context);
-      icon = LucideIcons.circleAlert;
-    } else if (isHeal) {
-      color = _semSuccess(context);
-      icon = LucideIcons.heartPulse;
-    } else if (isConflict) {
-      color = _semWarning(context);
-      icon = LucideIcons.triangleAlert;
-    } else if (action.type == 'upload') {
-      color = _semInfo(context);
-      icon = LucideIcons.upload;
-    } else if (action.type == 'download') {
-      color = _semInfo(context);
-      icon = LucideIcons.download;
-    } else if (action.type == 'delete') {
-      color = _semDanger(context);
-      icon = LucideIcons.trash2;
-    } else if (action.type == 'migrate') {
-      color = _semInfo(context);
-      icon = LucideIcons.arrowLeftRight;
-    } else {
-      color = _semNeutral(context);
-      icon = LucideIcons.info;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: ShadCard(
-        padding: EdgeInsets.zero,
-        child: ShadAccordion<String>(
-          children: [
-            ShadAccordionItem<String>(
-              value: action.uuid,
-              separator: const SizedBox.shrink(),
-              title: Row(
-                children: [
-                  Icon(icon, color: color),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          action.type,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: color,
-                          ),
-                        ),
-                        Text(
-                          action.uuid.isNotEmpty
-                              ? 'uuid: ${action.uuid}'
-                              : action.message ?? '',
-                          style: const TextStyle(fontSize: AppTextSize.s12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (action.uuid.isNotEmpty)
-                      _buildDetail(context, 'UUID', action.uuid),
-                    if (action.hash != null)
-                      _buildDetail(context, 'Hash', action.hash!),
-                    if (action.message != null)
-                      _buildDetail(context, 'Message'.tr(), action.message!),
-                    if (action.errorLabel != null)
-                      _buildDetail(
-                        context,
-                        'Error Type'.tr(),
-                        action.errorLabel!,
-                        color: _semDanger(context),
-                      ),
-                    if (action.errorDisplay != null)
-                      _buildDetail(
-                        context,
-                        'Error Details'.tr(),
-                        action.errorDisplay!,
-                        color: _semDanger(context),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetail(
-    BuildContext context,
-    String key,
-    String value, {
-    Color? color,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              key,
-              style: TextStyle(
-                color: _semNeutral(context),
-                fontSize: AppTextSize.s12,
-              ),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: TextStyle(fontSize: AppTextSize.s12, color: color),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────
-// Tab 4: 日志（实时 logcat 风格）
+// Tab 2: 日志（实时 logcat 风格）
 // ──────────────────────────────────────────────
 
 class _LogsTab extends StatefulWidget {
@@ -858,18 +484,27 @@ class _LogsTabState extends State<_LogsTab> {
                   );
                 },
               ),
-              // 导出（复制诊断+日志）
+              // 导出（写入系统下载目录）
               IconButton(
                 icon: const Icon(LucideIcons.download, size: 20),
                 tooltip: 'Export Diagnostics + Logs'.tr(),
                 onPressed: () async {
-                  final text = await SyncService.instance.exportAllLogsAsText();
-                  if (context.mounted) {
-                    _copyToClipboard(
-                      context,
-                      text,
-                      'Diagnostics + logs copied'.tr(),
-                    );
+                  try {
+                    final path = await SyncService.instance
+                        .exportAllLogsToFile();
+                    if (context.mounted) {
+                      showSnackBarMessage(
+                        context,
+                        'Exported to {path}'.tr(namedArgs: {'path': path}),
+                      );
+                    }
+                  } on Object catch (e) {
+                    if (context.mounted) {
+                      showSnackBarMessage(
+                        context,
+                        'Export failed: {error}'.tr(namedArgs: {'error': '$e'}),
+                      );
+                    }
                   }
                 },
               ),
@@ -925,10 +560,16 @@ class _LogsTabState extends State<_LogsTab> {
 
   Widget _buildLogLine(AppLogEntry entry) {
     final color = _levelColor(context, entry.level);
+    // 窄屏（手机）裁掉日期前缀只留时间：实时日志基本都在同一天，
+    // 日期无意义却占掉小半行宽度
+    var line = entry.formattedLine;
+    if (MediaQuery.sizeOf(context).width < 600) {
+      line = line.replaceFirst(RegExp(r'^\d{4}-\d{2}-\d{2} '), '');
+    }
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
       child: SelectableText(
-        entry.formattedLine,
+        line,
         style: TextStyle(
           fontSize: AppTextSize.s12,
           fontFamily: 'monospace',
@@ -975,7 +616,7 @@ class _LogsTabState extends State<_LogsTab> {
 }
 
 // ──────────────────────────────────────────────
-// Tab 5: Web 服务器
+// Tab 3: Web 服务器
 // ──────────────────────────────────────────────
 
 class _WebServerTab extends StatefulWidget {
@@ -1183,6 +824,159 @@ class _WebServerTabState extends State<_WebServerTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Tab 4: 测试（危险调试操作，仅 dev 面板可达）
+// ──────────────────────────────────────────────
+
+class _TestTab extends StatelessWidget {
+  const _TestTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Test'.tr(), style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          'These operations are destructive and take effect immediately, only for debugging and testing.'
+              .tr(),
+          style: TextStyle(
+            fontSize: AppTextSize.s12,
+            color: _semWarning(context),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _TestButton(
+          icon: LucideIcons.trash2,
+          label: 'Clear Logs'.tr(),
+          confirmMessage: 'Clear all log files and in-memory buffer?'.tr(),
+          onConfirm: () async {
+            final deleted = await SyncService.instance.clearAllLogs();
+            return 'Logs cleared ({count} files)'.tr(
+              namedArgs: {'count': '$deleted'},
+            );
+          },
+        ),
+        _TestButton(
+          icon: LucideIcons.fileX,
+          label: 'Clear Journal'.tr(),
+          confirmMessage:
+              'Clear the local journal? Recovery history will be lost.'.tr(),
+          onConfirm: () async {
+            await SyncService.instance.clearJournal();
+            return 'Journal cleared'.tr();
+          },
+        ),
+        _TestButton(
+          icon: LucideIcons.database,
+          label: 'Clear Database'.tr(),
+          confirmMessage:
+              'Delete ALL local data (notes, keys, database)? The app will exit.'
+                  .tr(),
+          onConfirm: () async {
+            // 与登录页「重置本地数据」(_performLocalDataReset) 同款流程，
+            // 但不做备份、完成后直接结束进程，用户手动重开进入首次设置：
+            // 1. 停同步并释放内存密钥态（防止退出前 autoSync 把远端数据拉回空库）
+            await SyncService.instance.logout();
+            // 2. 关连接后删除整个 db 文件（含 sync_meta 的 keyring 账本）
+            await NotesDatabase.instance.close();
+            await NotesDatabase.instance.deleteDbFile();
+            // 3. 清除保险库相关偏好键
+            await PreferencesStorage.clearVaultRelatedKeys();
+            AppBootState.vaultInitialized = false;
+            // 4. 结束进程（required：跳过优雅退出询问，各平台直接终止）
+            await ServicesBinding.instance.exitApplication(
+              AppExitType.required,
+            );
+            exit(0);
+            return 'Local data reset'.tr();
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// 危险操作按钮：点击后弹确认框，确认执行并展示结果
+class _TestButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String confirmMessage;
+  final Future<String> Function() onConfirm;
+
+  const _TestButton({
+    required this.icon,
+    required this.label,
+    required this.confirmMessage,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_TestButton> createState() => _TestButtonState();
+}
+
+class _TestButtonState extends State<_TestButton> {
+  bool _running = false;
+
+  Future<void> _run() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(widget.label),
+        content: Text(widget.confirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'.tr()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Confirm'.tr(),
+              style: TextStyle(color: _semDanger(context)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _running = true);
+    try {
+      final message = await widget.onConfirm();
+      if (mounted) showSnackBarMessage(context, message);
+    } on Object catch (e) {
+      if (mounted) {
+        showSnackBarMessage(
+          context,
+          'Failed: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ShadButton.raw(
+        variant: ShadButtonVariant.outline,
+        onPressed: _running ? null : _run,
+        leading: _running
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(widget.icon, color: _semDanger(context)),
+        child: Text(widget.label),
+      ),
     );
   }
 }

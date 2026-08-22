@@ -380,9 +380,17 @@ class IncompleteOperation {
   const IncompleteOperation({required this.start, required this.age});
 
   @override
-  String toString() =>
-      'IncompleteOperation(${start.type.wire} opId=${start.opId} '
-      'age=${age.inSeconds}s)';
+  String toString() {
+    final s = start;
+    return 'IncompleteOperation(${s.type.wire}'
+        '${s.phase == JournalPhase.none ? '' : '/${s.phase.wire}'}'
+        ' #${s.seq} opId=${s.opId ?? '-'}'
+        '${s.uuid == null ? '' : ' uuid=${s.uuid}'}'
+        '${s.hash == null ? '' : ' hash=${s.hash}'}'
+        '${s.dataKeyEpoch == null ? '' : ' epoch=${s.dataKeyEpoch}'}'
+        ' by=${s.by} at=${DateTime.fromMillisecondsSinceEpoch(s.ts).toIso8601String()}'
+        ' age=${age.inSeconds}s)';
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -567,6 +575,46 @@ class Journal {
     _flushTimer?.cancel();
     _flushTimer = null;
     await flush();
+  }
+
+  /// 清空全部本地日志（**仅供调试面板"清空 journal"按钮使用**）
+  ///
+  /// 丢弃未落盘缓冲与当前日志，删除全部归档和上传水位状态文件，
+  /// seq 从 1 重新开始。正常同步流程绝不应调用——journal 是崩溃恢复的
+  /// 唯一线索来源，清空后历史不可追溯。
+  Future<void> clear() async {
+    if (_closed) return;
+    // 取消挂起的定时 flush：缓冲即将被丢弃，无需落盘
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _pending.clear();
+    _entries.clear();
+    _nextSeq = 1;
+    _uploadedSeq = 0;
+    final chained = _writeChain.then((_) async {
+      for (final seq in await _listArchiveSeqs()) {
+        try {
+          await File(_archivePath(seq)).delete();
+        } on Exception catch (e) {
+          Log.sync.d('[Journal] clear 删除归档 log-$seq.json 失败', error: e);
+        }
+      }
+      try {
+        final stateFile = File(_statePath);
+        if (await stateFile.exists()) await stateFile.delete();
+      } on Exception catch (e) {
+        Log.sync.d('[Journal] clear 删除状态文件失败', error: e);
+      }
+      await _writeLogFile();
+    });
+    _writeChain = chained.catchError((Object e) {
+      Log.sync.w(
+        '[Journal] clear 失败（已忽略）',
+        error: e is Exception ? e : StateError('$e'),
+      );
+    });
+    await _writeChain;
+    Log.sync.w('[Journal] 本地日志已清空（调试操作）');
   }
 
   // ──────────────────────────────────────────────
@@ -824,6 +872,12 @@ class Journal {
   /// 也可能是 done 条目未来得及落盘——盲目重放会把"恢复"变成"二次损坏"。
   ///
   /// [minAge] 只返回早于该时长的 start（默认 30s），过滤掉正在进行的操作。
+  ///
+  /// 配对规则：
+  /// - 带 opId 的条目按 opId 精确配对；
+  /// - 无 opId 的条目（如 sync.round，全程串行、不带 opId）按
+  ///   「同类型顺序配对」闭合——start 之后遇到的第一条同类 done/failed
+  ///   即视为其配对。同一类型同时至多一个在途操作时该规则是精确的。
   Future<List<IncompleteOperation>> findIncompleteOperations({
     Duration minAge = const Duration(seconds: 30),
   }) async {
@@ -839,10 +893,27 @@ class Journal {
       }
     }
 
-    final result = <IncompleteOperation>[];
+    // 无 opId 条目的开闭状态：type → 最近一条未闭合的 start
+    final openNoOpId = <JournalEventType, JournalEntry>{};
+    final hanging = <JournalEntry>[];
+
     for (final e in all) {
-      if (e.phase != JournalPhase.start) continue;
-      if (e.opId != null && settled.contains(e.opId)) continue;
+      if (e.phase == JournalPhase.start) {
+        final opId = e.opId;
+        if (opId != null) {
+          if (!settled.contains(opId)) hanging.add(e);
+        } else {
+          openNoOpId[e.type] = e;
+        }
+      } else if (e.phase == JournalPhase.done ||
+          e.phase == JournalPhase.failed) {
+        if (e.opId == null) openNoOpId.remove(e.type);
+      }
+    }
+    hanging.addAll(openNoOpId.values);
+
+    final result = <IncompleteOperation>[];
+    for (final e in hanging) {
       final age = Duration(milliseconds: now - e.ts);
       if (age < minAge) continue;
       result.add(IncompleteOperation(start: e, age: age));

@@ -468,5 +468,19 @@
   "Restore successful": "Restore successful",
   "Content": "Content",
   "Current content will be replaced. A version of the current content will be saved automatically.": "Current content will be replaced. A version of the current content will be saved automatically.",
-  "Show diff": "Show diff"
+  "Show diff": "Show diff",
+  "Test": "Test",
+  "These operations are destructive and take effect immediately, only for debugging and testing.": "These operations are destructive and take effect immediately, only for debugging and testing.",
+  "Clear Logs": "Clear Logs",
+  "Clear Journal": "Clear Journal",
+  "Clear Database": "Clear Database",
+  "Clear all log files and in-memory buffer?": "Clear all log files and in-memory buffer?",
+  "Clear the local journal? Recovery history will be lost.": "Clear the local journal? Recovery history will be lost.",
+  "Logs cleared ({count} files)": "Logs cleared ({count} files)",
+  "Journal cleared": "Journal cleared",
+  "Failed: {error}": "Failed: {error}",
+  "Exported to {path}": "Exported to {path}",
+  "Export failed: {error}": "Export failed: {error}",
+  "Delete ALL local data (notes, keys, database)? The app will exit.": "Delete ALL local data (notes, keys, database)? The app will exit.",
+  "Local data reset": "Local data reset"
 }

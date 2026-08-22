@@ -466,6 +466,33 @@ void main() {
       await j.close();
     });
 
+    test('无 opId 的条目按同类型顺序配对（sync.round 场景）', () async {
+      final j = await openJournal();
+      // 两轮完整同步：start → done，均不带 opId
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.start);
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.done);
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.start);
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.done);
+      expect(
+        await j.findIncompleteOperations(minAge: Duration.zero),
+        isEmpty,
+        reason: '无 opId 的 start 已被同类 done 闭合，不应报告',
+      );
+      await j.close();
+    });
+
+    test('无 opId 的 start 无配对 done 时仍会报告', () async {
+      final j = await openJournal();
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.start);
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.done);
+      // 第二轮 start 后进程中断，无 done
+      j.append(type: JournalEventType.syncRound, phase: JournalPhase.start);
+      final found = await j.findIncompleteOperations(minAge: Duration.zero);
+      expect(found.length, 1);
+      expect(found.single.start.phase, JournalPhase.start);
+      await j.close();
+    });
+
     test('minAge 过滤掉"正在进行"的操作（默认 30s）', () async {
       final j = await openJournal();
       j.append(

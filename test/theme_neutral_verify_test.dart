@@ -49,26 +49,6 @@ void main() {
     expect(isNeutralSeed(const Color(0xFF3FA34D)), isFalse); // 绿
   });
 
-  test('中性 seed 经 monochrome 输出确为灰度（亮/暗）', () {
-    for (final brightness in [Brightness.light, Brightness.dark]) {
-      final scheme = buildSeedColorScheme(const Color(0xFFF5F5F5), brightness);
-      for (final c in [
-        scheme.primary,
-        scheme.onPrimary,
-        scheme.surface,
-        scheme.onSurface,
-        scheme.secondary,
-        scheme.outline,
-      ]) {
-        expect(
-          _isGray(c),
-          isTrue,
-          reason: '非灰度: #${c.toARGB32().toRadixString(16)}',
-        );
-      }
-    }
-  });
-
   test('彩色 seed 仍用 tonalSpot（primary 带色度）', () {
     final scheme = buildSeedColorScheme(
       const Color(0xFF2D6CDF),

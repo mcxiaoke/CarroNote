@@ -31,9 +31,11 @@
 // Dart 导入
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
@@ -1098,6 +1100,55 @@ class SyncService {
       buffer.writeln(entry.formattedLine);
     }
     return buffer.toString();
+  }
+
+  /// 导出诊断 + 日志文本到系统下载目录（调试面板"导出"按钮用）
+  ///
+  /// 桌面端与 Android 均优先 [getDownloadsDirectory]（无需任何存储权限）；
+  /// 平台不支持或目录不可用时回退到应用文档目录。
+  /// 返回写入的文件绝对路径（供 SnackBar 展示）。
+  Future<String> exportAllLogsToFile() async {
+    final text = await exportAllLogsAsText();
+    Directory? dir;
+    try {
+      dir = await getDownloadsDirectory();
+    } on UnsupportedError {
+      // 平台无 Downloads 概念（iOS 等）
+    }
+    dir ??= await getApplicationDocumentsDirectory();
+    final ts = DateTime.now()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[:\-]'), '')
+        .replaceAll(' ', 'T')
+        .substring(0, 15);
+    final file = File(p.join(dir.path, 'safenotes-logs-$ts.txt'));
+    await file.writeAsString(text, flush: true);
+    Log.ui.i('诊断+日志已导出: ${file.path}');
+    return file.path;
+  }
+
+  /// 清空全部日志（内存缓冲 + 日志文件，调试面板测试 tab 用）
+  ///
+  /// 返回删除的日志文件数。当前 sink 关闭后下次写入自动重建，
+  /// 不影响日志系统继续工作。
+  Future<int> clearAllLogs() async {
+    AppLogBuffer.instance.clear();
+    final deleted = await AppLogFile.clearLogFiles();
+    Log.sync.w('[Debug] 日志已清空（调试操作）：删除文件数=$deleted');
+    return deleted;
+  }
+
+  /// 清空 journal 本地日志（调试面板测试 tab 用）
+  ///
+  /// journal 未打开时抛 StateError（正常流程 journal 在 initialize 时打开，
+  /// 未打开说明同步尚未初始化，此时也无 journal 可清）。
+  Future<void> clearJournal() async {
+    final j = _journal;
+    if (j == null) {
+      throw StateError('journal not opened');
+    }
+    await j.flush();
+    await j.clear();
   }
 
   // ──────────────────────────────────────────────

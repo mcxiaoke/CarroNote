@@ -65,8 +65,7 @@
   <h1>SafeNotes Dashboard</h1>
   <input id="host" placeholder="ip:port">
   <button onclick="loadAll()">Refresh All</button>
-  <button class="ghost" onclick="dlSet(['api/download/db','api/download/sp'])">Download Data</button>
-  <button class="ghost" onclick="dlSet(['logfile','api/download/journal','diagnostics'])">Download Logs</button>
+  <button class="ghost" onclick="dlSet(['api/download/all'])">Download All</button>
   <span id="conn" class="off">Disconnected</span>
 </div>
 <div class="tabs">
@@ -131,13 +130,14 @@ function show(btn, name){
   for(var i=0;i<tabs.length;i++){ tabs[i].classList.remove('active'); }
   btn.classList.add('active');
   document.getElementById(name).classList.add('active');
-  closeLogs();
+  // WebSocket 全程保持连接（页面加载即连），切 tab 不断开，
+  // 日志在后台持续缓冲，进入 Logs tab 时直接渲染
   if(name==='status') loadStatus();
   else if(name==='sync') loadSync();
   else if(name==='memory') loadMemory();
   else if(name==='actions') loadActions();
   else if(name==='db') loadDb();
-  else if(name==='logs'){ connectLogs(); renderLogs(); }
+  else if(name==='logs'){ renderLogs(); }
 }
 
 function textRow(k, v){
@@ -259,11 +259,15 @@ function connectLogs(){
     if(tag && !knownTags.has(tag)){ knownTags.add(tag); renderLogTags(); }
     if(logVisible(e.data)) appendLog(e.data);
   };
-  logWs.onclose = function(){ setConn('Disconnected','off'); document.getElementById('connBtn').textContent='Reconnect'; logWs=null;
-    setTimeout(function(){ if(!logWs || logWs.readyState===3) connectLogs(); }, 5000); };
+  logWs.onclose = function(){
+    setConn(logPaused ? 'Paused' : 'Disconnected', 'off');
+    document.getElementById('connBtn').textContent='Reconnect';
+    logWs=null;
+    // 用户主动暂停时不自动重连
+    if(!logPaused) setTimeout(function(){ if(!logWs || logWs.readyState===3) connectLogs(); }, 5000);
+  };
   logWs.onerror = function(){ if(logWs) logWs.close(); };
 }
-function closeLogs(){ if(logWs){ logWs.close(); logWs=null; } }
 function parseLevel(t){ for(var i=0;i<LOGLEVELS.length;i++){ if(t.indexOf('['+LOGLEVELS[i].padEnd(5)+']')>=0) return LOGLEVELS[i]; } return ''; }
 function parseTag(t){ var m=t.match(/\]\s\[([A-Z]+)\]/); return m?m[1]:''; }
 function logVisible(t){
@@ -298,6 +302,8 @@ function toggleConn(){
 
 function loadAll(){ loadStatus(); loadSync(); loadMemory(); loadActions(); loadDb(); }
 loadAll();
+// 页面加载即建立 WebSocket 连接，顶部状态点立即可用
+connectLogs();
 </script>
 </body>
 </html>

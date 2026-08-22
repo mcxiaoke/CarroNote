@@ -542,6 +542,24 @@ class AppLogFile {
       // 忽略
     }
   }
+
+  /// 清空全部日志文件（**仅供调试面板"清空日志"按钮使用**）
+  ///
+  /// 关闭当前 sink（下次写入自动重建）并删除目录下所有历史日志文件，
+  /// 返回删除的文件数。内存缓冲由调用方另行清理。
+  static Future<int> clearLogFiles() async {
+    await close();
+    var deleted = 0;
+    for (final file in await listFiles()) {
+      try {
+        await file.delete();
+        deleted++;
+      } on Object {
+        // 单个文件删除失败不影响其他文件
+      }
+    }
+    return deleted;
+  }
 }
 
 // ──────────────────────────────────────────────

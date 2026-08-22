@@ -435,7 +435,7 @@ void main() {
       // 关键回归:letters 40 键不能再被压成 2 行并横向溢出
       expect(tester.takeException(), isNull);
       // 700 宽约 11 个/行 → 4 行(而非 2 行)
-      final rows = _rows(tester);
+      final rows = findRows(tester);
       expect(rows.length, greaterThan(2));
       // 按键总数不变:39 键 + 删除 = 40
       expect(_circleButtons(tester).length, 40);
@@ -514,7 +514,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final outlineSizes = _circleMats(
+      final outlineSizes = findCircleMats(
         tester,
       ).map((m) => tester.getSize(find.byWidget(m))).toSet();
       final ex = tester.takeException();
@@ -537,7 +537,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      for (final m in _circleMats(tester)) {
+      for (final m in findCircleMats(tester)) {
         expect(m.color, Colors.transparent, reason: '空心底应为透明');
       }
       final rings = findOutlineRings(tester);
@@ -580,8 +580,8 @@ void main() {
 
       // 亮度估算基准
       expect(ThemeData.estimateBrightnessForColor(dark), Brightness.dark);
-      // 圆底用 keyColor(非透明,能被 _circleMats 抓到)
-      final mats = _circleMats(tester).map((m) => m.color).toSet();
+      // 圆底用 keyColor(非透明,能被 findCircleMats 抓到)
+      final mats = findCircleMats(tester).map((m) => m.color).toSet();
       expect(mats, contains(dark));
       // 深底 → 白色字
       final colors = tester
