@@ -295,10 +295,7 @@ Future<void> main() async {
 
             // 锁定回登录页 → PIN 覆盖层自动弹出(PinUnlockPanel)。
             await _openNavEntry(tester, const Key('ui-home-nav-lock'));
-            await _waitFor(
-              tester,
-              () => tester.any(find.byType(PinKeyboard)),
-            );
+            await _waitFor(tester, () => tester.any(find.byType(PinKeyboard)));
 
             // 取键盘与「Use passphrase」按钮矩形,断言互不覆盖。
             final keypad = find.byType(PinKeyboard);
@@ -310,7 +307,8 @@ Future<void> main() async {
             expect(
               kbRect.overlaps(btnRect),
               isFalse,
-              reason: 'Use passphrase must not cover the PIN keypad '
+              reason:
+                  'Use passphrase must not cover the PIN keypad '
                   '(keypad=$kbRect, btn=$btnRect) @ ${entry.key}',
             );
 
@@ -484,7 +482,8 @@ Future<void> main() async {
           'edited body',
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('ui-note-button-save')));
+        // 自动保存：退出编辑页时保存
+        await _popTopRoute(tester);
         await _waitFor(tester, () => _isHome(tester));
 
         // Re-open and verify the edited body persisted.
@@ -1183,10 +1182,9 @@ Future<void> _createNote(WidgetTester tester, String title, String body) async {
   await tester.enterText(find.byKey(const Key('ui-note-field-title')), title);
   await tester.enterText(find.byKey(const Key('ui-note-field-body')), body);
   await tester.pumpAndSettle();
-  await _settle(tester); // 输入完成、后台自动保存逻辑走完再点保存
-
-  await tester.ensureVisible(find.byKey(const Key('ui-note-button-save')));
-  await tester.tap(find.byKey(const Key('ui-note-button-save')));
+  await _settle(tester);
+  // 自动保存：退出编辑页时保存（无保存按钮）
+  await _popTopRoute(tester);
   // Save is async (DB write) then closes the page; wait for the note to show.
   await _waitFor(tester, () => tester.any(find.text(title)));
   await _settle(tester); // 保存后返回 home 的转场动画走完，避免卡在半透明过渡态
@@ -1514,7 +1512,8 @@ Future<void> _forEachViewport(
       (actual!.width - target.width).abs() <= 50 &&
           (actual.height - target.height).abs() <= 50,
       isTrue,
-      reason: 'setWindowSize 后窗口尺寸应接近目标 '
+      reason:
+          'setWindowSize 后窗口尺寸应接近目标 '
           '(目标=$target, 实际=$actual) @ ${entry.key}',
     );
 

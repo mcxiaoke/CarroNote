@@ -145,9 +145,11 @@ Future<void> _createNote(WidgetTester tester, String title, String body) async {
   await tester.enterText(find.byKey(const Key('ui-note-field-title')), title);
   await tester.enterText(find.byKey(const Key('ui-note-field-body')), body);
   await tester.pumpAndSettle();
+  // 自动保存：退出编辑页触发
+  final element = tester.element(find.byType(Scaffold).first);
+  Navigator.of(element, rootNavigator: true).pop();
+  await tester.pumpAndSettle();
 
-  await tester.ensureVisible(find.byKey(const Key('ui-note-button-save')));
-  await tester.tap(find.byKey(const Key('ui-note-button-save')));
   await _waitFor(tester, () => tester.any(find.text(title)));
 }
 

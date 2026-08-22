@@ -17,12 +17,12 @@ Flutter 加密笔记应用，本地优先 + E2EE 多设备同步。
 - 代码格式: 针对修改过的代码，运行 `dart format` 和 `dart pub run import_sorter:main` 确保代码格式一致，禁止全仓库运行
 - 普通测试: 改代码后运行 `flutter analyze` 和 `dart test packages\core\test` 和 `flutter test` 测试通过
 - 编译验证: 运行 `flutter build windows --debug` 验证编译无错误
-- 集成测试：修改UI代码后运行 flutter test integration_test/ -d windows
+- 集成测试：重大UI重构后运行 flutter test integration_test/app_test.dart -d windows (耗时较长)
 
 
 ## 注意事项
 - 翻译语言资源只需要添加 `zh-CN` 和 `en-US` 就行
 - 未经用户明确允许，禁止 `git commit` ，任何情况下都禁止 `git push`
-- PowerShell不支持heredoc。commit可以用临时文件或改用 -m 多行参数
+- commit msg使用英文，commit可以用临时文件或改用 -m 多行参数
 - 核心包 `packages/core` 禁止引入任何 Flutter 依赖
-- 关键代码变更记入 `docs/CHANGES-YYYYMMDD.md` 顶部
+- 关键代码变更的改动概要记入 `docs/CHANGES-YYYYMMDD.md` 顶部

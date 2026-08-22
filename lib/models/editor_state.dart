@@ -60,14 +60,20 @@ class NoteEditorState {
     }
   }
 
-  Future<void> addOrUpdateNote() async {
+  /// 自动保存：退出编辑页或 App 进入后台时触发。
+  ///
+  /// [destroyAfter] 为 true 时保存后清理静态状态（用于退出页面）；
+  /// 为 false 时保留状态但将 [original] 更新为最新已保存的笔记（用于后台保存后
+  /// 仍停留在编辑页，避免新建笔记重复入库或旧引用导致版本捕获错位）。
+  Future<SafeNote?> addOrUpdateNote({bool destroyAfter = true}) async {
     // 评审 #13：防重入，避免超时保存与正常保存并发双写。
     // 若已有保存在进行中，直接返回（后台保存会覆盖同一份 title/description）。
     if (_isSaving) {
       Log.note.d('笔记保存已在进行中, 本次调用跳过 uuid=${original?.uuid ?? "(新建)"}');
-      return;
+      return null;
     }
     _isSaving = true;
+    SafeNote? saved;
     try {
       // if atleast one of the field is non empty save note
       if (title.isNotEmpty || description.isNotEmpty) {
@@ -79,34 +85,44 @@ class NoteEditorState {
         if (isUpdating) {
           if (original!.title != title ||
               original!.description != description) {
-            await updateNote();
+            saved = await updateNote();
           } else {
             Log.note.d('笔记内容未变化, 跳过保存 uuid=${original!.uuid}');
           }
         } else {
-          await addNote();
+          saved = await addNote();
         }
         // 笔记新增/编辑后触发自动同步（debounce 3 秒，非阻塞）
         // 确保本地变更能及时上传到远端，避免多端数据不一致
-        Log.sync.d('笔记变更后触发自动同步(debounce 3 秒)');
-        SyncService.instance.autoSync();
+        if (saved != null) {
+          Log.sync.d('笔记变更后触发自动同步(debounce 3 秒)');
+          SyncService.instance.autoSync();
+        }
       } else {
         Log.note.d('编辑器内容为空, 不保存笔记');
       }
-      destroyValue();
+      if (destroyAfter) {
+        destroyValue();
+      } else if (saved != null) {
+        // 后台保存：保持编辑态，但更新 original 为最新已落库的笔记
+        original = saved;
+        // title/description 已是归一化后的值（空串已补空格）
+      }
+      return saved;
     } finally {
       _isSaving = false;
     }
   }
 
-  Future addNote() async {
+  Future<SafeNote> addNote() async {
     final note = SafeNote.create(title: title, description: description);
     // 只记录长度，正文内容不入日志（隐私红线）
     Log.note.i(
       '保存新建笔记: uuid=${note.uuid} '
       'len=${title.length}+${description.length}',
     );
-    await NotesDatabase.instance.storeNote(note);
+    final saved = await NotesDatabase.instance.storeNote(note);
+    return saved;
   }
 
   /// 保存用户编辑后的笔记内容。
@@ -122,7 +138,7 @@ class NoteEditorState {
   ///
   /// 修复：保存前从数据库读取最新 `syncedHash`，确保 base 值不被编辑路径回退。
   /// 详见 `docs/conflict-stale-syncedhash-20260821.md`。
-  Future updateNote() async {
+  Future<SafeNote> updateNote() async {
     Log.note.i(
       '保存编辑后的笔记: uuid=${original!.uuid} '
       'len=${title.length}+${description.length}',
@@ -163,5 +179,6 @@ class NoteEditorState {
     await NotesDatabase.instance.saveVersion(original!);
 
     await NotesDatabase.instance.updateNote(note);
+    return note;
   }
 }

@@ -1,15 +1,15 @@
 /*
-* Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
-*
-* SPDX-License-Identifier: GPL-3.0-or-later
-* You may use, distribute and modify this code under the
-* terms of the GPL-3.0+ license.
-*
-* You should have received a copy of the GNU General Public License v3.0 with
-* this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
-*
-* See https://safenotes.dev for support or download.
-*/
+ * Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * You may use, distribute and modify this code under the
+ * terms of the GPL-3.0+ license.
+ *
+ * You should have received a copy of the GNU General Public License v3.0 with
+ * this file. If not, please visit https://www.gnu.org/licenses/gpl-3.0.html
+ *
+ * See https://safenotes.dev for support or download.
+ */
 
 import 'dart:async';
 
@@ -32,13 +32,10 @@ import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
-import 'package:safenotes/widgets/app_dialogs.dart';
 import 'package:safenotes/widgets/note_actions_sheet.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/tag_editor.dart';
 import 'package:safenotes/views/version_history_page.dart';
-
-/// 未保存退出弹框的三种选择：保存 / 放弃 / 取消。
 
 class AddEditNotePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -54,7 +51,8 @@ class AddEditNotePage extends StatefulWidget {
   AddEditNotePageState createState() => AddEditNotePageState();
 }
 
-class AddEditNotePageState extends State<AddEditNotePage> {
+class AddEditNotePageState extends State<AddEditNotePage>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
 
   late String title;
@@ -63,10 +61,16 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   bool _previewMode = true;
   // 正在执行删除：避免 PopScope 在删除后自动保存把已删笔记重新写回。
   bool _isDeleting = false;
-  // 正在执行保存：防止保存期间连点/退出拦截重复触发 addOrUpdateNote 产生重复笔记。
+  // 正在执行保存：防止保存期间重复触发 addOrUpdateNote 产生重复笔记。
   bool _isSaving = false;
-  // 已确认关闭（保存/放弃/删除），用于让 PopScope 放行 pop，避免退出弹框死循环。
+  // 已确认关闭，用于让 PopScope 放行 pop，避免死循环。
   bool _allowClose = false;
+
+  /// 已落库的笔记快照（用于新建笔记后台自动保存后追踪 uuid，避免重复新建）。
+  ///
+  /// 初始值为 [widget.note]；新建笔记后台自动保存后更新为新入库的笔记，
+  /// 后续改动判定、更多菜单等均以此为准。
+  SafeNote? _effectiveNote;
 
   /// 当前笔记的元数据快照（星标/锁定/标签），异步加载。
   ///
@@ -74,7 +78,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   /// 避免首帧卡住；锁定笔记在加载完成后切换为只读。
   NoteMeta? _meta;
 
-  /// 是否锁定（只读）。锁定后隐藏 编辑/保存 入口，仅展示预览。
+  /// 是否锁定（只读）。锁定后隐藏 编辑 入口，仅展示预览。
   bool get _isLocked => _meta?.locked ?? false;
 
   /// 当前标签列表（用于预览页标题下方浮层展示）。
@@ -83,6 +87,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   @override
   void initState() {
     super.initState();
+    _effectiveNote = widget.note;
     title = widget.note?.title ?? '';
     description = widget.note?.description ?? '';
     title = title == ' ' ? '' : title;
@@ -93,6 +98,8 @@ class AddEditNotePageState extends State<AddEditNotePage> {
       _loadMeta();
     }
     NoteEditorState.setSaveAttempted(false);
+    NoteEditorState.setState(_effectiveNote, title, description);
+    WidgetsBinding.instance.addObserver(this);
     // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
     Log.ui.i(
       '进入笔记编辑页: 模式=${widget.note == null ? "新建" : "编辑"} '
@@ -101,9 +108,32 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // 若页面因非 pop 路径被 dispose（如会话超时登出），静默自动保存
+    // 使用 destroyAfter=false 的路径由 handleUngracefulNoteExit 兜底，这里
+    // 仅清理静态状态标记，避免泄漏到下一次编辑。
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App 进入后台（paused/inactive/hidden/detached）时自动保存
+    // 不弹框、不关页，仅静默落库；有历史版本兜底，用户无需手动保存。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      if (_isLocked || _isDeleting || _isSaving) return;
+      Log.app.i('笔记编辑页: App进入后台自动保存 state=$state');
+      unawaited(_performAutoSave(keepEditing: true));
+    }
+  }
+
   /// 异步读取笔记元数据（星标/锁定/标签），加载完成后驱动锁定语义与预览标签。
   Future<void> _loadMeta() async {
-    final note = widget.note;
+    final note = _effectiveNote;
     if (note == null || !mounted) return;
     final meta = await NotesDatabase.instance.getNoteMeta(note.uuid);
     if (!mounted) return;
@@ -113,9 +143,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // 仅当「已确认关闭 / 正在删除 / 无未保存改动」时才允许直接 pop；
-      // 否则在 onPopInvoked 中弹框让用户选择保存/放弃/取消。
-      canPop: _allowClose || _isDeleting || !isNoteNewOrContentChanged(),
+      // 仅当「已确认关闭 / 正在删除」时直接放行；有未保存改动时在 onPopInvoked
+      // 中自动保存后再放行（无弹框）。
+      canPop: _allowClose || _isDeleting,
       onPopInvokedWithResult: (bool didPop, _) => _onPopInvoked(didPop),
       child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
@@ -126,13 +156,12 @@ class AddEditNotePageState extends State<AddEditNotePage> {
             actions: [
               // 锁定笔记只读：AppBar 顶部用「已锁定」文本指示，正文布局不被改动。
               if (_isLocked) _lockedIndicator(),
-              // 锁定笔记隐藏「编辑/预览」切换与「保存」，仅保留操作菜单，
+              // 锁定笔记隐藏「编辑/预览」切换，仅保留操作菜单，
               // 供复制 / 星标 / 解锁 / 标签 / 删除使用。
               if (!_isLocked) _previewToggle(),
-              if (!_isLocked) buildButton(),
-              // 复制/星标/锁定/标签/删除收进「更多」菜单，AppBar 只留预览与保存两个主操作。
-              // 仅编辑已有笔记时才提供：新建笔记尚无 id/uuid 落库，无从复制或删除。
-              if (widget.note != null) _moreButton(),
+              // 复制/星标/锁定/标签/删除/版本历史收进「更多」菜单，AppBar 仅保留预览切换。
+              // 新建笔记后台自动保存后 _effectiveNote 会被赋值，同样可调起菜单。
+              if (_effectiveNote != null) _moreButton(),
             ],
           ),
           body: (_isLocked || _previewMode)
@@ -146,27 +175,75 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
-  /// 拦截退出：有未保存改动时弹框确认，避免误丢改动。
+  /// 拦截退出：自动保存有改动的笔记，无弹框。
   Future<void> _onPopInvoked(bool didPop) async {
-    // pop 已发生（如无可关闭的未保存改动），无需处理。
+    // pop 已发生，无需处理。
     if (didPop) return;
     // 删除流程或已确认关闭：兜底直接放行，结束页面。
     if (_allowClose || _isDeleting) {
       if (mounted) Navigator.of(context).pop();
       return;
     }
-    // 保存进行中：不弹未保存框（避免重复触发保存），等保存流程自行关页。
+    // 保存进行中：等待保存流程自行关页，避免重复触发。
     if (_isSaving) return;
-    // 存在未保存改动：让用户选择 保存 / 放弃 / 取消。
-    final AppThreeWayResult? action = await _showUnsavedDialog();
-    if (!mounted) return;
-    if (action == null || action == AppThreeWayResult.cancel) return; // 留在本页
-    if (action == AppThreeWayResult.confirm) {
-      Log.note.i('退出编辑页前用户选择保存: uuid=${widget.note?.uuid ?? "(新建)"}');
-      await NoteEditorState().addOrUpdateNote();
+    // 锁定笔记不需要保存
+    if (_isLocked) {
+      await _closePage();
+      return;
     }
-    // 保存或放弃都关闭页面（放弃不写库）。
+    // 有未保存改动则自动保存，再关闭页面
+    if (isNoteNewOrContentChanged()) {
+      Log.note.i('退出编辑页自动保存: uuid=${_effectiveNote?.uuid ?? "(新建)"}');
+      await _performAutoSave(keepEditing: false);
+    } else {
+      // 无改动也需清理编辑态
+      NoteEditorState.destroyValue();
+    }
     await _closePage();
+  }
+
+  /// 执行自动保存（退出或后台）。
+  ///
+  /// [keepEditing] 为 true 时（后台）保留编辑态，[original] 更新为最新落库
+  /// 笔记以避免新建笔记重复入库；为 false 时（退出）销毁静态状态。
+  Future<SafeNote?> _performAutoSave({required bool keepEditing}) async {
+    if (_isSaving || _isDeleting) return null;
+    if (_isLocked) return null;
+    if (!isNoteNewOrContentChanged()) return null;
+    if (title.trim().isEmpty && description.trim().isEmpty) {
+      Log.note.d('自动保存跳过: 内容为空');
+      if (!keepEditing) NoteEditorState.destroyValue();
+      return null;
+    }
+    // 确保静态状态与当前输入同步（预览模式下也可能有未同步的 title/description）
+    NoteEditorState.setState(_effectiveNote, title, description);
+    if (mounted) setState(() => _isSaving = true);
+    try {
+      final saved = await NoteEditorState().addOrUpdateNote(
+        destroyAfter: !keepEditing,
+      );
+      if (saved != null) {
+        _effectiveNote = saved;
+        if (keepEditing && mounted) {
+          // 新建笔记后台保存后，更多菜单应立即可用
+          setState(() {});
+          // 后台保存后懒加载元数据（新建笔记首次有 uuid）
+          if (_meta == null) _loadMeta();
+        }
+      }
+      return saved;
+    } on Exception catch (e, st) {
+      Log.note.e('自动保存失败', error: e, stackTrace: st);
+      if (!keepEditing && mounted) {
+        showErrorToast(
+          context,
+          'Failed to save note: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   /// 安全关闭页面：先置 [_allowClose] 触发重建使 canPop=true，等一帧后再 pop，
@@ -178,17 +255,6 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<AppThreeWayResult?> _showUnsavedDialog() {
-    return showAppThreeWay(
-      context,
-      title: 'Unsaved changes'.tr(),
-      message: 'You have unsaved changes. Save before leaving?'.tr(),
-      confirmLabel: 'Save'.tr(),
-      discardLabel: 'Discard'.tr(),
-      cancelLabel: 'Cancel'.tr(),
-    );
-  }
-
   Widget _buildBody() {
     return Form(
       key: _formKey,
@@ -198,11 +264,11 @@ class AddEditNotePageState extends State<AddEditNotePage> {
         sessionStateStream: widget.sessionStateStream,
         onChangedTitle: (title) => setState(() {
           this.title = title;
-          NoteEditorState.setState(widget.note, this.title, description);
+          NoteEditorState.setState(_effectiveNote, this.title, description);
         }),
         onChangedDescription: (description) => setState(() {
           this.description = description;
-          NoteEditorState.setState(widget.note, title, this.description);
+          NoteEditorState.setState(_effectiveNote, title, this.description);
         }),
       ),
     );
@@ -254,7 +320,7 @@ class AddEditNotePageState extends State<AddEditNotePage> {
   /// 动作一律在 sheet 关闭之后执行（[showNoteActionsSheet] 只返回选择结果），
   /// 这样删除确认框与 toast 都挂在本页 context 上，不会用到已销毁的 sheet。
   Future<void> _onMorePressed() async {
-    final SafeNote? note = widget.note;
+    final SafeNote? note = _effectiveNote;
     if (note == null) return;
 
     // 无 meta 行即视为未加星/未锁定：元数据是懒创建的，只有设置过才会有行。
@@ -303,7 +369,9 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     }
     await Clipboard.setData(ClipboardData(text: text));
     // 隐私：只记录长度，不记录内容
-    Log.ui.i('复制笔记全文: uuid=${widget.note?.uuid ?? "(新建)"} len=${text.length}');
+    Log.ui.i(
+      '复制笔记全文: uuid=${_effectiveNote?.uuid ?? "(新建)"} len=${text.length}',
+    );
     if (mounted) showSnackBarMessage(context, 'Copied to clipboard'.tr());
   }
 
@@ -377,7 +445,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     if (mounted) {
       final updated = await NotesDatabase.instance.readNoteByUuid(note.uuid);
       if (updated != null && mounted) {
-        NoteEditorState.setState(updated, updated.title, updated.description);
+        _effectiveNote = updated;
+        title = updated.title == ' ' ? '' : updated.title;
+        description = updated.description == ' ' ? '' : updated.description;
+        NoteEditorState.setState(updated, title, description);
         setState(() {});
       }
     }
@@ -388,8 +459,10 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     await showDeleteConfirmation(
       context: context,
       onConfirm: () async {
-        // 标记删除中，避免 PopScope 在关闭页面时拦截或弹未保存框。
+        // 标记删除中，避免 PopScope 自动保存把已删笔记重新写回。
         setState(() => _isDeleting = true);
+        // 删除前若有未保存改动，先丢弃（删除优先级高于保存）
+        NoteEditorState.destroyValue();
         Log.note.i('用户确认删除笔记(移入回收站): uuid=${note.uuid} id=${note.id}');
         await NotesDatabase.instance.softDelete(note.id!);
         // 软删除（移入回收站）后触发自动同步，确保远端及时收到墓碑标记
@@ -541,56 +614,12 @@ class AddEditNotePageState extends State<AddEditNotePage> {
     );
   }
 
-  Widget buildButton() {
-    final bool isFormValid = title.isNotEmpty || description.isNotEmpty;
-
-    // AppBar 内用图标按钮（与预览/删除图标风格一致），不再用文字按钮。
-    // 保存进行中禁用，防止连点重复触发 addOrUpdateNote。
-    return IconButton(
-      key: const Key('ui-note-button-save'),
-      tooltip: 'Save'.tr(),
-      icon: const Icon(LucideIcons.save),
-      onPressed: (isFormValid && !_isSaving) ? onSaveCallback : null,
-    );
-  }
-
-  Future<void> onSaveCallback() async {
-    // 防重入：保存中忽略重复提交
-    if (_isSaving) return;
-
-    Log.note.i(
-      '用户点击保存按钮: 模式=${widget.note == null ? "新建" : "编辑"} '
-      'len=${title.length}+${description.length}',
-    );
-    setState(() => _isSaving = true);
-    try {
-      await NoteEditorState()
-          .addOrUpdateNote(); // this will also set NoteEditorState.setSaveAttempted = true
-      await _closePage();
-    } on Exception catch (e, st) {
-      Log.note.e('保存笔记失败', error: e, stackTrace: st);
-      if (mounted) {
-        showErrorToast(
-          context,
-          'Failed to save note: {error}'.tr(namedArgs: {'error': '$e'}),
-        );
-      }
-    } finally {
-      // 复位防重入（成功路径 pop 后页面已销毁，跳过 setState）
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
   bool isNoteNewOrContentChanged() {
-    if (widget.note == null) {
-      //New Note and content is not empty
+    if (_effectiveNote == null) {
       if (title.isNotEmpty || description.isNotEmpty) return true;
     } else {
-      // 评审 #13 修复：原条件把「清空标题」(title=='') 判为未变更，退出丢改动。
-      // 改为与原始内容逐字段比较——只要任一字段不同即视为已变更
-      // （清空标题也属于改动，保存时 addOrUpdateNote 会把空标题归一化为 ' '）。
-      if (widget.note!.title != title ||
-          widget.note!.description != description) {
+      if (_effectiveNote!.title != title ||
+          _effectiveNote!.description != description) {
         return true;
       }
     }

@@ -77,7 +77,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
-  testWidgets('解锁后恢复可编辑：保存按钮重新出现，锁定指示消失', (tester) async {
+  testWidgets('解锁后恢复可编辑：锁定指示消失，预览切换可点', (tester) async {
     await prepareUnlockedVault(
       password: kPassword,
       seeds: const [(title: '解锁测试', description: 'body')],
@@ -95,10 +95,11 @@ void main() {
     await tester.tap(find.text('Unlock note'));
     await tester.pumpAndSettle();
 
-    // 解锁后恢复可编辑
+    // 解锁后恢复可编辑（保存按钮已移除，改为自动保存）
     expect(find.byKey(const Key('ui-note-locked-indicator')), findsNothing);
     expect(find.byKey(const Key('ui-note-button-preview')), findsOneWidget);
-    expect(find.byKey(const Key('ui-note-button-save')), findsOneWidget);
+    // 保存按钮已移除，自动保存
+    expect(find.byKey(const Key('ui-note-button-save')), findsNothing);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 90)));
 }
