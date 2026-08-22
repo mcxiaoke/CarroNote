@@ -475,23 +475,16 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   /// 复刻编辑态 ShadInputFormField 的有效文字样式，保证预览与编辑逐像素一致。
   ///
-  /// 编辑态内部实现：`theme.textTheme.muted.copyWith(color: foreground)
-  /// .merge(widget.style)`，其中 widget.style = `AppText.x.copyWith(
-  /// fontFamily: uiFontFamily, fontFamilyFallback: uiFontFamilyFallback)`。
-  /// 关键：在 Android 等移动端 `uiFontFamily` 为 null，并不覆盖 shad muted 的字体，
-  /// 编辑态实际落到 shad muted 字体；而预览态若只用 `AppText`（fontFamily 为 null）
-  /// 会继承 Material 默认字体（Roboto），两种字体对 `#` 等符号的宽窄/粗细差异明显。
-  /// 因此预览态必须直接复用同一来源，而非另设可能为 null 的字体族。
+  /// 不覆盖 base 的 fontFamily——调用方负责传入正确字体的 base：
+  /// - 纯文本预览：传 [EditorText.title()]/[EditorText.body()]（携带笔记字体，
+  ///   "系统"档时即全局字体）；
+  /// - Markdown 预览：传 [AppText.body.copyWith(fontFamily: appFontFamilyFor(EditorText.fontType), ...)]
+  ///   （携带笔记字体，与编辑态一致）。
   TextStyle _editorLikeStyle(BuildContext context, TextStyle base) {
     final shad = ShadTheme.of(context);
     return shad.textTheme.muted
         .copyWith(color: shad.colorScheme.foreground)
-        .merge(
-          base.copyWith(
-            fontFamily: uiFontFamily,
-            fontFamilyFallback: uiFontFamilyFallback,
-          ),
-        );
+        .merge(base);
   }
 
   Widget _buildPreview(BuildContext context) {
@@ -534,6 +527,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
             SelectableText(
               description,
               style: _editorLikeStyle(context, EditorText.body()),
+              textAlign: EditorText.textAlign,
             ),
           // 标签展示到**正文最底部**（不放标题下方），靠左 chip 排布。
           if (_tags.isNotEmpty) ...[
@@ -568,17 +562,22 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// 字号（24→20→18→17→16→16），blockquote / code 显式设样式，避免落到
   /// Material 默认排印与 shad 风格脱节。Markdown 预览与纯文本编辑态不同，
   /// 是唯一带多级标题排版的视图。
+  ///
+  /// 字体族跟随笔记字体设置（EditorText.fontType），与编辑态/纯文本预览一致；
+  /// 代码块始终用 monospace，不受笔记字体影响。
+  /// P1-20：Markdown 预览暂不支持自定义字号，正文/标题固定用 AppText.body
+  /// 基准与 24/20/18/17 固定层级（与编辑/预览页的 EditorText 调节解耦），
+  /// 避免 Markdown 众多标签（列表/引用/代码/表格等）字号联动失控、排印错乱。
   MarkdownStyleSheet _markdownStyleSheet(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    // 预览与编辑态共用同一套文字样式来源：_editorLikeStyle 复刻 ShadInputFormField
-    // 的有效样式（shad muted 字体 + 注入 foreground），避免 Markdown 正文/标题落到
-    // Material 排印导致与编辑态字体/色差（尤其 Android 上 uiFontFamily 为 null 时）。
-    // h6 / blockquote 保留 M3 弱化色做层级区分。
-    // P1-20：Markdown 预览暂不支持自定义字号，正文/标题固定用 AppText.body
-    // 基准与 24/20/18/17 固定层级（与编辑/预览页的 EditorText 调节解耦），
-    // 避免 Markdown 众多标签（列表/引用/代码/表格等）字号联动失控、排印错乱。
-    final TextStyle uiBase = _editorLikeStyle(context, AppText.body);
+    final TextStyle uiBase = _editorLikeStyle(
+      context,
+      AppText.body.copyWith(
+        fontFamily: appFontFamilyFor(EditorText.fontType),
+        fontFamilyFallback: appFontFallbackFor(EditorText.fontType),
+      ),
+    );
     final base = MarkdownStyleSheet.fromTheme(theme);
     // 行内代码沿用主题已有配色，仅统一为等宽 + 小一号，避免硬编码颜色在
     // 亮/暗模式下对比度失衡。

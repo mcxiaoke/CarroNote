@@ -51,6 +51,9 @@ class PreferencesStorage {
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
   static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
   static const _keyFontFamilyTypeIndex = 'fontFamilyTypeIndex';
+  static const _keyNoteFontFamilyTypeIndex = 'noteFontFamilyTypeIndex';
+  static const _keyNoteLineHeightIndex = 'noteLineHeightIndex';
+  static const _keyNoteTextAlignIndex = 'noteTextAlignIndex';
   static const _keyIsRelativeTime = 'isRelativeTime';
   static const _keyIsSortByModified = 'isSortByModified';
   static const _keyIsDimTheme = 'isDimTheme';
@@ -502,6 +505,44 @@ class PreferencesStorage {
     final old = fontFamilyTypeIndex;
     await _preferences?.setInt(_keyFontFamilyTypeIndex, index);
     _logPrefChange('字体类型', old, index);
+  }
+
+  // ---- 笔记样式偏好（仅笔记编辑/纯文本预览/版本历史） ----
+
+  /// 笔记字体类型索引：0=系统(跟随全局) / 1=非衬线 / 2=衬线 / 3=等宽。
+  ///
+  /// 默认 0 = 系统，回读 [fontFamilyTypeIndex] 使笔记字体跟随全局设置。
+  /// 用户可显式选 1-3 使笔记字体与全局解耦。App 尚在开发中未发布，无需迁移。
+  static int get noteFontFamilyTypeIndex =>
+      _preferences?.getInt(_keyNoteFontFamilyTypeIndex) ?? 0;
+
+  static Future<void> setNoteFontFamilyTypeIndex(int index) async {
+    final old = noteFontFamilyTypeIndex;
+    await _preferences?.setInt(_keyNoteFontFamilyTypeIndex, index);
+    _logPrefChange('笔记字体类型', old, index);
+  }
+
+  /// 笔记行高档位值：紧凑1.2 / 标准1.4 / 宽松1.6 / 特松1.8。
+  static const List<double> noteLineHeights = [1.2, 1.4, 1.6, 1.8];
+
+  /// 笔记行高档位索引（仅正文），默认 1 = 标准 1.4（= 现状 body height）。
+  static int get noteLineHeightIndex =>
+      _preferences?.getInt(_keyNoteLineHeightIndex) ?? 1;
+
+  static Future<void> setNoteLineHeightIndex(int index) async {
+    final old = noteLineHeightIndex;
+    await _preferences?.setInt(_keyNoteLineHeightIndex, index);
+    _logPrefChange('笔记行高', old, index);
+  }
+
+  /// 笔记正文对齐索引：0=start / 1=center / 2=justify，默认 0=start。
+  static int get noteTextAlignIndex =>
+      _preferences?.getInt(_keyNoteTextAlignIndex) ?? 0;
+
+  static Future<void> setNoteTextAlignIndex(int index) async {
+    final old = noteTextAlignIndex;
+    await _preferences?.setInt(_keyNoteTextAlignIndex, index);
+    _logPrefChange('笔记正文对齐', old, index);
   }
 
   static bool get isRelativeTime =>

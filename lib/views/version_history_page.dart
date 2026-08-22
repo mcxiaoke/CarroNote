@@ -304,6 +304,7 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
         style: (isTitle ? EditorText.title() : EditorText.body()).copyWith(
           color: colorScheme.onSurface,
         ),
+        textAlign: isTitle ? TextAlign.start : EditorText.textAlign,
       ),
     );
   }
@@ -349,6 +350,7 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
         style: (isTitle ? EditorText.title() : EditorText.body()).copyWith(
           color: colorScheme.onSurface,
         ),
+        textAlign: isTitle ? TextAlign.start : EditorText.textAlign,
       ),
     );
   }

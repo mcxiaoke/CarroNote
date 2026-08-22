@@ -112,6 +112,7 @@ class NoteFormWidget extends StatelessWidget {
       minLines: 1,
       initialValue: description,
       textDirection: getTextDirecton(description ?? ''),
+      textAlign: EditorText.textAlign,
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
       // 编辑器正文走 EditorText.body（档位正文字尺寸，默认 16），编辑态纯文本。

@@ -29,6 +29,7 @@ import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/editor_font_setting.dart';
+import 'package:safenotes/views/settings/font_settings_page.dart';
 import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -162,6 +163,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _refreshDisplayValues();
           },
         ),
+        // 全局字体设置：字体类型对整个 App 生效（外观组）。
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-fontsettings'),
+          icon: LucideIcons.type,
+          title: 'Font settings'.tr(),
+          value: _globalFontTypeValue(),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FontSettingsPicker()),
+            );
+            _refreshDisplayValues();
+          },
+        ),
         // 排版（紧凑/Markdown）居中
         KeyedSubtree(
           key: const Key('ui-setting-switch-compact'),
@@ -191,17 +207,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
-        // 字体样式：进入独立子页（预览 + 字体类型/大小单选 + Apply）。
+        // 笔记样式：字体类型（系统/非衬线/衬线/等宽）+ 字号 + 行高 + 对齐，
+        // 仅作用于笔记编辑/纯文本预览/版本历史。
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-fontstyle'),
+          key: const Key('ui-setting-item-notestyle'),
           icon: LucideIcons.type,
-          title: 'Font style'.tr(),
-          value: _fontTypeValue(),
+          title: 'Note style'.tr(),
+          value: _noteStyleValue(),
           onTap: () async {
             await Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const FontStylePicker()),
+              MaterialPageRoute(builder: (_) => const NoteStylePicker()),
             );
             _refreshDisplayValues();
           },
@@ -323,11 +340,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               '${'When turned on, the content on the screen is treated as secure, '
                   'blocking background snapshots and preventing it from '
                   'appearing in screenshots or from being viewed on '
-                  'non-secure displays.'
-              .tr()} '
+                  'non-secure displays.'.tr()} '
               '${'Note: on Android 13 and above, for privacy the recent-tasks '
-                  'thumbnail is always hidden even when this is off.'
-              .tr()}',
+                  'thumbnail is always hidden even when this is off.'.tr()}',
           value: _isFlagSecure,
           onChanged: (v) {
             PreferencesStorage.setIsFlagSecure(v);
@@ -429,14 +444,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return isZh ? seed.name : seed.nameEn;
   }
 
-  /// 字体样式入口的展示值（当前全局字体类型）。
-  String _fontTypeValue() {
-    final t = EditorText.fontType;
+  /// 全局字体类型入口的展示值（读 fontFamilyTypeIndex）。
+  String _globalFontTypeValue() {
+    final t =
+        AppFontType.values[PreferencesStorage.fontFamilyTypeIndex.clamp(
+          0,
+          AppFontType.values.length - 1,
+        )];
     return switch (t) {
       AppFontType.serif => 'Serif'.tr(),
       AppFontType.sans => 'Sans-serif'.tr(),
       AppFontType.mono => 'Monospace'.tr(),
     };
+  }
+
+  /// 笔记样式入口的展示值：字体类型 · 字号。
+  String _noteStyleValue() {
+    final idx = PreferencesStorage.noteFontFamilyTypeIndex;
+    final fontLabel = switch (idx) {
+      0 => 'System'.tr(),
+      1 => 'Sans-serif'.tr(),
+      2 => 'Serif'.tr(),
+      3 => 'Monospace'.tr(),
+      _ => 'System'.tr(),
+    };
+    final sizeLabel = EditorText.labelOf(
+      PreferencesStorage.editorFontSizeIndex,
+    );
+    return '$fontLabel · $sizeLabel';
   }
 
   String inactivityTimeoutValue() {
