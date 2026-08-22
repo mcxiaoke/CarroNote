@@ -894,7 +894,7 @@ class _TestTab extends StatelessWidget {
               AppExitType.required,
             );
             exit(0);
-            return 'Local data reset'.tr();
+            // return 'Local data reset'.tr();
           },
         ),
       ],

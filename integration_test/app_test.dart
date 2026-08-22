@@ -87,33 +87,33 @@ const List<String> _hubTileKeys = <String>[
 
 // ignore: unused_element
 /// Hub 内二级页 leaf tile 映射（用于遍历二级页不崩溃校验，专项用例覆盖时可参考）。
-const Map<String, List<String>> _hubLeafKeys = {
-  'ui-setting-hub-theme': [
-    'ui-setting-item-darkmode',
-    'ui-setting-item-themecolor',
-    'ui-setting-item-notescolor',
-  ],
-  'ui-setting-hub-display': [
-    'ui-setting-item-fontsettings',
-    'ui-setting-switch-compact',
-    'ui-setting-switch-markdown',
-    'ui-setting-item-notestyle',
-    'ui-setting-switch-relativetime',
-  ],
-  'ui-setting-hub-sync': ['ui-setting-switch-sync', 'ui-sync-config-tile'],
-  'ui-setting-hub-backup': [
-    'ui-setting-item-exportbackup',
-    'ui-setting-item-importbackup',
-  ],
-  'ui-setting-hub-security': [
-    'ui-setting-item-biometric',
-    'ui-setting-item-pin',
-    'ui-setting-item-inactivity',
-    'ui-setting-item-changepassphrase',
-  ],
-  'ui-setting-hub-general': ['ui-setting-item-language'],
-  'ui-setting-hub-about': [],
-};
+// const Map<String, List<String>> _hubLeafKeys = {
+//   'ui-setting-hub-theme': [
+//     'ui-setting-item-darkmode',
+//     'ui-setting-item-themecolor',
+//     'ui-setting-item-notescolor',
+//   ],
+//   'ui-setting-hub-display': [
+//     'ui-setting-item-fontsettings',
+//     'ui-setting-switch-compact',
+//     'ui-setting-switch-markdown',
+//     'ui-setting-item-notestyle',
+//     'ui-setting-switch-relativetime',
+//   ],
+//   'ui-setting-hub-sync': ['ui-setting-switch-sync', 'ui-sync-config-tile'],
+//   'ui-setting-hub-backup': [
+//     'ui-setting-item-exportbackup',
+//     'ui-setting-item-importbackup',
+//   ],
+//   'ui-setting-hub-security': [
+//     'ui-setting-item-biometric',
+//     'ui-setting-item-pin',
+//     'ui-setting-item-inactivity',
+//     'ui-setting-item-changepassphrase',
+//   ],
+//   'ui-setting-hub-general': ['ui-setting-item-language'],
+//   'ui-setting-hub-about': [],
+// };
 
 Future<void> main() async {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
