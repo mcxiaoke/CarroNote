@@ -4,10 +4,10 @@ flutter_launcher_icons:
 
   # iOS / Windows / Web / Android legacy 共用直角母版
   image_path: "assets/images/icon.png"
-  #image_path_ios: "assets/images/icon.png"
+  image_path_ios: "assets/images/icon.png"
 
   # iOS 去掉 alpha（App Store 拒收透明）
-  #remove_alpha_ios: true
+  remove_alpha_ios: true
 
   # Android adaptive icon：背景取主色，前景透明主体居中 66%
   adaptive_icon_background: "#FCDC80"

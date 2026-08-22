@@ -241,14 +241,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         child: SizedBox(
           width: logoSize,
           height: logoSize,
-          child: SvgPicture.asset(
-            SafeNotesConfig.appLogoSvgPath,
-            // 按当前主题主色着色（方块=主色，镂空纸张透出页面底色，萝卜/文字线=主色）
-            colorFilter: ColorFilter.mode(
-              Theme.of(context).colorScheme.primaryContainer,
-              BlendMode.srcIn,
-            ),
-            semanticsLabel: SafeNotesConfig.appName,
+          child: Image.asset(
+            SafeNotesConfig.appLogoPath,
+            fit: BoxFit.contain,
+            semanticLabel: SafeNotesConfig.appName,
           ),
         ),
       ),

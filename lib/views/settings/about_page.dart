@@ -226,19 +226,15 @@ class _DevModeTapLogoState extends State<_DevModeTapLogo> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _handleTap,
-      child: SizedBox(
-        width: 96,
-        height: 96,
-        child: SvgPicture.asset(
-          SafeNotesConfig.appLogoSvgPath,
-          // 按当前主题主色着色（方块=主色，镂空纸张透出页面底色，萝卜/文字线=主色）
-          colorFilter: ColorFilter.mode(
-            Theme.of(context).colorScheme.primaryContainer,
-            BlendMode.srcIn,
+        child: SizedBox(
+          width: 96,
+          height: 96,
+          child: Image.asset(
+            SafeNotesConfig.appLogoPath,
+            fit: BoxFit.contain,
+            semanticLabel: SafeNotesConfig.appName,
           ),
-          semanticsLabel: SafeNotesConfig.appName,
         ),
-      ),
     );
   }
 }
