@@ -1125,45 +1125,16 @@ Future<int> hardDeleteByUuid(String uuid) async {
 
 ### 8.4 密钥变更后的版本解密
 
-密钥迁移（`reEncryptAllNotes`）会重新加密 notes 表，但**不重新加密版本表**。
+密钥迁移（`reEncryptAllNotes` / `reEncryptAllNotesAtomically`）会同时重新加密
+notes 表、note_meta.payload **和 note_versions 表**，确保换 key 后历史版本
+仍可正常解密。
 
-**问题**：如果 dataKey 变更（如修改密码），版本表中的旧密文将无法用新密钥解密。
+**实现方式**：在 dataKey 迁移流程中，与笔记和元数据同模式处理版本表——
+先用 oldKey 解出所有版本的 title/description 明文（`_readAllVersionsPlain`），
+再用 newKey 重新加密，在同一个 SQLite 事务内写入。
 
-**解决方案**：密钥迁移时同时重新加密版本表。在 `reEncryptAllNotes` 方法中追加：
-
-```dart
-// 在 reEncryptAllNotes 中，笔记重加密完成后：
-await _reEncryptAllVersions(oldKey, newKey);
-
-Future<void> _reEncryptAllVersions(Uint8List oldKey, Uint8List newKey) async {
-  final db = await database;
-  final rows = await db.query(tableNoteVersions);
-  for (final row in rows) {
-    final uuid = row[NoteVersionFields.noteUuid] as String;
-    // 用旧 key 解密
-    final title = await _decryptFieldWithKey(uuid,
-        row[NoteVersionFields.title] as String, oldKey);
-    final desc = await _decryptFieldWithKey(uuid,
-        row[NoteVersionFields.description] as String, oldKey);
-    // 用新 key 重新加密
-    await db.update(
-      tableNoteVersions,
-      {
-        NoteVersionFields.title: await _encryptFieldWithKey(uuid, title, newKey),
-        NoteVersionFields.description: await _encryptFieldWithKey(uuid, desc, newKey),
-      },
-      where: '${NoteVersionFields.id} = ?',
-      whereArgs: [row[NoteVersionFields.id]],
-    );
-  }
-}
-```
-
-**注意**：这需要在 `database_handler.dart` 中新增 `_encryptFieldWithKey` 和 `_decryptFieldWithKey` 方法（接受显式 key 参数），或重构现有 `_encryptField` 使其可接受可选 key 参数。
-
-**替代方案**：如果密钥迁移场景较少（仅在修改密码时触发），可以在迁移时直接清空版本表（`DELETE FROM note_versions`），丢弃历史版本。这是更简单但更激进的方案，适合首期实现。
-
-**首期建议**：采用替代方案（清空版本表），在文档中记录为已知限制。后续根据用户反馈决定是否实现重加密。
+**容错策略**：解密失败的版本行**跳过**（保留旧密文不动），只记警告不中断迁移，
+与 note_meta.payload 的容错策略一致。
 
 ### 8.5 磁盘空间评估
 
@@ -1311,7 +1282,6 @@ Future<void> _reEncryptAllVersions(Uint8List oldKey, Uint8List newKey) async {
 |------|------|----------|
 | 版本不同步 | 换设备后看不到旧设备的版本历史 | 可选：将版本作为独立 blob 同步 |
 | 版本不随备份导出 | 导入备份后版本历史丢失 | 可选：备份格式扩展版本数据 |
-| 密钥迁移清空版本表 | 修改密码后版本历史丢失 | 实现 `_reEncryptAllVersions` |
 | 无版本搜索/过滤 | 50 条版本只能下拉框浏览 | 版本列表页（替代下拉框） |
 | 无版本对比（两个历史版本之间） | 只能 diff 当前 vs 历史 | 支持选择两个版本互相对比 |
 

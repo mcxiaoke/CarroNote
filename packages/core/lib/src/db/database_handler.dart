@@ -1629,6 +1629,11 @@ class NotesDatabase {
       //     dataKey，若只重加密笔记而漏掉 payload，迁移后标签将永久无法解密。
       final metaPayloads = await _readMetaPayloadsPlain(db);
 
+      // 2c. 用 oldKey 解出 note_versions 的 title/description 明文。
+      //     **必须与笔记一同迁移**：版本表密文与 notes 表用同一把 dataKey，
+      //     若只重加密笔记而漏掉版本表，迁移后历史版本将永久无法解密。
+      final versionPlains = await _readAllVersionsPlain(db);
+
       // 3. 临时切换 dataKey 为 newKey，准备加密
       _dataKey = Uint8List.fromList(newKey);
 
@@ -1648,6 +1653,16 @@ class NotesDatabase {
           _metaAad(entry.key),
           entry.value,
         );
+      }
+
+      // 4c. 用 newKey 重新加密 note_versions 的 title/description
+      final encryptedVersions = <({int id, String encTitle, String encDesc})>[];
+      for (final v in versionPlains) {
+        encryptedVersions.add((
+          id: v.id,
+          encTitle: await _encryptField(v.uuid, v.title),
+          encDesc: await _encryptField(v.uuid, v.description),
+        ));
       }
 
       // 5. 在事务中一次性写入所有新密文（atomic）
@@ -1672,25 +1687,31 @@ class NotesDatabase {
             whereArgs: [entry.key],
           );
         }
+        // note_versions 与笔记同事务写入：要么一起成功，要么一起回滚，
+        // 不会出现「笔记已用新 key、版本表仍是旧 key」的半迁移状态。
+        for (final v in encryptedVersions) {
+          await txn.update(
+            tableNoteVersions,
+            {
+              NoteVersionFields.title: v.encTitle,
+              NoteVersionFields.description: v.encDesc,
+            },
+            where: '${NoteVersionFields.id} = ?',
+            whereArgs: [v.id],
+          );
+        }
       });
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
 
-      // 6. 清空版本表（首期待定项，见 docs/feature-note-version-history-design.md §8.4）
-      //    版本表中的密文用 oldKey 加密，无法用 newKey 解密。
-      //    首期方案：直接清空，丢弃历史版本。后续可实现 _reEncryptAllVersions。
-      final deletedVersions = await db.delete(tableNoteVersions);
-      if (deletedVersions > 0) {
-        Log.db.w('密钥迁移: 已清空 $deletedVersions 条历史版本（旧密钥加密）');
-      }
-
-      // 7. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
+      // 6. 成功后更新 _dataKey 为 newKey（后续读写用新 key）
       _dataKey = Uint8List.fromList(newKey);
 
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
       Log.db.i(
         '全库重加密完成: ${notes.length} 条笔记, '
-        '${encryptedMeta.length} 条元数据 payload, 耗时 ${ms}ms',
+        '${encryptedMeta.length} 条元数据 payload, '
+        '${encryptedVersions.length} 条历史版本, 耗时 ${ms}ms',
       );
       return notes.length;
     } catch (e, st) {
@@ -1708,7 +1729,8 @@ class NotesDatabase {
   ///
   /// 在**同一个 SQLite 事务**内完成：
   ///   1. 全库重加密（oldKey 解密 → newKey 加密 → 逐行 UPDATE）
-  ///      含 note_meta.payload 重加密，防止换 key 后标签永久丢失
+  ///      含 note_meta.payload 和 note_versions 重加密，防止换 key 后
+  ///      标签和历史版本永久丢失
   ///   2. keyring 账本 upsert（[keyringJson]：新包裹/新纪元）
   ///   3. （可选）blob 待重传标记（[markBlobReupload]：dataKey 真变时）
   ///
@@ -1744,6 +1766,11 @@ class NotesDatabase {
       //     dataKey，若只重加密笔记而漏掉 payload，迁移后标签将永久无法解密。
       final metaPayloads = await _readMetaPayloadsPlain(db);
 
+      // 1c. 用 oldKey 解出 note_versions 的 title/description 明文。
+      //     **必须与笔记一同迁移**：版本表密文与 notes 表用同一把 dataKey，
+      //     若只重加密笔记而漏掉版本表，迁移后历史版本将永久无法解密。
+      final versionPlains = await _readAllVersionsPlain(db);
+
       // 2. 临时切换 dataKey 为 newKey，准备加密
       _dataKey = Uint8List.fromList(newKey);
 
@@ -1761,6 +1788,16 @@ class NotesDatabase {
           _metaAad(entry.key),
           entry.value,
         );
+      }
+
+      // 3c. 用 newKey 重新加密 note_versions 的 title/description
+      final encryptedVersions = <({int id, String encTitle, String encDesc})>[];
+      for (final v in versionPlains) {
+        encryptedVersions.add((
+          id: v.id,
+          encTitle: await _encryptField(v.uuid, v.title),
+          encDesc: await _encryptField(v.uuid, v.description),
+        ));
       }
 
       // 4. 需标记重传的 uuid（dataKey 真变时：非墓碑全部标记）
@@ -1804,6 +1841,19 @@ class NotesDatabase {
             whereArgs: [entry.key],
           );
         }
+        // note_versions 与笔记同事务写入：要么一起成功，要么一起回滚，
+        // 不会出现「笔记已用新 key、版本表仍是旧 key」的半迁移状态。
+        for (final v in encryptedVersions) {
+          await txn.update(
+            tableNoteVersions,
+            {
+              NoteVersionFields.title: v.encTitle,
+              NoteVersionFields.description: v.encDesc,
+            },
+            where: '${NoteVersionFields.id} = ?',
+            whereArgs: [v.id],
+          );
+        }
       });
 
       _invalidateCache(); // 全库密文已更新，使解密缓存失效
@@ -1814,7 +1864,8 @@ class NotesDatabase {
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
       Log.db.i(
         '原子化迁移完成: ${notes.length} 条笔记, '
-        '${encryptedMeta.length} 条元数据 payload, 耗时 ${ms}ms',
+        '${encryptedMeta.length} 条元数据 payload, '
+        '${encryptedVersions.length} 条历史版本, 耗时 ${ms}ms',
       );
       return notes.length;
     } catch (e, st) {
@@ -2325,6 +2376,40 @@ class NotesDatabase {
         out[uuid] = await _decryptField(_metaAad(uuid), encrypted);
       } on Object catch (e) {
         Log.db.w('note_meta payload 解密失败，迁移时跳过该行: uuid=$uuid ($e)');
+      }
+    }
+    return out;
+  }
+
+  /// 用**当前** dataKey 解出所有历史版本的明文。
+  ///
+  /// 仅供 [reEncryptAllNotes] / [reEncryptAllNotesAtomically] 的 dataKey 迁移使用：
+  /// 迁移必须同时覆盖 note_versions 的 title/description 密文，否则换 key 后
+  /// 历史版本将永久无法解密。
+  ///
+  /// 解密失败的行**跳过**——留着旧密文不动，避免用新 key 覆盖出二次损坏；
+  /// 只记警告，不中断迁移（笔记正文迁移优先级更高）。
+  Future<List<({int id, String uuid, String title, String description})>>
+  _readAllVersionsPlain(Database db) async {
+    final rows = await db.query(tableNoteVersions);
+    final out = <({int id, String uuid, String title, String description})>[];
+    for (final row in rows) {
+      final id = row[NoteVersionFields.id] as int?;
+      final uuid = row[NoteVersionFields.noteUuid] as String? ?? '';
+      if (id == null || uuid.isEmpty) continue;
+      final encTitle = row[NoteVersionFields.title] as String? ?? '';
+      final encDesc = row[NoteVersionFields.description] as String? ?? '';
+      try {
+        final plainTitle = await _decryptField(uuid, encTitle);
+        final plainDesc = await _decryptField(uuid, encDesc);
+        out.add((
+          id: id,
+          uuid: uuid,
+          title: plainTitle,
+          description: plainDesc,
+        ));
+      } on Object catch (e) {
+        Log.db.w('note_versions 解密失败，迁移时跳过该行: id=$id uuid=$uuid ($e)');
       }
     }
     return out;

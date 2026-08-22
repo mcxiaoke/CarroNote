@@ -401,9 +401,9 @@ void main() {
   });
 
   // ──────────────────────────────────────────────
-  // F. 密钥迁移清空版本表
+  // F. 密钥迁移重加密版本表
   // ──────────────────────────────────────────────
-  group('reEncryptAllNotes 清空版本表', () {
+  group('reEncryptAllNotes 重加密版本表', () {
     late Uint8List keyA;
     late Uint8List keyB;
 
@@ -424,22 +424,92 @@ void main() {
       await database.close();
     });
 
-    test('密钥迁移后版本表被清空', () async {
+    test('密钥迁移后版本内容仍可解密（reEncryptAllNotes）', () async {
       const uuid = 'ver-reenc-1';
       final note = await database.storeNote(
         _makeNote(uuid: uuid, title: 'Before', description: 'B'),
       );
       await database.saveVersion(note);
 
-      // 确认有版本
-      expect((await database.readVersions(uuid)).length, 1);
+      // 确认有版本且内容正确
+      final versionsBefore = await database.readVersions(uuid);
+      expect(versionsBefore.length, 1);
+      expect(versionsBefore.first.title, 'Before');
+      expect(versionsBefore.first.description, 'B');
 
       // 执行密钥迁移
       await database.reEncryptAllNotes(oldKey: keyA, newKey: keyB);
       database.setDataKey(keyB);
 
-      // 版本表应被清空
-      expect((await database.readVersions(uuid)).isEmpty, isTrue);
+      // 版本表应保留且内容可解密
+      final versionsAfter = await database.readVersions(uuid);
+      expect(versionsAfter.length, 1);
+      expect(versionsAfter.first.title, 'Before');
+      expect(versionsAfter.first.description, 'B');
+      // contentHash 和 savedAt 是明文，应保持不变
+      expect(versionsAfter.first.contentHash, versionsBefore.first.contentHash);
+      expect(versionsAfter.first.savedAt, versionsBefore.first.savedAt);
+    });
+
+    test('密钥迁移后版本内容仍可解密（reEncryptAllNotesAtomically）', () async {
+      const uuid = 'ver-reenc-2';
+      final note = await database.storeNote(
+        _makeNote(uuid: uuid, title: 'Atomic', description: 'D'),
+      );
+      await database.saveVersion(note);
+
+      // 确认有版本
+      expect((await database.readVersions(uuid)).length, 1);
+
+      // 执行原子化密钥迁移
+      await database.reEncryptAllNotesAtomically(
+        oldKey: keyA,
+        newKey: keyB,
+        keyringJson: '{}',
+        markBlobReupload: true,
+      );
+      database.setDataKey(keyB);
+
+      // 版本表应保留且内容可解密
+      final versions = await database.readVersions(uuid);
+      expect(versions.length, 1);
+      expect(versions.first.title, 'Atomic');
+      expect(versions.first.description, 'D');
+    });
+
+    test('多条版本密钥迁移后全部保留', () async {
+      const uuid = 'ver-reenc-3';
+      await database.storeNote(
+        _makeNote(uuid: uuid, title: 'Current', description: 'Now'),
+      );
+      // 保存 3 条不同内容的版本
+      await database.saveVersion(
+        _makeNote(uuid: uuid, title: 'V1', description: 'D1'),
+      );
+      await database.saveVersion(
+        _makeNote(uuid: uuid, title: 'V2', description: 'D2'),
+      );
+      await database.saveVersion(
+        _makeNote(uuid: uuid, title: 'V3', description: 'D3'),
+      );
+
+      // 确认有 3 条版本
+      expect((await database.readVersions(uuid)).length, 3);
+
+      // 执行密钥迁移
+      await database.reEncryptAllNotes(oldKey: keyA, newKey: keyB);
+      database.setDataKey(keyB);
+
+      // 所有版本应保留且内容可解密
+      final versions = await database.readVersions(uuid);
+      expect(versions.length, 3);
+      // 按时间倒序，最新的在前
+      expect(versions[0].title, 'V3');
+      expect(versions[0].description, 'D3');
+      expect(versions[1].title, 'V2');
+      expect(versions[1].description, 'D2');
+      expect(versions[2].title, 'V1');
+      expect(versions[2].description, 'D1');
     });
   });
 

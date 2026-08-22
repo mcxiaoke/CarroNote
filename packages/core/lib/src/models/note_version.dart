@@ -25,7 +25,7 @@
  *   - 本模型**绝不参与** blob 内容寻址。SafeNote.computeHash /
  *     toContentBytes / fromContentBytes / blob AAD 一概不碰。
  *   - 版本表**不同步**——不进入 sync manifest，不上传 blob。
- *   - 密钥迁移时清空版本表（首期待定项，见设计文档 §8.4）。
+ *   - 密钥迁移时自动重新加密版本表（与 notes/note_meta 同事务）。
  */
 
 /// note_versions 表名
