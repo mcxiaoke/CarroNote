@@ -1,13 +1,12 @@
 /*
-* Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
-*
-* SPDX-License-Identifier: GPL-3.0-or-later
-*
-* You may use, distribute and modify this code under the
-* terms of the GPL-3.0+ license.
-*
-* See https://safenotes.dev for support or download.
-*/
+ * Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * You may use, distribute and modify this code under the
+ * terms of the GPL-3.0+ license.
+ *
+ * See https://safenotes.dev for support or download.
+ */
 
 import 'dart:async';
 
@@ -19,20 +18,18 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
-import 'package:safenotes/utils/dev_mode.dart';
-import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/views/settings/backup_setting.dart';
-import 'package:safenotes/views/settings/editor_font_setting.dart';
-import 'package:safenotes/views/settings/font_settings_page.dart';
-import 'package:safenotes/views/settings/theme_setting.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
+/// 设置 Hub 页：6 顶级入口（外观 / 同步 / 备份 / 安全 / 通用 / 关于）
+///
+/// 原单页 24 行长列表按 docs/settings-hub-ia-20260822.md 重构为 Hub + 二级页：
+/// 同步与备份拆为顶级入口，移动端通过 pushNamed 进二级页，桌面端同样走 push（首版）；
+/// 后续可升级为 Master-Detail 双栏，当前已通过 720 限宽居中解决过宽问题。
 class SettingsScreen extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
@@ -43,216 +40,64 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // 开关类偏好本地缓存：切换时 setState 只更新对应字段，避免用空 setState
-  // 强制整页重建（原 17 处 `setState((){})` 空刷新模式，见 db 审查 P1-7）。
-  late bool _isCompactPreview;
-  late bool _isMarkdownEnabled;
-  late bool _isRelativeTime;
-  late bool _isSortByModified;
-  late bool _isFlagSecure;
-  late bool _keyboardIncognito;
-  late bool _isAutoRotate;
-
-  // 导航子页返回后需要刷新的展示值（value 列读 PreferencesStorage）。
-  late String _themeColorName;
-  late String _notesColorValue;
+  late String _themeValue;
+  late String _displayValue;
   late String _syncStatusValue;
   late String _backupValue;
-  late String _biometricValue;
-  late String _pinValue;
-  late String _inactivityValue;
-  late String _languageValue;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSwitchValues();
-  }
+  late String _securityValue;
+  late String _generalValue;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 展示值依赖 context.locale（easy_localization），需在依赖就绪后读取；
-    // 语言切换等依赖变化时再次刷新（无需 setState，紧随其后的 build 会读到新值）。
     _loadDisplayValues();
   }
 
-  /// 一次性从 PreferencesStorage 读入全部开关值（初始化用）。
-  void _loadSwitchValues() {
-    _isCompactPreview = PreferencesStorage.isCompactPreview;
-    _isMarkdownEnabled = PreferencesStorage.isMarkdownEnabled;
-    _isRelativeTime = PreferencesStorage.isRelativeTime;
-    _isSortByModified = PreferencesStorage.isSortByModified;
-    _isFlagSecure = PreferencesStorage.isFlagSecure;
-    _keyboardIncognito = PreferencesStorage.keyboardIncognito;
-    _isAutoRotate = PreferencesStorage.isAutoRotate;
-  }
-
-  /// 读取展示值（value 列）；导航返回后调用以反映子页改动。
   void _loadDisplayValues() {
-    _themeColorName = _currentThemeColorName(context);
-    _notesColorValue = PreferencesStorage.isColorful ? 'On'.tr() : 'Off'.tr();
+    _themeValue = _currentThemeColorName(context);
+    _displayValue = _globalFontTypeValue();
     _syncStatusValue = _syncStatusValueString();
     _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
-    _biometricValue = PreferencesStorage.isBiometricAuthEnabled
-        ? 'On'.tr()
-        : 'Off'.tr();
-    _pinValue = PreferencesStorage.isPinAuthEnabled
-        ? 'On · {n} digits'.tr(
-            namedArgs: {'n': '${PreferencesStorage.pinLength}'},
-          )
-        : 'Off'.tr();
-    _inactivityValue = inactivityTimeoutValue();
-    _languageValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
+    _securityValue = _securitySummary();
+    _generalValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
   }
 
-  /// 导航返回后刷新展示值（非空 setState）。
-  void _refreshDisplayValues() => setState(_loadDisplayValues);
+  void _refresh() => setState(_loadDisplayValues);
 
   @override
   Widget build(BuildContext context) {
-    // 主题切换时重建本页（Dark mode 弹层走 ThemeProvider 通知，无需手动 setState）
     Provider.of<ThemeProvider>(context);
-
     return Scaffold(
       key: const Key('ui-settings-screen'),
       appBar: AppBar(title: Text('Settings'.tr(), style: appBarTitle)),
-      body: shadSettingsList(_settingsGroups(context)),
+      body: shadSettingsList(_hubGroups(context)),
     );
   }
 
-  /// 各设置分区：分区标题 + 卡片（内含若干 tile，行间用分隔线）。
-  ///
-  /// 分组信息架构（IA 重构，见 docs/settings-sidebar-ia-design-20260815.md）：
-  /// 按「使用频率 × 重要性」降序排列为 6 组：
-  /// 外观（Appearance）→ 数据（Data）→ 安全（Security）→ 账户（Account）
-  /// → 通用（General）→ 关于（About）。
-  List<Widget> _settingsGroups(BuildContext context) {
-    final groups = <Widget>[
+  List<Widget> _hubGroups(BuildContext context) {
+    return [
       shadSectionTitle(context, 'Appearance'.tr()),
       shadSettingsCard([
-        // 主题/配色在前（视觉类最高频）
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-darkmode'),
-          icon: LucideIcons.moon,
-          title: 'Dark mode'.tr(),
-          // 值由 ThemeProvider 通知驱动重建，这里直接读偏好即可。
-          value: !PreferencesStorage.isThemeDark ? 'Off'.tr() : 'On'.tr(),
-          onTap: () => showThemeBottomSheet(context),
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-themecolor'),
-          icon: LucideIcons.paintbrush,
-          title: 'Theme color'.tr(),
-          value: _themeColorName,
+          key: const Key('ui-setting-hub-theme'),
+          icon: LucideIcons.palette,
+          title: 'Theme'.tr(),
+          value: _themeValue,
           onTap: () async {
-            await Navigator.pushNamed(context, '/themeColorSettings');
-            _refreshDisplayValues();
+            await Navigator.pushNamed(context, '/themeSettings');
+            _refresh();
           },
         ),
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-notescolor'),
-          icon: LucideIcons.brush,
-          title: 'Notes Color'.tr(),
-          value: _notesColorValue,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/chooseColorSettings');
-            _refreshDisplayValues();
-          },
-        ),
-        // 全局字体设置：字体类型对整个 App 生效（外观组）。
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-fontsettings'),
+          key: const Key('ui-setting-hub-display'),
           icon: LucideIcons.type,
-          title: 'Font settings'.tr(),
-          value: _globalFontTypeValue(),
+          title: 'Display'.tr(),
+          value: _displayValue,
           onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const FontSettingsPicker()),
-            );
-            _refreshDisplayValues();
-          },
-        ),
-        // 排版（紧凑/Markdown）居中
-        KeyedSubtree(
-          key: const Key('ui-setting-switch-compact'),
-          child: shadSwitchTile(
-            context,
-            icon: LucideIcons.shrink,
-            title: 'Compact Notes'.tr(),
-            value: _isCompactPreview,
-            onChanged: (v) {
-              PreferencesStorage.setIsCompactPreview(v);
-              setState(() => _isCompactPreview = v);
-            },
-          ),
-        ),
-        KeyedSubtree(
-          key: const Key('ui-setting-switch-markdown'),
-          child: shadSwitchTile(
-            context,
-            icon: LucideIcons.type,
-            title: 'Markdown'.tr(),
-            description:
-                'Format note preview with Markdown. Off shows plain text.'.tr(),
-            value: _isMarkdownEnabled,
-            onChanged: (v) {
-              PreferencesStorage.setIsMarkdownEnabled(v);
-              setState(() => _isMarkdownEnabled = v);
-            },
-          ),
-        ),
-        // 笔记样式：字体类型（系统/非衬线/衬线/等宽）+ 字号 + 行高 + 对齐，
-        // 仅作用于笔记编辑/纯文本预览/版本历史。
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-notestyle'),
-          icon: LucideIcons.type,
-          title: 'Note style'.tr(),
-          value: _noteStyleValue(),
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const NoteStylePicker()),
-            );
-            _refreshDisplayValues();
-          },
-        ),
-        // 时间与排序（信息呈现方式）靠后
-        KeyedSubtree(
-          key: const Key('ui-setting-switch-relativetime'),
-          child: shadSwitchTile(
-            context,
-            icon: LucideIcons.clock,
-            title: 'Relative Time'.tr(),
-            description:
-                'Show note timestamps as relative (e.g. 5 minutes ago). '
-                        'Off shows absolute dates.'
-                    .tr(),
-            value: _isRelativeTime,
-            onChanged: (v) {
-              PreferencesStorage.setIsRelativeTime(v);
-              setState(() => _isRelativeTime = v);
-            },
-          ),
-        ),
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.arrowUpDown,
-          title: 'Sort by Modified Date'.tr(),
-          description:
-              'Sort notes by last modified time. '
-                      'Off sorts by creation time.'
-                  .tr(),
-          value: _isSortByModified,
-          onChanged: (v) {
-            PreferencesStorage.setIsSortByModified(v);
-            setState(() => _isSortByModified = v);
+            await Navigator.pushNamed(context, '/displaySettings');
+            _refresh();
           },
         ),
       ]),
@@ -260,40 +105,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-sync'),
+          key: const Key('ui-setting-hub-sync'),
           icon: LucideIcons.cloud,
           title: 'Sync Settings'.tr(),
           value: _syncStatusValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/syncSettings');
-            _refreshDisplayValues();
+            _refresh();
           },
         ),
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-backup'),
+          key: const Key('ui-setting-hub-backup'),
           icon: LucideIcons.cloudUpload,
           title: 'Backup'.tr(),
           value: _backupValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/backup');
-            _refreshDisplayValues();
-          },
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-exportbackup'),
-          icon: LucideIcons.fileOutput,
-          title: 'Export Backup'.tr(),
-          onTap: () => startExportNotes(context),
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-importbackup'),
-          icon: LucideIcons.download,
-          title: 'Import Backup'.tr(),
-          onTap: () async {
-            await showImportDialog(context);
+            _refresh();
           },
         ),
       ]),
@@ -301,71 +130,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-biometric'),
-          icon: LucideIcons.fingerprint,
-          title: 'Biometric'.tr(),
-          value: _biometricValue,
+          key: const Key('ui-setting-hub-security'),
+          icon: LucideIcons.shield,
+          title: 'Security'.tr(),
+          value: _securityValue,
           onTap: () async {
-            await Navigator.pushNamed(context, '/biometricSetting');
-            _refreshDisplayValues();
-          },
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-pin'),
-          icon: LucideIcons.key,
-          title: 'PIN Lock'.tr(),
-          value: _pinValue,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/pinSetting');
-            _refreshDisplayValues();
-          },
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-inactivity'),
-          icon: LucideIcons.smartphone,
-          title: 'Logout on Inactivity'.tr(),
-          value: _inactivityValue,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/inactivityTimerSettings');
-            _refreshDisplayValues();
-          },
-        ),
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.monitorOff,
-          title: 'Secure Display'.tr(),
-          description:
-              '${'When turned on, the content on the screen is treated as secure, '
-                  'blocking background snapshots and preventing it from '
-                  'appearing in screenshots or from being viewed on '
-                  'non-secure displays.'.tr()} '
-              '${'Note: on Android 13 and above, for privacy the recent-tasks '
-                  'thumbnail is always hidden even when this is off.'.tr()}',
-          value: _isFlagSecure,
-          onChanged: (v) {
-            PreferencesStorage.setIsFlagSecure(v);
-            setState(() => _isFlagSecure = v);
-          },
-        ),
-        shadSwitchTile(
-          context,
-          icon: LucideIcons.eyeOff,
-          title: 'Incognito Keyboard'.tr(),
-          value: _keyboardIncognito,
-          onChanged: (v) {
-            PreferencesStorage.setKeyboardIncognito(v);
-            setState(() => _keyboardIncognito = v);
-          },
-        ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-item-changepassphrase'),
-          icon: LucideIcons.lock,
-          title: 'Change Passphrase'.tr(),
-          onTap: () async {
-            await Navigator.pushNamed(context, '/changepassphrase');
+            await Navigator.pushNamed(context, '/securitySettings');
+            _refresh();
           },
         ),
       ]),
@@ -373,68 +144,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shadSettingsCard([
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-language'),
-          icon: LucideIcons.languages,
-          title: 'Language'.tr(),
-          value: _languageValue,
-          subtitle: context.locale.toString() != 'en_US'
-              ? 'Language'.tr()
-              : null,
+          key: const Key('ui-setting-hub-general'),
+          icon: LucideIcons.slidersHorizontal,
+          title: 'General'.tr(),
+          value: _generalValue,
           onTap: () async {
-            await Navigator.pushNamed(context, '/chooseLanguageSettings');
-            _refreshDisplayValues();
+            await Navigator.pushNamed(context, '/generalSettings');
+            _refresh();
           },
         ),
-        // Auto Rotate 为纯移动端选项，桌面/Web 隐藏该行（IA 方案 §3.3）
-        if (!isDesktopPlatform)
-          shadSwitchTile(
-            context,
-            icon: LucideIcons.rotateCw,
-            title: 'Auto Rotate'.tr(),
-            description: 'Close and open app for change to take effect'.tr(),
-            value: _isAutoRotate,
-            onChanged: (v) {
-              PreferencesStorage.setIsAutoRotate(v);
-              setState(() => _isAutoRotate = v);
-            },
-          ),
-        // 开发者模式：未开启时不显示；开启后（在关于页连点图标）才出现本开关，
-        // 仅用于关闭；关闭即刻消失，再次开启须回关于页。
-        if (DevMode.isActive)
-          KeyedSubtree(
-            key: const Key('ui-setting-switch-devmode'),
-            child: shadSwitchTile(
-              context,
-              icon: LucideIcons.bug,
-              title: 'Developer Mode'.tr(),
-              description: 'Enable debug panel, full logs and log web server.'
-                  .tr(),
-              value: true,
-              onChanged: (v) async {
-                await DevMode.setActive(v);
-                if (mounted) setState(() {});
-              },
-            ),
-          ),
-        // 关于：低频信息页入口（源码 / 开源许可 / 反馈均在 About 页内）
         shadNavigationTile(
           context,
-          key: const Key('ui-setting-item-about'),
+          key: const Key('ui-setting-hub-about'),
           icon: LucideIcons.info,
           title: 'About'.tr(),
           onTap: () async {
             await Navigator.pushNamed(context, '/about');
-            // 从关于页解锁开发者模式后返回，需重建以显示/启用开发者模式开关
             if (mounted) setState(() {});
+            _refresh();
           },
         ),
       ]),
+      const SizedBox(height: 12),
     ];
-
-    return groups;
   }
 
-  /// 当前主题色的语言化显示名（中文用中文名，其他语言用英文名）。
   String _currentThemeColorName(BuildContext context) {
     final isZh = context.locale.languageCode == 'zh';
     final seed = AppThemeSeeds.itemByIndex(
@@ -444,7 +178,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return isZh ? seed.name : seed.nameEn;
   }
 
-  /// 全局字体类型入口的展示值（读 fontFamilyTypeIndex）。
   String _globalFontTypeValue() {
     final t =
         AppFontType.values[PreferencesStorage.fontFamilyTypeIndex.clamp(
@@ -458,33 +191,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     };
   }
 
-  /// 笔记样式入口的展示值：字体类型 · 字号。
-  String _noteStyleValue() {
-    final idx = PreferencesStorage.noteFontFamilyTypeIndex;
-    final fontLabel = switch (idx) {
-      0 => 'System'.tr(),
-      1 => 'Sans-serif'.tr(),
-      2 => 'Serif'.tr(),
-      3 => 'Monospace'.tr(),
-      _ => 'System'.tr(),
-    };
-    final sizeLabel = EditorText.labelOf(
-      PreferencesStorage.editorFontSizeIndex,
-    );
-    return '$fontLabel · $sizeLabel';
-  }
-
-  String inactivityTimeoutValue() {
-    // 取值走 PreferencesStorage 的统一来源。
-    final index = PreferencesStorage.inactivityTimeoutIndex;
-    final seconds = PreferencesStorage.kInactivityTimeoutChoicesSeconds[index];
-    if (seconds < 60) {
-      return '{seconds} sec'.tr(namedArgs: {'seconds': '$seconds'});
+  String _securitySummary() {
+    if (PreferencesStorage.isBiometricAuthEnabled ||
+        PreferencesStorage.isPinAuthEnabled) {
+      return 'On'.tr();
     }
-    return '{minutes} min'.tr(namedArgs: {'minutes': '${seconds ~/ 60}'});
+    return 'Off'.tr();
   }
 
-  /// 同步状态显示值（三态）。
   String _syncStatusValueString() {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();

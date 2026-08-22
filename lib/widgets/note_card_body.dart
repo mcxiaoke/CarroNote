@@ -118,6 +118,12 @@ class NoteCardBody extends StatelessWidget {
 
   /// 正常模式：标题 + 时间 + 摘要。
   Widget _buildFull(Color fontColor, String time) {
+    // 卡片预览为单行摘要：折叠标题/正文里的换行符，避免 Text(maxLines)+
+    // overflow:ellipsis 在遇到内嵌 '\n' 时多预留一行导致卡片 Column 溢出。
+    final String titleText = sanitize(note.title).replaceAll('\n', ' ');
+    final String abstractText = sanitize(
+      note.abstractText,
+    ).replaceAll('\n', ' ');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -127,8 +133,8 @@ class NoteCardBody extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                sanitize(note.title),
-                textDirection: getTextDirecton(note.title),
+                titleText,
+                textDirection: getTextDirecton(titleText),
                 style: AppText.body.copyWith(
                   fontWeight: FontWeight.w500,
                   color: fontColor,
@@ -150,8 +156,8 @@ class NoteCardBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpace.sm),
         Text(
-          sanitize(note.abstractText),
-          textDirection: getTextDirecton(note.abstractText),
+          abstractText,
+          textDirection: getTextDirecton(abstractText),
           style: AppText.body.copyWith(color: fontColor),
           maxLines: bodyMaxLines,
           overflow: TextOverflow.ellipsis,
@@ -162,9 +168,11 @@ class NoteCardBody extends StatelessWidget {
 
   /// 紧凑模式：AutoSizeText 单块（标题或摘要）+ 时间。
   Widget _buildCompact(Color fontColor, String time) {
-    final previewText = note.title.trim().isEmpty
-        ? note.abstractText
-        : note.title;
+    final previewText =
+        (note.title.trim().isEmpty ? note.abstractText : note.title).replaceAll(
+          '\n',
+          ' ',
+        );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,

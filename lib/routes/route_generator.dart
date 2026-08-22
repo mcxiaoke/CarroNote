@@ -29,12 +29,17 @@ import 'package:safenotes/views/change_passphrase.dart';
 import 'package:safenotes/views/deleted_notes.dart';
 import 'package:safenotes/views/home.dart';
 import 'package:safenotes/views/settings/about_page.dart';
+import 'package:safenotes/views/settings/appearance_settings_page.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
+import 'package:safenotes/views/settings/display_page.dart';
+import 'package:safenotes/views/settings/theme_page.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
+import 'package:safenotes/views/settings/general_settings_page.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
 import 'package:safenotes/views/settings/language_setting.dart';
 import 'package:safenotes/views/settings/notes_color_setting.dart';
 import 'package:safenotes/views/settings/pin_setting.dart';
+import 'package:safenotes/views/settings/security_settings_page.dart';
 import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
@@ -168,6 +173,21 @@ class RouteGenerator {
 
       case '/pinSetting':
         return _buildRoute(const PinSetting(), settings);
+
+      case '/appearanceSettings':
+        return _buildRoute(const AppearanceSettingsPage(), settings);
+
+      case '/themeSettings':
+        return _buildRoute(const ThemeSettingsPage(), settings);
+
+      case '/displaySettings':
+        return _buildRoute(const DisplaySettingsPage(), settings);
+
+      case '/securitySettings':
+        return _buildRoute(const SecuritySettingsPage(), settings);
+
+      case '/generalSettings':
+        return _buildRoute(const GeneralSettingsPage(), settings);
 
       default:
         return _errorRoute(route: routeName);

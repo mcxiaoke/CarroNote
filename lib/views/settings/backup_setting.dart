@@ -20,6 +20,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/file_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
@@ -114,8 +115,7 @@ class BackupSettingState extends State<BackupSetting> {
           context,
           icon: LucideIcons.cloud,
           title: 'Auto Backup'.tr(),
-          description:
-              'AppBackupDescription'.tr(),
+          description: 'AppBackupDescription'.tr(),
           value: isBackupOn,
           onChanged: (value) async {
             await PreferencesStorage.setIsBackupOn(value);
@@ -154,6 +154,25 @@ class BackupSettingState extends State<BackupSetting> {
           onTap: () => onBackupNow(),
         ),
         _encryptedBadge(),
+      ]),
+      shadSectionTitle(context, 'Transfer'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-exportbackup'),
+          icon: LucideIcons.fileOutput,
+          title: 'Export Backup'.tr(),
+          onTap: () => startExportNotes(context),
+        ),
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-item-importbackup'),
+          icon: LucideIcons.download,
+          title: 'Import Backup'.tr(),
+          onTap: () async {
+            await showImportDialog(context);
+          },
+        ),
       ]),
       const SizedBox(height: 12),
     ]);
