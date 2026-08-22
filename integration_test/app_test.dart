@@ -74,21 +74,46 @@ const Map<String, Size?> _viewports = {
   'compact-land-890x400': Size(890, 400), // 窄屏手机，横屏
 };
 
-/// 设置页 12 个导航 tile 的 key，按屏幕上从上到下的顺序。
-const List<String> _settingsTileKeys = <String>[
-  'ui-setting-item-darkmode',
-  'ui-setting-item-themecolor',
-  'ui-setting-item-notescolor',
-  'ui-setting-item-sync',
-  'ui-setting-item-backup',
-  'ui-setting-item-exportbackup',
-  'ui-setting-item-importbackup',
-  'ui-setting-item-biometric',
-  'ui-setting-item-inactivity',
-  'ui-setting-item-changepassphrase',
-  'ui-setting-item-language',
-  'ui-setting-item-about',
+/// 设置 Hub 7 个顶级 tile 的 key（主题与显示已提升为一级入口）。
+const List<String> _hubTileKeys = <String>[
+  'ui-setting-hub-theme',
+  'ui-setting-hub-display',
+  'ui-setting-hub-sync',
+  'ui-setting-hub-backup',
+  'ui-setting-hub-security',
+  'ui-setting-hub-general',
+  'ui-setting-hub-about',
 ];
+
+// ignore: unused_element
+/// Hub 内二级页 leaf tile 映射（用于遍历二级页不崩溃校验，专项用例覆盖时可参考）。
+const Map<String, List<String>> _hubLeafKeys = {
+  'ui-setting-hub-theme': [
+    'ui-setting-item-darkmode',
+    'ui-setting-item-themecolor',
+    'ui-setting-item-notescolor',
+  ],
+  'ui-setting-hub-display': [
+    'ui-setting-item-fontsettings',
+    'ui-setting-switch-compact',
+    'ui-setting-switch-markdown',
+    'ui-setting-item-notestyle',
+    'ui-setting-switch-relativetime',
+  ],
+  'ui-setting-hub-sync': ['ui-setting-switch-sync', 'ui-sync-config-tile'],
+  'ui-setting-hub-backup': [
+    'ui-setting-item-exportbackup',
+    'ui-setting-item-importbackup',
+  ],
+  'ui-setting-hub-security': [
+    'ui-setting-item-biometric',
+    'ui-setting-item-pin',
+    'ui-setting-item-inactivity',
+    'ui-setting-item-changepassphrase',
+  ],
+  'ui-setting-hub-general': ['ui-setting-item-language'],
+  'ui-setting-hub-about': [],
+};
 
 Future<void> main() async {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -175,48 +200,49 @@ Future<void> main() async {
 
         await _forEachViewport(tester, (tester, size) async {
           await _openSettings(tester);
-          // Confirm we are on the settings screen: the dark-mode tile is always
-          // present among the navigation tiles (the settings icon itself only
-          // lives on the home entry, not on this screen).
+          // Hub 已拆为 7 顶级入口（主题/显示为一级标题），不再直接展示 darkmode 等叶节点。
           expect(
-            find.byKey(const Key('ui-setting-item-darkmode')),
+            find.byKey(const Key('ui-setting-hub-theme')),
             findsOneWidget,
-            reason: 'Expected to be on the settings screen @ $size',
+            reason: 'Expected to be on the settings hub @ $size',
+          );
+          expect(
+            find.byKey(const Key('ui-settings-screen')),
+            findsOneWidget,
+            reason: 'Expected settings hub screen @ $size',
           );
 
-          // Navigation tiles in their on-screen top->bottom order. Visiting each
-          // simply opens the sub-page/sheet/dialog and returns, asserting that
-          // nothing crashed and no layout overflow occurred.
-          for (final key in _settingsTileKeys) {
-            final tileFinder = find.byKey(Key(key));
-            // The settings list is a (lazily built) ListView. A tile may be in
-            // the tree but scrolled out of view, so always scroll it into view
-            // before tapping (no-op when already visible).
+          // 遍历每个 Hub 入口，进入二级页后校验不崩溃即返回 Hub。
+          // 二级页内的叶节点由其它专项用例覆盖，此处仅校验 Hub→二级 的导航链路。
+          for (final hubKey in _hubTileKeys) {
+            final hubFinder = find.byKey(Key(hubKey));
             await tester.scrollUntilVisible(
-              tileFinder,
+              hubFinder,
               200.0,
               scrollable: find.byType(Scrollable).first,
             );
             await tester.pumpAndSettle();
-
-            await tester.tap(tileFinder);
+            await tester.tap(hubFinder);
             await tester.pumpAndSettle();
 
-            // A "crash" surfaces as an ErrorWidget; a layout overflow surfaces as
-            // a pending FlutterError captured by tester.takeException().
             expect(
               find.byType(ErrorWidget),
               findsNothing,
-              reason: 'ErrorWidget rendered on $key @ $size',
+              reason: 'ErrorWidget on hub $hubKey @ $size',
             );
             expect(
               tester.takeException(),
               isNull,
-              reason: 'Crash / layout overflow on $key @ $size',
+              reason: 'Crash / overflow on hub $hubKey @ $size',
             );
 
-            // Return to the settings screen.
             await _popTopRoute(tester);
+            await tester.pumpAndSettle();
+            expect(
+              find.byKey(const Key('ui-settings-screen')),
+              findsOneWidget,
+              reason: 'Should return to hub after $hubKey @ $size',
+            );
           }
         });
       },
@@ -527,74 +553,41 @@ Future<void> main() async {
       }
     });
 
-    testWidgets(
-      'note: unsaved changes three-way dialog (cancel/discard/save)',
-      (WidgetTester tester) async {
-        await _loginToHome(tester);
-        const title = 'ZZZThreeWay';
-        await _createNote(tester, title, 'orig body');
-        try {
-          // Branch 1: Cancel keeps us on the editor.
-          await _openNoteByTitle(tester, title);
-          await tester.tap(find.byKey(const Key('ui-note-button-preview')));
-          await tester.pumpAndSettle();
-          await tester.enterText(
-            find.byKey(const Key('ui-note-field-body')),
-            'unsaved change',
-          );
-          await tester.pumpAndSettle();
-          await tester.binding.handlePopRoute();
-          await tester.pumpAndSettle();
-          expect(find.byKey(const Key('ui-dialog-cancel')), findsOneWidget);
-          await tester.tap(find.byKey(const Key('ui-dialog-cancel')));
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(const Key('ui-note-screen')),
-            findsOneWidget,
-            reason: 'cancel should stay on the editor',
-          );
-
-          // Branch 2: Discard pops without saving.
-          await tester.binding.handlePopRoute();
-          await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const Key('ui-dialog-discard')));
-          await _waitFor(tester, () => _isHome(tester));
-          await _openNoteByTitle(tester, title);
-          expect(
-            find.text('orig body'),
-            findsWidgets,
-            reason: 'discard should keep the last saved body',
-          );
-          expect(find.text('unsaved change'), findsNothing);
-          await _popTopRoute(tester);
-          await _waitFor(tester, () => _isHome(tester));
-
-          // Branch 3: Save persists the changes.
-          await _openNoteByTitle(tester, title);
-          await tester.tap(find.byKey(const Key('ui-note-button-preview')));
-          await tester.pumpAndSettle();
-          await tester.enterText(
-            find.byKey(const Key('ui-note-field-body')),
-            'saved body',
-          );
-          await tester.pumpAndSettle();
-          await tester.binding.handlePopRoute();
-          await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const Key('ui-dialog-confirm'))); // Save
-          await _waitFor(tester, () => _isHome(tester));
-          await _openNoteByTitle(tester, title);
-          expect(
-            find.text('saved body'),
-            findsWidgets,
-            reason: 'save should persist the body',
-          );
-          await _popTopRoute(tester);
-          await _waitFor(tester, () => _isHome(tester));
-        } finally {
-          await _deleteNoteByTitle(tester, title);
-        }
-      },
-    );
+    testWidgets('note: unsaved changes are auto-saved on exit (no dialog)', (
+      WidgetTester tester,
+    ) async {
+      // 笔记页改为退出时自动保存（PopScope canPop:false 拦截 → 自动保存），
+      // 不再弹「取消/丢弃/保存」三选一对话框。此用例校验：编辑后直接退出，
+      // 改动被自动落库，重新打开仍能看到最新内容。
+      await _loginToHome(tester);
+      const title = 'ZZZAutoSave';
+      await _createNote(tester, title, 'orig body');
+      try {
+        await _openNoteByTitle(tester, title);
+        // 切到编辑态并修改正文。
+        await tester.tap(find.byKey(const Key('ui-note-button-preview')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('ui-note-field-body')),
+          'autosaved body',
+        );
+        await tester.pumpAndSettle();
+        // 直接退出（不点任何保存按钮）→ 触发自动保存。
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+        // 重新打开校验改动已持久化。
+        await _openNoteByTitle(tester, title);
+        expect(
+          find.text('autosaved body'),
+          findsWidgets,
+          reason: 'unsaved edit should be auto-saved on exit',
+        );
+        await _popTopRoute(tester);
+        await _waitFor(tester, () => _isHome(tester));
+      } finally {
+        await _deleteNoteByTitle(tester, title);
+      }
+    });
 
     testWidgets('note: markdown renders in the preview when enabled', (
       WidgetTester tester,
@@ -721,6 +714,15 @@ Future<void> main() async {
       (WidgetTester tester) async {
         await _loginToHome(tester);
         await _openSettings(tester);
+        // Hub: 进入 Backup 二级页（同步与备份已拆为顶级入口）
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('ui-setting-hub-backup')),
+          200.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-setting-hub-backup')));
+        await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
           find.byKey(const Key('ui-setting-item-exportbackup')),
           200.0,
@@ -763,7 +765,10 @@ Future<void> main() async {
         await tester.pumpAndSettle();
         expect(exportDisabled(), isFalse);
 
-        // Cancel (pop the dialog) closes the panel back to settings.
+        // Cancel (pop the dialog) closes the panel back to backup page.
+        await _popTopRoute(tester);
+        await tester.pumpAndSettle();
+        // 回到 Backup 页后返回 Hub，再回 Home
         await _popTopRoute(tester);
         await _waitFor(
           tester,
@@ -780,6 +785,14 @@ Future<void> main() async {
       await _loginToHome(tester);
       await _openSettings(tester);
       await tester.scrollUntilVisible(
+        find.byKey(const Key('ui-setting-hub-backup')),
+        200.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-setting-hub-backup')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
         find.byKey(const Key('ui-setting-item-importbackup')),
         200.0,
         scrollable: find.byType(Scrollable).first,
@@ -792,6 +805,15 @@ Future<void> main() async {
       expect(find.byKey(const Key('ui-dialog-cancel')), findsOneWidget);
       await tester.tap(find.byKey(const Key('ui-dialog-cancel')));
       await tester.pumpAndSettle();
+      // 仍在 Backup 二级页
+      expect(
+        find.byKey(const Key('ui-setting-item-importbackup')),
+        findsOneWidget,
+      );
+
+      // 返回 Hub 再回 Home
+      await _popTopRoute(tester);
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('ui-settings-screen')), findsOneWidget);
 
       await _popTopRoute(tester);
@@ -803,6 +825,15 @@ Future<void> main() async {
     ) async {
       await _loginToHome(tester);
       await _openSettings(tester);
+      // 进入 Theme 二级页（主题已提升为一级入口）
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('ui-setting-hub-theme')),
+        200.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-setting-hub-theme')));
+      await tester.pumpAndSettle();
       // The dark-mode tile opens a bottom sheet.
       await _toggleSettingSwitch(tester, const Key('ui-setting-item-darkmode'));
       expect(find.byKey(const Key('ui-theme-switch-dark')), findsOneWidget);
@@ -813,6 +844,9 @@ Future<void> main() async {
       expect(tester.takeException(), isNull);
 
       await _popTopRoute(tester); // close the sheet
+      await tester.pumpAndSettle();
+      // 返回 Hub
+      await _popTopRoute(tester);
       await _waitFor(
         tester,
         () => tester.any(find.byKey(const Key('ui-settings-screen'))),
@@ -826,6 +860,14 @@ Future<void> main() async {
     ) async {
       await _loginToHome(tester);
       await _openSettings(tester);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('ui-setting-hub-theme')),
+        200.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-setting-hub-theme')));
+      await tester.pumpAndSettle();
       await _toggleSettingSwitch(
         tester,
         const Key('ui-setting-item-notescolor'),
@@ -836,7 +878,9 @@ Future<void> main() async {
       await _toggleSettingSwitch(tester, const Key('ui-notescolor-switch'));
       expect(tester.takeException(), isNull);
 
-      await _popTopRoute(tester); // back to settings
+      await _popTopRoute(tester); // back to appearance
+      await tester.pumpAndSettle();
+      await _popTopRoute(tester); // back to hub
       await _waitFor(
         tester,
         () => tester.any(find.byKey(const Key('ui-settings-screen'))),
@@ -850,6 +894,14 @@ Future<void> main() async {
     ) async {
       await _loginToHome(tester);
       await _openSettings(tester);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('ui-setting-hub-security')),
+        200.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-setting-hub-security')));
+      await tester.pumpAndSettle();
       await _toggleSettingSwitch(
         tester,
         const Key('ui-setting-item-changepassphrase'),
@@ -862,7 +914,9 @@ Future<void> main() async {
       );
       expect(tester.takeException(), isNull);
 
-      await _popTopRoute(tester); // back to settings (no change performed)
+      await _popTopRoute(tester); // back to security page
+      await tester.pumpAndSettle();
+      await _popTopRoute(tester); // back to hub
       await _waitFor(
         tester,
         () => tester.any(find.byKey(const Key('ui-settings-screen'))),
@@ -876,7 +930,16 @@ Future<void> main() async {
     ) async {
       await _loginToHome(tester);
       await _openSettings(tester);
-      // Compact Notes and Relative Time: toggle on then back off.
+      // 进入 Display 二级页操作紧凑/相对时间开关（已从 Appearance 提升）
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('ui-setting-hub-display')),
+        200.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-setting-hub-display')));
+      await tester.pumpAndSettle();
+
       await _toggleSettingSwitch(
         tester,
         const Key('ui-setting-switch-compact'),
@@ -895,6 +958,8 @@ Future<void> main() async {
       );
       expect(tester.takeException(), isNull);
 
+      await _popTopRoute(tester); // back to hub
+      await tester.pumpAndSettle();
       await _popTopRoute(tester); // back home
       await _waitFor(tester, () => _isHome(tester));
     });
@@ -905,12 +970,12 @@ Future<void> main() async {
       await _loginToHome(tester);
       await _openSettings(tester);
       await tester.scrollUntilVisible(
-        find.byKey(const Key('ui-setting-item-sync')),
+        find.byKey(const Key('ui-setting-hub-sync')),
         200.0,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+      await tester.tap(find.byKey(const Key('ui-setting-hub-sync')));
       await tester.pumpAndSettle();
 
       // The sync settings page renders its tiles (sync switch, config tile).
@@ -918,7 +983,7 @@ Future<void> main() async {
       expect(find.byKey(const Key('ui-sync-config-tile')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      await _popTopRoute(tester); // back to settings
+      await _popTopRoute(tester); // back to hub
       await _waitFor(
         tester,
         () => tester.any(find.byKey(const Key('ui-settings-screen'))),
@@ -933,12 +998,12 @@ Future<void> main() async {
       await _loginToHome(tester);
       await _openSettings(tester);
       await tester.scrollUntilVisible(
-        find.byKey(const Key('ui-setting-item-sync')),
+        find.byKey(const Key('ui-setting-hub-sync')),
         200.0,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+      await tester.tap(find.byKey(const Key('ui-setting-hub-sync')));
       await tester.pumpAndSettle();
 
       // Open the backend config panel (a dialog on desktop).
@@ -968,24 +1033,24 @@ Future<void> main() async {
       await _openSettings(tester);
       final scrollable = find.byType(Scrollable).first;
 
-      // About is the last tile; scroll down to reveal it.
+      // Hub 已缩短为 6 项，About 仍在底部；校验 Hub 滚动不溢出
       await tester.scrollUntilVisible(
-        find.byKey(const Key('ui-setting-item-about')),
+        find.byKey(const Key('ui-setting-hub-about')),
         300.0,
         scrollable: scrollable,
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('ui-setting-item-about')), findsOneWidget);
+      expect(find.byKey(const Key('ui-setting-hub-about')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // Scroll back up to the first tile.
+      // Scroll back up to the first hub tile（主题为首项）.
       await tester.scrollUntilVisible(
-        find.byKey(const Key('ui-setting-item-darkmode')),
+        find.byKey(const Key('ui-setting-hub-theme')),
         -300.0,
         scrollable: scrollable,
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('ui-setting-item-darkmode')), findsOneWidget);
+      expect(find.byKey(const Key('ui-setting-hub-theme')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await _popTopRoute(tester);
@@ -1116,7 +1181,10 @@ bool _isHome(WidgetTester tester) {
 /// navigator and lets the frame settle.
 Future<void> _popTopRoute(WidgetTester tester) async {
   final element = tester.element(find.byType(Scaffold).first);
-  Navigator.of(element, rootNavigator: true).pop();
+  // 必须用 maybePop 而非 pop：笔记页用 PopScope(canPop:false) 拦截退出并
+  // 自动保存，pop() 会强制关闭路由、绕过自动保存导致内容丢失；maybePop 才会
+  // 触发 onPopInvoked(didPop:false) → 自动保存 → 真正关闭。
+  await Navigator.of(element, rootNavigator: true).maybePop();
   await tester.pumpAndSettle();
 }
 
@@ -1133,7 +1201,8 @@ Future<void> _backToHome(WidgetTester tester) async {
       final element = tester.element(find.byType(Scaffold).first);
       final navigator = Navigator.of(element, rootNavigator: true);
       if (navigator.canPop()) {
-        navigator.pop();
+        // 同 _popTopRoute：用 maybePop 尊重 PopScope 的自动保存拦截。
+        await navigator.maybePop();
         await tester.pumpAndSettle();
         continue;
       }
@@ -1387,10 +1456,20 @@ Future<void> _toggleSettingSwitch(WidgetTester tester, Key key) async {
   await _settle(tester); // 开关切换动画/持久化走完
 }
 
-/// Opens Settings, toggles the "Markdown" switch, and returns to the home screen.
+/// Opens Settings → Display, toggles the "Markdown" switch, and returns to home.
 Future<void> _toggleMarkdown(WidgetTester tester) async {
   await _openSettings(tester);
+  await tester.scrollUntilVisible(
+    find.byKey(const Key('ui-setting-hub-display')),
+    200.0,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('ui-setting-hub-display')));
+  await tester.pumpAndSettle();
   await _toggleSettingSwitch(tester, const Key('ui-setting-switch-markdown'));
+  await _popTopRoute(tester); // back to hub
+  await tester.pumpAndSettle();
   await _popTopRoute(tester); // back to home
   await tester.pumpAndSettle();
 }
@@ -1410,12 +1489,12 @@ Future<void> _disableSync(WidgetTester tester) async {
 
   await _openNavEntry(tester, const Key('ui-home-nav-settings'));
   await tester.scrollUntilVisible(
-    find.byKey(const Key('ui-setting-item-sync')),
+    find.byKey(const Key('ui-setting-hub-sync')),
     200.0,
     scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('ui-setting-item-sync')));
+  await tester.tap(find.byKey(const Key('ui-setting-hub-sync')));
   await tester.pumpAndSettle();
 
   // Only toggle off if sync is currently enabled.
