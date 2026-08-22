@@ -384,6 +384,8 @@
   "Show less": "收起",
   "Show all ({count})": "全部显示（{count}）",
   "Edit": "编辑",
+  "Redo": "重做",
+  "Undo": "撤销",
   "Failed to save note: {error}": "保存笔记失败: {error}",
   "Last Backup": "上次备份时间",
   "Backup folder: {path}": "备份路径: {path}",

@@ -384,6 +384,8 @@
   "Show less": "Show less",
   "Show all ({count})": "Show all ({count})",
   "Edit": "Edit",
+  "Redo": "Redo",
+  "Undo": "Undo",
   "Failed to save note: {error}": "Failed to save note: {error}",
   "Last Backup": "Last Backup",
   "Backup folder: {path}": "Backup folder: {path}",

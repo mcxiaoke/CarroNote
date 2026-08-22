@@ -26,17 +26,14 @@ import 'package:safenotes/utils/text_direction_util.dart';
 class NoteFormWidget extends StatelessWidget {
   final StreamController<SessionState> sessionStateStream;
 
-  final String? title;
-  final String? description;
-  final ValueChanged<String> onChangedTitle;
-  final ValueChanged<String> onChangedDescription;
+  /// 标题 / 正文编辑控制器，由编辑页持有并接线撤销栈监听器。
+  final TextEditingController titleController;
+  final TextEditingController descriptionController;
 
   const NoteFormWidget({
     super.key,
-    this.title = '',
-    this.description = '',
-    required this.onChangedTitle,
-    required this.onChangedDescription,
+    required this.titleController,
+    required this.descriptionController,
     required this.sessionStateStream,
   });
 
@@ -70,11 +67,11 @@ class NoteFormWidget extends StatelessWidget {
 
     return ShadInputFormField(
       key: const Key('ui-note-field-title'),
+      controller: titleController,
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: null,
-      textDirection: getTextDirecton(title ?? ''),
-      initialValue: title,
+      textDirection: getTextDirecton(titleController.text),
       enableInteractiveSelection: true,
       // P1-19：编辑器标题走 EditorText.title（档位标题尺寸，默认 20 bold），
       // 仅调节编辑/预览页字体，沿用平台字体族。
@@ -95,7 +92,8 @@ class NoteFormWidget extends StatelessWidget {
         secondaryErrorBorder: ShadBorder.none,
         color: Colors.transparent,
       ),
-      onChanged: onChangedTitle,
+      // 变更通知由编辑页在 titleController 上挂监听器统一处理
+      // （同时驱动撤销栈与预览态同步），此处不再回调。
     );
   }
 
@@ -106,12 +104,12 @@ class NoteFormWidget extends StatelessWidget {
 
     return ShadInputFormField(
       key: const Key('ui-note-field-body'),
+      controller: descriptionController,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,
       minLines: 1,
-      initialValue: description,
-      textDirection: getTextDirecton(description ?? ''),
+      textDirection: getTextDirecton(descriptionController.text),
       textAlign: EditorText.textAlign,
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,
@@ -131,7 +129,7 @@ class NoteFormWidget extends StatelessWidget {
         secondaryErrorBorder: ShadBorder.none,
         color: Colors.transparent,
       ),
-      onChanged: onChangedDescription,
+      // 变更通知由编辑页在 descriptionController 上挂监听器统一处理。
     );
   }
 

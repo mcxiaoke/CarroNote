@@ -28,6 +28,7 @@ import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/motion.dart';
+import 'package:safenotes/utils/note_edit_history.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
@@ -57,6 +58,20 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   late String title;
   late String description;
+
+  /// 标题 / 正文编辑控制器：撤销栈通过它还原文本与光标（selection）。
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+
+  /// 编辑会话级撤销/重做历史（双栈快照）。
+  final NoteEditHistory _history = NoteEditHistory();
+
+  /// 正在应用撤销/重做：守卫 controller 监听器，避免“还原操作”又被记录进历史。
+  bool _applyingHistory = false;
+
+  /// 撤销/重做可用性，驱动 AppBar 按钮启用态。
+  bool _canUndo = false;
+  bool _canRedo = false;
   // 默认预览模式；仅新建笔记默认进入编辑，已有笔记打开后先看预览。
   bool _previewMode = true;
   // 正在执行删除：避免 PopScope 在删除后自动保存把已删笔记重新写回。
@@ -92,6 +107,16 @@ class AddEditNotePageState extends State<AddEditNotePage>
     description = widget.note?.description ?? '';
     title = title == ' ' ? '' : title;
     description = description == ' ' ? '' : description;
+    // 用初始内容初始化控制器与撤销栈基准状态。
+    _titleController = TextEditingController(text: title);
+    _descriptionController = TextEditingController(text: description);
+    _history.init(
+      TextEditingValue(text: title),
+      TextEditingValue(text: description),
+    );
+    // 控制器监听器统一驱动：预览态同步 + 撤销栈记录。
+    _titleController.addListener(() => _onEdit('title'));
+    _descriptionController.addListener(() => _onEdit('description'));
     // 新建笔记默认进入编辑模式，已有笔记打开后默认预览。
     _previewMode = widget.note != null;
     if (widget.note != null) {
@@ -110,6 +135,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   @override
   void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     // 若页面因非 pop 路径被 dispose（如会话超时登出），静默自动保存
     // 使用 destroyAfter=false 的路径由 handleUngracefulNoteExit 兜底，这里
@@ -159,6 +186,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
               // 锁定笔记隐藏「编辑/预览」切换，仅保留操作菜单，
               // 供复制 / 星标 / 解锁 / 标签 / 删除使用。
               if (!_isLocked) _previewToggle(),
+              // 编辑态（非锁定）提供撤销 / 重做按钮，按 _canUndo/_canRedo 启用。
+              if (!_isLocked && !_previewMode) _undoRedoButtons(),
               // 复制/星标/锁定/标签/删除/版本历史收进「更多」菜单，AppBar 仅保留预览切换。
               // 新建笔记后台自动保存后 _effectiveNote 会被赋值，同样可调起菜单。
               if (_effectiveNote != null) _moreButton(),
@@ -256,22 +285,115 @@ class AddEditNotePageState extends State<AddEditNotePage>
   }
 
   Widget _buildBody() {
-    return Form(
-      key: _formKey,
-      child: NoteFormWidget(
-        title: title,
-        description: description,
-        sessionStateStream: widget.sessionStateStream,
-        onChangedTitle: (title) => setState(() {
-          this.title = title;
-          NoteEditorState.setState(_effectiveNote, this.title, description);
-        }),
-        onChangedDescription: (description) => setState(() {
-          this.description = description;
-          NoteEditorState.setState(_effectiveNote, title, this.description);
-        }),
+    return Focus(
+      onKeyEvent: _handleKeyEvent,
+      child: Form(
+        key: _formKey,
+        child: NoteFormWidget(
+          titleController: _titleController,
+          descriptionController: _descriptionController,
+          sessionStateStream: widget.sessionStateStream,
+        ),
       ),
     );
+  }
+
+  /// 撤销 / 重做按钮组：按可用性启用，仅在编辑态（非锁定）出现。
+  Widget _undoRedoButtons() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          key: const Key('ui-note-button-undo'),
+          tooltip: 'Undo'.tr(),
+          icon: const Icon(LucideIcons.undo2),
+          onPressed: _canUndo ? _undo : null,
+        ),
+        IconButton(
+          key: const Key('ui-note-button-redo'),
+          tooltip: 'Redo'.tr(),
+          icon: const Icon(LucideIcons.redo2),
+          onPressed: _canRedo ? _redo : null,
+        ),
+      ],
+    );
+  }
+
+  /// 键盘拦截：在 focus 遍历中先于原生 Shortcuts（系统 undo）执行。
+  /// 命中 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y 时由本栈处理并返回 handled，
+  /// 阻止 EditableText 原生 undo 造成“双撤销”。
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (_previewMode || _isLocked) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final bool ctrl =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed; // macOS Cmd 同义
+    if (!ctrl) return KeyEventResult.ignored;
+    final bool shift = HardwareKeyboard.instance.isShiftPressed;
+    if (event.physicalKey == PhysicalKeyboardKey.keyZ) {
+      if (shift) {
+        _redo();
+      } else {
+        _undo();
+      }
+      return KeyEventResult.handled;
+    } else if (event.physicalKey == PhysicalKeyboardKey.keyY && !shift) {
+      _redo();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 编辑变更回调（controller 监听器）：同步预览态并向撤销栈记录一步。
+  ///
+  /// 光标/选区移动也会触发本回调，此时文本未变；是否入栈由
+  /// `NoteEditHistory.record` 内部判定（统一收敛），这里只负责同步状态。
+  void _onEdit(String field) {
+    if (_applyingHistory) return;
+    title = _titleController.text;
+    description = _descriptionController.text;
+    NoteEditorState.setState(_effectiveNote, title, description);
+    _history.record(
+      title: _titleController.value,
+      desc: _descriptionController.value,
+      field: field,
+    );
+    setState(() {
+      _canUndo = _history.canUndo;
+      _canRedo = _history.canRedo;
+    });
+  }
+
+  /// 撤销：取回上一步快照并把标题/正文还原到编辑前的状态。
+  void _undo() {
+    if (_previewMode || _isLocked) return;
+    final EditSnapshot? snap = _history.undo();
+    if (snap == null) return;
+    _apply(snap.titleBefore, snap.descBefore);
+  }
+
+  /// 重做：把标题/正文还原到被撤销的那一步之后。
+  void _redo() {
+    if (_previewMode || _isLocked) return;
+    final EditSnapshot? snap = _history.redo();
+    if (snap == null) return;
+    _apply(snap.titleAfter, snap.descAfter);
+  }
+
+  /// 把快照中的标题/正文写回两个 controller（含光标 selection），
+  /// 并同步预览态与按钮可用性。用 [_applyingHistory] 守卫，避免回流到监听器被再次记录。
+  void _apply(TextEditingValue titleValue, TextEditingValue descValue) {
+    _applyingHistory = true;
+    _titleController.value = titleValue;
+    _descriptionController.value = descValue;
+    _applyingHistory = false;
+    title = titleValue.text;
+    description = descValue.text;
+    NoteEditorState.setState(_effectiveNote, title, description);
+    setState(() {
+      _canUndo = _history.canUndo;
+      _canRedo = _history.canRedo;
+    });
   }
 
   Widget _previewToggle() {
@@ -449,6 +571,18 @@ class AddEditNotePageState extends State<AddEditNotePage>
         title = updated.title == ' ' ? '' : updated.title;
         description = updated.description == ' ' ? '' : updated.description;
         NoteEditorState.setState(updated, title, description);
+        // 同步编辑控制器，使回到编辑态时显示恢复后的内容；
+        // 用守卫避免把“外部恢复”当作一次可撤销编辑，并重置历史基线。
+        _applyingHistory = true;
+        _titleController.text = title;
+        _descriptionController.text = description;
+        _applyingHistory = false;
+        _history.init(
+          TextEditingValue(text: title),
+          TextEditingValue(text: description),
+        );
+        _canUndo = false;
+        _canRedo = false;
         setState(() {});
       }
     }
