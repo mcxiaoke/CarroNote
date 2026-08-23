@@ -34,11 +34,14 @@
  * 跨源（含跨 scheme 降级、https→http）一律不跟随，杜绝凭据泄露。
  */
 
+import 'dart:typed_data';
+
 // Package 导入
 import 'package:http/http.dart' as http;
 
 // Project 导入
 import 'package:core/src/logger/app_logger.dart';
+import 'package:core/src/sync/sync_backend.dart';
 
 /// 最大重定向跳数（防死循环，与 package:http 默认值一致）
 const int kRedirectMaxHops = 5;
@@ -92,12 +95,14 @@ String? _headerIgnoreCase(http.Response res, String name) {
   return null;
 }
 
-/// 后端统一 HTTP 发送入口（B-H1 修复）
+/// 统一发送 HTTP 请求，关掉 package:http 默认的盲目重定向，改走显式策略。
 ///
-/// 所有后端请求必须经此函数发送，保证：
-///   1. followRedirects=false（底层不再自动跟随，杜绝方法降级与凭据泄露）；
+/// 行为与 package:http 类似但有三处关键增强：
+///   1. 关掉底层 Client.followRedirects，避免写操作被静默降级为 GET（B-H1）；
 ///   2. 3xx 按 [sendWithRedirectPolicy] 规则显式决定是否手工重发；
 ///   3. 不跟随的 3xx 原样返回给调用方，由既有非 2xx 分支给出响亮失败。
+///   4. T-5 修复：流式接收响应体边收边计数，超出 [maxResponseBodyBytes]
+///      立即抛异常截断连接，避免把超大恶意响应体全量收进内存。
 ///
 /// [bodyBytes] 在每次手工重发时都会被重新带上（307/308 语义保留）。
 /// 超过 [kRedirectMaxHops] 跳抛 [http.ClientException]（确定性错误）。
@@ -108,6 +113,7 @@ Future<http.Response> sendWithRedirectPolicy({
   Map<String, String>? headers,
   List<int>? bodyBytes,
   Duration timeout = const Duration(seconds: 30),
+  int maxResponseBodyBytes = kRemoteManifestMaxBytes,
 }) async {
   var current = url;
   for (var hop = 0; hop <= kRedirectMaxHops; hop++) {
@@ -118,7 +124,34 @@ Future<http.Response> sendWithRedirectPolicy({
     if (bodyBytes != null) req.bodyBytes = bodyBytes;
 
     final streamed = await client.send(req).timeout(timeout);
-    final res = await http.Response.fromStream(streamed);
+    if (streamed.contentLength != null &&
+        streamed.contentLength! > maxResponseBodyBytes) {
+      throw http.ClientException(
+        'Response Content-Length (${streamed.contentLength}) exceeds limit ($maxResponseBodyBytes)',
+        current,
+      );
+    }
+    final builder = BytesBuilder(copy: false);
+    var bytesReceived = 0;
+    await for (final chunk in streamed.stream) {
+      bytesReceived += chunk.length;
+      if (bytesReceived > maxResponseBodyBytes) {
+        throw http.ClientException(
+          'Response body exceeded max limit of $maxResponseBodyBytes bytes',
+          current,
+        );
+      }
+      builder.add(chunk);
+    }
+    final res = http.Response.bytes(
+      builder.takeBytes(),
+      streamed.statusCode,
+      request: streamed.request,
+      headers: streamed.headers,
+      isRedirect: streamed.isRedirect,
+      persistentConnection: streamed.persistentConnection,
+      reasonPhrase: streamed.reasonPhrase,
+    );
     if (!_isRedirectStatus(res.statusCode)) return res;
 
     final location = _headerIgnoreCase(res, 'location');

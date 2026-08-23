@@ -110,6 +110,9 @@ class WebDavBackend implements SyncBackend {
   /// 退化为内容 hash 时 If-Match 可能被服务器忽略，退化为"最后写入胜"。
   bool _etagSupported = true;
 
+  /// ETag 支持状态
+  bool get isEtagSupported => _etagSupported;
+
   /// E2 修复：是否已警告过 ETag 不支持
   ///
   /// 避免每次同步都打印警告，只在 init 时警告一次。
@@ -277,6 +280,7 @@ class WebDavBackend implements SyncBackend {
     Map<String, String>? headers,
     List<int>? bodyBytes,
     Duration timeout = _httpTimeout,
+    int maxResponseBodyBytes = kRemoteManifestMaxBytes,
   }) {
     return sendWithRedirectPolicy(
       client: _client,
@@ -285,6 +289,7 @@ class WebDavBackend implements SyncBackend {
       headers: headers,
       bodyBytes: bodyBytes,
       timeout: timeout,
+      maxResponseBodyBytes: maxResponseBodyBytes,
     );
   }
 
@@ -314,6 +319,19 @@ class WebDavBackend implements SyncBackend {
     }
 
     final etag = _normalizeEtag(res.headers['etag']);
+    if (etag.isEmpty) {
+      _etagSupported = false;
+      if (!_etagWarningLogged) {
+        _etagWarningLogged = true;
+        Log.sync.w(
+          '[WebDAV] 警告：服务器响应未包含 ETag 头，'
+          '乐观锁将退化为内容 hash 比较，多端并发写入有覆盖风险。',
+        );
+      }
+    } else {
+      _etagSupported = true;
+    }
+
     final ciphertext = res.bodyBytes;
     // F-M04：远端 manifest 大小上限，防恶意服务端打爆内存
     checkRemoteReadSize(ciphertext, 'WebDAV manifest', kRemoteManifestMaxBytes);
@@ -384,6 +402,7 @@ class WebDavBackend implements SyncBackend {
         'GET',
         Uri.parse('$_blobsUrl/$hash'),
         headers: _authHeaders(),
+        maxResponseBodyBytes: kRemoteBlobMaxBytes,
       );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
@@ -395,7 +414,9 @@ class WebDavBackend implements SyncBackend {
         'GET blob failed: ${res.statusCode} for hash=$hash',
       );
     }
-    return res.bodyBytes;
+    final bytes = res.bodyBytes;
+    checkRemoteReadSize(bytes, 'WebDAV blob', kRemoteBlobMaxBytes);
+    return bytes;
   }
 
   @override

@@ -403,8 +403,8 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
   Future<bool> _initKeyring(String passphrase) async {
     // 守卫：keyring 已初始化说明路由错误（应走 login 而非 set_passphrase），
     // 直接拒绝 createNew，避免覆盖已有 keyring 元数据导致数据丢失。
-    Log.crypto.d('设置密码步骤 2/4：检查 Keyring 是否已初始化');
-    if (await Keyring.isInitialized(NotesDatabase.instance)) {
+    Log.crypto.d('设置密码步骤 2/4：检查 Keyring 是否已存在');
+    if (await Keyring.hasKeyringRecord(NotesDatabase.instance)) {
       // 路由异常场景：已有 keyring 却走到设置页，拒绝覆盖以防数据丢失
       Log.crypto.e('拒绝创建新 Keyring：检测到已存在的加密元数据(应走登录流程)');
       if (mounted) {

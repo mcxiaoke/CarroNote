@@ -154,14 +154,49 @@ class BackupHeader {
       );
     }
 
+    // 安全上限约束（T-4 修复：防恶意 snbak 极端参数消耗 CPU/内存挂死应用）
+    const maxPbkdf2Iterations = 600000;
+    const maxArgon2Iterations = 5;
+    const maxArgon2MemoryKiB = 256 * 1024; // 256 MB
+    const maxArgon2Parallelism = 8;
+    const minPayloadBytes = 28; // 12-byte nonce + 16-byte GCM tag
+    const maxPayloadBytes = 500 * 1024 * 1024; // 500 MB
+
     final iterations = kdf?['iterations'] as int?;
     if (iterations == null || iterations <= 0) {
       throw const FormatException('备份 KDF 迭代次数非法');
     }
 
+    if (kdfAlgorithm == kPbkdf2Algorithm) {
+      if (iterations > maxPbkdf2Iterations) {
+        throw FormatException(
+          'PBKDF2 迭代次数超限（$iterations > $maxPbkdf2Iterations）',
+        );
+      }
+    } else if (kdfAlgorithm == kArgon2idAlgorithm) {
+      if (iterations > maxArgon2Iterations) {
+        throw FormatException(
+          'Argon2id 迭代次数超限（$iterations > $maxArgon2Iterations）',
+        );
+      }
+    }
+
     // Argon2id 参数（PBKDF2 备份无此字段，为 null）
     final memoryKiB = kdf?['memoryKiB'] as int?;
     final parallelism = kdf?['parallelism'] as int?;
+
+    if (kdfAlgorithm == kArgon2idAlgorithm) {
+      if (memoryKiB == null ||
+          memoryKiB <= 0 ||
+          memoryKiB > maxArgon2MemoryKiB) {
+        throw FormatException('Argon2id memoryKiB 参数非法（$memoryKiB）');
+      }
+      if (parallelism == null ||
+          parallelism <= 0 ||
+          parallelism > maxArgon2Parallelism) {
+        throw FormatException('Argon2id parallelism 参数非法（$parallelism）');
+      }
+    }
 
     final saltB64 = json['salt'] as String?;
     final payloadB64 = json['payload'] as String?;
@@ -179,6 +214,12 @@ class BackupHeader {
     }
     if (salt.length != kSaltLength) {
       throw FormatException('备份 salt 长度非法（${salt.length} 字节）');
+    }
+    if (payload.length < minPayloadBytes) {
+      throw FormatException('备份 payload 长度过短（${payload.length} 字节）');
+    }
+    if (payload.length > maxPayloadBytes) {
+      throw FormatException('备份 payload 长度超限（${payload.length} 字节）');
     }
 
     return BackupHeader(

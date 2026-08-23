@@ -65,6 +65,15 @@ class WrongPasswordException implements Exception {
   String toString() => 'WrongPasswordException: $message';
 }
 
+/// Keyring 账本损坏异常（JSON 损坏、结构不合法或字段异常时抛出）
+class KeyringCorruptedException implements Exception {
+  final String message;
+  const KeyringCorruptedException([this.message = 'Keyring 账本损坏']);
+
+  @override
+  String toString() => 'KeyringCorruptedException: $message';
+}
+
 /// Keyring 未初始化异常（本地既无 keyring 键也无旧 keyring 元数据时抛出）
 class KeyringNotInitializedException implements Exception {
   final String message;
@@ -207,7 +216,7 @@ class KeyringLedger {
     return database.setMeta(MetaKeys.keyring, jsonEncode(toJson()));
   }
 
-  /// 从 sync_meta 的 `keyring` 单键读取账本；不存在或损坏返回 null
+  /// 从 sync_meta 的 `keyring` 单键读取账本；不存在返回 null，损坏抛 KeyringCorruptedException
   static Future<KeyringLedger?> load(NotesDatabase database) async {
     final raw = await database.getMeta(MetaKeys.keyring);
     if (raw == null || raw.isEmpty) {
@@ -218,7 +227,9 @@ class KeyringLedger {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) {
         Log.crypto.e('加载 keyring 账本失败: 顶层不是 JSON 对象 (${raw.length} 字节)');
-        return null;
+        throw const KeyringCorruptedException(
+          'Keyring ledger is not a JSON object',
+        );
       }
       final ledger = KeyringLedger.fromJson(Map<String, dynamic>.from(decoded));
       Log.crypto.d(
@@ -228,10 +239,11 @@ class KeyringLedger {
         'fp=${_fpBrief(ledger.current.keyFingerprint)}',
       );
       return ledger;
+    } on KeyringCorruptedException {
+      rethrow;
     } on Object catch (e) {
-      // JSON 损坏（混沌测试会主动制造）：视为无账本，报未初始化
-      Log.crypto.e('加载 keyring 账本失败(视为未初始化): $e');
-      return null;
+      Log.crypto.e('加载 keyring 账本失败(账本损坏): $e');
+      throw KeyringCorruptedException('Keyring ledger corrupted: $e');
     }
   }
 }
@@ -445,10 +457,23 @@ class Keyring {
   ///
   /// 流程：生成 vaultId + dataKey + per-vault salt → 派生 MK → wrap dataKey →
   /// 写入 `keyring` 单键（一次写入，取代旧实现的 7 次 setMeta）。
+  ///
+  /// [overwrite] 为 false 时，若本地已有 keyring 记录（无论有效或损坏），
+  /// 拒绝直接覆盖以防全库密文丢失，抛出 [StateError]。
   static Future<Keyring> createNew({
     required String password,
     required NotesDatabase database,
+    bool overwrite = false,
   }) async {
+    if (!overwrite) {
+      final existing = await database.getMeta(MetaKeys.keyring);
+      if (existing != null && existing.isNotEmpty) {
+        Log.crypto.e('拒绝创建新 Keyring: 检测到已存在 keyring 记录，防止意外覆盖导致数据不可解');
+        throw StateError(
+          'Keyring already exists. Refusing to overwrite without explicit overwrite flag.',
+        );
+      }
+    }
     final sw = Stopwatch()..start();
     Log.crypto.i('创建新 Keyring: 生成 vaultId/dataKey/salt 并派生 MK (PBKDF2)');
     final vaultId = _generateVaultId();
@@ -568,16 +593,23 @@ class Keyring {
     return keyring;
   }
 
-  /// 解包 dataKey，失败统一转为 [WrongPasswordException]
+  /// 解包 dataKey，失败区分格式损坏与密码错误
   static Future<Uint8List> _unwrapOrThrow(
     Uint8List mk,
     String encryptedDataKey,
   ) async {
+    final Uint8List rawBytes;
     try {
-      return await SyncCrypto.unwrapDataKey(
-        mk,
-        base64.decode(encryptedDataKey),
-      );
+      rawBytes = base64.decode(encryptedDataKey);
+    } on FormatException catch (e) {
+      Log.crypto.e('encryptedDataKey 不是合法的 base64: $e');
+      throw KeyringCorruptedException('encryptedDataKey base64 解码失败: $e');
+    }
+
+    try {
+      return await SyncCrypto.unwrapDataKey(mk, rawBytes);
+    } on WrongPasswordException {
+      rethrow;
     } on Exception catch (e) {
       // GCM tag 验证失败 = 密码错误
       Log.crypto.w('解包 dataKey 失败(通常为密码错误): $e');
@@ -878,6 +910,24 @@ class Keyring {
       dataKey: dataKey,
       mk: newMk,
     );
+    // N-9 修复：写入前对 DB 现有账本执行乐观并发校验，防止与迁移事务并发回写旧 epoch
+    final latestLedger = await KeyringLedger.load(database);
+    if (latestLedger != null) {
+      if (latestLedger.vaultId != vaultId ||
+          latestLedger.current.dataKeyEpoch != dataKeyEpoch) {
+        throw StateError(
+          'Keyring epoch or vaultId modified concurrently (expected epoch $dataKeyEpoch, '
+          'got ${latestLedger.current.dataKeyEpoch}). Aborting changePassword.',
+        );
+      }
+      if (latestLedger.current.keyVersion != keyVersion) {
+        throw StateError(
+          'Keyring keyVersion modified concurrently (expected keyVersion $keyVersion, '
+          'got ${latestLedger.current.keyVersion}). Aborting changePassword.',
+        );
+      }
+    }
+
     await changed.persist(database);
     Log.crypto.i(
       'Keyring 改密码完成: keyVersion $keyVersion → ${keyVersion + 1}, '
@@ -913,9 +963,15 @@ class Keyring {
   // 检查 / 工具方法
   // ──────────────────────────────────────────────
 
-  /// 本地是否已初始化（有 keyring 单键）
+  /// 本地是否有有效的 keyring 账本（未初始化返回 false，损坏抛 KeyringCorruptedException）
   static Future<bool> isInitialized(NotesDatabase database) async =>
       await KeyringLedger.load(database) != null;
+
+  /// 检查本地是否已有任何 keyring 记录（包括有效或已损坏的原始元数据）
+  static Future<bool> hasKeyringRecord(NotesDatabase database) async {
+    final raw = await database.getMeta(MetaKeys.keyring);
+    return raw != null && raw.isNotEmpty;
+  }
 
   /// 读取 vaultId（不解锁）
   static Future<String?> getVaultId(NotesDatabase database) async =>

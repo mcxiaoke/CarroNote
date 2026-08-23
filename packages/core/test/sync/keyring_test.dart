@@ -150,6 +150,31 @@ void main() {
 
       expect(await Keyring.isInitialized(database), isTrue);
     });
+
+    test('已存在 keyring 时 createNew 默认拒绝覆盖，除非 overwrite=true', () async {
+      await Keyring.createNew(password: 'pw1', database: database);
+
+      expect(
+        () => Keyring.createNew(password: 'pw2', database: database),
+        throwsA(isA<StateError>()),
+      );
+
+      final overwritten = await Keyring.createNew(
+        password: 'pw2',
+        database: database,
+        overwrite: true,
+      );
+      expect(overwritten.keyVersion, 1);
+    });
+
+    test('账本损坏时 KeyringLedger.load 抛出 KeyringCorruptedException', () async {
+      await database.setMeta(MetaKeys.keyring, '{bad json format');
+      expect(
+        () => KeyringLedger.load(database),
+        throwsA(isA<KeyringCorruptedException>()),
+      );
+      expect(await Keyring.hasKeyringRecord(database), isTrue);
+    });
   });
 
   group('Keyring - unlockLocal', () {
@@ -418,6 +443,32 @@ void main() {
         await persistedDataKeyEpoch(database),
         1,
         reason: '改密码不动 dataKey，纪元必须原地不动',
+      );
+    });
+
+    test('并发修改账本后 changePassword 抛出 StateError 拒绝覆写', () async {
+      final keyring = await Keyring.createNew(
+        password: 'old-password',
+        database: database,
+      );
+
+      // 模拟并发事务推进了 keyVersion 或 epoch
+      final ledger = (await KeyringLedger.load(database))!;
+      final modifiedLedger = KeyringLedger(
+        vaultId: ledger.vaultId,
+        kdf: ledger.kdf,
+        createdAt: ledger.createdAt,
+        current: ledger.current.copyWith(keyVersion: 99),
+      );
+      await modifiedLedger.persist(database);
+
+      expect(
+        () => keyring.changePassword(
+          oldPassword: 'old-password',
+          newPassword: 'new-password',
+          database: database,
+        ),
+        throwsA(isA<StateError>()),
       );
     });
   });
@@ -781,12 +832,12 @@ void main() {
       );
     });
 
-    test('load：JSON 损坏返回 null 而不是抛异常', () async {
+    test('load：JSON 损坏抛 KeyringCorruptedException 而不是返回 null (N-8)', () async {
       await database.setMeta(MetaKeys.keyring, '{not valid json');
       expect(
-        await KeyringLedger.load(database),
-        isNull,
-        reason: '账本损坏要能降级到"未初始化"，而不是让 App 崩在启动路径上',
+        () => KeyringLedger.load(database),
+        throwsA(isA<KeyringCorruptedException>()),
+        reason: '账本损坏必须抛异常，防止误判为未初始化而覆盖已有密钥导致数据永久丢失',
       );
     });
   });

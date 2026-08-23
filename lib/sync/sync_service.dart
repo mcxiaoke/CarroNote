@@ -202,8 +202,15 @@ class SyncService {
     // 获取设备 ID（首次调用会查询系统 API，后续用缓存）
     _deviceId = await DeviceIdProvider.instance.getDeviceId();
 
-    // 打开 journal（沙盒目录不可用时抛异常，阻断初始化）
-    _journal = await _openJournal(vaultId: keyring.vaultId);
+    try {
+      // 打开 journal（沙盒目录不可用时抛异常，阻断初始化）
+      _journal = await _openJournal(vaultId: keyring.vaultId);
+    } catch (e, st) {
+      Log.sync.e('SyncService 打开 journal 失败', error: e, stackTrace: st);
+      _engine = null;
+      _backendReady = false;
+      rethrow;
+    }
 
     _engine = SyncEngine(
       backend: backend,
@@ -226,11 +233,18 @@ class SyncService {
       'keyVersion=${keyring.keyVersion}, dataKeyEpoch=${keyring.dataKeyEpoch})',
     );
 
-    await backend.init();
-    _backendReady = true;
-
-    Log.sync.i('后端初始化成功 (providerKey=${backend.providerKey})');
-    _updateState(state.copyWith(status: SyncStatus.idle));
+    try {
+      await backend.init();
+      _backendReady = true;
+      Log.sync.i('后端初始化成功 (providerKey=${backend.providerKey})');
+      _updateState(state.copyWith(status: SyncStatus.idle));
+    } catch (e, st) {
+      // 若 backend.init() 抛出异常（如离线状态），标记 backendReady=false，
+      // 保持 _engine 和 _journal 就绪，后续 sync() 会惰性重试 backend.init()。
+      Log.sync.w('SyncService 后端初始化未就绪（离线或网络异常）: $e', error: e, stackTrace: st);
+      _backendReady = false;
+      rethrow;
+    }
 
     // P3-log：initialize 整体完成（与 dispose 对称，便于排查初始化是否走完）
     Log.sync.i('SyncService 初始化完成 (status=idle, backendReady=true)');
@@ -593,18 +607,36 @@ class SyncService {
           _backendReady = true;
         } on BackendUnavailableException catch (e, st) {
           Log.sync.w('repairRemote: 后端初始化失败', error: e, stackTrace: st);
-          return SyncResult.failure(
+          final failure = SyncResult.failure(
             'Network unavailable; check your connection and retry: {error}'.tr(
               namedArgs: {'error': '$e'},
             ),
           );
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              lastSyncTime: DateTime.now(),
+              lastResult: failure,
+              errorMessage: failure.errorMessage,
+            ),
+          );
+          return failure;
         } on Exception catch (e, st) {
           Log.sync.e('repairRemote: 后端初始化失败（未预期异常）', error: e, stackTrace: st);
-          return SyncResult.failure(
+          final failure = SyncResult.failure(
             'Backend initialization failed: {error}'.tr(
               namedArgs: {'error': '$e'},
             ),
           );
+          _updateState(
+            state.copyWith(
+              status: SyncStatus.error,
+              lastSyncTime: DateTime.now(),
+              lastResult: failure,
+              errorMessage: failure.errorMessage,
+            ),
+          );
+          return failure;
         }
       }
 
@@ -625,14 +657,32 @@ class SyncService {
       return result;
     } on BackendUnavailableException catch (e, st) {
       Log.sync.e('repairRemote: 后端不可用', error: e, stackTrace: st);
-      return SyncResult.failure(
+      final failure = SyncResult.failure(
         'Backend unavailable: {error}'.tr(namedArgs: {'error': '$e'}),
       );
+      _updateState(
+        state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          lastResult: failure,
+          errorMessage: failure.errorMessage,
+        ),
+      );
+      return failure;
     } on Exception catch (e, st) {
       Log.sync.e('repairRemote: 修复异常', error: e, stackTrace: st);
-      return SyncResult.failure(
+      final failure = SyncResult.failure(
         'Repair error: {error}'.tr(namedArgs: {'error': '$e'}),
       );
+      _updateState(
+        state.copyWith(
+          status: SyncStatus.error,
+          lastSyncTime: DateTime.now(),
+          lastResult: failure,
+          errorMessage: failure.errorMessage,
+        ),
+      );
+      return failure;
     } finally {
       _syncInProgress = false;
     }
@@ -728,9 +778,15 @@ class SyncService {
   /// 不暴露给外部，仅 autoSync 内部维护。
   bool _autoSyncFailureRetried = false;
 
-  // ──────────────────────────────────────────────
-  // 后端管理
-  // ──────────────────────────────────────────────
+  /// 等待当前在途同步完成（用于改密码等关键操作前排空同步任务）
+  Future<void> waitForSyncCompletion({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final sw = Stopwatch()..start();
+    while (_syncInProgress && sw.elapsed < timeout) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }
 
   /// 切换后端（设置页修改同步配置后调用）
   ///
@@ -751,11 +807,23 @@ class SyncService {
         'Sync in progress; cannot switch backend. Please retry later.'.tr(),
       );
     }
-    final oldType = _backend?.runtimeType.toString() ?? 'null';
+    final oldBackend = _backend;
+    final oldType = oldBackend?.runtimeType.toString() ?? 'null';
     Log.sync.i('切换同步后端: $oldType → ${backend.runtimeType}');
-    await _backend?.close();
+
+    // N-1 修复：先初始化新后端，成功后再关闭旧后端并替换引用；
+    // 初始化失败时保持状态一致，防止进入半残状态。
+    _backendReady = false;
+    try {
+      await backend.init();
+    } catch (e, st) {
+      Log.sync.e('切换同步后端失败: 新后端 init 异常', error: e, stackTrace: st);
+      _backendReady = false;
+      rethrow;
+    }
+
+    await oldBackend?.close();
     _backend = backend;
-    await backend.init();
     _backendReady = true;
 
     final keyring = _keyring;
@@ -1214,14 +1282,14 @@ class SyncService {
     required NotesDatabase database,
   }) async {
     try {
-      final isInitialized = await Keyring.isInitialized(database);
+      final hasRecord = await Keyring.hasKeyringRecord(database);
       Log.sync.i(
-        '登录密钥环准备: 本地是否已初始化=$isInitialized, '
-        '${isInitialized ? "将解锁(密码解密 dataKey)" : "将新建(生成 dataKey)"}',
+        '登录密钥环准备: 本地是否有记录=$hasRecord, '
+        '${hasRecord ? "将解锁(密码解密 dataKey)" : "将新建(生成 dataKey)"}',
       );
 
       final Keyring keyring;
-      if (isInitialized) {
+      if (hasRecord) {
         keyring = await Keyring.unlockLocal(
           password: password,
           database: database,
@@ -1243,6 +1311,14 @@ class SyncService {
       return (
         success: false,
         error: 'Wrong passphrase: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
+    } on KeyringCorruptedException catch (e) {
+      Log.sync.e('登录密钥环准备失败: 账本损坏，拒绝新建以防数据丢失', error: e);
+      return (
+        success: false,
+        error: 'Keyring ledger corrupted: {error}'.tr(
+          namedArgs: {'error': '$e'},
+        ),
       );
     } on Exception catch (e) {
       return (

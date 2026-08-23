@@ -391,6 +391,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       Keyring newKeyring;
       try {
         Log.auth.i('改密码步骤 3/5：重新包裹 dataKey 并持久化新 keyring');
+        // N-9 修复：等待在途同步完成，防止迁移事务与改密码竞态
+        await SyncService.instance.waitForSyncCompletion();
         newKeyring = await keyring.changePassword(
           oldPassword: oldPassword,
           newPassword: newPassword,

@@ -59,7 +59,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _syncStatusValue = _syncStatusValueString();
     _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
     _securityValue = _securitySummary();
-    _generalValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
+    _generalValue =
+        SafeNotesConfig.mapLocaleName[context.locale.toString()] ??
+        context.locale.languageCode;
   }
 
   void _refresh() => setState(_loadDisplayValues);

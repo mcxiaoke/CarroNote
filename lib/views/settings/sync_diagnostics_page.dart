@@ -36,6 +36,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/authwall.dart' show AppBootState;
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -886,7 +888,9 @@ class _TestTab extends StatelessWidget {
             // 2. 关连接后删除整个 db 文件（含 sync_meta 的 keyring 账本）
             await NotesDatabase.instance.close();
             await NotesDatabase.instance.deleteDbFile();
-            // 3. 清除保险库相关偏好键
+            // 3. 清除生物识别/PIN 凭据与保险库相关偏好键
+            await BiometricAuth.disable();
+            await PinAuth.disable();
             await PreferencesStorage.clearVaultRelatedKeys();
             AppBootState.vaultInitialized = false;
             // 4. 结束进程（required：跳过优雅退出询问，各平台直接终止）

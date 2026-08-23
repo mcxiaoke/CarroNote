@@ -163,6 +163,7 @@ class SafeServerBackend implements SyncBackend {
     Map<String, String>? headers,
     List<int>? bodyBytes,
     Duration timeout = _httpTimeout,
+    int maxResponseBodyBytes = kRemoteManifestMaxBytes,
   }) {
     return sendWithRedirectPolicy(
       client: _client,
@@ -171,6 +172,7 @@ class SafeServerBackend implements SyncBackend {
       headers: headers,
       bodyBytes: bodyBytes,
       timeout: timeout,
+      maxResponseBodyBytes: maxResponseBodyBytes,
     );
   }
 
@@ -287,6 +289,7 @@ class SafeServerBackend implements SyncBackend {
         'GET',
         Uri.parse('$_blobUrlPrefix/$hash'),
         headers: _authHeaders(),
+        maxResponseBodyBytes: kRemoteBlobMaxBytes,
       );
     } on Exception catch (e) {
       throw BackendUnavailableException('GET blob network error: $e');
@@ -303,7 +306,9 @@ class SafeServerBackend implements SyncBackend {
         'GET blob failed: ${res.statusCode} for hash=$hash',
       );
     }
-    return res.bodyBytes;
+    final bytes = res.bodyBytes;
+    checkRemoteReadSize(bytes, 'SafeServer blob', kRemoteBlobMaxBytes);
+    return bytes;
   }
 
   @override

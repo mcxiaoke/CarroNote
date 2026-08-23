@@ -166,8 +166,10 @@ class LogWebServer {
       throw Exception('无法绑定端口 $port~${port + 9}: $lastError');
     }
 
-    // 生成随机 6 位数字 token，每次启动都不同
-    _token = (Random.secure().nextInt(900000) + 100000).toString();
+    // 生成安全随机 128-bit（16 字节）hex token，每次启动都不同（T-3 修复）
+    final random = Random.secure();
+    final tokenBytes = List<int>.generate(16, (_) => random.nextInt(256));
+    _token = tokenBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     // 订阅日志流，实时推送给所有 WebSocket 客户端
     _logSub = AppLogBuffer.instance.stream.listen((entry) {
@@ -182,10 +184,13 @@ class LogWebServer {
     );
 
     final addrs = await localAddresses();
+    final maskedToken = _token != null && _token!.length >= 8
+        ? '${_token!.substring(0, 4)}...${_token!.substring(_token!.length - 4)}'
+        : '****';
     Log.web.i(
       '日志 Web 服务器已启动: '
-      '${addrs.map((a) => 'http://$a:$_port/?token=$_token').join(', ')}'
-      '${addrs.isEmpty ? '端口 $_port (token=$_token)' : ''}',
+      '${addrs.map((a) => 'http://$a:$_port/?token=$maskedToken').join(', ')}'
+      '${addrs.isEmpty ? '端口 $_port (token=$maskedToken)' : ''}',
     );
 
     return _port;
@@ -307,11 +312,11 @@ class LogWebServer {
     return token != null && token == _token;
   }
 
-  /// 统一设置 CORS 响应头（允许任意来源，便于 dashboard 独立部署后跨域访问）
+  /// 统一设置 CORS 响应头
   static void _setCors(HttpResponse res) {
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.headers.set('Access-Control-Allow-Headers', 'Content-Type, token');
   }
 
   /// 以 JSON 响应（自动带 CORS 头，支持 Map / List 等任意 JSON 结构）

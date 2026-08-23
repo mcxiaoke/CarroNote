@@ -153,7 +153,15 @@ class LocalFsBackend implements SyncBackend {
     _ensureInitialized();
     final file = File(p.join(_blobsDirPath, hash));
     if (!await file.exists()) return null;
-    return await file.readAsBytes();
+    final length = await file.length();
+    if (length > kRemoteBlobMaxBytes) {
+      throw BackendUnavailableException(
+        'LocalFS blob 文件过大（$length bytes > $kRemoteBlobMaxBytes），已中止读取',
+      );
+    }
+    final bytes = await file.readAsBytes();
+    checkRemoteReadSize(bytes, 'LocalFS blob', kRemoteBlobMaxBytes);
+    return bytes;
   }
 
   @override

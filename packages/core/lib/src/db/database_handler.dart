@@ -32,6 +32,7 @@ import 'dart:typed_data';
 import 'dart:io';
 
 // Package 导入
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite_common/sqlite_api.dart';
@@ -152,10 +153,10 @@ class NotesDatabase {
     'cacheCount': _notesCache?.length ?? 0,
   };
 
-  /// 缓存笔记摘要（供内存快照 / DB Inspector 展示，不含正文内容）。
+  /// 缓存笔记摘要（供内存快照 / DB Inspector 展示，不含正文与明文标题）。
   ///
-  /// 仅暴露 uuid / 标题 / 删除标记 / 修改时间 / 同步标记，绝不返回 [description]
-  /// （笔记明文正文），符合隐私红线。
+  /// T-26 修复：仅暴露 uuid / 标题长度与hash / 删除标记 / 修改时间 / 同步标记，
+  /// 绝不返回明文标题或 [description]，符合隐私红线。
   List<Map<String, dynamic>> cachedNoteSummaries() {
     final cache = _notesCache;
     if (cache == null) return const [];
@@ -163,7 +164,11 @@ class NotesDatabase {
         .map(
           (n) => <String, dynamic>{
             'uuid': n.uuid,
-            'title': n.title,
+            'titleLength': n.title.length,
+            'titleHash': sha256
+                .convert(utf8.encode(n.title))
+                .toString()
+                .substring(0, 8),
             'deleted': n.deleted,
             'updatedAt': DateTime.fromMillisecondsSinceEpoch(
               n.updatedAt,

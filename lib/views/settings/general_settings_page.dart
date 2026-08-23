@@ -29,11 +29,15 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _languageValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
+    _languageValue =
+        SafeNotesConfig.mapLocaleName[context.locale.toString()] ??
+        context.locale.languageCode;
   }
 
   void _refresh() => setState(() {
-    _languageValue = SafeNotesConfig.mapLocaleName[context.locale.toString()]!;
+    _languageValue =
+        SafeNotesConfig.mapLocaleName[context.locale.toString()] ??
+        context.locale.languageCode;
   });
 
   @override

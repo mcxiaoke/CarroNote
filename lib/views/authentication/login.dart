@@ -26,6 +26,7 @@ import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/generic.dart';
 import 'package:safenotes/models/biometric_auth.dart';
+import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
@@ -790,6 +791,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
 
       await NotesDatabase.instance.deleteDbFile();
+
+      // 清除生物识别与 PIN 凭据及信封（防止跨重置复用旧包裹密钥）
+      await BiometricAuth.disable();
+      await PinAuth.disable();
 
       // 清除 keyring 相关 SharedPreferences key
       await PreferencesStorage.clearVaultRelatedKeys();

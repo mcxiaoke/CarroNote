@@ -276,6 +276,7 @@ const int kManifestBackupRingCount = 5;
 /// （100KB×3 份）约束。超限时视为「远端数据不合法」，抛异常中止本次读取。
 const int kRemoteManifestMaxBytes = 64 * 1024 * 1024; // 64 MB
 const int kRemoteJournalMaxBytes = 64 * 1024 * 1024; // 64 MB
+const int kRemoteBlobMaxBytes = 100 * 1024 * 1024; // 100 MB
 
 /// F-M04：校验远端响应体大小，超限抛 [BackendUnavailableException]
 void checkRemoteReadSize(Uint8List bytes, String what, int maxBytes) {

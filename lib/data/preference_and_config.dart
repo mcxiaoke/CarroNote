@@ -153,18 +153,19 @@ class PreferencesStorage {
     important ? Log.settings.i(msg) : Log.settings.d(msg);
   }
 
-  /// 清除 keyring 相关的 SharedPreferences key(忘记密码逃生通道使用)
+  /// 清除 keyring 与凭据相关的 SharedPreferences key(忘记密码逃生通道与重置使用)
   ///
-  /// 与 NotesDatabase.deleteDbFile 配合使用:
+  /// 与 NotesDatabase.deleteDbFile 及 BiometricAuth.disable() / PinAuth.disable() 配合使用:
   ///   - db 文件包含 sync_meta 表(vaultId/encryptedDataKey/salt 等)
-  ///   - SharedPreferences 中 biometric 开关保留(用户偏好不变)
+  ///   - 清理 biometric 与 PIN 开关及失败计数
   ///   - passPhraseHash 已在 init() 清理,这里再清一次保险
   static Future<void> clearVaultRelatedKeys() async {
     // 逃生通道的一部分：清除保险库相关 key（不可逆），必须留痕
     Log.settings.w('清除保险库相关偏好键（忘记密码逃生通道）');
     await _preferences?.remove(_keyPassPhraseHash);
-    // biometric 开关保留:用户偏好不变,只是 keyring 数据被清空
-    // 其他 UI 偏好(gridView/sortOrder 等)也保留
+    await _preferences?.remove(_keyIsBiometricAuthEnabled);
+    await _preferences?.remove(_keyIsPinAuthEnabled);
+    await _preferences?.remove(_keyPinFailedCount);
   }
 
   // appVersionCode controls the one time code execution on version change

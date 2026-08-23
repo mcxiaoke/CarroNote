@@ -63,7 +63,8 @@ void main() {
   ];
 
   const testPassword = 'test-pass-口令-123';
-  const lowIterations = 1000;
+  const lowIterations = 2;
+  const lowPbkdf2Iterations = 1000;
 
   group('BackupFileCodec - 明文导出 (plaintext-v1)', () {
     test('encodePlaintext → parse：records 往返一致且 total=长度', () {
@@ -262,7 +263,7 @@ void main() {
       final kdf = KdfParams(
         algorithm: kPbkdf2Algorithm,
         salt: base64Encode(salt),
-        iterations: lowIterations,
+        iterations: lowPbkdf2Iterations,
       );
       final key1 = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
       final key2 = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
@@ -283,7 +284,7 @@ void main() {
       final kdf = KdfParams(
         algorithm: kPbkdf2Algorithm,
         salt: base64Encode(salt),
-        iterations: lowIterations,
+        iterations: lowPbkdf2Iterations,
       );
       final correct = await SyncCrypto.deriveBackupKey(testPassword, kdf: kdf);
       final wrong = await SyncCrypto.deriveBackupKey(
@@ -306,7 +307,7 @@ void main() {
         kdf: KdfParams(
           algorithm: kPbkdf2Algorithm,
           salt: base64Encode(SyncCrypto.generateSalt()),
-          iterations: lowIterations,
+          iterations: lowPbkdf2Iterations,
         ),
       );
       final b = await SyncCrypto.deriveBackupKey(
@@ -314,10 +315,52 @@ void main() {
         kdf: KdfParams(
           algorithm: kPbkdf2Algorithm,
           salt: base64Encode(SyncCrypto.generateSalt()),
-          iterations: lowIterations,
+          iterations: lowPbkdf2Iterations,
         ),
       );
       expect(a, isNot(equals(b)));
+    });
+
+    test('解析超出安全限制的 KDF 参数抛 FormatException', () {
+      final badPbkdf2 = jsonEncode({
+        'format': kBackupFormat,
+        'formatVersion': 1,
+        'enc': {
+          'algorithm': kBackupEncAlgorithm,
+          'kdf': {
+            'algorithm': kPbkdf2Algorithm,
+            'iterations': 1000000, // > 600,000
+          },
+        },
+        'salt': base64Encode(List.filled(16, 0)),
+        'payload': base64Encode(List.filled(32, 0)),
+        'total': 0,
+      });
+      expect(
+        () => BackupFileCodec.parse(badPbkdf2),
+        throwsA(isA<FormatException>()),
+      );
+
+      final badArgon2 = jsonEncode({
+        'format': kBackupFormat,
+        'formatVersion': 1,
+        'enc': {
+          'algorithm': kBackupEncAlgorithm,
+          'kdf': {
+            'algorithm': kArgon2idAlgorithm,
+            'iterations': 10, // > 5
+            'memoryKiB': 1024,
+            'parallelism': 1,
+          },
+        },
+        'salt': base64Encode(List.filled(16, 0)),
+        'payload': base64Encode(List.filled(32, 0)),
+        'total': 0,
+      });
+      expect(
+        () => BackupFileCodec.parse(badArgon2),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }
