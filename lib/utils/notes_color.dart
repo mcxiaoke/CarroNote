@@ -29,7 +29,7 @@ class NotesColor extends ChangeNotifier {
   /// 未启用彩色笔记时，品牌色叠加在 surfaceContainerLow 上的比例（P1-13）：
   /// 替代写死 `0xFFA7BEAE`，让"无主题"卡片跟随当前 seed 色（如 Honey 黄系），
   /// 且与页面背景（scaffoldBackground ≈ surfaceContainerLow）拉开对比。
-  static const double _brandTintAmount = 0.14;
+  static const double _brandTintAmount = 0.10;
 
   static Color getNoteColor({required int notIndex, BuildContext? context}) {
     final lightColors =

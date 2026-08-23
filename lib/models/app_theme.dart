@@ -153,7 +153,9 @@ class AppThemes {
     final Brightness appBarStatusBarIcons = darkMode
         ? Brightness.light
         : (neutral
-              ? (appBarFg == Colors.black ? Brightness.dark : Brightness.light)
+              ? (appBarFg.computeLuminance() < 0.5
+                    ? Brightness.dark
+                    : Brightness.light)
               : Brightness.dark);
     final SystemUiOverlayStyle? appBarOverlay = darkMode
         ? null
@@ -236,10 +238,9 @@ class AppThemes {
         systemOverlayStyle: appBarOverlay,
       ),
       // highlightColor
-      splashColor: base.secondary.withValues(alpha: 0.12),   // 水波纹
+      splashColor: base.secondary.withValues(alpha: 0.12), // 水波纹
       highlightColor: base.secondary.withValues(alpha: 0.08), // 按下时的实色高亮
-      hoverColor: base.secondary.withValues(alpha: 0.06),    // 桌面 hover(可选)
-
+      hoverColor: base.secondary.withValues(alpha: 0.06), // 桌面 hover(可选)
       // 填充按钮：统一用主色板 primaryContainer。
       filledButtonTheme: FilledButtonThemeData(style: filledBtn),
       // 描边按钮：描边色改用主色 primary（替代默认 colorScheme.outline 的中性灰），
