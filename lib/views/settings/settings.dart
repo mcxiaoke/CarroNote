@@ -10,6 +10,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:easy_localization/easy_localization.dart';
@@ -130,17 +131,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _refresh();
           },
         ),
-        shadNavigationTile(
-          context,
-          key: const Key('ui-setting-hub-backup'),
-          icon: LucideIcons.cloudUpload,
-          title: 'Backup'.tr(),
-          value: _backupValue,
-          onTap: () async {
-            await Navigator.pushNamed(context, '/backup');
-            _refresh();
-          },
-        ),
+        if (!kIsWeb)
+          shadNavigationTile(
+            context,
+            key: const Key('ui-setting-hub-backup'),
+            icon: LucideIcons.cloudUpload,
+            title: 'Backup'.tr(),
+            value: _backupValue,
+            onTap: () async {
+              await Navigator.pushNamed(context, '/backup');
+              _refresh();
+            },
+          ),
       ]),
       shadSectionTitle(context, 'Security'.tr()),
       shadSettingsCard([

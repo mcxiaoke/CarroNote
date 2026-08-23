@@ -62,10 +62,7 @@ class AboutPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  SafeNotesConfig.appSlogan,
-                  style: theme.textTheme.muted,
-                ),
+                Text(SafeNotesConfig.appSlogan, style: theme.textTheme.muted),
                 const SizedBox(height: 24),
                 // 版本 / 构建 / Git 信息
                 ShadCard(
@@ -226,15 +223,15 @@ class _DevModeTapLogoState extends State<_DevModeTapLogo> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _handleTap,
-        child: SizedBox(
-          width: 96,
-          height: 96,
-          child: Image.asset(
-            SafeNotesConfig.appLogoPath,
-            fit: BoxFit.contain,
-            semanticLabel: SafeNotesConfig.appName,
-          ),
+      child: SizedBox(
+        width: 96,
+        height: 96,
+        child: Image.asset(
+          SafeNotesConfig.appLogoPath,
+          fit: BoxFit.contain,
+          semanticLabel: SafeNotesConfig.appName,
         ),
+      ),
     );
   }
 }

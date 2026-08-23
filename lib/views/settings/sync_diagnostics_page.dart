@@ -23,9 +23,11 @@
 // Dart 导入
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' show AppExitType;
 
+import 'package:safenotes/src/platform/platform_io.dart';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -897,8 +899,8 @@ class _TestTab extends StatelessWidget {
             await ServicesBinding.instance.exitApplication(
               AppExitType.required,
             );
-            exit(0);
-            // return 'Local data reset'.tr();
+            if (!kIsWeb) exit(0);
+            return 'Local data reset'.tr();
           },
         ),
       ],

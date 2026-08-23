@@ -63,7 +63,6 @@ class App extends StatelessWidget {
               AppThemes.build(seed, mTheme.brightness),
           navigatorKey: navigatorKey,
           navigatorObservers: [routeObserver],
-          initialRoute: '/',
           onGenerateRoute: RouteGenerator.generateRoute,
           title: SafeNotesConfig.appName,
           scrollBehavior: const AppScrollBehavior(),

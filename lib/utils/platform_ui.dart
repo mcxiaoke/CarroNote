@@ -60,11 +60,7 @@ String? appFontFamilyFor(AppFontType type) {
       AppFontType.mono => 'Menlo',
     };
   }
-  // 其余平台：用通用族名，交系统映射到真实字体。
-  // 注意：sans 必须返回非空的 'sans-serif' 而**不能返回 null**——Flutter 在
-  // fontFamily 由非空（'serif'/'monospace'）变为 null 时不会重排文字（已知
-  // repaint 缺陷），会导致「从衬线/等宽切回非衬线时预览不更新」。'sans-serif'
-  // 在 Android/iOS/Linux/Web 均映射到系统默认无衬线，观感与 null 一致。
+  // 其余移动/Linux平台：用通用族名
   switch (type) {
     case AppFontType.sans:
       return 'sans-serif';
@@ -77,10 +73,10 @@ String? appFontFamilyFor(AppFontType type) {
 
 /// 指定字体类型的 CJK 兜底字体族（主字体不含中日韩字形时回退）。
 ///
-/// 桌面（Win/macOS）用具体字体名，需显式 CJK 兜底；其余平台主字体是通用族名，
-/// 系统本身已含 CJK 回退，故留空避免引入不存在的字体名。
+/// 桌面（Win/macOS）与 Web 端用具体字体名提供显式 CJK 兜底；其余平台系统自带 CJK 回退。
 List<String> appFontFallbackFor(AppFontType type) {
-  if (defaultTargetPlatform == TargetPlatform.windows ||
+  if (kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.macOS) {
     switch (type) {
       case AppFontType.sans:
@@ -91,21 +87,22 @@ List<String> appFontFallbackFor(AppFontType type) {
           'SimSun',
           'Noto Serif CJK SC',
           'Source Han Serif SC',
+          'serif',
         ];
       case AppFontType.mono:
         return const [
           'Noto Sans Mono CJK SC',
           'Sarasa Mono SC',
           'Microsoft YaHei',
+          'monospace',
         ];
     }
   }
   return const [];
 }
 
-/// 平台原生非衬线主字体族（与历史行为一致：桌面用系统原生，移动/Web 返回 null）。
+/// 平台原生非衬线主字体族（桌面与 Web 桌面浏览器使用 Segoe UI / SF 等系统字体）。
 String? get _platformSansFamily {
-  if (kIsWeb) return null;
   switch (defaultTargetPlatform) {
     case TargetPlatform.windows:
       return 'Segoe UI';
@@ -116,20 +113,29 @@ String? get _platformSansFamily {
     case TargetPlatform.fuchsia:
       return 'Roboto';
     default:
-      return null;
+      return kIsWeb ? 'sans-serif' : null;
   }
 }
 
-/// 平台原生非衬线 CJK 兜底（与历史行为一致）。
+/// 平台原生非衬线 CJK 兜底。
 List<String> get _platformSansFallback {
-  if (kIsWeb) return const [];
   switch (defaultTargetPlatform) {
     case TargetPlatform.windows:
-      return const ['Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC'];
+      return const [
+        'Microsoft YaHei',
+        'PingFang SC',
+        'Noto Sans CJK SC',
+        'sans-serif',
+      ];
     case TargetPlatform.macOS:
-      return const ['PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC'];
+      return const [
+        'PingFang SC',
+        'Microsoft YaHei',
+        'Noto Sans CJK SC',
+        'sans-serif',
+      ];
     default:
-      return const [];
+      return const ['sans-serif'];
   }
 }
 

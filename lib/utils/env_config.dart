@@ -17,16 +17,15 @@
 // 读取发生在进程启动时（buildSeedColorScheme 首次调用），因此同一份构建产物
 // 只需在启动时注入不同环境变量即可切换外观，无需重新打包。
 
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 
 import 'package:core/core.dart';
+import 'package:safenotes/src/platform/env_reader.dart';
 
 /// 通用环境变量容器（SN_ENV_VARS）的解析结果，懒加载缓存，进程内只解析一次。
 Map<String, String> _parseGenericEnvVars() {
   const String raw = String.fromEnvironment('SN_ENV_VARS', defaultValue: '');
-  final String fromPlatform = Platform.environment['SN_ENV_VARS'] ?? '';
+  final String fromPlatform = getPlatformEnv('SN_ENV_VARS') ?? '';
   final String source = fromPlatform.isNotEmpty ? fromPlatform : raw;
   if (source.isEmpty) return const <String, String>{};
 
@@ -51,7 +50,7 @@ Map<String, String> get _genericEnvVars =>
 String? envVar(String name, [String? fallback]) {
   final fromGeneric = _genericEnvVars[name];
   if (fromGeneric != null && fromGeneric.isNotEmpty) return fromGeneric;
-  final fromPlatform = Platform.environment[name];
+  final fromPlatform = getPlatformEnv(name);
   if (fromPlatform != null && fromPlatform.isNotEmpty) return fromPlatform;
   return fallback;
 }

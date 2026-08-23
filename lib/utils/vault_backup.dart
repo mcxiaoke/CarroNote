@@ -18,7 +18,8 @@
 // 偏好 dump 仅含 UI/功能开关，不含任何密钥类数据。
 
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:safenotes/src/platform/platform_io.dart';
 
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;

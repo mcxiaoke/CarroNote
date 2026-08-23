@@ -203,7 +203,10 @@ void main() {
         );
         expect(etag1, equals('new-etag-456'));
         expect(capturedRequest.headers['If-None-Match'], equals('*'));
-        expect(capturedRequest.headers['Authorization'], equals('Bearer test-token-12345'));
+        expect(
+          capturedRequest.headers['Authorization'],
+          equals('Bearer test-token-12345'),
+        );
 
         // 2. 带 expectedEtag
         await backend.putManifest(Uint8List.fromList([10, 20]), 'old-etag-123');

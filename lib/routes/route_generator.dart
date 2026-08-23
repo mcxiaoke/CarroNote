@@ -20,7 +20,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 
 import 'package:safenotes/authwall.dart';
-import 'package:safenotes/main.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/views/add_edit_note.dart';
 import 'package:safenotes/views/authentication/login.dart';
@@ -55,7 +54,20 @@ class RouteGenerator {
 
     switch (routeName) {
       case '/':
-        return _buildRoute(const SafeNotesApp(), settings);
+        if (args is SessionArguments) {
+          return _buildRoute(
+            AuthWall(
+              sessionStateStream: args.sessionStream,
+              isKeyboardFocused: args.isKeyboardFocused,
+            ),
+            settings,
+          );
+        }
+        // Web 默认根路径或未传参时回退到 home (AuthWall)
+        return _buildRoute(
+          AuthWall(sessionStateStream: StreamController<SessionState>()),
+          settings,
+        );
 
       case '/login':
         if (args is SessionArguments) {

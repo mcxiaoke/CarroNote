@@ -11,13 +11,14 @@
 * See https://safenotes.dev for support or download.
 */
 
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:path_provider/path_provider.dart';
 
 class CacheManager {
   static Future<void> emptyCache() async {
-    Directory dir = await getTemporaryDirectory();
+    if (kIsWeb) return;
+    final dir = await getTemporaryDirectory();
     dir.deleteSync(recursive: true);
     dir.create();
   }

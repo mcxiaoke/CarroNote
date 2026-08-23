@@ -24,8 +24,10 @@
  */
 
 // Dart 原生导入
-import 'dart:io';
 import 'dart:typed_data';
+
+// Project 导入
+import 'package:core/src/platform/platform_io.dart';
 
 // Package 导入
 import 'package:path/path.dart' as p;
