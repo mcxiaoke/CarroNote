@@ -129,6 +129,7 @@ class ChaosHarness {
   late final LocalFsBackend backend;
   late final Uint8List sharedDataKey;
   late final List<ChaosClient> clients;
+  Database? probeDb;
 
   /// 把当前客户端设为"活跃"（切全局 DB + 注入共享 dataKey）。
   void _activate(ChaosClient c) {
@@ -317,27 +318,28 @@ class ChaosHarness {
     final runDir = p.join(Directory.current.path, kChaosRootRel, 'run-$seed');
     final vaultDir = p.join(runDir, 'safenotes-vault');
 
-    // 1. 克隆真实 keyring（绝不碰原件）
+    // 1. 若存在真实源 keyring 则克隆探测，否则走兜底模式
     await _removeDir(runDir);
-    await _cloneVault(
+    final sourceVault = Directory(
       p.join(Directory.current.path, kSourceVaultRel),
-      vaultDir,
     );
-
-    // 2. 先探测真实克隆 keyring 能否用候选密码打开（用指向克隆的临时 backend）。
-    final probeBackend = LocalFsBackend(rootPath: vaultDir);
-    await probeBackend.init();
-    // 先用临时 DB 激活（unlock 内部用 NotesDatabase.instance 持久化 meta）
-    final probeDb = await _newDb(p.join(runDir, 'probe.db'));
-    NotesDatabase.setDatabaseForTesting(probeDb);
-
-    bool usingRealData = true;
+    bool usingRealData = false;
     String? workingPassword;
-    try {
-      final opened = await _openRealVault(probeBackend, kRealVaultPasswords);
-      workingPassword = opened.password;
-    } on StateError {
-      usingRealData = false;
+    LocalFsBackend? probeBackend;
+
+    if (sourceVault.existsSync()) {
+      await _cloneVault(sourceVault.path, vaultDir);
+      probeBackend = LocalFsBackend(rootPath: vaultDir);
+      await probeBackend.init();
+      probeDb = await _newDb(p.join(runDir, 'probe.db'));
+      NotesDatabase.setDatabaseForTesting(probeDb!);
+      try {
+        final opened = await _openRealVault(probeBackend, kRealVaultPasswords);
+        workingPassword = opened.password;
+        usingRealData = true;
+      } on StateError {
+        usingRealData = false;
+      }
     }
 
     // 3+4. 构建多客户端（各自独立 DB + 各自 keyring）。
@@ -345,7 +347,7 @@ class ChaosHarness {
     // 兜底模式：真实密码不匹配，改用全新空 keyring（独立目录，绝不覆盖克隆）。
     clients = <ChaosClient>[];
     if (usingRealData && workingPassword != null) {
-      backend = probeBackend;
+      backend = probeBackend!;
       knownPasswords.add(workingPassword);
       // 共享 dataKey（keyring 级，改密码不变）+ 基线模型（真实 118 数据）
       final probeResp = await backend.getManifest();
@@ -614,7 +616,7 @@ class ChaosHarness {
       } catch (_) {}
     }
     try {
-      await probeDb.close();
+      await probeDb?.close();
     } catch (_) {}
     await _removeDir(runDir);
   }

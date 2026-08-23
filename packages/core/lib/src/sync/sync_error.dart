@@ -103,7 +103,7 @@ class DecryptionError extends SyncError {
   String toDisplayString() {
     final parts = <String>['$label（$operation）'];
     if (noteUuid != null) parts.add('uuid=$noteUuid');
-    if (blobHash != null) parts.add('hash=${blobHash!.substring(0, 8)}…');
+    if (blobHash != null) parts.add('hash=${_truncateHash(blobHash!)}');
     if (attemptedEpoch != null) parts.add('epoch=$attemptedEpoch');
     if (cause != null) parts.add('cause=${_truncateCause(cause!)}');
     return parts.join(' ');
@@ -166,7 +166,7 @@ class BlobMissingError extends SyncError {
 
   @override
   String toDisplayString() =>
-      '$label（$operation, hash=${blobHash.substring(0, 8)}…'
+      '$label（$operation, hash=${_truncateHash(blobHash)}'
       '${noteUuid != null ? ', uuid=$noteUuid' : ''}）';
 
   @override
@@ -296,6 +296,12 @@ String _truncateCause(Object cause, {int maxLen = 200}) {
   final s = cause.toString();
   if (s.length <= maxLen) return s;
   return '${s.substring(0, maxLen)}…';
+}
+
+/// 辅助：安全截断 hash 字符串（防短 hash RangeError）
+String _truncateHash(String hash, {int maxLen = 8}) {
+  if (hash.length <= maxLen) return hash;
+  return '${hash.substring(0, maxLen)}…';
 }
 
 // ──────────────────────────────────────────────
