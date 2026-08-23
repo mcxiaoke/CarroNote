@@ -294,12 +294,22 @@ class SafeNotesApp extends StatefulWidget {
   State<SafeNotesApp> createState() => _SafeNotesAppState();
 }
 
-class _SafeNotesAppState extends State<SafeNotesApp> {
+class _SafeNotesAppState extends State<SafeNotesApp>
+    with WidgetsBindingObserver {
   final navigatorKey = GlobalKey<NavigatorState>();
   NavigatorState? get _navigator => navigatorKey.currentState;
   late final StreamController<SessionState> sessionStateStream;
   SessionConfig? _prevSessionConfig;
   StreamSubscription<SessionTimeoutState>? _sessionSubscription;
+
+  /// 后台触发的会话超时事件。
+  ///
+  /// 空闲 Timer 不感知前后台：切到其他应用后超时照样触发。若在后台直接
+  /// 导航到登录页，路由重建 + 登录页/PIN 面板的 autofocus 会向引擎发起
+  /// 窗口焦点请求（Flutter Windows 引擎存在失活窗口重新激活的已知问题，
+  /// flutter/flutter#187436），表现为应用突然抢前台。这里先记录事件，
+  /// 延迟到回到前台时再执行锁定（见 didChangeAppLifecycleState）。
+  SessionTimeoutState? _pendingLockEvent;
 
   // 评审 #15：缓存上一次生效的超时配置，build 只在配置真正变化时重建订阅，
   // 避免每次 build 都取消/重建会话监听、把 SessionTimeoutManager 的超时基准
@@ -311,6 +321,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     sessionStateStream = StreamController<SessionState>();
     // 应用初始位于 AuthWall（尚未登录）或无会话，先 stop listening
     // 原实现在 build() 里每次重建都 add，这里移入 initState 只发一次，
@@ -322,6 +333,7 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   void dispose() {
     // F-C03：取消会话订阅、释放 SessionConfig 的闭包 stream 并关闭 controller，
     // 避免重建时旧 listener 泄漏 / StreamController 永不关闭
+    WidgetsBinding.instance.removeObserver(this);
     _sessionSubscription?.cancel();
     _prevSessionConfig?.dispose();
     _cachedSessionConfig?.dispose();
@@ -379,6 +391,17 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
   Future<void> sessionHandler(SessionTimeoutState timeoutEvent) async {
     // stop listening, as user will already be in auth page
     sessionStateStream.add(SessionState.stopListening);
+
+    // 应用在后台时不做任何 UI 切换：记录待锁定事件，回到前台再执行。
+    // （防止后台导航触发窗口焦点请求把应用抢到前台，见 _pendingLockEvent 注释）
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+        (timeoutEvent == SessionTimeoutState.userInactivityTimeout ||
+            timeoutEvent == SessionTimeoutState.appFocusTimeout)) {
+      _pendingLockEvent = timeoutEvent;
+      Log.auth.i('会话超时但应用在后台，锁定延迟至回到前台执行');
+      return;
+    }
+
     // 评审 #15：navigatorKey.currentContext 在应用首次 build 前为 null，
     // 强解包会崩溃。取不到 context 时本次超时只停监听、不导航
     // （下次超时事件到达时通常已挂载）。
@@ -388,6 +411,14 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
       return;
     }
 
+    await _executeSessionLock(timeoutEvent, context);
+  }
+
+  /// 执行会话锁定（登出并跳转登录页）。仅在应用前台时调用。
+  Future<void> _executeSessionLock(
+    SessionTimeoutState timeoutEvent,
+    BuildContext context,
+  ) async {
     if (timeoutEvent == SessionTimeoutState.userInactivityTimeout &&
         PreferencesStorage.isInactivityTimeoutOn) {
       Log.auth.i('会话超时：用户长时间无操作，准备锁定');
@@ -397,6 +428,22 @@ class _SafeNotesAppState extends State<SafeNotesApp> {
       Log.auth.i('会话超时：应用失焦超时，准备锁定');
       await onTimeOutDo(context: context);
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // 回到前台时补执行后台期间积压的锁定。重复事件是幂等的：
+    // Session.logout 清掉 dataKey 后，onTimeOutDo 的 isEncryptionEnabled
+    // 检查会直接跳过二次登出/导航。
+    if (state != AppLifecycleState.resumed) return;
+    final pendingEvent = _pendingLockEvent;
+    if (pendingEvent == null) return;
+    _pendingLockEvent = null;
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+    Log.auth.i('应用回到前台，执行延迟的会话锁定');
+    unawaited(_executeSessionLock(pendingEvent, context));
   }
 
   Future<void> onTimeOutDo({required BuildContext context}) async {
