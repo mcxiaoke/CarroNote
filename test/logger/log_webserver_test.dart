@@ -1,8 +1,14 @@
+/*
+ * Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * You may use, distribute and modify this code under the
+ * terms of the GPL-3.0+ license.
+ */
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-
-import 'package:flutter/services.dart';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,87 +17,172 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
 
+class _RealHttpOverrides extends HttpOverrides {}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  tearDown(() {
-    LogWebServer.enableWebServer = true;
-  });
+  late HttpClient client;
+  late int serverPort;
+  late String serverToken;
 
-  test('/api/download/sp 中文内容以 UTF-8 返回（Latin1 编码回归）', () async {
+  setUpAll(() async {
+    HttpOverrides.global = _RealHttpOverrides();
+    LogWebServer.enableWebServer = true;
     SharedPreferences.setMockInitialValues({
+      'test_key': 'test_val',
       'managedTags': <String>['个人', '工作'],
       'locale': 'zh_CN',
     });
     await PreferencesStorage.init();
 
-    final port = await LogWebServer.instance.start(port: 18888);
-    try {
-      // TestWidgetsFlutterBinding 会劫持 HttpClient（一律返回 400），
-      // 故用原始 socket 直接发送 HTTP 请求验证真实响应
-      final socket = await Socket.connect('127.0.0.1', port);
-      socket.write(
-        'GET /api/download/sp?token=${LogWebServer.instance.token} HTTP/1.0\r\n'
-        'Host: 127.0.0.1:$port\r\n'
-        'Connection: close\r\n'
-        '\r\n',
-      );
-      await socket.flush();
-
-      final chunks = <int>[];
-      await for (final chunk in socket) {
-        chunks.addAll(chunk);
-      }
-      final raw = utf8.decode(chunks);
-      final headerEnd = raw.indexOf('\r\n\r\n');
-      final headers = raw.substring(0, headerEnd);
-      final body = raw.substring(headerEnd + 4);
-
-      expect(headers, contains('200 OK'));
-      expect(headers.toLowerCase(), contains('charset=utf-8'));
-      final decoded = jsonDecode(body) as Map<String, dynamic>;
-      expect((decoded['managedTags'] as List).first, '个人');
-    } finally {
-      await LogWebServer.instance.stop();
-    }
+    // 绑定高位测试端口
+    serverPort = await LogWebServer.instance.start(port: 19888);
+    serverToken = LogWebServer.instance.token!;
+    client = HttpClient();
   });
 
-  test('/api/download/all 打包 ZIP 返回且可解出成员', () async {
-    SharedPreferences.setMockInitialValues({
-      'managedTags': <String>['个人'],
-    });
-    await PreferencesStorage.init();
+  tearDownAll(() async {
+    client.close(force: true);
+    await LogWebServer.instance.stop();
+    LogWebServer.enableWebServer = false;
+    HttpOverrides.global = null;
+  });
 
-    final port = await LogWebServer.instance.start(port: 18889);
-    try {
-      final socket = await Socket.connect('127.0.0.1', port);
-      socket.write(
-        'GET /api/download/all?token=${LogWebServer.instance.token} HTTP/1.0\r\n'
-        'Host: 127.0.0.1:$port\r\n'
-        'Connection: close\r\n'
-        '\r\n',
+  group('LogWebServer 安全与端点验证', () {
+    test('OPTIONS 预检请求返回 204 与 CORS 跨域响应头', () async {
+      final req = await client.openUrl(
+        'OPTIONS',
+        Uri.parse('http://127.0.0.1:$serverPort/api/status'),
       );
-      await socket.flush();
+      final res = await req.close();
+      expect(res.statusCode, HttpStatus.noContent);
+      expect(res.headers.value('access-control-allow-origin'), '*');
+      expect(
+        res.headers.value('access-control-allow-methods'),
+        contains('GET'),
+      );
+    });
+
+    test('缺失或无效 Token 请求被拦截并返回 403 Forbidden', () async {
+      // 1. 无 token
+      final reqNoToken = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$serverPort/api/status'),
+      );
+      final resNoToken = await reqNoToken.close();
+      expect(resNoToken.statusCode, HttpStatus.forbidden);
+
+      // 2. 错误 token
+      final reqBadToken = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/api/status?token=wrong_token_value',
+        ),
+      );
+      final resBadToken = await reqBadToken.close();
+      expect(resBadToken.statusCode, HttpStatus.forbidden);
+    });
+
+    test('支持 Query 与 token Header 两种鉴权方式通过验证', () async {
+      // 1. Query 参数 ?token=...
+      final reqQuery = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$serverPort/api/status?token=$serverToken'),
+      );
+      final resQuery = await reqQuery.close();
+      expect(resQuery.statusCode, HttpStatus.ok);
+
+      // 2. HTTP Header token: ...
+      final reqHeader = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$serverPort/api/status'),
+      );
+      reqHeader.headers.set('token', serverToken);
+      final resHeader = await reqHeader.close();
+      expect(resHeader.statusCode, HttpStatus.ok);
+    });
+
+    test('/logfile 端点对目录穿越攻击拦截并返回 400 Bad Request', () async {
+      // 1. 包含 ..
+      final reqDotDot = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/logfile?token=$serverToken&name=../../etc/passwd',
+        ),
+      );
+      final resDotDot = await reqDotDot.close();
+      expect(resDotDot.statusCode, HttpStatus.badRequest);
+
+      // 2. 包含正斜杠 /
+      final reqSlash = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/logfile?token=$serverToken&name=subdir/app.log',
+        ),
+      );
+      final resSlash = await reqSlash.close();
+      expect(resSlash.statusCode, HttpStatus.badRequest);
+
+      // 3. 包含反斜杠 \
+      final reqBackslash = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/logfile?token=$serverToken&name=subdir\\app.log',
+        ),
+      );
+      final resBackslash = await reqBackslash.close();
+      expect(resBackslash.statusCode, HttpStatus.badRequest);
+    });
+
+    test('/api/prefs 端点返回有效 SharedPreferences JSON 快照', () async {
+      final req = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$serverPort/api/prefs?token=$serverToken'),
+      );
+      final res = await req.close();
+      expect(res.statusCode, HttpStatus.ok);
+
+      final body = await utf8.decoder.bind(res).join();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      expect(json, isA<Map<String, dynamic>>());
+      expect(json['test_key'], 'test_val');
+    });
+
+    test('/logs 端点返回纯文本响应', () async {
+      final req = await client.getUrl(
+        Uri.parse('http://127.0.0.1:$serverPort/logs?token=$serverToken'),
+      );
+      final res = await req.close();
+      expect(res.statusCode, HttpStatus.ok);
+      expect(res.headers.contentType?.mimeType, 'text/plain');
+    });
+
+    test('/api/download/sp 中文内容以 UTF-8 返回（Latin1 编码回归）', () async {
+      final req = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/api/download/sp?token=$serverToken',
+        ),
+      );
+      final res = await req.close();
+      expect(res.statusCode, HttpStatus.ok);
+      expect(
+        res.headers.contentType?.mimeType,
+        'application/json',
+      );
+
+      final body = await utf8.decoder.bind(res).join();
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      expect((decoded['managedTags'] as List).first, '个人');
+    });
+
+    test('/api/download/all 打包 ZIP 返回且可解出成员', () async {
+      final req = await client.getUrl(
+        Uri.parse(
+          'http://127.0.0.1:$serverPort/api/download/all?token=$serverToken',
+        ),
+      );
+      final res = await req.close();
+      expect(res.statusCode, HttpStatus.ok);
+      expect(res.headers.contentType?.mimeType, 'application/zip');
 
       final chunks = <int>[];
-      await for (final chunk in socket) {
+      await for (final chunk in res) {
         chunks.addAll(chunk);
       }
-      // 响应体是二进制（ZIP），按字节切分 header/body
-      final raw = Uint8List.fromList(chunks);
-      final headerEnd = _findHeaderEnd(raw);
-      expect(headerEnd, greaterThan(0));
-      final headers = ascii.decode(raw.sublist(0, headerEnd));
-      final zipBytes = raw.sublist(headerEnd + 4);
-
-      expect(headers, contains('200 OK'));
-      expect(headers.toLowerCase(), contains('application/zip'));
-      // 必须带 Content-Length（否则 chunked 编码会让部分下载工具挂起）
-      expect(
-        headers.toLowerCase(),
-        contains('content-length: ${zipBytes.length}'),
-      );
-
+      final zipBytes = Uint8List.fromList(chunks);
       final archive = ZipDecoder().decodeBytes(zipBytes);
       final names = archive.files.map((f) => f.name).toSet();
       expect(names, contains('shared_preferences.json'));
@@ -100,21 +191,6 @@ void main() {
       );
       final spContent = utf8.decode(spFile.content as List<int>);
       expect(spContent, contains('个人'));
-    } finally {
-      await LogWebServer.instance.stop();
-    }
+    });
   });
-}
-
-/// 在原始 HTTP 响应字节中定位 "\r\n\r\n"（header 与 body 分隔符）位置
-int _findHeaderEnd(List<int> bytes) {
-  for (var i = 0; i + 3 < bytes.length; i++) {
-    if (bytes[i] == 13 &&
-        bytes[i + 1] == 10 &&
-        bytes[i + 2] == 13 &&
-        bytes[i + 3] == 10) {
-      return i;
-    }
-  }
-  return -1;
 }

@@ -33,6 +33,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:path/path.dart' as p;
@@ -1242,7 +1244,10 @@ class SyncService {
       return u.toString();
     } on FormatException {
       // 非合法 URL：对常见的 `scheme://user:pass@` 前缀做正则掩码
-      return url.replaceAll(RegExp(r'(https?://)[^/@\s]+@'), r'$1***@');
+      return url.replaceAllMapped(
+        RegExp(r'(https?://)[^/@\s]+@'),
+        (m) => '${m[1]}***@',
+      );
     }
   }
 
@@ -1252,6 +1257,13 @@ class SyncService {
     if (username.length <= 2) return '***';
     return '${username.substring(0, 2)}***';
   }
+
+  @visibleForTesting
+  static String redactUrlForTesting(String url) => _redactUrl(url);
+
+  @visibleForTesting
+  static String maskUsernameForTesting(String username) =>
+      _maskUsername(username);
 
   void _updateState(SyncServiceState newState) {
     _state = newState;
