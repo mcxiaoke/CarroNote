@@ -4,10 +4,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
-import 'package:safenotes/views/settings/editor_font_setting.dart';
 import 'package:safenotes/views/settings/font_settings_page.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
@@ -23,6 +21,7 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   late bool _isMarkdownEnabled;
   late bool _isRelativeTime;
   late bool _isSortByModified;
+  late String _notesColorValue;
 
   @override
   void initState() {
@@ -32,6 +31,18 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
     _isRelativeTime = PreferencesStorage.isRelativeTime;
     _isSortByModified = PreferencesStorage.isSortByModified;
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadDisplayValues();
+  }
+
+  void _loadDisplayValues() {
+    _notesColorValue = PreferencesStorage.isColorful ? 'On'.tr() : 'Off'.tr();
+  }
+
+  void _refresh() => setState(_loadDisplayValues);
 
   @override
   Widget build(BuildContext context) {
@@ -55,16 +66,13 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
           ),
           shadNavigationTile(
             context,
-            key: const Key('ui-setting-item-notestyle'),
-            icon: LucideIcons.type,
-            title: 'Note style'.tr(),
-            value: _noteStyleValue(),
+            key: const Key('ui-setting-item-notescolor'),
+            icon: LucideIcons.brush,
+            title: 'Notes Color'.tr(),
+            value: _notesColorValue,
             onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NoteStylePicker()),
-              );
-              if (mounted) setState(() {});
+              await Navigator.pushNamed(context, '/chooseColorSettings');
+              _refresh();
             },
           ),
           KeyedSubtree(
@@ -142,20 +150,5 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
       AppFontType.sans => 'Sans-serif'.tr(),
       AppFontType.mono => 'Monospace'.tr(),
     };
-  }
-
-  String _noteStyleValue() {
-    final idx = PreferencesStorage.noteFontFamilyTypeIndex;
-    final fontLabel = switch (idx) {
-      0 => 'System'.tr(),
-      1 => 'Sans-serif'.tr(),
-      2 => 'Serif'.tr(),
-      3 => 'Monospace'.tr(),
-      _ => 'System'.tr(),
-    };
-    final sizeLabel = EditorText.labelOf(
-      PreferencesStorage.editorFontSizeIndex,
-    );
-    return '$fontLabel · $sizeLabel';
   }
 }

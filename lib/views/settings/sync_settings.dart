@@ -274,6 +274,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       );
     } else {
       _showMessage('Sync configuration saved'.tr());
+      if (SyncConfig.isSyncReady && SyncService.instance.state.isInitialized) {
+        SyncService.instance.autoSync();
+      }
     }
   }
 

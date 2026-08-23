@@ -74,10 +74,11 @@ const Map<String, Size?> _viewports = {
   'compact-land-890x400': Size(890, 400), // 窄屏手机，横屏
 };
 
-/// 设置 Hub 7 个顶级 tile 的 key（主题与显示已提升为一级入口）。
+/// 设置 Hub 8 个顶级 tile 的 key（主题、显示与笔记样式已提升为一级入口）。
 const List<String> _hubTileKeys = <String>[
   'ui-setting-hub-theme',
   'ui-setting-hub-display',
+  'ui-setting-hub-notestyle',
   'ui-setting-hub-sync',
   'ui-setting-hub-backup',
   'ui-setting-hub-security',
@@ -426,28 +427,26 @@ Future<void> main() async {
       await _ensureMinNotes(tester, 2);
 
       await _forEachViewport(tester, (tester, size) async {
-        IconButton layoutBtn() => tester.widget<IconButton>(
-          find.byKey(const Key('ui-home-toolbar-layout')),
-        );
-        final firstIcon = (layoutBtn().icon as Icon).icon;
-
-        await tester.tap(find.byKey(const Key('ui-home-toolbar-layout')));
+        // 打开 popover 菜单，通过 ui-home-menu-gridview 切换布局
+        await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
         await tester.pumpAndSettle();
-        expect(
-          (layoutBtn().icon as Icon).icon,
-          isNot(firstIcon),
-          reason: 'layout toggle should flip the button icon @ $size',
+
+        final gridSwitch = find.descendant(
+          of: find.byKey(const Key('ui-home-menu-gridview')),
+          matching: find.byType(ShadSwitch),
         );
+        expect(gridSwitch, findsOneWidget);
+        await tester.tap(gridSwitch);
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: 'overflow @ $size');
 
         // Toggle back to restore the original layout.
-        await tester.tap(find.byKey(const Key('ui-home-toolbar-layout')));
+        await tester.tap(gridSwitch);
         await tester.pumpAndSettle();
-        expect(
-          (layoutBtn().icon as Icon).icon,
-          firstIcon,
-          reason: 'layout toggle should toggle back @ $size',
-        );
+
+        // 再次点击收起 popover
+        await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
+        await tester.pumpAndSettle();
       });
     });
 
@@ -467,12 +466,12 @@ Future<void> main() async {
           reason: 'popover overflow @ $size',
         );
         for (final key in const [
+          'ui-home-menu-gridview',
           'ui-home-menu-newfirst',
           'ui-home-menu-sortmodified',
           'ui-home-menu-relativetime',
           'ui-home-menu-compact',
           'ui-home-menu-colorful',
-          'ui-home-menu-starredonly',
         ]) {
           expect(
             find.byKey(Key(key)),
@@ -480,6 +479,7 @@ Future<void> main() async {
             reason: 'popover 缺少菜单项 $key @ $size',
           );
         }
+        expect(find.byKey(const Key('ui-home-menu-starredonly')), findsNothing);
 
         // 再次点击收起 popover，回到干净的主界面。
         await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
@@ -584,6 +584,7 @@ Future<void> main() async {
         );
         await _popTopRoute(tester);
         await _waitFor(tester, () => _isHome(tester));
+        await _settle(tester);
       } finally {
         await _deleteNoteByTitle(tester, title);
       }
@@ -861,12 +862,12 @@ Future<void> main() async {
       await _loginToHome(tester);
       await _openSettings(tester);
       await tester.scrollUntilVisible(
-        find.byKey(const Key('ui-setting-hub-theme')),
+        find.byKey(const Key('ui-setting-hub-display')),
         200.0,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('ui-setting-hub-theme')));
+      await tester.tap(find.byKey(const Key('ui-setting-hub-display')));
       await tester.pumpAndSettle();
       await _toggleSettingSwitch(
         tester,
@@ -1555,11 +1556,12 @@ Future<void> _createNote(WidgetTester tester, String title, String body) async {
 /// editor in preview mode. The search query is left in place.
 Future<void> _openNoteByTitle(WidgetTester tester, String title) async {
   // 从笔记页 pop 回 home 有一个过渡期，搜索框可能尚未挂载；先等它就绪，
-  // 再稳定等待避免 enterText 对尚未出现的输入框抛 "No element"（偶发时序抖动）。
-  await _waitFor(
-    tester,
-    () => tester.any(find.byKey(const Key('ui-home-search-input'))),
+  // 必须等内部的 EditableText 挂载完毕，再稳定等待避免 enterText 抛 "No element"。
+  final inputFinder = find.descendant(
+    of: find.byKey(const Key('ui-home-search-input')),
+    matching: find.byType(EditableText),
   );
+  await _waitFor(tester, () => tester.any(inputFinder));
   await _settle(tester);
   await tester.enterText(find.byKey(const Key('ui-home-search-input')), title);
   await _waitFor(tester, () => tester.any(find.text(title)));

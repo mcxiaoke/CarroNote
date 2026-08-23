@@ -82,56 +82,29 @@ void main() {
       findsOneWidget,
     );
 
-    // 点击排序 icon 弹出下拉菜单，六个开关项齐全。
+    // 点击排序 icon 弹出下拉菜单，六个开关项齐全（包含 Grid view，已移除仅显示星标）。
     await tester.tap(find.byKey(const Key('ui-home-toolbar-sort')));
     await tester.pumpAndSettle();
     for (final key in const [
+      'ui-home-menu-gridview',
       'ui-home-menu-newfirst',
       'ui-home-menu-sortmodified',
       'ui-home-menu-relativetime',
       'ui-home-menu-compact',
       'ui-home-menu-colorful',
-      'ui-home-menu-starredonly',
     ]) {
       expect(find.byKey(Key(key)), findsOneWidget, reason: '缺少菜单项 $key');
     }
+    expect(find.byKey(const Key('ui-home-menu-starredonly')), findsNothing);
 
-    // 开启「仅显示星标」：只保留置顶的 A，列表只渲染一张卡片。
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const Key('ui-home-menu-starredonly')),
-        matching: find.byType(ShadSwitch),
-      ),
+    // 切换「网格视图」开关：改变 PreferencesStorage.isGridView
+    final gridSwitch = find.descendant(
+      of: find.byKey(const Key('ui-home-menu-gridview')),
+      matching: find.byType(ShadSwitch),
     );
+    expect(gridSwitch, findsOneWidget);
+    await tester.tap(gridSwitch);
     await tester.pumpAndSettle();
-
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('ui-home-note-0')),
-        matching: find.text('Note A'),
-      ),
-      findsOneWidget,
-      reason: '开启仅显示星标后，置顶笔记应保留且排在第 0 位',
-    );
-    expect(find.text('Note B'), findsNothing);
-    expect(find.text('Note C'), findsNothing);
-
-    // 再关掉：恢复全部三张笔记（纯内存开关，不持久化）。
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const Key('ui-home-menu-starredonly')),
-        matching: find.byType(ShadSwitch),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('ui-home-note-2')),
-        matching: find.text('Note B'),
-      ),
-      findsOneWidget,
-      reason: '关闭仅显示星标后应恢复全量列表（排序不变）',
-    );
 
     // 切换「新→旧」方向 → 旧→新：B/C 顺序反转，A 仍置顶在前。
     await tester.tap(find.byKey(const Key('ui-home-menu-newfirst')));

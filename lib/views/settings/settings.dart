@@ -21,15 +21,13 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
+import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/styles.dart';
+import 'package:safenotes/views/settings/editor_font_setting.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
-/// 设置 Hub 页：6 顶级入口（外观 / 同步 / 备份 / 安全 / 通用 / 关于）
-///
-/// 原单页 24 行长列表按 docs/settings-hub-ia-20260822.md 重构为 Hub + 二级页：
-/// 同步与备份拆为顶级入口，移动端通过 pushNamed 进二级页，桌面端同样走 push（首版）；
-/// 后续可升级为 Master-Detail 双栏，当前已通过 720 限宽居中解决过宽问题。
+/// 设置 Hub 页：顶级入口
 class SettingsScreen extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
 
@@ -42,6 +40,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late String _themeValue;
   late String _displayValue;
+  late String _noteStyleValue;
   late String _syncStatusValue;
   late String _backupValue;
   late String _securityValue;
@@ -56,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _loadDisplayValues() {
     _themeValue = _currentThemeColorName(context);
     _displayValue = _globalFontTypeValue();
+    _noteStyleValue = _currentNoteStyleValue();
     _syncStatusValue = _syncStatusValueString();
     _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
     _securityValue = _securitySummary();
@@ -92,11 +92,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shadNavigationTile(
           context,
           key: const Key('ui-setting-hub-display'),
-          icon: LucideIcons.type,
+          icon: LucideIcons.slidersHorizontal,
           title: 'Display'.tr(),
           value: _displayValue,
           onTap: () async {
             await Navigator.pushNamed(context, '/displaySettings');
+            _refresh();
+          },
+        ),
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-hub-notestyle'),
+          icon: LucideIcons.type,
+          title: 'Note style'.tr(),
+          value: _noteStyleValue,
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NoteStylePicker()),
+            );
             _refresh();
           },
         ),
@@ -189,6 +203,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       AppFontType.sans => 'Sans-serif'.tr(),
       AppFontType.mono => 'Monospace'.tr(),
     };
+  }
+
+  String _currentNoteStyleValue() {
+    final idx = PreferencesStorage.noteFontFamilyTypeIndex;
+    final fontLabel = switch (idx) {
+      0 => 'System'.tr(),
+      1 => 'Sans-serif'.tr(),
+      2 => 'Serif'.tr(),
+      3 => 'Monospace'.tr(),
+      _ => 'System'.tr(),
+    };
+    final sizeLabel = EditorText.labelOf(
+      PreferencesStorage.editorFontSizeIndex,
+    );
+    return '$fontLabel · $sizeLabel';
   }
 
   String _securitySummary() {

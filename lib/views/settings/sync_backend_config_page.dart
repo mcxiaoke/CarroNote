@@ -397,7 +397,7 @@ class _SyncBackendConfigPageState extends State<SyncBackendConfigPage> {
           _textField(
             controller: _webdavPasswordCtrl,
             label: 'Password'.tr(),
-            hint: 'App Password (not login password)'.tr(),
+            hint: 'Login password or app password'.tr(),
             icon: LucideIcons.lock,
             obscure: _obscureWebdavPassword,
             suffix: _obscureToggle(

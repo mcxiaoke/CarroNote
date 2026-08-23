@@ -18,6 +18,7 @@ import 'package:core/core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/biometric_auth.dart';
 
 /// PIN 字符集(三种键盘类型,见 docs/pin-lock-design.md §8)
 ///
@@ -247,6 +248,10 @@ class PinAuth {
     );
 
     // 5. 持久化策略与开关
+    if (PreferencesStorage.isBiometricAuthEnabled) {
+      Log.auth.i('PIN 锁定设置成功，自动关闭已启用的生物识别认证');
+      await BiometricAuth.disable();
+    }
     await PreferencesStorage.setPinLength(effective.length);
     await PreferencesStorage.setPinCharsetIndex(effective.charset.index);
     await PreferencesStorage.setPinShuffleEnabled(effective.shuffle);

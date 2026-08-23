@@ -18,6 +18,7 @@ import 'package:core/core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/models/pin_auth.dart';
 
 // Project imports:
 
@@ -87,6 +88,10 @@ class BiometricAuth {
 
   static Future<void> enable() async {
     Log.auth.i('生物识别认证: 开始开启');
+    if (PreferencesStorage.isPinAuthEnabled) {
+      Log.auth.i('生物识别认证开启，自动关闭已启用的 PIN 锁定');
+      await PinAuth.disable();
+    }
     await PreferencesStorage.setIsBiometricAuthEnabled(true);
     // 重新开启时生成新的包裹密钥（丢弃旧 KEY，防止开关周期内密钥复用）
     await storage.delete(key: _secureBiometricWrapKey);

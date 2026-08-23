@@ -138,7 +138,7 @@ class BackupSettingState extends State<BackupSetting> {
           context,
           icon: LucideIcons.folderOpen,
           title: 'Location'.tr(),
-          value: dir.isEmpty ? '—' : dir,
+          subtitle: dir.isEmpty ? '—' : dir,
           onTap: canOpen ? () => _openBackupDirectory() : () {},
         ),
         shadNavigationTile(

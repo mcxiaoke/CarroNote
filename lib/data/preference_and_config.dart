@@ -294,7 +294,7 @@ class PreferencesStorage {
     _logPrefChange('自动备份开关', old, flag);
   }
 
-  static bool get isColorful => _preferences?.getBool(_keyIsColorful) ?? true;
+  static bool get isColorful => _preferences?.getBool(_keyIsColorful) ?? false;
 
   static Future<void> setIsColorful(bool flag) async {
     final old = _preferences?.getBool(_keyIsColorful);

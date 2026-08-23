@@ -390,7 +390,6 @@ class HomePageState extends State<HomePage> with RouteAware {
                                 _filterIndicator(),
                               _syncStatusButton(),
                               _diagnosticsButton(),
-                              _gridListView(),
                               _shortNotes(),
                             ],
                     ),
@@ -453,7 +452,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   ///   - 成功：cloud_done_outlined
   ///   - 失败：cloud_off_outlined（红色）
   Widget _syncStatusButton() {
-    if (!SyncConfig.isSyncReady) return const SizedBox.shrink();
+    if (!SyncConfig.isSyncEnabled) return const SizedBox.shrink();
 
     final state = _lastSyncState ?? SyncService.instance.state;
     final isSyncing = state.isSyncing;
@@ -526,21 +525,6 @@ class HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  Widget _gridListView() {
-    return IconButton(
-      key: const Key('ui-home-toolbar-layout'),
-      icon: !isGridView
-          ? const Icon(LucideIcons.layoutGrid)
-          : const Icon(LucideIcons.columns2),
-      onPressed: () {
-        setState(() {
-          PreferencesStorage.setIsGridView(!isGridView);
-          isGridView = !isGridView;
-        });
-      },
-    );
-  }
-
   // Widget _DevSessionListner() {
   //   return IconButton(
   //     icon: isListner ? Icon(LucideIcons.toggleRight) : Icon(LucideIcons.toggleLeft),
@@ -572,8 +556,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   /// 排序/显示偏好下拉菜单：复用排序 icon（↑/↓ 表示新→旧方向），
-  /// 点击弹出开关列表，前几项与设置页共用同一持久化偏好，
-  /// 「仅显示星标」为纯内存开关（[_showStarredOnly]，不落盘）。
+  /// 点击弹出开关列表，各项与设置页共用同一持久化偏好。
   Widget _buildSortMenu(BuildContext context) {
     final theme = ShadTheme.of(context);
     Widget row({
@@ -615,6 +598,18 @@ class HomePageState extends State<HomePage> with RouteAware {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        row(
+          key: const Key('ui-home-menu-gridview'),
+          icon: LucideIcons.layoutGrid,
+          title: 'Grid view'.tr(),
+          value: isGridView,
+          onChanged: (v) {
+            setState(() {
+              isGridView = v;
+              PreferencesStorage.setIsGridView(v);
+            });
+          },
+        ),
         row(
           key: const Key('ui-home-menu-newfirst'),
           icon: LucideIcons.arrowDown,
@@ -665,16 +660,6 @@ class HomePageState extends State<HomePage> with RouteAware {
           onChanged: (v) {
             PreferencesStorage.setIsColorful(v);
             setState(() {}); // 卡片底色即时切换
-          },
-        ),
-        row(
-          key: const Key('ui-home-menu-starredonly'),
-          icon: LucideIcons.star,
-          title: 'Starred only'.tr(),
-          value: _showStarredOnly,
-          onChanged: (v) {
-            setState(() => _showStarredOnly = v);
-            _applyViewFilter();
           },
         ),
       ],

@@ -20,7 +20,6 @@ class ThemeSettingsPage extends StatefulWidget {
 
 class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
   late String _themeColorName;
-  late String _notesColorValue;
 
   @override
   void didChangeDependencies() {
@@ -30,7 +29,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
 
   void _loadDisplayValues() {
     _themeColorName = _currentThemeColorName(context);
-    _notesColorValue = PreferencesStorage.isColorful ? 'On'.tr() : 'Off'.tr();
   }
 
   void _refresh() => setState(_loadDisplayValues);
@@ -58,17 +56,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
             value: _themeColorName,
             onTap: () async {
               await Navigator.pushNamed(context, '/themeColorSettings');
-              _refresh();
-            },
-          ),
-          shadNavigationTile(
-            context,
-            key: const Key('ui-setting-item-notescolor'),
-            icon: LucideIcons.brush,
-            title: 'Notes Color'.tr(),
-            value: _notesColorValue,
-            onTap: () async {
-              await Navigator.pushNamed(context, '/chooseColorSettings');
               _refresh();
             },
           ),

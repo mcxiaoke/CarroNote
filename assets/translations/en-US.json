@@ -349,6 +349,8 @@
   "Server Address": "Server Address",
   "Username": "Username",
   "App Password (not login password)": "App Password (not login password)",
+  "Login password or app password": "Login password or app password",
+  "Grid view": "Grid view",
   "The client automatically creates a safenotes-vault subdirectory under this address for sync data.": "The client automatically creates a safenotes-vault subdirectory under this address for sync data.",
   "Fixed Bearer Token configured at deployment": "Fixed Bearer Token configured at deployment",
   "Testing...": "Testing...",
