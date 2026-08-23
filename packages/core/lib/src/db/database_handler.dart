@@ -2297,6 +2297,22 @@ class NotesDatabase {
     );
   }
 
+  /// 设置笔记颜色（ARGB int），null = 恢复默认（跟随主题取色）。
+  ///
+  /// 与 [setNotePinned] 同构：只写 note_meta，不动笔记正文与 `updated_at`。
+  Future<NoteMeta> setNoteColor(String uuid, int? color) async {
+    final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);
+    return upsertNoteMeta(
+      current.copyWith(
+        uuid: uuid,
+        color: color,
+        clearColor: color == null,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        synced: false,
+      ),
+    );
+  }
+
   /// 设置标签（自动规范化：去空白 / 丢空串 / 去重），返回写入后的元数据。
   Future<NoteMeta> setNoteTags(String uuid, Iterable<String> tags) async {
     final current = await getNoteMeta(uuid) ?? NoteMeta.defaults(uuid);

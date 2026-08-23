@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 /// 此处 Container 仅保留描边/圆角且填充透明），墨色得以画在底色之上、不被盖住。
 class NoteCardPressFeedback extends StatelessWidget {
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final Widget child;
   final double radius;
 
@@ -26,6 +27,7 @@ class NoteCardPressFeedback extends StatelessWidget {
     super.key,
     required this.onTap,
     required this.child,
+    this.onLongPress,
     this.radius = 12,
   });
 
@@ -33,6 +35,7 @@ class NoteCardPressFeedback extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       mouseCursor: SystemMouseCursors.click,
       borderRadius: BorderRadius.circular(radius),
       child: child,

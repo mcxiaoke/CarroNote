@@ -46,6 +46,17 @@ class NoteCardBody extends StatelessWidget {
   /// 只读标记，不承载任何写操作（写只走 setNotePinned，见红线 1/2）。
   final bool pinned;
 
+  /// 用户通过 NoteMeta.color 设置的自定义颜色（ARGB int）。
+  /// null 时回退到按位置取色（NotesColor.getNoteColor）。
+  final int? noteColor;
+
+  /// 多选模式标记：true 时卡片处于多选模式下（可能被选中或未选中）。
+  final bool isSelectionMode;
+
+  /// 是否被选中：仅在 [isSelectionMode] 为 true 时有效，
+  /// 选中时卡片边框高亮为 primary 色 2px。
+  final bool isSelected;
+
   const NoteCardBody({
     super.key,
     required this.note,
@@ -54,24 +65,29 @@ class NoteCardBody extends StatelessWidget {
     this.titleMaxLines = 2,
     this.bodyMaxLines = 3,
     this.pinned = false,
+    this.noteColor,
+    this.isSelectionMode = false,
+    this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // 取色与字体色：底色与 OpenContainer 的 closedColor 取同一来源（纯计算，重复调用无副作用）。
-    final Color color = NotesColor.getNoteColor(
+    // 取色与字体色：优先使用 NoteMeta.color，null 时回退到按位置取色。
+    final Color color = NotesColor.getNoteColorWithMeta(
       notIndex: index,
+      metaColor: noteColor,
       context: context,
     );
     final Color fontColor = getFontColorForBackground(color);
-    // 单色（中性灰度）主题下，给卡片叠加一圈 primary 描边，使素净卡片与背景有边界：
-    // 是否描边、颜色、粗细都由 NotesColor.cardBorder 统一封装，调用方按需传入。
+    // 边框：选中时高亮 primary 色 2px，否则用默认边框逻辑。
     final ColorScheme cardScheme = Theme.of(context).colorScheme;
-    final ShadBorder cardBorder = NotesColor.cardBorder(
-      outline: isMonochromeMode && !PreferencesStorage.isColorful,
-      color: cardScheme.outlineVariant,
-      width: 1,
-    );
+    final ShadBorder cardBorder = isSelected
+        ? ShadBorder.all(color: cardScheme.primary, width: 2)
+        : NotesColor.cardBorder(
+            outline: isMonochromeMode && !PreferencesStorage.isColorful,
+            color: cardScheme.outlineVariant,
+            width: 1,
+          );
 
     // 显示时间跟随排序依据：按修改时间排序时显示修改时间，否则显示创建时间，
     // 否则标题下的时间戳与列表顺序对不上（看起来"错乱"）。

@@ -39,6 +39,47 @@ class NotesColor extends ChangeNotifier {
     final base = isColorful
         ? lightColors[notIndex % lightColors.length]
         : _neutralCardColor(context);
+    return _adjustForTheme(base, isColorful, context);
+  }
+
+  /// 根据用户设置的 NoteMeta.color 返回卡片底色。
+  ///
+  /// [metaColor] 为 null 时回退到 [getNoteColor] 按位置取色；
+  /// 非 null 时用用户指定颜色，暗色模式下查 [noteColorDarkVariant] 取对应暗色变体。
+  static Color getNoteColorWithMeta({
+    required int notIndex,
+    int? metaColor,
+    BuildContext? context,
+  }) {
+    if (metaColor == null) {
+      return getNoteColor(notIndex: notIndex, context: context);
+    }
+    // 暗色模式：使用 Google Keep 暗色变体（独立设计，保证白字可读）
+    if (PreferencesStorage.isThemeDark) {
+      return noteColorDarkVariant(metaColor);
+    }
+    return Color(metaColor);
+  }
+
+  /// 编辑页 / 预览页背景色：从 NoteMeta.color 取色并适配主题。
+  ///
+  /// 与 [getNoteColorWithMeta] 使用同样的暗色变体逻辑。
+  /// [metaColor] 为 null 时返回 null，调用方回退到默认 scaffold 背景。
+  static Color? editorBackgroundColor({int? metaColor, BuildContext? context}) {
+    if (metaColor == null) return null;
+    // 暗色模式：使用 Google Keep 暗色变体（独立设计，保证白字可读）
+    if (PreferencesStorage.isThemeDark) {
+      return noteColorDarkVariant(metaColor);
+    }
+    return Color(metaColor);
+  }
+
+  /// 暗色/浅色模式适配：暗色模式下压暗彩色卡，浅色模式下提亮。
+  static Color _adjustForTheme(
+    Color base,
+    bool isColorful,
+    BuildContext? context,
+  ) {
     if (PreferencesStorage.isThemeDark) {
       // 暗黑模式：原调配色多为浅/亮色（黄、薄荷、近白等），直接铺在深色背景上
       // 会过亮刺眼。将彩色卡与深色背景混合压暗，保留色相差异的同时回到舒适明度；
@@ -111,6 +152,57 @@ class NotesColor extends ChangeNotifier {
 }
 
 // contrastRatio / getFontColorForBackground 已移至 lib/utils/contrast.dart（见顶部 export）。
+
+/// Google Keep 同款笔记颜色色板 — 浅色模式（11 色）。
+///
+/// 颜色选择器固定使用此列表，不随主题色板变化；
+/// 存入 NoteMeta.color 的始终是**浅色 ARGB 值**作为"颜色身份"，
+/// 渲染时按当前主题通过 [noteColorDarkVariant] 查对应的暗色变体。
+const List<Color> kNoteColorPalette = [
+  Color(0xFFF8A8A0), // 珊瑚红
+  Color(0xFFF59B70), // 橙
+  Color(0xFFFFF7B3), // 淡黄
+  Color(0xFFA8C8D8), // 浅蓝
+  Color(0xFFD4E8EF), // 淡青
+  Color(0xFFA8DDCF), // 薄荷绿
+  Color(0xFFDCF6D0), // 浅绿
+  Color(0xFFD0C0E0), // 淡紫
+  Color(0xFFF7E2DD), // 粉橘
+  Color(0xFFEDE8D8), // 米色
+  Color(0xFFF3F3F4), // 灰白
+];
+
+/// Google Keep 同款笔记颜色色板 — 暗色模式（11 色）。
+///
+/// 与 [kNoteColorPalette] 逐一对应：暗色色板是独立设计的（更饱和、更深），
+/// 保证白色文字在暗色背景上有足够对比度，不是 alphaBlend 计算出来的。
+const List<Color> kNoteColorPaletteDark = [
+  Color(0xFFA02838), // 珊瑚红
+  Color(0xFF783C24), // 橙
+  Color(0xFF885818), // 淡黄
+  Color(0xFF284050), // 浅蓝
+  Color(0xFF286070), // 淡青
+  Color(0xFF246860), // 薄荷绿
+  Color(0xFF285840), // 浅绿
+  Color(0xFF402858), // 淡紫
+  Color(0xFF683848), // 粉橘
+  Color(0xFF484438), // 米色
+  Color(0xFF242426), // 灰白
+];
+
+/// 浅→暗色板映射表，key = 浅色 ARGB，value = 暗色变体。
+final Map<int, Color> _lightToDarkColorMap = {
+  for (var i = 0; i < kNoteColorPalette.length; i++)
+    kNoteColorPalette[i].toARGB32(): kNoteColorPaletteDark[i],
+};
+
+/// 根据浅色 ARGB 值返回对应的暗色变体。
+///
+/// [lightArgb] 必须是 [kNoteColorPalette] 中的某个色值。
+/// 用于暗色模式下卡片背景、编辑页背景等渲染场景。
+Color noteColorDarkVariant(int lightArgb) {
+  return _lightToDarkColorMap[lightArgb] ?? Color(lightArgb);
+}
 
 class NotesColorTheme {
   final String prefix;

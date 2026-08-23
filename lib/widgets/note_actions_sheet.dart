@@ -25,6 +25,7 @@ enum NoteAction {
   copyAll,
   toggleStar,
   toggleLock,
+  setColor,
   editTags,
   versionHistory,
   delete,
@@ -113,6 +114,13 @@ class _NoteActionsSheet extends StatelessWidget {
                   icon: locked ? LucideIcons.lockOpen : LucideIcons.lock,
                   title: locked ? 'Unlock note'.tr() : 'Lock note'.tr(),
                   onTap: () => Navigator.of(context).pop(NoteAction.toggleLock),
+                ),
+                shadActionTile(
+                  context,
+                  key: const Key('ui-note-action-color'),
+                  icon: LucideIcons.palette,
+                  title: 'Set Color'.tr(),
+                  onTap: () => Navigator.of(context).pop(NoteAction.setColor),
                 ),
                 shadActionTile(
                   context,

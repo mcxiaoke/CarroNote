@@ -1088,6 +1088,292 @@ Future<void> main() async {
       expect(find.byKey(const Key('ui-home-note-0')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    // ---- 多选模式 + 颜色功能集成测试 ----
+
+    testWidgets(
+      'multiselect: long press enters selection, tap toggles, close exits',
+      (WidgetTester tester) async {
+        await _loginToHome(tester);
+        await _ensureMinNotes(tester, 3);
+
+        // Long press the first note → enters selection mode.
+        await tester.longPress(find.byKey(const Key('ui-home-note-0')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('ui-home-selection-close')),
+          findsOneWidget,
+          reason: 'Selection AppBar should appear after long press',
+        );
+        _expectSelectionCount(tester, 1);
+
+        // Tap the second note → count becomes 2.
+        await tester.tap(find.byKey(const Key('ui-home-note-1')));
+        await tester.pumpAndSettle();
+        _expectSelectionCount(tester, 2);
+
+        // Tap the second note again → count back to 1.
+        await tester.tap(find.byKey(const Key('ui-home-note-1')));
+        await tester.pumpAndSettle();
+        _expectSelectionCount(tester, 1);
+
+        // Tap X → exits selection mode.
+        await tester.tap(find.byKey(const Key('ui-home-selection-close')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('ui-home-selection-close')),
+          findsNothing,
+          reason: 'Selection AppBar should be gone after tapping close',
+        );
+      },
+    );
+
+    testWidgets('multiselect: batch star pins selected notes', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      const title1 = 'ZZZBatchStar1';
+      const title2 = 'ZZZBatchStar2';
+      await _createNote(tester, title1, 'body1');
+      await _createNote(tester, title2, 'body2');
+      try {
+        // Clear search so all notes are visible.
+        if (tester.any(find.byIcon(LucideIcons.x))) {
+          await tester.tap(find.byIcon(LucideIcons.x));
+          await tester.pumpAndSettle();
+        }
+
+        // Long press note-0 → selection mode.
+        await tester.longPress(find.byKey(const Key('ui-home-note-0')));
+        await tester.pumpAndSettle();
+        _expectSelectionCount(tester, 1);
+
+        // Tap note-1 → count 2.
+        await tester.tap(find.byKey(const Key('ui-home-note-1')));
+        await tester.pumpAndSettle();
+        _expectSelectionCount(tester, 2);
+
+        // Tap star → batch star, exits selection mode.
+        await tester.tap(find.byKey(const Key('ui-home-selection-star')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('ui-home-selection-close')),
+          findsNothing,
+          reason: 'Selection mode should exit after batch star',
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        // Clean up: delete the test notes (also unpins them).
+        await _deleteNoteByTitle(tester, title1);
+        await _deleteNoteByTitle(tester, title2);
+      }
+    });
+
+    testWidgets('multiselect: batch delete removes selected notes from home', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      const title1 = 'ZZZBatchDel1';
+      const title2 = 'ZZZBatchDel2';
+      await _createNote(tester, title1, 'body1');
+      await _createNote(tester, title2, 'body2');
+      try {
+        // Clear search so all notes are visible.
+        if (tester.any(find.byIcon(LucideIcons.x))) {
+          await tester.tap(find.byIcon(LucideIcons.x));
+          await tester.pumpAndSettle();
+        }
+
+        // Long press note-0 → selection mode.
+        await tester.longPress(find.byKey(const Key('ui-home-note-0')));
+        await tester.pumpAndSettle();
+
+        // Tap note-1 → count 2.
+        await tester.tap(find.byKey(const Key('ui-home-note-1')));
+        await tester.pumpAndSettle();
+        _expectSelectionCount(tester, 2);
+
+        // Overflow → delete.
+        await tester.tap(find.byKey(const Key('ui-home-selection-overflow')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('ui-home-selection-delete')));
+        await tester.pumpAndSettle();
+
+        // Confirm the delete dialog.
+        await tester.tap(find.byKey(const Key('ui-dialog-confirm')));
+        await _waitFor(tester, () => _isHome(tester));
+
+        // Both test notes should be gone from home.
+        expect(
+          find.text(title1),
+          findsNothing,
+          reason: 'First batch-deleted note should be gone',
+        );
+        expect(
+          find.text(title2),
+          findsNothing,
+          reason: 'Second batch-deleted note should be gone',
+        );
+      } finally {
+        // Notes are already soft-deleted; nothing to clean up.
+      }
+    });
+
+    testWidgets('multiselect: select all via overflow menu', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      await _ensureMinNotes(tester, 3);
+
+      // Long press note-0 → selection mode.
+      await tester.longPress(find.byKey(const Key('ui-home-note-0')));
+      await tester.pumpAndSettle();
+      _expectSelectionCount(tester, 1);
+
+      // Overflow → select all.
+      await tester.tap(find.byKey(const Key('ui-home-selection-overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-home-selection-selectall')));
+      await tester.pumpAndSettle();
+
+      // Count should be > 1 (all notes selected, not just the one we started with).
+      // We can't assert exact count because off-screen notes are lazily built
+      // but still selected by uuid.
+      final countText = tester.widget<Text>(
+        find.descendant(of: find.byType(AppBar), matching: find.byType(Text)),
+      );
+      final count = int.parse(countText.data!);
+      expect(
+        count,
+        greaterThan(1),
+        reason: 'Select all should select more than 1 note',
+      );
+
+      // Exit selection mode.
+      await tester.tap(find.byKey(const Key('ui-home-selection-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ui-home-selection-close')), findsNothing);
+    });
+
+    testWidgets('multiselect: batch color picker opens and sets color', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      await _ensureMinNotes(tester, 2);
+
+      // Long press note-0 → selection mode.
+      await tester.longPress(find.byKey(const Key('ui-home-note-0')));
+      await tester.pumpAndSettle();
+
+      // Tap color → color picker sheet appears.
+      await tester.tap(find.byKey(const Key('ui-home-selection-color')));
+      await _waitFor(
+        tester,
+        () => tester.any(find.byKey(const Key('ui-color-picker-default'))),
+      );
+      expect(
+        find.byKey(const Key('ui-color-picker-default')),
+        findsOneWidget,
+        reason: 'Color picker sheet should show the "default" option',
+      );
+
+      // Tap a real color (not default).
+      final realColorFinder = find.byWidgetPredicate((w) {
+        if (w is GestureDetector && w.key is ValueKey<String>) {
+          final keyStr = (w.key as ValueKey<String>).value;
+          return keyStr.startsWith('ui-color-picker-') &&
+              keyStr != 'ui-color-picker-default';
+        }
+        return false;
+      });
+      expect(
+        realColorFinder,
+        findsWidgets,
+        reason: 'Color picker should have at least one real color option',
+      );
+      await tester.ensureVisible(realColorFinder.first);
+      await tester.pumpAndSettle();
+      await tester.tap(realColorFinder.first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      // Wait for async batch write + _exitSelectionMode to complete.
+      await _waitFor(
+        tester,
+        () => !tester.any(find.byKey(const Key('ui-home-selection-close'))),
+      );
+
+      // Should have exited selection mode (batch write → exit).
+      expect(
+        find.byKey(const Key('ui-home-selection-close')),
+        findsNothing,
+        reason: 'Should exit selection mode after selecting a color',
+      );
+    });
+
+    testWidgets('color: set color from editor action sheet', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      await _ensureMinNotes(tester, 1);
+
+      // Open the first note directly (avoid _createNote timing issues).
+      await tester.ensureVisible(find.byKey(const Key('ui-home-note-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ui-home-note-0')));
+      await _waitFor(
+        tester,
+        () => tester.any(find.byKey(const Key('ui-note-screen'))),
+      );
+      await _settle(tester);
+
+      // Open the bottom action sheet (more button → async meta read → sheet).
+      await tester.tap(find.byKey(const Key('ui-note-button-more')));
+      await _waitFor(
+        tester,
+        () => tester.any(find.byKey(const Key('ui-note-action-color'))),
+      );
+      await _settle(tester);
+
+      // Tap "Set Color" → color picker sheet appears.
+      await tester.tap(find.byKey(const Key('ui-note-action-color')));
+      await _waitFor(
+        tester,
+        () => tester.any(find.byKey(const Key('ui-color-picker-default'))),
+      );
+      expect(
+        find.byKey(const Key('ui-color-picker-default')),
+        findsOneWidget,
+        reason: 'Color picker sheet should show the "default" option',
+      );
+
+      // Tap a real color (not default).
+      final realColorFinder = find.byWidgetPredicate((w) {
+        if (w is GestureDetector && w.key is ValueKey<String>) {
+          final keyStr = (w.key as ValueKey<String>).value;
+          return keyStr.startsWith('ui-color-picker-') &&
+              keyStr != 'ui-color-picker-default';
+        }
+        return false;
+      });
+      expect(
+        realColorFinder,
+        findsWidgets,
+        reason: 'Color picker should have at least one real color option',
+      );
+      await tester.ensureVisible(realColorFinder.first);
+      await tester.pumpAndSettle();
+      await tester.tap(realColorFinder.first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      // Wait for toast to appear and settle.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Return to home via _backToHome (handles PopScope auto-save + retries).
+      await _backToHome(tester);
+      expect(_isHome(tester), isTrue);
+    });
   });
 }
 
@@ -1191,6 +1477,11 @@ Future<void> _popTopRoute(WidgetTester tester) async {
 /// Pops routes until the home screen is reached (or login is shown, in which
 /// case it logs back in).
 Future<void> _backToHome(WidgetTester tester) async {
+  // Exit selection mode if active (defensive: prior test may have left it on).
+  if (tester.any(find.byKey(const Key('ui-home-selection-close')))) {
+    await tester.tap(find.byKey(const Key('ui-home-selection-close')));
+    await tester.pumpAndSettle();
+  }
   for (var i = 0; i < 15; i++) {
     if (_isHome(tester)) return;
     if (tester.any(find.byKey(const Key('passphraseInput')))) {
@@ -1616,3 +1907,15 @@ Future<void> _forEachViewport(
 /// 是否桌面平台。真机上应从设备自然尺寸运行，程序化 resize 无意义。
 bool get _isDesktop =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+/// 断言多选模式 AppBar 中显示的选中数量。
+///
+/// 选中数量是 AppBar 的 title Text，用 descendant 缩小范围避免匹配到
+/// 笔记标题/日期中的同值文本。
+void _expectSelectionCount(WidgetTester tester, int expected) {
+  expect(
+    find.descendant(of: find.byType(AppBar), matching: find.text('$expected')),
+    findsOneWidget,
+    reason: 'Selection AppBar should show count=$expected',
+  );
+}

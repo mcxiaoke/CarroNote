@@ -500,5 +500,9 @@
   "Exported to {path}": "已导出到 {path}",
   "Export failed: {error}": "导出失败: {error}",
   "Delete ALL local data (notes, keys, database)? The app will exit.": "删除全部本地数据（笔记、密钥、数据库）？应用将退出。",
-  "Local data reset": "本地数据已重置"
+  "Local data reset": "本地数据已重置",
+  "Note Color": "笔记颜色",
+  "Set Color": "设置颜色",
+  "Color updated": "颜色已更新",
+  "Select All": "全选"
 }

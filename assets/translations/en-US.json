@@ -500,5 +500,9 @@
   "Exported to {path}": "Exported to {path}",
   "Export failed: {error}": "Export failed: {error}",
   "Delete ALL local data (notes, keys, database)? The app will exit.": "Delete ALL local data (notes, keys, database)? The app will exit.",
-  "Local data reset": "Local data reset"
+  "Local data reset": "Local data reset",
+  "Note Color": "Note Color",
+  "Set Color": "Set Color",
+  "Color updated": "Color updated",
+  "Select All": "Select All"
 }

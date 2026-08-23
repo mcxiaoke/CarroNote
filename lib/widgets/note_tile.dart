@@ -24,12 +24,18 @@ class NoteTileWidget extends StatelessWidget {
   final SafeNote note;
   final int index;
   final bool pinned;
+  final int? noteColor;
+  final bool isSelectionMode;
+  final bool isSelected;
 
   const NoteTileWidget({
     super.key,
     required this.note,
     required this.index,
     this.pinned = false,
+    this.noteColor,
+    this.isSelectionMode = false,
+    this.isSelected = false,
   });
 
   @override
@@ -38,6 +44,9 @@ class NoteTileWidget extends StatelessWidget {
       note: note,
       index: index,
       pinned: pinned,
+      noteColor: noteColor,
+      isSelectionMode: isSelectionMode,
+      isSelected: isSelected,
       titleMaxLines: 1,
       bodyMaxLines: 2,
     );

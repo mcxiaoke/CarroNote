@@ -30,10 +30,12 @@ import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/note_edit_history.dart';
 import 'package:safenotes/utils/platform_ui.dart';
+import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
 import 'package:safenotes/widgets/note_actions_sheet.dart';
+import 'package:safenotes/widgets/note_color_picker.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/tag_editor.dart';
 import 'package:safenotes/views/version_history_page.dart';
@@ -169,6 +171,11 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   @override
   Widget build(BuildContext context) {
+    // 笔记颜色背景：从 NoteMeta.color 取色，暗色模式自动压暗。
+    final Color? noteBg = NotesColor.editorBackgroundColor(
+      metaColor: _meta?.color,
+      context: context,
+    );
     return PopScope(
       // 仅当「已确认关闭 / 正在删除」时直接放行；有未保存改动时在 onPopInvoked
       // 中自动保存后再放行（无弹框）。
@@ -179,7 +186,9 @@ class AddEditNotePageState extends State<AddEditNotePage>
         child: Scaffold(
           key: const Key('ui-note-screen'),
           resizeToAvoidBottomInset: false,
+          backgroundColor: noteBg,
           appBar: AppBar(
+            backgroundColor: noteBg,
             actions: [
               // 锁定笔记只读：AppBar 顶部用「已锁定」文本指示，正文布局不被改动。
               if (_isLocked) _lockedIndicator(),
@@ -467,6 +476,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
         await _toggleStar(note, !pinned);
       case NoteAction.toggleLock:
         await _toggleLock(note, !locked);
+      case NoteAction.setColor:
+        await _setColor(note);
       case NoteAction.editTags:
         await _editTags(note);
       case NoteAction.versionHistory:
@@ -524,6 +535,26 @@ class AddEditNotePageState extends State<AddEditNotePage>
       context,
       locked ? 'Note locked'.tr() : 'Note unlocked'.tr(),
     );
+  }
+
+  /// 设置笔记颜色：弹出颜色选择 Sheet，写入 NoteMeta.color。
+  ///
+  /// 与 [_toggleStar] 同构：只写 note_meta，不动笔记正文与 `updated_at`。
+  Future<void> _setColor(SafeNote note) async {
+    final result = await showNoteColorPicker(
+      context,
+      currentColor: _meta?.color,
+    );
+    // null = 用户关闭了 sheet，不做任何操作。
+    if (result == null) return;
+    final int? color = result.color; // null = 清除颜色
+    await NotesDatabase.instance.setNoteColor(note.uuid, color);
+    Log.note.i('笔记颜色设置: uuid=${note.uuid} color=$color');
+    if (!mounted) return;
+    setState(() {
+      _meta = _meta?.copyWith(color: color, clearColor: color == null);
+    });
+    showSnackBarMessage(context, 'Color updated'.tr());
   }
 
   /// 编辑笔记标签：打开全屏标签编辑页（见 [pushTagEditor]），行首勾选归属当前笔记。

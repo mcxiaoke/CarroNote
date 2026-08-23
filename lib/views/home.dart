@@ -25,6 +25,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/routes/route_generator.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
@@ -44,6 +45,7 @@ import 'package:safenotes/widgets/home_navigation_rail.dart';
 import 'package:safenotes/widgets/note_card.dart';
 import 'package:safenotes/widgets/note_card_compact.dart';
 import 'package:safenotes/widgets/note_card_press_feedback.dart';
+import 'package:safenotes/widgets/note_color_picker.dart';
 import 'package:safenotes/widgets/note_tile.dart';
 import 'package:safenotes/widgets/note_tile_compact.dart';
 import 'package:safenotes/widgets/search_widget.dart';
@@ -113,6 +115,12 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   /// 按标签过滤（纯内存，不持久化）。非空时仅展示含该标签的笔记。
   String? _activeTag;
+
+  /// 多选模式状态。
+  bool _isSelectionMode = false;
+
+  /// 多选模式下选中的笔记 uuid 集合。
+  Set<String> _selectedUuids = {};
 
   //bool isListner = false;
   @override
@@ -362,50 +370,55 @@ class HomePageState extends State<HomePage> with RouteAware {
           onTap: dismissKeyboard,
           onVerticalDragStart: dismissKeyboard,
           onVerticalDragDown: dismissKeyboard,
-          child: Scaffold(
-            key: const Key('ui-home-screen'),
-            drawer: isCompact ? _buildDrawer(context) : null,
-            appBar: AppBar(
-              // title: Text(SafeNotesConfig.appName, style: appBarTitle),
-              actions: isLoading
+          child: PopScope(
+            canPop: !_isSelectionMode,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && _isSelectionMode) {
+                _exitSelectionMode();
+              }
+            },
+            child: Scaffold(
+              key: const Key('ui-home-screen'),
+              drawer: isCompact ? _buildDrawer(context) : null,
+              appBar: _isSelectionMode
+                  ? _buildSelectionAppBar()
+                  : AppBar(
+                      actions: isLoading
+                          ? null
+                          : [
+                              if (_showStarredOnly || _activeTag != null)
+                                _filterIndicator(),
+                              _syncStatusButton(),
+                              _diagnosticsButton(),
+                              _gridListView(),
+                              _shortNotes(),
+                            ],
+                    ),
+              body: isCompact
+                  ? _homeBody()
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        HomeSidebar(
+                          isCollapsed: _sidebarCollapsed,
+                          onToggleCollapsed: _toggleSidebarCollapsed,
+                          onAllNotesCallback: _clearFilters,
+                          onSettingsCallback: _navSettings,
+                          onDeletedNotesCallback: _navDeletedNotes,
+                          onStarredCallback: _enableStarredFilter,
+                          tags: PreferencesStorage.managedTags,
+                          activeTag: _activeTag,
+                          onTagSelected: _enableTagFilter,
+                          onManageTags: _manageTags,
+                          onLockCallback: _navLock,
+                        ),
+                        Expanded(child: _homeBody()),
+                      ],
+                    ),
+              floatingActionButton: _isSelectionMode
                   ? null
-                  : [
-                      // 过滤态指示：处于星标/标签过滤时显示当前过滤条件，可一键清除。
-                      if (_showStarredOnly || _activeTag != null)
-                        _filterIndicator(),
-                      //_DevSessionListner(),
-                      _syncStatusButton(),
-                      _diagnosticsButton(),
-                      _gridListView(),
-                      _shortNotes(),
-                    ],
+                  : _addANewNoteButton(context),
             ),
-            // 桌面/大屏适配（P0-2）：原本 body 铺满整个窗口宽度。
-            // 用 Center + ConstrainedBox 将内容宽度收束到最大 1300 并居中，
-            // 避免大屏上文字行过宽、卡片被拉散；手机宽度 < 1300 时约束不生效，
-            // 行为与改动前一致。crossAxisAlignment.stretch 让内容填满受限宽度。
-            body: isCompact
-                ? _homeBody()
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      HomeSidebar(
-                        isCollapsed: _sidebarCollapsed,
-                        onToggleCollapsed: _toggleSidebarCollapsed,
-                        onAllNotesCallback: _clearFilters,
-                        onSettingsCallback: _navSettings,
-                        onDeletedNotesCallback: _navDeletedNotes,
-                        onStarredCallback: _enableStarredFilter,
-                        tags: PreferencesStorage.managedTags,
-                        activeTag: _activeTag,
-                        onTagSelected: _enableTagFilter,
-                        onManageTags: _manageTags,
-                        onLockCallback: _navLock,
-                      ),
-                      Expanded(child: _homeBody()),
-                    ],
-                  ),
-            floatingActionButton: _addANewNoteButton(context),
           ),
         );
       },
@@ -837,10 +850,20 @@ class HomePageState extends State<HomePage> with RouteAware {
     // indexOf 返回其在全量列表中的位置，颜色始终与排序顺序挂钩。
     final int stableIndex = allnotes.indexOf(note);
     final int colorIndex = stableIndex >= 0 ? stableIndex : index; // 兜底
-    final Color cardColor = NotesColor.getNoteColor(
+    final int? noteColor = _noteMeta[note.uuid]?.color;
+    final Color cardColor = NotesColor.getNoteColorWithMeta(
       notIndex: colorIndex,
+      metaColor: noteColor,
       context: context,
     );
+    // 编辑页背景色：有颜色时与编辑页 Scaffold 一致，过渡更自然。
+    final Color openColor =
+        NotesColor.editorBackgroundColor(
+          metaColor: noteColor,
+          context: context,
+        ) ??
+        Theme.of(context).scaffoldBackgroundColor;
+    final bool isSelected = _selectedUuids.contains(note.uuid);
     return OpenContainer(
       tappable: false,
       // P1-11：时长走 AppMotion.pageTransition（保持 250ms：动画期间编辑页
@@ -848,7 +871,7 @@ class HomePageState extends State<HomePage> with RouteAware {
       transitionDuration: AppMotion.pageTransition,
       transitionType: ContainerTransitionType.fade,
       closedColor: cardColor,
-      openColor: Theme.of(context).scaffoldBackgroundColor,
+      openColor: openColor,
       closedShape: RoundedRectangleBorder(
         // P1-14：与卡片圆角（AppShape.cardRadius）保持一致。
         borderRadius: BorderRadius.circular(AppShape.cardRadius),
@@ -868,6 +891,10 @@ class HomePageState extends State<HomePage> with RouteAware {
       },
       closedBuilder: (context, action) => NoteCardPressFeedback(
         onTap: () {
+          if (_isSelectionMode) {
+            _toggleSelection(note.uuid);
+            return;
+          }
           // 只记录 uuid 与序号，不记录标题正文（隐私红线）
           Log.ui.i(
             '界面切换: 主界面(${grid ? "网格" : "列表"}) → 编辑笔记'
@@ -875,6 +902,7 @@ class HomePageState extends State<HomePage> with RouteAware {
           );
           action();
         },
+        onLongPress: () => _enterSelectionMode(note.uuid),
         // ui 前缀 key：集成测试按序号定位第 N 条笔记（如 ui-home-note-1 = 第 2 条）
         child: KeyedSubtree(
           key: Key('ui-home-note-$index'),
@@ -884,22 +912,34 @@ class HomePageState extends State<HomePage> with RouteAware {
                         note: note,
                         index: colorIndex,
                         pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                        noteColor: noteColor,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: isSelected,
                       )
                     : NoteTileWidgetCompact(
                         note: note,
                         index: colorIndex,
                         pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                        noteColor: noteColor,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: isSelected,
                       ))
               : (grid
                     ? NoteCardWidget(
                         note: note,
                         index: colorIndex,
                         pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                        noteColor: noteColor,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: isSelected,
                       )
                     : NoteTileWidget(
                         note: note,
                         index: colorIndex,
                         pinned: _noteMeta[note.uuid]?.pinned ?? false,
+                        noteColor: noteColor,
+                        isSelectionMode: _isSelectionMode,
+                        isSelected: isSelected,
                       )),
         ),
       ),
@@ -1052,6 +1092,243 @@ class HomePageState extends State<HomePage> with RouteAware {
         ),
       ),
     );
+  }
+
+  // ---- 多选模式 ----
+
+  /// 进入多选模式并选中指定笔记。
+  void _enterSelectionMode(String uuid) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedUuids.add(uuid);
+    });
+  }
+
+  /// 切换指定笔记的选中状态；最后一个取消时自动退出多选模式。
+  void _toggleSelection(String uuid) {
+    setState(() {
+      if (_selectedUuids.contains(uuid)) {
+        _selectedUuids.remove(uuid);
+        if (_selectedUuids.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedUuids.add(uuid);
+      }
+    });
+  }
+
+  /// 退出多选模式，清空所有选中。
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedUuids.clear();
+    });
+  }
+
+  /// 全选/取消全选当前 notes 列表。
+  void _toggleSelectAll() {
+    setState(() {
+      final allUuids = notes.map((n) => n.uuid).toSet();
+      if (_selectedUuids.containsAll(allUuids)) {
+        _selectedUuids.clear();
+        _isSelectionMode = false;
+      } else {
+        _selectedUuids = allUuids;
+      }
+    });
+  }
+
+  /// 多选模式操作栏：✕关闭 + 计数 + 星标/颜色/标签 + 溢出菜单(锁定/全选/删除)
+  PreferredSizeWidget _buildSelectionAppBar() {
+    return AppBar(
+      leading: IconButton(
+        key: const Key('ui-home-selection-close'),
+        icon: const Icon(LucideIcons.x),
+        onPressed: _exitSelectionMode,
+      ),
+      title: Text('${_selectedUuids.length}'),
+      actions: [
+        IconButton(
+          key: const Key('ui-home-selection-star'),
+          tooltip: 'Starred'.tr(),
+          icon: const Icon(LucideIcons.pin),
+          onPressed: _batchToggleStar,
+        ),
+        IconButton(
+          key: const Key('ui-home-selection-color'),
+          tooltip: 'Note Color'.tr(),
+          icon: const Icon(LucideIcons.palette),
+          onPressed: _showColorPicker,
+        ),
+        IconButton(
+          key: const Key('ui-home-selection-tags'),
+          tooltip: 'Edit Tags'.tr(),
+          icon: const Icon(LucideIcons.tags),
+          onPressed: _batchEditTags,
+        ),
+        PopupMenuButton<String>(
+          key: const Key('ui-home-selection-overflow'),
+          icon: const Icon(LucideIcons.moreVertical),
+          onSelected: (value) {
+            switch (value) {
+              case 'lock':
+                _batchToggleLock();
+              case 'select_all':
+                _toggleSelectAll();
+              case 'delete':
+                _batchDelete();
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              key: const Key('ui-home-selection-lock'),
+              value: 'lock',
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.lock, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Lock'.tr()),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
+              key: const Key('ui-home-selection-selectall'),
+              value: 'select_all',
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.checkCheck, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Select All'.tr()),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              key: const Key('ui-home-selection-delete'),
+              value: 'delete',
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.trash2, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Delete'.tr()),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ---- 批量操作 ----
+
+  /// 批量切换星标：全部已星标→取消，否则→全部星标。
+  Future<void> _batchToggleStar() async {
+    final allPinned = _selectedUuids.every(
+      (uuid) => _noteMeta[uuid]?.pinned ?? false,
+    );
+    final target = !allPinned;
+    await Future.wait(
+      _selectedUuids.map(
+        (uuid) => NotesDatabase.instance.setNotePinned(uuid, target),
+      ),
+    );
+    Log.note.i('批量星标: count=${_selectedUuids.length} pinned=$target');
+    SyncService.instance.autoSync();
+    _exitSelectionMode();
+    refreshNotes();
+  }
+
+  /// 批量切换锁定：全部已锁定→解锁，否则→全部锁定。
+  Future<void> _batchToggleLock() async {
+    final allLocked = _selectedUuids.every(
+      (uuid) => _noteMeta[uuid]?.locked ?? false,
+    );
+    final target = !allLocked;
+    await Future.wait(
+      _selectedUuids.map(
+        (uuid) => NotesDatabase.instance.setNoteLocked(uuid, target),
+      ),
+    );
+    Log.note.i('批量锁定: count=${_selectedUuids.length} locked=$target');
+    SyncService.instance.autoSync();
+    _exitSelectionMode();
+    refreshNotes();
+  }
+
+  /// 批量删除：弹确认对话框后软删除选中笔记。
+  Future<void> _batchDelete() async {
+    final count = _selectedUuids.length;
+    await showDeleteConfirmation(
+      context: context,
+      onConfirm: () async {
+        final ids = _selectedUuids.map((uuid) {
+          return allnotes.firstWhere((n) => n.uuid == uuid).id!;
+        }).toList();
+        await Future.wait(
+          ids.map((id) => NotesDatabase.instance.softDelete(id)),
+        );
+        Log.note.i('批量删除(移入回收站): count=$count');
+        SyncService.instance.autoSync();
+        _exitSelectionMode();
+        refreshNotes();
+      },
+    );
+  }
+
+  /// 批量设置标签：打开标签编辑器，选中的标签集合覆盖到所有选中笔记。
+  Future<void> _batchEditTags() async {
+    final TagEditorResult? result = await pushTagEditor(
+      context,
+      title: 'Edit Tags'.tr(),
+      pool: PreferencesStorage.managedTags,
+      selected: const [],
+      selectionMode: true,
+    );
+    if (result == null) return;
+    final tags = NoteMeta.normalizeTags(result.selected);
+    await Future.wait(
+      _selectedUuids.map(
+        (uuid) => NotesDatabase.instance.setNoteTags(uuid, tags),
+      ),
+    );
+    await PreferencesStorage.setManagedTags(result.pool);
+    Log.note.i('批量设置标签: count=${_selectedUuids.length} tags=${tags.length}');
+    SyncService.instance.autoSync();
+    _exitSelectionMode();
+    refreshNotes();
+  }
+
+  /// 批量设置颜色：弹出颜色选择 Sheet 后批量写入 NoteMeta.color。
+  ///
+  /// 如果所有选中笔记颜色一致，高亮当前色；选择「默认」会清除颜色。
+  Future<void> _showColorPicker() async {
+    // 从缓存读取选中笔记的当前颜色，用于高亮。
+    final selectedColors = _selectedUuids
+        .map((uuid) => _noteMeta[uuid]?.color)
+        .toSet();
+    // 所有选中笔记颜色一致时传 currentColor，否则不高亮（混色场景）。
+    final int? currentColor = selectedColors.length == 1
+        ? selectedColors.first
+        : null;
+
+    final result = await showNoteColorPicker(
+      context,
+      currentColor: currentColor,
+    );
+    // null = 用户关闭了 sheet，不做任何操作。
+    if (result == null) return;
+    final int? color = result.color; // null = 清除颜色
+    await Future.wait(
+      _selectedUuids.map(
+        (uuid) => NotesDatabase.instance.setNoteColor(uuid, color),
+      ),
+    );
+    Log.note.i('批量设置颜色: count=${_selectedUuids.length} color=$color');
+    SyncService.instance.autoSync();
+    _exitSelectionMode();
+    refreshNotes();
   }
 
   void _searchNote(String query) {
