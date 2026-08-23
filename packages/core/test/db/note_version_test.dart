@@ -482,13 +482,15 @@ void main() {
       await database.storeNote(
         _makeNote(uuid: uuid, title: 'Current', description: 'Now'),
       );
-      // 保存 3 条不同内容的版本
+      // 保存 3 条不同内容的版本（间隔确保 saved_at 时间戳不同）
       await database.saveVersion(
         _makeNote(uuid: uuid, title: 'V1', description: 'D1'),
       );
+      await Future.delayed(const Duration(milliseconds: 20));
       await database.saveVersion(
         _makeNote(uuid: uuid, title: 'V2', description: 'D2'),
       );
+      await Future.delayed(const Duration(milliseconds: 20));
       await database.saveVersion(
         _makeNote(uuid: uuid, title: 'V3', description: 'D3'),
       );

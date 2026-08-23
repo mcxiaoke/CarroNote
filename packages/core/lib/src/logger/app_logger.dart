@@ -534,6 +534,7 @@ class AppLogFile {
     final sink = _currentSink;
     _currentSink = null;
     _currentDate = null;
+    _initialized = false;
     if (sink == null) return;
     try {
       await sink.flush();
