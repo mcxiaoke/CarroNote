@@ -27,18 +27,20 @@ import 'package:safenotes/dialogs/delete_confirmation.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/editor_text.dart';
+import 'package:safenotes/utils/markdown_formatter.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/note_edit_history.dart';
-import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/url_launcher.dart';
+import 'package:safenotes/views/version_history_page.dart';
+import 'package:safenotes/widgets/markdown_toolbar.dart';
 import 'package:safenotes/widgets/note_actions_sheet.dart';
 import 'package:safenotes/widgets/note_color_picker.dart';
 import 'package:safenotes/widgets/note_widget.dart';
 import 'package:safenotes/widgets/tag_editor.dart';
-import 'package:safenotes/views/version_history_page.dart';
 
 class AddEditNotePage extends StatefulWidget {
   final StreamController<SessionState> sessionStateStream;
@@ -64,6 +66,17 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// 标题 / 正文编辑控制器：撤销栈通过它还原文本与光标（selection）。
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
+
+  /// 标题 / 正文焦点控制，用于工具栏精准识别当前活跃输入框与焦点保持。
+  final FocusNode _titleFocusNode = FocusNode();
+  final FocusNode _descriptionFocusNode = FocusNode();
+
+  /// 当前处于焦点或正在操作的 controller 与 focusNode
+  TextEditingController get _activeController =>
+      _titleFocusNode.hasFocus ? _titleController : _descriptionController;
+
+  FocusNode get _activeFocusNode =>
+      _titleFocusNode.hasFocus ? _titleFocusNode : _descriptionFocusNode;
 
   /// 编辑会话级撤销/重做历史（双栈快照）。
   final NoteEditHistory _history = NoteEditHistory();
@@ -139,6 +152,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _titleFocusNode.dispose();
+    _descriptionFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     // 若页面因非 pop 路径被 dispose（如会话超时登出），静默自动保存
     // 使用 destroyAfter=false 的路径由 handleUngracefulNoteExit 兜底，这里
@@ -207,9 +222,35 @@ class AddEditNotePageState extends State<AddEditNotePage>
               : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
                 // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
                 // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
-                _KeyboardAwarePadding(child: _buildBody()),
+                _KeyboardAwarePadding(child: _buildEditorLayout(noteBg)),
         ),
       ),
+    );
+  }
+
+  /// 组合编辑区与 Markdown 工具栏：
+  /// - 若偏好设置关闭了 Markdown 工具栏，则直接返回纯文本编辑区，不渲染任何工具栏；
+  /// - 桌面端：工具栏置于顶部（AppBar 下方），方便鼠标操作；
+  /// - 移动端：工具栏置于正文底部，配合 _KeyboardAwarePadding 紧贴软键盘上方。
+  Widget _buildEditorLayout(Color? noteBg) {
+    if (!PreferencesStorage.isMarkdownToolbarEnabled) {
+      return _buildBody();
+    }
+
+    final bool isDesktop = isDesktopPlatform;
+    final toolbar = MarkdownToolbar(
+      controller: _activeController,
+      focusNode: _activeFocusNode,
+      backgroundColor: noteBg,
+      position: isDesktop ? ToolbarPosition.top : ToolbarPosition.bottom,
+    );
+
+    return Column(
+      children: [
+        if (isDesktop) toolbar,
+        Expanded(child: _buildBody()),
+        if (!isDesktop) SafeArea(top: false, child: toolbar),
+      ],
     );
   }
 
@@ -301,6 +342,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
         child: NoteFormWidget(
           titleController: _titleController,
           descriptionController: _descriptionController,
+          titleFocusNode: _titleFocusNode,
+          descriptionFocusNode: _descriptionFocusNode,
           sessionStateStream: widget.sessionStateStream,
         ),
       ),
@@ -672,7 +715,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
           // Markdown 关闭时预览纯文本，避免把 Markdown 源码直接渲染/解析。
           if (PreferencesStorage.isMarkdownEnabled)
             MarkdownBody(
-              data: description,
+              data: MarkdownFormatter.prepareMarkdownForRendering(description),
               selectable: true,
               styleSheet: _markdownStyleSheet(context),
               // 隐私：不加载任何网络/本地图片，避免泄露 IP / 元数据

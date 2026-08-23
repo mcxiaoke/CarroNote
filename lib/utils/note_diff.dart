@@ -20,9 +20,10 @@ library;
 /// - deletion（红色）：历史版本有、当前没有 → 此版本之后被删除的内容
 /// - equal：两者相同
 
-import 'package:diff_match_patch/diff_match_patch.dart';
 import 'package:flutter/foundation.dart';
+
 import 'package:core/core.dart';
+import 'package:diff_match_patch/diff_match_patch.dart';
 
 /// Diff 片段类型
 enum DiffSegmentType { equal, insertion, deletion }

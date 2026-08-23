@@ -12,6 +12,7 @@
 */
 
 import 'package:flutter/material.dart';
+
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';

@@ -506,5 +506,22 @@
   "Note Color": "Note Color",
   "Set Color": "Set Color",
   "Color updated": "Color updated",
-  "Select All": "Select All"
+  "Select All": "Select All",
+  "Bold": "Bold",
+  "Italic": "Italic",
+  "Strikethrough": "Strikethrough",
+  "Heading": "Heading",
+  "Heading 1": "Heading 1",
+  "Heading 2": "Heading 2",
+  "Heading 3": "Heading 3",
+  "Task List": "Task List",
+  "Bullet List": "Bullet List",
+  "Numbered List": "Numbered List",
+  "Blockquote": "Blockquote",
+  "Inline Code": "Inline Code",
+  "Code Block": "Code Block",
+  "Link": "Link",
+  "Horizontal Rule": "Horizontal Rule",
+  "Markdown Toolbar": "Markdown Toolbar",
+  "Show formatting toolbar and auto-indent in note editor.": "Show formatting toolbar and auto-indent in note editor."
 }

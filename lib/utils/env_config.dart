@@ -19,8 +19,9 @@
 
 import 'dart:io' show Platform;
 
-import 'package:core/core.dart';
 import 'package:flutter/material.dart';
+
+import 'package:core/core.dart';
 
 /// 通用环境变量容器（SN_ENV_VARS）的解析结果，懒加载缓存，进程内只解析一次。
 Map<String, String> _parseGenericEnvVars() {

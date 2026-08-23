@@ -31,9 +31,8 @@ import 'package:safenotes/views/home.dart';
 import 'package:safenotes/views/settings/about_page.dart';
 import 'package:safenotes/views/settings/appearance_settings_page.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
-import 'package:safenotes/views/settings/display_page.dart';
-import 'package:safenotes/views/settings/theme_page.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
+import 'package:safenotes/views/settings/display_page.dart';
 import 'package:safenotes/views/settings/general_settings_page.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
 import 'package:safenotes/views/settings/language_setting.dart';
@@ -44,6 +43,7 @@ import 'package:safenotes/views/settings/settings.dart';
 import 'package:safenotes/views/settings/sync_diagnostics_page.dart';
 import 'package:safenotes/views/settings/sync_settings.dart';
 import 'package:safenotes/views/settings/theme_color_setting.dart';
+import 'package:safenotes/views/settings/theme_page.dart';
 
 class RouteGenerator {
   static Route<dynamic> generateRoute(RouteSettings settings) {

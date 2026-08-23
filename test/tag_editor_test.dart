@@ -13,6 +13,7 @@
 //   - 点勾选框/行切换选中态
 //   - 追加新标签后自动勾选，保存返回勾选子集与完整标签池
 //   - 行尾 X 可删除标签（管理态 selectionMode=false 时无勾选框，仅增删）
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

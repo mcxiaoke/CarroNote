@@ -33,13 +33,13 @@
 
 import 'dart:io' show Platform;
 
+import 'package:core/core.dart' show kDebugMode;
 import 'package:device_info_plus/device_info_plus.dart';
 
 import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入
 
-import 'package:core/core.dart' show kDebugMode;
 
 /// 设备 ID 提供者
 ///

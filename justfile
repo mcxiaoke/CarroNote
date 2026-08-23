@@ -13,7 +13,7 @@ default:
     just --list
 
 # ── Dependencies & maintenance ──────────────────────────────
-get: 
+get:
     flutter pub get
 
 clean:
@@ -58,7 +58,12 @@ apk: gen
 exe: gen
     flutter build windows --debug
 
-all: exe apk
+all: exe build-windows apk build-apk
+
+install-apk:
+    adb install .\build\app\outputs\flutter-apk\app-release.apk
+
+install: build-apk install-apk
 
 release: gen
     python scripts/release.py

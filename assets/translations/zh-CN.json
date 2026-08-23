@@ -506,5 +506,22 @@
   "Note Color": "笔记颜色",
   "Set Color": "设置颜色",
   "Color updated": "颜色已更新",
-  "Select All": "全选"
+  "Select All": "全选",
+  "Bold": "加粗",
+  "Italic": "斜体",
+  "Strikethrough": "删除线",
+  "Heading": "标题",
+  "Heading 1": "一级标题",
+  "Heading 2": "二级标题",
+  "Heading 3": "三级标题",
+  "Task List": "待办清单",
+  "Bullet List": "无序列表",
+  "Numbered List": "有序列表",
+  "Blockquote": "引用",
+  "Inline Code": "行内代码",
+  "Code Block": "代码块",
+  "Link": "超链接",
+  "Horizontal Rule": "分割线",
+  "Markdown Toolbar": "Markdown 工具栏",
+  "Show formatting toolbar and auto-indent in note editor.": "在笔记编辑页显示格式工具栏与列表自动续行。"
 }

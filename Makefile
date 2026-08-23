@@ -73,7 +73,7 @@ exe: gen-build-info
 	@echo "-> Build Windows executable (debug)"
 	flutter build windows --debug
 
-all: exe apk
+all: exe build-windows apk build-apk
 	@echo "-> Windows + Android debug builds completed"
 
 # Release packaging (multi-ABI split + AppBundle), inject latest build info first

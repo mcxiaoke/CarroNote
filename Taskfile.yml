@@ -86,7 +86,9 @@ tasks:
     desc: Build debug Windows exe + Android APK
     cmds:
       - task: exe
+      - task: build-windows
       - task: apk
+      - task: build-apk
 
   release:
     desc: Run the release packaging script

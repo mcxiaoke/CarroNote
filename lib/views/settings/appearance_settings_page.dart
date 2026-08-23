@@ -25,6 +25,7 @@ class AppearanceSettingsPage extends StatefulWidget {
 class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   late bool _isCompactPreview;
   late bool _isMarkdownEnabled;
+  late bool _isMarkdownToolbarEnabled;
   late bool _isRelativeTime;
   late bool _isSortByModified;
 
@@ -46,6 +47,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   void _loadSwitchValues() {
     _isCompactPreview = PreferencesStorage.isCompactPreview;
     _isMarkdownEnabled = PreferencesStorage.isMarkdownEnabled;
+    _isMarkdownToolbarEnabled = PreferencesStorage.isMarkdownToolbarEnabled;
     _isRelativeTime = PreferencesStorage.isRelativeTime;
     _isSortByModified = PreferencesStorage.isSortByModified;
   }
@@ -138,6 +140,22 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               onChanged: (v) {
                 PreferencesStorage.setIsMarkdownEnabled(v);
                 setState(() => _isMarkdownEnabled = v);
+              },
+            ),
+          ),
+          KeyedSubtree(
+            key: const Key('ui-setting-switch-markdown-toolbar'),
+            child: shadSwitchTile(
+              context,
+              icon: LucideIcons.panelBottom,
+              title: 'Markdown Toolbar'.tr(),
+              description:
+                  'Show formatting toolbar and auto-indent in note editor.'
+                      .tr(),
+              value: _isMarkdownToolbarEnabled,
+              onChanged: (v) {
+                PreferencesStorage.setIsMarkdownToolbarEnabled(v);
+                setState(() => _isMarkdownToolbarEnabled = v);
               },
             ),
           ),

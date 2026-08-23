@@ -21,6 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/editor_text.dart';
+import 'package:safenotes/utils/markdown_formatter.dart';
 import 'package:safenotes/utils/text_direction_util.dart';
 
 class NoteFormWidget extends StatelessWidget {
@@ -29,12 +30,16 @@ class NoteFormWidget extends StatelessWidget {
   /// 标题 / 正文编辑控制器，由编辑页持有并接线撤销栈监听器。
   final TextEditingController titleController;
   final TextEditingController descriptionController;
+  final FocusNode? titleFocusNode;
+  final FocusNode? descriptionFocusNode;
 
   const NoteFormWidget({
     super.key,
     required this.titleController,
     required this.descriptionController,
     required this.sessionStateStream,
+    this.titleFocusNode,
+    this.descriptionFocusNode,
   });
 
   @override
@@ -68,6 +73,7 @@ class NoteFormWidget extends StatelessWidget {
     return ShadInputFormField(
       key: const Key('ui-note-field-title'),
       controller: titleController,
+      focusNode: titleFocusNode,
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: null,
@@ -105,6 +111,10 @@ class NoteFormWidget extends StatelessWidget {
     return ShadInputFormField(
       key: const Key('ui-note-field-body'),
       controller: descriptionController,
+      focusNode: descriptionFocusNode,
+      inputFormatters: PreferencesStorage.isMarkdownToolbarEnabled
+          ? const [MarkdownAutoIndentFormatter()]
+          : const [],
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,

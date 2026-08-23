@@ -17,8 +17,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
@@ -27,7 +27,6 @@ import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/text_styles.dart';
-
 import 'support/harness.dart';
 
 /// 构建 Markdown 预览 styleSheet（复刻 add_edit_note.dart 的 _markdownStyleSheet 逻辑）。

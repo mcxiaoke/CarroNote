@@ -49,6 +49,7 @@ class PreferencesStorage {
   static const _keyPinShuffleEnabled = 'pinShuffleEnabled';
   static const _keyIsCompactPreview = 'isCompactPreview';
   static const _keyIsMarkdownEnabled = 'isMarkdownEnabled';
+  static const _keyIsMarkdownToolbarEnabled = 'isMarkdownToolbarEnabled';
   static const _keyEditorFontSizeIndex = 'editorFontSizeIndex';
   static const _keyFontFamilyTypeIndex = 'fontFamilyTypeIndex';
   static const _keyNoteFontFamilyTypeIndex = 'noteFontFamilyTypeIndex';
@@ -480,6 +481,16 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsMarkdownEnabled);
     await _preferences?.setBool(_keyIsMarkdownEnabled, flag);
     _logPrefChange('Markdown 渲染', old, flag);
+  }
+
+  /// Markdown 格式工具栏总开关（默认开启）。
+  /// 关闭后，笔记编辑页隐藏工具栏且不挂载列表自动续行，提供干净的原生输入环境。
+  static bool get isMarkdownToolbarEnabled =>
+      _preferences?.getBool(_keyIsMarkdownToolbarEnabled) ?? true;
+  static Future<void> setIsMarkdownToolbarEnabled(bool flag) async {
+    final old = _preferences?.getBool(_keyIsMarkdownToolbarEnabled);
+    await _preferences?.setBool(_keyIsMarkdownToolbarEnabled, flag);
+    _logPrefChange('Markdown 工具栏', old, flag);
   }
 
   /// 编辑器（笔记编辑/预览页）字体大小档位索引。

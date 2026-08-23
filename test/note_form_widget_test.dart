@@ -11,23 +11,22 @@
  *     （integration_test 用它们做 enterText）。
  */
 
-import 'package:flutter/material.dart';
-
 import 'dart:async';
+
+import 'package:flutter/material.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/shad_theme.dart';
 import 'package:safenotes/utils/notes_color.dart';
 import 'package:safenotes/widgets/note_widget.dart';
-
 import 'support/harness.dart';
 
 /// 与 note_font_preview_test 一致的轻量封装：ShadTheme + MaterialApp + 双 Provider。

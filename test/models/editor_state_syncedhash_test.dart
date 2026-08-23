@@ -15,8 +15,8 @@
 // 修复前：copyWith 沿用 original.syncedHash → 回退 DB 正确 base → 虚假冲突。
 // 修复后：保存前 readNoteByUuid 获取最新 syncedHash。
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:core/core.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'package:safenotes/models/editor_state.dart';
 import '../test_helpers.dart';

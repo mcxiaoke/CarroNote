@@ -33,11 +33,11 @@ import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/authwall.dart' show AppBootState;
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/pin_auth.dart';
+import 'package:safenotes/src/logger/log_webserver.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';

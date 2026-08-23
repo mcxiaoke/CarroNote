@@ -307,11 +307,74 @@ longrun_persistent_store_test、safe_server_integration_test（需要本地起�
 
 ## 5. 实施批次建议
 
+### 5.1 大批次概览
+
 | 批次 | 内容 | 预估规模 | 目标 |
 |---|---|---|---|
 | B1（P0） | sync_models 容器负向分支；safe_server/webdav MockClient 状态码矩阵；sync_engine 密钥判定 + §7.1 恢复编排；database_handler v3→v4 升级 / 迁移回滚 / _parseUuidList；writeRingBackup | core 覆盖率整体 ≥90%，四个低覆盖文件 ≥80% | 数据安全回归防线 |
 | B2（P1） | sync_service 脱敏/autoSync/互斥/applyConfig；scheduled_task + vault_backup；pin/biometric 失败路径；app_logger；CLI 冒烟 + 退出码；keyring C1/C2 | lib 非 UI 关键文件 ≥70% | 行为契约固化 |
 | B3（P2） | sync_error（含 substring<8 隐患修复）；parse_import 恶意头表驱动；journal/writeRingBackup 残余；note_version 模型；快速胜利四件套；log_webserver 安全端点；confirm/delete 对话框 | 补齐长尾 | 健壮性 |
+
+### 5.2 推荐的细粒度分步实施路径（4 阶段小步推进）
+
+为避免单个大批次跨度过大、排查困难，实际落地推荐按以下 4 阶段拆解执行：
+
+#### 阶段 0：基建就绪与快速胜利（低风险、立竿见影）
+1. **测试基建与公共 Mock**：
+   - 固化覆盖率统计脚本（如 `tool/coverage.ps1`），先记录初始精确基线。
+   - 在 `packages/core/test/sync/sync_test_support.dart` 补充通用的 `MockClient` 响应生成与异常注入辅助工具。
+2. **快速胜利四件套（纯逻辑，零副作用）**：
+   - `note_diff.dart`（0% → 90%+）：比对算法与差异判定。
+   - `prefs_store_override.dart`（0% → 95%+）：纯 Dart 内存 Store 往返与容错。
+   - `models/note_version.dart`（30% → 95%+）：模型 copyWith 与脱敏 toString。
+   - `utils/device_id.dart`（28.6% → 80%+）：overrideForTesting 机制。
+
+#### 阶段 1：Core 核心数据安全防线（P0，纯 Dart 极速执行）
+1. **Step 1.1 — `sync_models.dart` v5 容器负向解析**：
+   - 覆盖 `_parseAndVerifyContainer` 6 个负向篡改分支（过短、magic 错误、pubHash 翻转、固定头不匹配）。
+   - 验证关键分流：DataKey 错误时精确抛出 `ManifestKeyMismatchException` 而非 `ManifestAuthException`。
+2. **Step 1.2 — `database_handler.dart` 迁移回滚与故障防护**：
+   - v3→v4 升级迁移（真实 v3 结构验证）。
+   - `reEncryptAllNotes` 中途异常回滚旧密钥与状态复位。
+   - `_parseUuidList` / GC 表解析坏 JSON 防御（防已删笔记复活）。
+3. **Step 1.3 — `safe_server_backend` & `webdav_backend` 状态码矩阵**：
+   - 使用 `MockClient` 全面替代对真实服务器的依赖。
+   - 覆盖 404/401/412/409/405、ETag 缺失抛错、MKCOL 矩阵、环形备份 5 份轮转与越权路径校验。
+4. **Step 1.4 — `sync_engine.dart` 密钥判定与自愈编排**：
+   - Scenario a/b/c/d 密钥判定矩阵（改密未推、他端改密 requiresRelogin、跨版本重试）。
+   - 远端 manifest 损坏恢复流程（reget 成功不备份、坏 pubHash/旧 key 备份跳过、最终本地重建）。
+   - 传输重试退避与 M7 hash 错位处理。
+
+#### 阶段 2：Lib 业务调度与认证安全（P1，Flutter/平台模拟）
+1. **Step 2.1 — `sync_service.dart` 调度与并发控制**：
+   - 凭据脱敏静态函数（`_redactUrl` / `_maskUsername`，防止凭据进入局域网日志）。
+   - `autoSync` 的 debounce 防抖、失败重试一次标志位、`sync()` 入口并发互斥锁。
+2. **Step 2.2 — `scheduled_task.dart` 与 `vault_backup.dart`**：
+   - 禁止明文备份守卫（会话密码为空时拒绝备份）。
+   - 自动备份开关拦截、`forceBackup` 强制落盘。
+   - 备份目录滚动修剪（只留最新 5 份快照，最旧目录自动删除）。
+3. **Step 2.3 — 认证安全与会话生命周期（`pin_auth` / `biometric_auth` / `session`）**：
+   - Mock SecureStorage / MethodChannel：连续 5 次错误 PIN 自动禁用 PIN 登录。
+   - PIN 与生物识别互斥逻辑。
+   - `session.logout` 严格执行顺序（先备份 → sync logout → 清 key → 销毁）。
+4. **Step 2.4 — `editor_state.dart` 保存守卫**：
+   - `_isSaving` 防重入、空内容跳过保存、`destroyAfter:false` 防重复插入。
+
+#### 阶段 3：CLI 工具、日志与已知隐患修复（P1/P2，健壮性与长尾）
+1. **Step 3.1 — 已知隐患修复与异常模型（`sync_error.dart`）**：
+   - 遵循 TDD 流程：先为 `blobHash.substring(0, 8)` 在长度 `< 8` 时编写暴露崩溃的测试，再修复代码验证通过。
+2. **Step 3.2 — `bin/` CLI 冒烟与退出码测试**：
+   - 直接调用 `CliRunner` 测试 UsageException(64)、CliException(1)、未知(2) 退出码。
+   - 危险操作（db wipe / purge-deleted）缺少 `--yes` 确认门的阻断测试。
+   - 端到端冒烟：`init → add → export → wipe → import` 数量与数据一致性闭环。
+3. **Step 3.3 — `app_logger.dart` 与 `log_webserver.dart` 安全固化**：
+   - 日志环形缓冲区 2000 条裁剪、前缀误剥离防护、`consoleEnabled` 静默开关。
+   - WebServer 的 Token 鉴权、`../` / `..\` 目录穿越防御。
+
+### 5.3 实施准则与质量控制
+1. **原子化推进（One Step per Commit/PR）**：按细粒度步骤推进，每步完成后运行 `dart format`、`flutter analyze`、`dart test packages\core\test` 和 `flutter test` 确保全绿。
+2. **零网络依赖与极速运行**：所有测试严格使用 `MockClient` / 假数据 / 内存 DB，避免真实网络与外部服务器依赖，保证全量测试在 30 秒内跑完。
+3. **日志记录**：重要改动与阶段性覆盖率提升记录于 `docs/CHANGES-YYYYMMDD.md`。
 
 ## 6. 工程配套
 
