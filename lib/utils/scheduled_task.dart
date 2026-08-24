@@ -11,7 +11,7 @@
 * See https://safenotes.dev for support or download.
 */
 
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:core/core.dart';
 import 'package:media_scanner/media_scanner.dart';
@@ -20,10 +20,12 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/file_handler.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 class ScheduledTask {
   static Future<void> backup() async {
+    if (kIsWeb) return;
     // 记录触发条件：便于排查「为什么这次没有产生备份文件」
     if (PreferencesStorage.isBackupOn == false ||
         PreferencesStorage.isBackupNeeded == false) {
@@ -283,6 +285,7 @@ class ScheduledTask {
   ///
   /// 返回 true 表示备份成功，false 表示失败（调用方可据此决定是否继续操作）。
   static Future<bool> forceBackup({String? fileName}) async {
+    if (kIsWeb) return true;
     int maxAttempt = PreferencesStorage.maxBackupRetryAttempts;
     // 强制备份通常发生在改密码等高风险操作前，起止必须留痕
     Log.backup.i(

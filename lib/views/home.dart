@@ -14,6 +14,7 @@
 import 'dart:async';
 import 'dart:math' show max;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:animations/animations.dart';
@@ -180,6 +181,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 仅 dev 模式（含 debug 构建）自动启动；非 dev 模式默认不启动，
   /// 需要时可在调试面板的 Web Server Tab 手动启停。
   Future<void> _startLogWebServer() async {
+    if (kIsWeb) return;
     if (!DevMode.isActive) return;
     if (LogWebServer.instance.isRunning) return;
     try {

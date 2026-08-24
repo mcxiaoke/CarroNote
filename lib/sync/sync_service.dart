@@ -31,7 +31,8 @@
 // Dart 导入
 
 import 'dart:async';
-import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter/foundation.dart';
 
@@ -41,6 +42,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/device_id.dart';
 
@@ -257,10 +259,12 @@ class SyncService {
   }
 
   /// 打开 journal（沙盒目录解析 + 打开）
-  ///
-  /// journal 打开失败直接向上抛异常，阻断同步初始化——不再有内存降级路径。
   Future<Journal> _openJournal({required String vaultId}) async {
     final deviceId = _deviceId ?? 'unknown-device';
+    if (kIsWeb) {
+      // Web 环境无本地物理沙盒目录，使用内存模式 Journal
+      return Journal.inMemory(vaultId: vaultId, deviceId: deviceId);
+    }
     final dir = await getApplicationSupportDirectory();
     return Journal.open(
       baseDir: dir.path,
@@ -1179,19 +1183,21 @@ class SyncService {
   /// 返回写入的文件绝对路径（供 SnackBar 展示）。
   Future<String> exportAllLogsToFile() async {
     final text = await exportAllLogsAsText();
-    Directory? dir;
+    if (kIsWeb) return '';
+    String? dirPath;
     try {
-      dir = await getDownloadsDirectory();
+      final dir = await getDownloadsDirectory();
+      dirPath = dir?.path;
     } on UnsupportedError {
       // 平台无 Downloads 概念（iOS 等）
     }
-    dir ??= await getApplicationDocumentsDirectory();
+    dirPath ??= (await getApplicationDocumentsDirectory()).path;
     final ts = DateTime.now()
         .toIso8601String()
         .replaceAll(RegExp(r'[:\-]'), '')
         .replaceAll(' ', 'T')
         .substring(0, 15);
-    final file = File(p.join(dir.path, 'safenotes-logs-$ts.txt'));
+    final file = File(p.join(dirPath, 'safenotes-logs-$ts.txt'));
     await file.writeAsString(text, flush: true);
     Log.ui.i('诊断+日志已导出: ${file.path}');
     return file.path;

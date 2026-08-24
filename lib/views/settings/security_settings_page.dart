@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:easy_localization/easy_localization.dart';
@@ -56,17 +57,18 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
       body: shadSettingsList([
         shadSectionTitle(context, 'Authentication'.tr()),
         shadSettingsCard([
-          shadNavigationTile(
-            context,
-            key: const Key('ui-setting-item-biometric'),
-            icon: LucideIcons.fingerprint,
-            title: 'Biometric'.tr(),
-            value: _biometricValue,
-            onTap: () async {
-              await Navigator.pushNamed(context, '/biometricSetting');
-              _refresh();
-            },
-          ),
+          if (!kIsWeb)
+            shadNavigationTile(
+              context,
+              key: const Key('ui-setting-item-biometric'),
+              icon: LucideIcons.fingerprint,
+              title: 'Biometric'.tr(),
+              value: _biometricValue,
+              onTap: () async {
+                await Navigator.pushNamed(context, '/biometricSetting');
+                _refresh();
+              },
+            ),
           shadNavigationTile(
             context,
             key: const Key('ui-setting-item-pin'),

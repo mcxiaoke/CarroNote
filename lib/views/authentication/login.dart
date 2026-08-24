@@ -13,6 +13,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:after_layout/after_layout.dart';
@@ -765,29 +766,31 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     try {
       await NotesDatabase.instance.close();
 
-      // 安全网：删除前把加密数据库 + 偏好快照保存到 backups/ 目录。
+      // 安全网：删除前把加密数据库 + 偏好快照保存到 backups/ 目录（Web 无文件系统直接跳过）。
       // 若用户之后想起密码，快照仍可手动恢复。
-      try {
-        final backupDir = await backupVaultBeforeReset();
-        if (mounted) {
-          showSnackBarMessage(
-            context,
-            'Reset backup saved to: {path}'.tr(
-              namedArgs: {'path': backupDir.path},
-            ),
-          );
+      if (!kIsWeb) {
+        try {
+          final backupDir = await backupVaultBeforeReset();
+          if (mounted) {
+            showSnackBarMessage(
+              context,
+              'Reset backup saved to: {path}'.tr(
+                namedArgs: {'path': backupDir.path},
+              ),
+            );
+          }
+        } on Exception catch (e, st) {
+          Log.auth.e('重置前备份失败，中止重置（原数据保留未删除）', error: e, stackTrace: st);
+          if (mounted) {
+            showErrorToast(
+              context,
+              'Reset aborted: backup failed: {error}'.tr(
+                namedArgs: {'error': '$e'},
+              ),
+            );
+          }
+          return;
         }
-      } on Exception catch (e, st) {
-        Log.auth.e('重置前备份失败，中止重置（原数据保留未删除）', error: e, stackTrace: st);
-        if (mounted) {
-          showErrorToast(
-            context,
-            'Reset aborted: backup failed: {error}'.tr(
-              namedArgs: {'error': '$e'},
-            ),
-          );
-        }
-        return;
       }
 
       await NotesDatabase.instance.deleteDbFile();

@@ -52,12 +52,14 @@
 // Dart 原生导入
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 // Package 导入
 import 'package:path/path.dart' as p;
+
+// Project 导入
+import 'package:core/src/platform/platform_io.dart';
 
 // Project 导入
 import 'package:core/src/crypto/crypto.dart';

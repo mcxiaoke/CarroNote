@@ -37,7 +37,9 @@
 
 // Dart 导入
 import 'dart:async';
-import 'dart:io';
+
+// Project 导入
+import 'package:core/src/platform/platform_io.dart';
 
 // 第三方导入
 import 'package:path/path.dart' as p;
@@ -367,20 +369,21 @@ class AppLogFile {
   /// 桌面端优先用 exe 同目录的 logs/（便于用户直接找到）；
   /// 若该目录不可写（如安装在 Program Files），回退到应用数据目录。
   static Future<String?> _resolveLogDir() async {
-    // CLI（preferLogDirOverride=true）优先用注入的数据目录，保证多设备日志隔离
-    if (preferLogDirOverride) {
+    // 注入解析器优先（Web 端注入返回 null，CLI 优先用注入的数据目录）
+    if (preferLogDirOverride || logDirResolverOverride != null) {
       final viaOverride = await _resolveLogDirViaOverride();
       if (viaOverride != null) return viaOverride;
+      if (logDirResolverOverride != null) return null;
     }
 
-    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      try {
+    try {
+      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
         final exeDir = p.dirname(Platform.resolvedExecutable);
         final candidate = p.join(exeDir, 'logs');
         if (await _ensureWritableDir(candidate)) return candidate;
-      } on Object {
-        // 忽略，走下面的回退分支
       }
+    } on Object {
+      // 忽略平台访问异常（如 Web/非桌面），走回退分支
     }
 
     return _resolveLogDirViaOverride();

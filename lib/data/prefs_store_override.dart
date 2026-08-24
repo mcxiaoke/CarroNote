@@ -21,7 +21,8 @@
  */
 
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:safenotes/src/platform/platform_io.dart';
 
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 

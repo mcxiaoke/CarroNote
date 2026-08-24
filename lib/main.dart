@@ -12,9 +12,9 @@
 */
 
 import 'dart:async';
-import 'dart:io' show Directory, File, Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -23,13 +23,16 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:local_session_timeout/local_session_timeout.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite_common/sqflite.dart';
+
+import 'package:safenotes/src/platform/data_dir_override.dart';
+import 'package:safenotes/src/platform/database_bootstrap.dart';
+import 'package:safenotes/src/platform/platform_io.dart'
+    show Directory, File, Platform;
 
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
-import 'package:safenotes/data/prefs_store_override.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
@@ -59,7 +62,7 @@ Future main() async {
       // 数据目录覆盖必须在最早期应用：日志目录解析（_initLogging）、
       // prefs 后端（SharedPreferencesStorePlatform.instance）都要在各自
       // 初始化前被替换，DB 路径则在 _bootstrap 里读取。
-      _applyDataDirOverride();
+      applyDataDirOverride();
 
       // ① 日志系统必须最先初始化，保证后续任何环节的错误都能落盘
       await _initLogging();
@@ -77,33 +80,16 @@ Future main() async {
   );
 }
 
-/// 应用数据目录覆盖（若有）。无覆盖时保持默认行为。
-///
-/// 优先读环境变量 `SN_DATA_DIR`；若未设置但 [dataDirOverride] 已被调用方
-/// （如集成测试）预先赋值，则沿用该值。两者皆无时保持默认数据目录。
-void _applyDataDirOverride() {
-  final env = Platform.environment['SN_DATA_DIR'];
-  if (env != null && env.isNotEmpty) {
-    dataDirOverride = env;
-  }
-  final dir = dataDirOverride;
-  if (dir == null) return;
-  // prefs 存储后端：指向隔离目录的 JSON 文件（老式 SharedPreferences 通过
-  // 全局单例读写，替换实例即可生效，与 setMockInitialValues 同一机制）。
-  SharedPreferencesStorePlatform.instance = FilePreferencesStore(
-    File(p.join(dir, 'preferences.json')),
-  );
-  Log.app.i('数据目录覆盖: $dir');
-}
-
 /// 初始化日志系统（全平台一致：移动端 + 桌面端）
 Future<void> _initLogging() async {
   // 注入 dev 模式判断（读取 SharedPreferences，非 debug 构建生效）。
   // 必须在 AppLogFile.init() 之前注入，使默认日志级别按 dev 模式正确初始化。
   devModeProvider = () => PreferencesStorage.isDevMode;
   // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
-  logDirResolverOverride = () async =>
-      dataDirOverride ?? (await getApplicationSupportDirectory()).path;
+  logDirResolverOverride = () async {
+    if (kIsWeb) return null;
+    return dataDirOverride ?? (await getApplicationSupportDirectory()).path;
+  };
   await AppLogFile.init();
   Log.app.i('════════ SafeNotes 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
@@ -120,11 +106,16 @@ Future<void> _initLogging() async {
   Log.app.i(
     '构建时间: ${BuildInfo.buildDateReadable} (UTC ${BuildInfo.buildDate})',
   );
-  Log.app.i(
-    '平台: ${Platform.operatingSystem} '
-    '${Platform.operatingSystemVersion}',
-  );
-  Log.app.i('Dart: ${Platform.version.split(' ').first}');
+  if (kIsWeb) {
+    Log.app.i('平台: web web');
+    Log.app.i('Dart: web');
+  } else {
+    Log.app.i(
+      '平台: ${Platform.operatingSystem} '
+      '${Platform.operatingSystemVersion}',
+    );
+    Log.app.i('Dart: ${Platform.version.split(' ').first}');
+  }
   Log.app.i('日志目录: ${AppLogFile.dirPath ?? "不可用（仅内存 + 控制台）"}');
 }
 
@@ -154,27 +145,8 @@ Future<void> _bootstrap() async {
   // 桌面端窗口管理（最小尺寸 + 居中）：必须在 runApp 之前就绪
   await initDesktopWindowManager();
 
-  // 桌面平台（Windows/macOS/Linux）初始化 sqflite_ffi
-  // sqflite 原生只支持 Android/iOS，桌面端必须用 sqflite_common_ffi
-  if (isDesktopPlatform) {
-    sqfliteFfiInit();
-    // Use OrNull to silently alter the default factory behavior
-    databaseFactoryOrNull = databaseFactoryFfi;
-    // 桌面端：把数据库目录从 sqflite_ffi 默认的「CWD 相对路径
-    // .dart_tool/sqflite_common_ffi/databases」改为应用支持目录
-    // （getApplicationSupportDirectory → %APPDATA%\<app>）。
-    // 原因：默认相对路径会让数据库位置随程序启动目录（exe 所在目录）漂移；
-    // 打包到 Program Files 后该目录通常无写权限，会导致无法建库。
-    // 注意：setDatabasesPath 必须在首次访问 database 之前调用（见下方
-    // NotesDatabase.instance.database），此处顺序满足要求。
-    final dbDir =
-        dataDirOverride ?? (await getApplicationSupportDirectory()).path;
-    await databaseFactory.setDatabasesPath(dbDir);
-    Log.app.i(
-      '桌面平台，sqflite_ffi数据库目录已指向: '
-      '$dbDir\\safenotes_sync.db',
-    );
-  }
+  // 平台数据库初始化（Native 桌面走 FFI，Web 走 WASM+IndexedDB，移动端走原生插件）
+  await initDatabaseForPlatform(dataDirOverride: dataDirOverride);
 
   // 移动端 + 数据目录覆盖（集成测试真机模式）：把设备真实的 safenotes_sync.db
   // 复制一份到隔离目录，并从该副本打开，避免测试污染设备真实数据。
@@ -185,7 +157,7 @@ Future<void> _bootstrap() async {
   // （SQLITE_READONLY_DBMOVED）。因此隔离副本固定放在 <databases>/integration_test_data，
   // 而非 dataDirOverride；prefs/日志仍用 dataDirOverride。
   final overrideDir = dataDirOverride;
-  if (!isDesktopPlatform && overrideDir != null) {
+  if (!kIsWeb && !isDesktopPlatform && overrideDir != null) {
     final realDbDir = await databaseFactory.getDatabasesPath();
     final isoDir = p.join(realDbDir, 'integration_test_data');
     final src = File(p.join(realDbDir, 'safenotes_sync.db'));
@@ -201,8 +173,8 @@ Future<void> _bootstrap() async {
     NotesDatabase.dbPathOverride = isoDir;
   }
 
-  // 统一注入数据库工厂：桌面端已被换成 FFI 实现，移动端由 sqflite 插件注册
-  // （同一注入点、两套平台实现，不引入分支）。
+  // 统一注入数据库工厂：桌面端已被换成 FFI 实现，Web 端为 WASM，移动端由 sqflite 插件注册
+  // （同一注入点、不同平台实现，不引入分支）。
   NotesDatabase.dbFactoryOverride = databaseFactory;
 
   WidgetsBinding.instance.addObserver(
@@ -477,6 +449,7 @@ class _SafeNotesAppState extends State<SafeNotesApp>
 
 // run once every update
 void onAppUpdate() async {
+  if (kIsWeb) return;
   if (PreferencesStorage.appVersionCode != SafeNotesConfig.appVersionCode) {
     Log.app.i(
       '检测到应用升级: '

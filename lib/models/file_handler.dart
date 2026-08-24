@@ -12,9 +12,10 @@
 */
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:safenotes/src/platform/platform_io.dart';
 
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';

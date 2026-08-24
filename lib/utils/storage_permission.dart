@@ -11,12 +11,15 @@
 * See https://safenotes.dev for support or download.
 */
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:safenotes/utils/device_info.dart';
 
 // return true on successful storage permission
 Future<bool> handleStoragePermission() async {
+  if (kIsWeb) return true;
   // if sdk is above 29 no permission needed to store file in Download folder
   if (!await isAndroidSdkVersionAbove(29) &&
       !await _requestPermission(Permission.storage)) {

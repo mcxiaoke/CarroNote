@@ -29,7 +29,9 @@
 // Dart 导入
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:io';
+
+// Project 导入
+import 'package:core/src/platform/platform_io.dart';
 
 // Package 导入
 import 'package:crypto/crypto.dart' show sha256;
@@ -521,14 +523,30 @@ class NotesDatabase {
   ///   - v5：新增 note_meta 表（笔记级元数据：星标/标签/归档…）。
   ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
   ///   - v6：note_meta 新增 `locked` 明文列（笔记锁定只读标志）。
-  ///   - v7：新增 note_versions 表（笔记历史版本，字段级加密，不参与同步）。
-  ///     **不动 notes 表**，仅 `CREATE TABLE IF NOT EXISTS`，老库零风险升级。
   static const int _schemaVersion = 7;
+
+  /// 安全解析数据库绝对路径（兼容 Web / WASM 平台 getDatabasesPath 为 null 的情况）
+  static Future<String> _resolveDbPath(
+    DatabaseFactory factory,
+    String filePath,
+  ) async {
+    if (dbPathOverride != null && dbPathOverride!.isNotEmpty) {
+      return join(dbPathOverride!, filePath);
+    }
+    try {
+      final dbPath = await factory.getDatabasesPath();
+      if (dbPath.isNotEmpty) {
+        return join(dbPath, filePath);
+      }
+    } on Object {
+      // Web / WASM 平台无物理目录概念，直接返回文件名作为 IndexedDB 存储标识
+    }
+    return filePath;
+  }
 
   Future<Database> _initDB(String filePath) async {
     final factory = dbFactoryOverride ?? databaseFactory;
-    final dbPath = dbPathOverride ?? await factory.getDatabasesPath();
-    final path = join(dbPath, filePath);
+    final path = await _resolveDbPath(factory, filePath);
 
     try {
       final db = await factory.openDatabase(
@@ -2466,8 +2484,7 @@ class NotesDatabase {
   /// 路径解析优先级与 [deleteDbFile] 一致：dbPathOverride / factory.getDatabasesPath。
   Future<String> dbFilePath() async {
     final factory = dbFactoryOverride ?? databaseFactory;
-    final dbPath = dbPathOverride ?? await factory.getDatabasesPath();
-    return join(dbPath, 'safenotes_sync.db');
+    return _resolveDbPath(factory, 'safenotes_sync.db');
   }
 
   /// 删除 db 文件（忘记密码逃生通道使用）
@@ -2477,13 +2494,24 @@ class NotesDatabase {
   /// 同时清除 _dataKey,避免残留内存中的旧密钥。
   Future<void> deleteDbFile() async {
     final factory = dbFactoryOverride ?? databaseFactory;
-    final dbPath = dbPathOverride ?? await factory.getDatabasesPath();
-    final path = join(dbPath, 'safenotes_sync.db');
+    final path = await _resolveDbPath(factory, 'safenotes_sync.db');
     // 不可逆的全量数据销毁（忘记密码逃生通道），必须以 FATAL 级别留痕
     Log.db.f('⚠ 删除数据库文件（所有本地笔记将永久丢失）: $path');
     try {
-      await factory.deleteDatabase(path);
-      Log.db.i('数据库文件已删除，内存密钥已清空');
+      try {
+        await factory.deleteDatabase(path);
+      } on UnsupportedError {
+        // sqflite_common_ffi_web (WASM) 不支持 deleteDatabase
+        // 回退方案：重新打开数据库，清空重建所有表
+        Log.db.w('deleteDatabase 不受平台支持（Web/WASM），回退为清空并重建数据表');
+        final db = await factory.openDatabase(path);
+        await db.execute('DROP TABLE IF EXISTS $tableNotes');
+        await db.execute('DROP TABLE IF EXISTS $tableNoteVersions');
+        await db.execute('DROP TABLE IF EXISTS $tableMeta');
+        await _createDBStatic(db, _schemaVersion);
+        await db.close();
+      }
+      Log.db.i('数据库文件已删除/重置，内存密钥已清空');
     } on Object catch (e, st) {
       Log.db.e('删除数据库文件失败', error: e, stackTrace: st);
       rethrow;

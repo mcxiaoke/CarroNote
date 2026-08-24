@@ -29,17 +29,16 @@
  * 测试支持：通过 [DeviceIdProvider.overrideForTesting] 可注入 mock 值。
  */
 
-// Dart 原生导入
-
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:core/core.dart' show kDebugMode;
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:safenotes/src/platform/platform_io.dart' show Platform;
 import 'package:safenotes/utils/platform_ui.dart';
 
 // Package 导入
-
 
 /// 设备 ID 提供者
 ///
@@ -104,8 +103,20 @@ class DeviceIdProvider {
 
   /// 查询系统 API 获取设备 ID
   Future<String> _queryDeviceId() async {
-    final deviceInfo = DeviceInfoPlugin();
     final prefix = kDebugMode ? "dev-" : "";
+
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      var id = prefs.getString('web_device_id');
+      if (id == null) {
+        id =
+            '${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecondsSinceEpoch % 1000000}';
+        await prefs.setString('web_device_id', id);
+      }
+      return '${prefix}web-$id';
+    }
+
+    final deviceInfo = DeviceInfoPlugin();
 
     if (isAndroid) {
       final info = await deviceInfo.androidInfo;
