@@ -50,6 +50,7 @@ import 'package:path_provider/path_provider.dart';
 // Project imports:
 import 'package:core/core.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/main.dart' as safenotes;
 import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/utils/desktop_window.dart'
@@ -245,6 +246,8 @@ Future<void> main() async {
               reason: 'Should return to hub after $hubKey @ $size',
             );
           }
+          await _popTopRoute(tester); // back to home
+          await tester.pumpAndSettle();
         });
       },
     );
@@ -595,8 +598,10 @@ Future<void> main() async {
     ) async {
       await _loginToHome(tester);
       const title = 'ZZZMarkdown';
-      // Enable Markdown preview via settings, then restore it afterwards.
-      await _toggleMarkdown(tester);
+      // 确保 Markdown 渲染开关处于开启状态（默认即为 true）。
+      if (!PreferencesStorage.isMarkdownEnabled) {
+        await _toggleMarkdown(tester);
+      }
       try {
         await _createNote(tester, title, '# Heading\n**bold** text');
         await _openNoteByTitle(tester, title);
@@ -609,7 +614,9 @@ Future<void> main() async {
         await _waitFor(tester, () => _isHome(tester));
       } finally {
         await _deleteNoteByTitle(tester, title);
-        await _toggleMarkdown(tester); // restore markdown off
+        if (!PreferencesStorage.isMarkdownEnabled) {
+          await _toggleMarkdown(tester);
+        }
       }
     });
 
@@ -1555,6 +1562,11 @@ Future<void> _createNote(WidgetTester tester, String title, String body) async {
 /// (narrows the home list to that single note) then taps it, landing on the
 /// editor in preview mode. The search query is left in place.
 Future<void> _openNoteByTitle(WidgetTester tester, String title) async {
+  await _backToHome(tester);
+  if (tester.any(find.byIcon(LucideIcons.x))) {
+    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.pumpAndSettle();
+  }
   // 从笔记页 pop 回 home 有一个过渡期，搜索框可能尚未挂载；先等它就绪，
   // 必须等内部的 EditableText 挂载完毕，再稳定等待避免 enterText 抛 "No element"。
   final inputFinder = find.descendant(
@@ -1586,6 +1598,7 @@ Future<void> _tapEditorDelete(WidgetTester tester) async {
 /// -> confirm the destructive dialog -> return home and clear the leftover
 /// search query.
 Future<void> _deleteNoteByTitle(WidgetTester tester, String title) async {
+  await _backToHome(tester);
   await _openNoteByTitle(tester, title);
   await _settle(tester); // 编辑器（预览态）完全就绪后再点删除
 
