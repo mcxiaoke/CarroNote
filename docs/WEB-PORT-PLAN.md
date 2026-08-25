@@ -1,6 +1,6 @@
 # SafeNotes Web 版移植计划（WEB-PORT-PLAN）
 
-> 状态：规划文档（已完成深度审计与修订）
+> 状态：**已完成**（已全量落地并通过自动化测试与生产出包验证）
 > 目标：让 `safenotes` 能以 `flutter build web` 出包，并在浏览器里跑通**完整用户流程**（建库→设密码→登录→增删改笔记→列表/搜索→设置→登出/会话超时）。
 > 定位：**纯本地开发 / 测试用途**。
 
@@ -22,16 +22,16 @@
 
 ## 1. 全流程验收清单（Web 必须跑通）
 
-1. 首次启动 → 进入初始化（设主密码）→ 建库成功。
-2. 重启用主密码登录 → 进入主页（笔记列表为空）。
-3. 新建笔记 → 输入标题/正文 → 保存 → 列表出现该笔记。
-4. 打开笔记 → 编辑 → 保存 → 返回列表内容更新。
-5. 删除笔记 → 软删除生效 → 列表消失。
-6. 搜索（按标题/正文）→ 结果正确。
-7. 设置页打开 → 普通设置项可读写（主题、超时、语言切换）。
-8. 会话超时 / 手动登出 → 回到 AuthWall。
-9. 二次登录 → 数据仍在（IndexedDB 持久化）。
-10. 调试日志：Web 上不启日志 WebServer，仅 console / 内存日志，不崩。
+1. [x] 首次启动 → 进入初始化（设主密码）→ 建库成功。
+2. [x] 重启用主密码登录 → 进入主页（笔记列表为空）。
+3. [x] 新建笔记 → 输入标题/正文 → 保存 → 列表出现该笔记。
+4. [x] 打开笔记 → 编辑 → 保存 → 返回列表内容更新。
+5. [x] 删除笔记 → 软删除生效 → 列表消失。
+6. [x] 搜索（按标题/正文）→ 结果正确。
+7. [x] 设置页打开 → 普通设置项可读写（主题、超时、语言切换）。
+8. [x] 会话超时 / 手动登出 → 回到 AuthWall。
+9. [x] 二次登录 → 数据仍在（IndexedDB 持久化）。
+10. [x] 调试日志：Web 上不启日志 WebServer，仅 console / 内存日志，不崩。
 
 **明确不在验收内**：备份/导出/导入对话框、生物识别登录、本地文件同步。
 
@@ -341,36 +341,36 @@ cd build/web && python -m http.server 8080
 
 ## 9. 测试与验收方案
 
-1. **静态检查**：`flutter analyze` 零 Error。
-2. **编译验证**：`flutter build web --release` 成功出包。
-3. **冒烟流程（按 §1 清单验证）**：
+1. [x] **静态检查**：`flutter analyze` 零 Error。
+2. [x] **编译验证**：`flutter build web --release` 成功出包。
+3. [x] **冒烟流程（按 §1 清单验证）**：
    - 首次初始化设置主密码 → 建库成功。
    - 新建笔记 → 标题/正文编辑 → 保存 → 列表展示。
    - 刷新页面（F5）→ 弹出登录页 → 输入密码成功解锁 → 数据完好。
    - 搜索、修改、软删除、恢复测试。
    - 设置页切换深色模式、语言切换、会话超时测试。
    - 忘记密码 / 重置本地数据流程测试。
-4. **自动化 E2E**：可通过 Playwright / Chrome DevTools 驱动进行无头回归测试。
+4. [x] **自动化 E2E**：已通过 Chrome/Edge DevTools CDP 自动化启动验证。
 
 ---
 
 ## 10. 分步执行清单（Checklist）
 
 ### P0：编译与基础脚手架（让 `flutter build web` 成功）
-- [ ] **P0-WASM**：`flutter pub add sqflite_common_ffi_web` + `dart run sqflite_common_ffi_web:setup`。
-- [ ] **P0-App-Platform**：建立 `lib/src/platform/{platform_io.dart, io_real.dart, io_stub.dart}`，补齐全套符号。
-- [ ] **P0-App-IO 替换**：将 14 个 App 文件的 `import 'dart:io'` 替换为 `platform_io.dart`。
-- [ ] **P0-Core-Platform**：建立 `packages/core/lib/src/platform/platform_io.dart`，替换 core 内部 5 处 `dart:io`。
-- [ ] **P0-DB-Bootstrap**：建立 `database_bootstrap.dart`，Web 端注入 `databaseFactoryFfiWeb`。
-- [ ] **P0-Plugin-Stubs**：为 `media_scanner`、`local_auth`、`permission_handler`、`window_manager`、`log_webserver` 建立 Web 桩。
+- [x] **P0-WASM**：`sqflite_common_ffi_web: ^1.1.2` + `web/sqlite3.wasm` + `web/sqflite_sw.js` 就绪。
+- [x] **P0-App-Platform**：建立 `lib/src/platform/{platform_io.dart, io_real.dart, io_stub.dart, data_dir_override.dart, env_reader.dart}`。
+- [x] **P0-App-IO 替换**：全库 App 文件 `import 'dart:io'` 均替换为 `platform_io.dart` / 条件导出。
+- [x] **P0-Core-Platform**：建立 `packages/core/lib/src/platform/platform_io.dart`，core 包彻底解耦 `dart:io`。
+- [x] **P0-DB-Bootstrap**：建立 `database_bootstrap.dart`，Web 端注入 `databaseFactoryFfiWebNoWebWorker`。
+- [x] **P0-Plugin-Stubs**：为 `local_auth`、`window_manager`、`log_webserver` 建立 Web 桩。
 
 ### P1：运行时门控与流程跑通（消灭运行时崩溃）
-- [ ] **P1-PathProvider 门控**：在 `main._initLogging`、`sync_service`、`cache_manager` 拦截 `path_provider` 调用。
-- [ ] **P1-Reset 流程修复**：`login.dart:_performLocalDataReset` 在 Web 跳过文件备份，直接重置。
-- [ ] **P1-UI 门控**：隐藏 Web 上的备份、导入导出、生物识别、日志 WebServer 入口。
-- [ ] **P1-DeviceId**：`device_id.dart` 实现 `kIsWeb` 稳定 UUID。
-- [ ] **P1-DB-Reset**：`database_handler.dart:deleteDbFile` 在 Web 走 Drop/重建表逻辑。
+- [x] **P1-PathProvider 门控**：在 `main._initLogging`、`sync_service`、`cache_manager` 拦截 `path_provider` 调用，Web Journal 走 `Journal.inMemory`。
+- [x] **P1-Reset 流程修复**：`login.dart:_performLocalDataReset` 在 Web 跳过文件备份，直接重置。
+- [x] **P1-UI 门控**：隐藏 Web 上的备份、导入导出、生物识别、日志 WebServer 入口。
+- [x] **P1-DeviceId**：`device_id.dart` 实现 `kIsWeb` 稳定 UUID。
+- [x] **P1-DB-Reset**：`database_handler.dart:deleteDbFile` 在 Web 走 Drop/重建表与安全路径回退。
 
 ### P2：验证与固化
-- [ ] **P2-Build**：`flutter build web --release` 验证。
-- [ ] **P2-Smoke**：静态服务器按 §1 清单走通全流程。
+- [x] **P2-Build**：`flutter build web --release` 编译出包成功。
+- [x] **P2-Smoke**：Edge/Chrome DevTools 自动化冒烟走通全流程。
