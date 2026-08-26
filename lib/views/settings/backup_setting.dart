@@ -10,8 +10,6 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:safenotes/src/platform/platform_io.dart';
-
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
@@ -23,6 +21,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/backup_import.dart';
 import 'package:safenotes/dialogs/export_backup_dialog.dart';
 import 'package:safenotes/models/file_handler.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/snack_message.dart';
@@ -241,8 +240,8 @@ class BackupSettingState extends State<BackupSetting> {
         return;
       }
     }
-    // 手动备份必须真正落盘，绕过 isBackupOn/isBackupNeeded 开关：
-    // 否则首次成功后备 isBackupNeeded 置 false，「再次点击立即备份」会静默跳过。
+    // 手动备份必须真正落盘，绕过 isBackupOn 开关（R1 修复后自动备份不再
+    // 依赖 isBackupNeeded 标记，手动路径与自动路径语义已一致）。
     final manualFileName = SafeNotesConfig.manualBackupFileName;
     final success = await ScheduledTask.forceBackup(fileName: manualFileName);
     if (!mounted) return;

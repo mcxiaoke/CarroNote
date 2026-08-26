@@ -12,16 +12,22 @@
 // 这里通过 window_manager 补充应用内可控能力：
 //   1. 设最小尺寸：防止窗口被拖到布局崩坏（侧栏/输入框挤出屏幕）；
 //   2. 启动居中并设置初始尺寸；
-//   3. 提供 WindowManager 实例供后续功能（如记住上次大小、全屏等）扩展。
+//   3. 提供 WindowManager 实例供后续功能（如记住上次大小、全屏等）扩展；
+//   4. 拦截点 X 关窗（R2）：先执行 [desktopWindowCloseHandler]（保存编辑器
+//      草稿 + 停同步/日志等清理），再销毁窗口——否则异步保存与进程退出
+//      竞态，未保存内容必丢。
 //
 // 仅桌面平台（Windows/macOS/Linux）调用；Web/移动端自动跳过。
 
+import 'dart:async';
 import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/painting.dart';
 
+import 'package:core/core.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:safenotes/utils/desktop_window_callback.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
 /// 主窗口最小尺寸（桌面布局可用的下限，含侧栏 + 内容区 + 键盘输入域）。
@@ -29,6 +35,32 @@ const Size kAppWindowMinSize = Size(380, 380);
 
 /// 主窗口初始尺寸（与 windows/runner/main.cpp 保持一致的观感）。
 const Size kAppWindowInitialSize = Size(1280, 800);
+
+/// 关闭前清理的兜底超时：清理逻辑挂死时仍保证窗口能关掉。
+const Duration _closeHandlerTimeout = Duration(seconds: 10);
+
+/// 防止连点 X 重复触发保存/销毁流程。
+bool _isClosing = false;
+
+final _AppWindowListener _appWindowListener = _AppWindowListener();
+
+class _AppWindowListener with WindowListener {
+  @override
+  void onWindowClose() async {
+    if (_isClosing) return;
+    _isClosing = true;
+    try {
+      final handler = desktopWindowCloseHandler;
+      if (handler != null) {
+        await handler().timeout(_closeHandlerTimeout);
+      }
+    } on Object catch (e, st) {
+      Log.app.w('窗口关闭前清理失败（忽略，继续退出）', error: e, stackTrace: st);
+    } finally {
+      await windowManager.destroy();
+    }
+  }
+}
 
 /// 初始化桌面窗口管理器并在窗口就绪后应用尺寸/位置设置。
 ///
@@ -49,6 +81,9 @@ Future<void> initDesktopWindowManager() async {
   // waitUntilReadyToShow：等原生窗口就绪后一次性写入尺寸/位置/最小尺寸，
   // 避免在 Dart 侧启动期反复读写窗口属性造成闪烁。
   windowManager.waitUntilReadyToShow(options, () async {
+    // R2：拦截系统关闭（点 X / Alt+F4），转由 onWindowClose 先保存草稿再退出
+    await windowManager.setPreventClose(true);
+    windowManager.addListener(_appWindowListener);
     await windowManager.show();
     await windowManager.focus();
   });

@@ -452,4 +452,113 @@ void main() {
       );
     });
   });
+
+  group('R4: items.meta CAS（并发整文件覆盖防护）', () {
+    test('PUT 冲突后重拉合并：他端窗口期写入的条目不被抹掉', () async {
+      final backend = _MetaTestBackend();
+      final dataKey = SyncCrypto.generateDataKey();
+      final edk = base64.encode(Uint8List(60)..fillRange(0, 60, 0xAB));
+
+      // 设备 A：建笔记 + 星标 + 同步（建立远端 items.meta 基线）
+      final dbA = await _makeDatabase(dataKey);
+      await dbA.storeNote(_makeNote(uuid: 'note-1'));
+      final engineA = _makeEngine(
+        backend: backend,
+        database: dbA,
+        dataKey: dataKey,
+        encryptedDataKey: edk,
+        deviceId: 'device-A',
+      );
+      expect((await engineA.sync()).success, isTrue);
+      await dbA.setNotePinned('note-1', true);
+      expect((await engineA.sync()).success, isTrue);
+
+      // 设备 B：同步到最新，然后星标 note-2（产生脏行，待上传）
+      final dbB = await _makeDatabase(dataKey);
+      final engineB = _makeEngine(
+        backend: backend,
+        database: dbB,
+        dataKey: dataKey,
+        encryptedDataKey: edk,
+        deviceId: 'device-B',
+      );
+      expect((await engineB.sync()).success, isTrue);
+      await dbB.setNotePinned('note-2', true);
+
+      // 模拟设备 C 在 B 的 GET 之后、PUT 之前写入了远端（并发窗口）：
+      // 直接改写 backend.metaObject 为 C 的快照（note-3 星标）
+      backend.metaObject = await NoteMetaSyncCodec.seal(
+        dataKey,
+        NoteMetaSyncCodec.encode({
+          'note-3': NoteMeta(
+            uuid: 'note-3',
+            pinned: true,
+            updatedAt: DateTime.now().millisecondsSinceEpoch + 5000,
+          ),
+        }),
+      );
+      // 注入一次 CAS 冲突：B 首次 PUT 必失败，重拉后才能看到 C 的写入
+      backend.forceConflictCount = 1;
+
+      expect((await engineB.sync()).success, isTrue);
+
+      // 远端最终快照必须同时含 B 与 C 的条目——修复前 B 的无条件覆盖
+      // 会把 C 的 note-3 从远端抹掉，且 C 本地已标 synced 永不再传
+      final plain = await NoteMetaSyncCodec.open(dataKey, backend.metaObject!);
+      final remoteFile = NoteMetaSyncCodec.decode(plain)!;
+      expect(
+        remoteFile.metas['note-2']?.pinned,
+        isTrue,
+        reason: 'B 自己的变更必须成功上传',
+      );
+      expect(
+        remoteFile.metas['note-3']?.pinned,
+        isTrue,
+        reason: 'CAS 重拉合并后 C 窗口期写入的条目不得丢失',
+      );
+      // B 本地也合并了 C 的条目
+      expect((await dbB.getNoteMeta('note-3'))!.pinned, isTrue);
+    });
+
+    test('冲突重试超过上限 → 本轮放弃且不破坏数据，下轮可恢复', () async {
+      final backend = _MetaTestBackend();
+      final dataKey = SyncCrypto.generateDataKey();
+      final edk = base64.encode(Uint8List(60)..fillRange(0, 60, 0xAB));
+
+      final db = await _makeDatabase(dataKey);
+      await db.storeNote(_makeNote(uuid: 'busy-note'));
+      final engine = _makeEngine(
+        backend: backend,
+        database: db,
+        dataKey: dataKey,
+        encryptedDataKey: edk,
+        deviceId: 'device-A',
+      );
+      expect((await engine.sync()).success, isTrue);
+
+      await db.setNotePinned('busy-note', true);
+      // 注入超过重试上限的持续冲突（模拟他端高频写 meta 的极端场景）
+      backend.forceConflictCount = 99;
+
+      expect(
+        (await engine.sync()).success,
+        isTrue,
+        reason: 'meta 段失败不得阻断同步主链路',
+      );
+      expect(
+        (await db.getNoteMeta('busy-note'))!.synced,
+        isFalse,
+        reason: '未上传成功绝不能误标已同步',
+      );
+
+      // 冲突消失后下一轮同步恢复上传
+      backend.forceConflictCount = 0;
+      expect((await engine.sync()).success, isTrue);
+      final plain = await NoteMetaSyncCodec.open(dataKey, backend.metaObject!);
+      expect(
+        NoteMetaSyncCodec.decode(plain)!.metas['busy-note']?.pinned,
+        isTrue,
+      );
+    });
+  });
 }

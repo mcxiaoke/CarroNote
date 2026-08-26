@@ -203,7 +203,9 @@ class SyncEngine {
   ///   2. per-note LWW 合并入本地（远端胜出才写；synced=1 表「刚与远端
   ///      对齐」，不产生新脏数据）。
   ///   3. 本地有 synced=0 脏行或处于自愈场景 → 序列化全量（含待上报墓碑）
-  ///      → 上传 → 条件置 synced → 墓碑 GC；无脏行且非自愈不上传空文件。
+  ///      → **If-Match CAS 上传**（R4：堵住并发整文件覆盖导致的元数据丢失）
+  ///      → 条件置 synced → 墓碑 GC；无脏行且非自愈不上传空文件。
+  ///      CAS 冲突（他端先写）→ 重拉远端重新合并再传，最多 [_kMetaCasMaxAttempts] 轮。
   Future<void> _syncNoteMeta() async {
     if (!backend.supportsMetaObjects) return;
     var forceUpload = false; // 自愈场景：即使无脏行也上传（覆盖坏文件）
@@ -211,14 +213,21 @@ class SyncEngine {
       // ── 1. 下载与解析 ──
       Map<String, NoteMeta>? remote;
       var skipRound = false;
-      final ciphertext = await backend.getMetaObject();
-      if (ciphertext != null && ciphertext.isNotEmpty) {
+      var remoteExists = false; // 远端是否已有 items.meta（决定 CAS 模式）
+      var remoteEtag = ''; // 远端当前代际（If-Match 用）
+      final fetched = await backend.getMetaObject();
+      if (fetched != null && fetched.ciphertext.isNotEmpty) {
+        remoteExists = true;
+        remoteEtag = fetched.etag;
         Uint8List? plaintext;
         var failureNote = '';
         try {
-          plaintext = await NoteMetaSyncCodec.open(_dataKey, ciphertext);
+          plaintext = await NoteMetaSyncCodec.open(
+            _dataKey,
+            fetched.ciphertext,
+          );
         } on SyncDecryptionException catch (e) {
-          failureNote = 'decrypt failed (${ciphertext.length} bytes)';
+          failureNote = 'decrypt failed (${fetched.ciphertext.length} bytes)';
           Log.sync.w('items.meta 解密失败，走自愈重建', error: e);
         }
         NoteMetaRemoteFile? parsed;
@@ -257,41 +266,82 @@ class SyncEngine {
         return;
       }
 
-      // ── 2. per-note LWW 合并 ──
-      var applied = 0;
-      if (remote != null && remote.isNotEmpty) {
-        applied = await database.mergeRemoteNoteMetas(remote.values.toList());
-      }
+      // ── 2+3. 合并 + CAS 上传（R4）──
+      // 冲突即「GET 之后他端 PUT 过」：无条件覆盖会把窗口期他端的条目从
+      // 远端抹掉且本端已标 synced 不再补传——这正是修复前的元数据丢失路径。
+      // 冲突后重拉最新快照重新合并，直到以远端最新代际为基线成功写入。
+      for (var attempt = 1; ; attempt++) {
+        var applied = 0;
+        if (remote != null && remote.isNotEmpty) {
+          applied = await database.mergeRemoteNoteMetas(remote.values.toList());
+        }
 
-      // ── 3. 上传（有脏行或自愈才传）──
-      final all = await database.readAllNoteMetaIncludingTombstones();
-      final hasDirty = all.values.any((m) => !m.synced);
-      if (!hasDirty && !forceUpload) {
+        final all = await database.readAllNoteMetaIncludingTombstones();
+        final hasDirty = all.values.any((m) => !m.synced);
+        if (!hasDirty && !forceUpload) {
+          journal.append(
+            type: JournalEventType.syncNoteMeta,
+            phase: JournalPhase.done,
+            dataKeyEpoch: keyring.dataKeyEpoch,
+            note: 'merged=$applied uploaded=0(clean)',
+          );
+          return;
+        }
+        final sealed = await NoteMetaSyncCodec.seal(
+          _dataKey,
+          NoteMetaSyncCodec.encode(all),
+        );
+        try {
+          await backend.putMetaObject(
+            sealed,
+            ifMatch: remoteExists ? remoteEtag : null,
+            createOnly: !remoteExists,
+          );
+        } on ConflictException {
+          Log.sync.w(
+            'note_meta CAS 冲突 (attempt=$attempt/$_kMetaCasMaxAttempts)，'
+            '重拉远端合并后重试',
+          );
+          if (attempt >= _kMetaCasMaxAttempts) rethrow; // 外层记失败，下轮重试
+          final refetched = await backend.getMetaObject();
+          if (refetched == null) {
+            // 他端删除了 items.meta（如换库重建）：转为首建模式
+            remoteExists = false;
+            remoteEtag = '';
+            remote = const {};
+            continue;
+          }
+          final parsed = await _decodeRemoteMetaForRetry(refetched.ciphertext);
+          if (parsed == null || parsed.version > kNoteMetaWireVersion) {
+            // 重拉仍解不开 / 版本过新（对端可能在迁移）：本轮放弃，
+            // 下轮同步的自愈或升级路径兜底
+            journal.append(
+              type: JournalEventType.syncNoteMeta,
+              phase: JournalPhase.failed,
+              dataKeyEpoch: keyring.dataKeyEpoch,
+              note: 'cas refetch undecodable or future version',
+            );
+            return;
+          }
+          remoteExists = true;
+          remoteEtag = refetched.etag;
+          remote = parsed.metas;
+          continue;
+        }
+        await database.markNoteMetasSynced(all.values);
+        final gc = await database.purgeReportedNoteMetaTombstones();
+        Log.sync.i(
+          'note_meta 同步完成: merged=$applied '
+          'uploaded=${all.length} tombstoneGc=$gc attempt=$attempt',
+        );
         journal.append(
           type: JournalEventType.syncNoteMeta,
           phase: JournalPhase.done,
           dataKeyEpoch: keyring.dataKeyEpoch,
-          note: 'merged=$applied uploaded=0(clean)',
+          note: 'merged=$applied uploaded=${all.length} tombstoneGc=$gc',
         );
         return;
       }
-      final sealed = await NoteMetaSyncCodec.seal(
-        _dataKey,
-        NoteMetaSyncCodec.encode(all),
-      );
-      await backend.putMetaObject(sealed);
-      await database.markNoteMetasSynced(all.values);
-      final gc = await database.purgeReportedNoteMetaTombstones();
-      Log.sync.i(
-        'note_meta 同步完成: merged=$applied '
-        'uploaded=${all.length} tombstoneGc=$gc',
-      );
-      journal.append(
-        type: JournalEventType.syncNoteMeta,
-        phase: JournalPhase.done,
-        dataKeyEpoch: keyring.dataKeyEpoch,
-        note: 'merged=$applied uploaded=${all.length} tombstoneGc=$gc',
-      );
     } on Exception catch (e, st) {
       Log.sync.w('note_meta 同步失败（不影响同步结果）', error: e, stackTrace: st);
       journal.append(
@@ -308,6 +358,25 @@ class SyncEngine {
         dataKeyEpoch: keyring.dataKeyEpoch,
         note: 'sync error: $e',
       );
+    }
+  }
+
+  /// meta CAS 重试上限：每轮都重拉合并，3 次仍冲突说明他端在持续高频写
+  /// meta（极罕见），放弃本轮避免活锁，下次同步继续。
+  static const int _kMetaCasMaxAttempts = 3;
+
+  /// 重拉后的 items.meta 解密+解析；解密失败或结构损坏返回 null。
+  ///
+  /// 与步骤 1 的差异：不触发自愈（自愈语义只属于首轮下载），失败仅放弃本轮。
+  Future<NoteMetaRemoteFile?> _decodeRemoteMetaForRetry(
+    Uint8List ciphertext,
+  ) async {
+    try {
+      final plaintext = await NoteMetaSyncCodec.open(_dataKey, ciphertext);
+      return NoteMetaSyncCodec.decode(plaintext);
+    } on SyncDecryptionException catch (e) {
+      Log.sync.w('items.meta 重拉后解密失败', error: e);
+      return null;
     }
   }
 

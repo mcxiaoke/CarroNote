@@ -807,17 +807,40 @@ class WebDavBackend implements SyncBackend {
 
   /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，网盘只存字节）
   ///
-  /// 非 2xx 抛异常禁止"假成功"（与 putJournalObject 的 F-H07 修复同理由）；
-  /// 异常由引擎 meta 同步段的外层 catch 兜底，下次同步重试。
+  /// R4：带 If-Match / If-None-Match 乐观锁——412 Precondition Failed 抛
+  /// [ConflictException] 由引擎重拉合并重试；其余非 2xx 抛
+  /// [BackendUnavailableException] 禁止"假成功"（与 putJournalObject 的
+  /// F-H07 修复同理由）。仅把 412 视为冲突：部分服务器的 409 表示父目录
+  /// 缺失等结构问题，当作冲突会污染重试预算、掩盖真实故障。
   @override
-  Future<void> putMetaObject(Uint8List ciphertext) async {
+  Future<void> putMetaObject(
+    Uint8List ciphertext, {
+    String? ifMatch,
+    bool createOnly = false,
+  }) async {
     _ensureInitialized();
+    final headers = {
+      ..._authHeaders(),
+      'Content-Type': 'application/octet-stream',
+    };
+    if (ifMatch != null && ifMatch.isNotEmpty) {
+      // 规范化后的 etag 用引号包回去（WebDAV If-Match 规范要求带引号）
+      headers['If-Match'] = '"$ifMatch"';
+    } else if (createOnly) {
+      headers['If-None-Match'] = '*';
+    }
     final res = await _sendHttp(
       'PUT',
       Uri.parse('$baseUrl/items.meta'),
-      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      headers: headers,
       bodyBytes: ciphertext,
     );
+    if (res.statusCode == 412) {
+      throw ConflictException(
+        '[WebDAV] items.meta CAS failed: remote changed '
+        '(ifMatch=$ifMatch createOnly=$createOnly)',
+      );
+    }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       // 统一抛 BackendUnavailableException（而非 StateError）：
       // 与网络层异常类型一致，便于引擎按类型分级日志/重试策略
@@ -828,7 +851,7 @@ class WebDavBackend implements SyncBackend {
   }
 
   @override
-  Future<Uint8List?> getMetaObject() async {
+  Future<MetaRemoteObject?> getMetaObject() async {
     _ensureInitialized();
     try {
       final res = await _sendHttp(
@@ -840,7 +863,10 @@ class WebDavBackend implements SyncBackend {
       final bytes = res.bodyBytes;
       // F-M04：大小上限，防恶意服务端打爆内存
       checkRemoteReadSize(bytes, 'WebDAV meta', kRemoteMetaMaxBytes);
-      return bytes;
+      // R4：优先服务器 ETag；不返回时退化为内容 hash（与 manifest 约定一致）
+      var etag = _normalizeEtag(res.headers['etag']);
+      if (etag.isEmpty) etag = _computeContentEtag(bytes);
+      return MetaRemoteObject(ciphertext: bytes, etag: etag);
     } on Exception catch (e) {
       Log.sync.d('[WebDAV] items.meta 读取失败', error: e);
       return null;

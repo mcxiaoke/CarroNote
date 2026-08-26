@@ -26,13 +26,14 @@ import 'package:safenotes/utils/platform_ui.dart';
 class ScheduledTask {
   static Future<void> backup() async {
     if (kIsWeb) return;
-    // 记录触发条件：便于排查「为什么这次没有产生备份文件」
-    if (PreferencesStorage.isBackupOn == false ||
-        PreferencesStorage.isBackupNeeded == false) {
+    // 发布评审 R1：不再依赖 isBackupNeeded 标记。旧实现「备份成功后置 false、
+    // 无任何路径置回 true」，导致自动备份一生只执行一次（Last Backup 停在首次）。
+    // 自动备份触发点本来就少（切后台/登出/升级后），每次触发都全量落盘即可；
+    // 手动路径 forceBackup 本就绕过该标记，语义现在与自动路径一致。
+    if (PreferencesStorage.isBackupOn == false) {
       Log.backup.d(
         '跳过自动备份: 开关 isBackupOn='
-        '${PreferencesStorage.isBackupOn}, '
-        '待备份 isBackupNeeded=${PreferencesStorage.isBackupNeeded}',
+        '${PreferencesStorage.isBackupOn}',
       );
       return;
     }
@@ -185,7 +186,6 @@ class ScheduledTask {
       }
 
       await PreferencesStorage.setLastBackupTime();
-      await PreferencesStorage.setIsBackupNeeded(false);
       return true;
     } catch (err, st) {
       lastBackupError = _simplifyBackupError(err);
@@ -232,7 +232,6 @@ class ScheduledTask {
       );
 
       await PreferencesStorage.setLastBackupTime();
-      await PreferencesStorage.setIsBackupNeeded(false);
       return true;
     } catch (err, st) {
       lastBackupError = _simplifyBackupError(err);
@@ -265,7 +264,6 @@ class ScheduledTask {
       );
 
       await PreferencesStorage.setLastBackupTime();
-      await PreferencesStorage.setIsBackupNeeded(false);
       return true;
     } catch (err, st) {
       lastBackupError = _simplifyBackupError(err);
@@ -274,7 +272,7 @@ class ScheduledTask {
     }
   }
 
-  /// 强制备份一次（绕过 isBackupOn / isBackupNeeded 开关）
+  /// 强制备份一次（绕过 isBackupOn 开关）
   ///
   /// 用于改密码等关键操作前的数据保护：
   ///   - 无论用户是否开启自动备份，都强制写入一份本地完整备份

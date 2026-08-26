@@ -31,6 +31,7 @@ import 'dart:typed_data';
 
 // Package 导入
 import 'package:core/core.dart';
+import 'package:crypto/crypto.dart' show sha256;
 
 // ──────────────────────────────────────────────
 // Keyring 构造
@@ -190,18 +191,49 @@ mixin FakeJournalStore {
 ///
 /// [supportsMeta] 置 false 可模拟不支持 meta 对象的后端
 /// （getMetaObject 恒 null、putMetaObject 抛错），验证引擎整段跳过。
+///
+/// R4：put/get 带真实 CAS 语义——etag 为内容 SHA-256，[ifMatch] 不匹配或
+/// [createOnly] 但对象已存在时抛 [ConflictException]，与三个生产后端一致；
+/// [forceConflictCount] 可注入「他端先写」冲突，驱动引擎的重拉合并重试路径。
 mixin FakeNoteMetaStore {
   bool supportsMeta = true;
   Uint8List? metaObject;
 
+  /// 注入的 CAS 冲突次数：每次 putMetaObject 消耗一次（抛 ConflictException），
+  /// 用于验证引擎重拉合并后仍能成功上传。
+  int forceConflictCount = 0;
+
   bool get supportsMetaObjects => supportsMeta;
 
-  Future<void> putMetaObject(Uint8List ciphertext) async {
+  String? get _currentEtag =>
+      metaObject == null ? null : sha256.convert(metaObject!).toString();
+
+  Future<void> putMetaObject(
+    Uint8List ciphertext, {
+    String? ifMatch,
+    bool createOnly = false,
+  }) async {
     if (!supportsMeta) {
       throw StateError('backend does not support meta objects');
+    }
+    if (forceConflictCount > 0) {
+      forceConflictCount--;
+      throw ConflictException('FakeNoteMetaStore: injected conflict');
+    }
+    if (createOnly && metaObject != null) {
+      throw ConflictException('FakeNoteMetaStore: createOnly but exists');
+    }
+    if (ifMatch != null && ifMatch.isNotEmpty && _currentEtag != ifMatch) {
+      throw ConflictException(
+        'FakeNoteMetaStore: etag mismatch '
+        '(expected=$ifMatch, actual=$_currentEtag)',
+      );
     }
     metaObject = ciphertext;
   }
 
-  Future<Uint8List?> getMetaObject() async => supportsMeta ? metaObject : null;
+  Future<MetaRemoteObject?> getMetaObject() async {
+    if (!supportsMeta || metaObject == null) return null;
+    return MetaRemoteObject(ciphertext: metaObject!, etag: _currentEtag!);
+  }
 }

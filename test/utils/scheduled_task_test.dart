@@ -9,9 +9,10 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
 
 import 'package:core/core.dart';
+import 'package:flutter_test/flutter_test.dart';
+
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import '../test_helpers.dart';
@@ -67,14 +68,20 @@ void main() {
       expect(files, isEmpty);
     });
 
-    test('isBackupNeeded == false 时跳过自动备份且不产生文件', () async {
+    test('isBackupNeeded == false 时仍执行自动备份（R1 回归：标记失效不再阻断）', () async {
       await PreferencesStorage.setIsBackupNeeded(false);
       PhraseHandler.initPass('test.password.123');
 
       await ScheduledTask.backup();
 
-      final files = tempBackupDir.listSync();
-      expect(files, isEmpty);
+      final files = tempBackupDir.listSync().whereType<File>().toList();
+      expect(
+        files.length,
+        1,
+        reason:
+            '自动备份不能因 isBackupNeeded=false 被跳过，'
+            '否则首次成功后所有自动备份永久失效',
+      );
     });
 
     test('开关开启且待备份时成功生成加密备份并更新状态', () async {
@@ -86,7 +93,6 @@ void main() {
       expect(files.length, 1);
       expect(files.first.path.endsWith(SafeNotesConfig.backupFileName), isTrue);
 
-      expect(PreferencesStorage.isBackupNeeded, isFalse);
       expect(PreferencesStorage.lastBackupTime, isNotNull);
 
       // 验证备份内容为有效加密备份并能解出原始笔记

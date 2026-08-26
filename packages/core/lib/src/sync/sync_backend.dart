@@ -243,20 +243,49 @@ abstract class SyncBackend {
   /// 写入笔记元数据加密对象（items.meta，单文件整体覆盖上传）
   ///
   /// [ciphertext] 已由调用方用 `AES-GCM(dataKey)` 整体加密的密文——
-  /// 后端不解析、不解密，远端永不落明文。合并语义由调用方负责：
-  /// 下载时逐条 per-note LWW（见 `note_meta_sync.dart`），
-  /// 文件级并发为 last-writer-wins，靠下一轮下载合并收敛。
+  /// 后端不解析、不解密，远端永不落明文。
+  ///
+  /// R4（发布评审）：文件级并发不再是无条件 last-writer-wins——
+  /// 整文件覆盖曾导致「A 上传置 synced=1 → B 用不含 A 条目的快照覆盖远端
+  /// → A 的变更永不上传」的元数据永久丢失。现在上传必须走乐观锁：
+  ///   - [ifMatch] 非空：远端 ETag 必须匹配才允许写入（If-Match），
+  ///     不匹配抛 [ConflictException]，调用方重拉合并后重试；
+  ///   - [createOnly] 为 true：仅当远端不存在该对象时允许创建
+  ///     （If-None-Match: *），堵住「两端并发首建互相覆盖」；
+  ///   - 两者均未提供：无条件覆盖（自愈重建 / dataKey 迁移重封专用）。
+  ///
+  /// 注意：若存储服务不返回 ETag 且忽略 If-Match（极少数 WebDAV 实现），
+  /// 本方法退化为 LWW——与修复前行为一致，不会更糟（诊断页已有标红提示）。
   ///
   /// 默认空实现（no-op）：后端不支持时 meta 同步静默跳过，不影响主流程。
-  Future<void> putMetaObject(Uint8List ciphertext) async {}
+  Future<void> putMetaObject(
+    Uint8List ciphertext, {
+    String? ifMatch,
+    bool createOnly = false,
+  }) async {}
 
-  /// 读取笔记元数据加密对象；不存在返回 null
-  Future<Uint8List?> getMetaObject() async => null;
+  /// 读取笔记元数据加密对象及其 ETag；远端不存在返回 null
+  ///
+  /// [MetaRemoteObject.etag] 为规范化后的强标识（无 W/ 前缀、无引号）：
+  /// 服务器返回 ETag 时原样规范化；否则退化为内容的 SHA-256（与
+  /// manifest 的 fallback 约定一致），供 [putMetaObject] 的 If-Match 使用。
+  Future<MetaRemoteObject?> getMetaObject() async => null;
 
   /// 释放后端资源（如关闭 HTTP 连接）
   ///
   /// 通常在应用退出或切换后端时调用。可选实现。
   Future<void> close();
+}
+
+/// items.meta 远端读取结果（R4：附带 ETag 供 If-Match 乐观锁）
+class MetaRemoteObject {
+  /// 信封密文（nonce12 ‖ ciphertext ‖ tag16，AES-GCM(dataKey) 整体加密）
+  final Uint8List ciphertext;
+
+  /// 规范化后的版本标识（无弱前缀/引号）；服务器无原生 ETag 时为内容 hash
+  final String etag;
+
+  const MetaRemoteObject({required this.ciphertext, required this.etag});
 }
 
 /// 乐观锁冲突异常

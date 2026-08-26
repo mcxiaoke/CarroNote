@@ -1335,6 +1335,24 @@ class NotesDatabase {
     return rows;
   }
 
+  /// 事务版：删除指定笔记的所有历史版本（供 hardDelete* 在同一事务内调用，R3）
+  ///
+  /// 与 [deleteVersionsForNote] 的区别：接受外部事务执行器，保证「删笔记行 +
+  /// 清版本」原子生效，避免崩溃窗口内留下孤儿版本行。
+  Future<void> _deleteVersionsForNoteInTxn(
+    Transaction txn,
+    String noteUuid,
+  ) async {
+    final rows = await txn.delete(
+      tableNoteVersions,
+      where: '${NoteVersionFields.noteUuid} = ?',
+      whereArgs: [noteUuid],
+    );
+    if (rows > 0) {
+      Log.note.d('清理版本数据（事务内）uuid=$noteUuid count=$rows');
+    }
+  }
+
   /// FIFO 清理：超出 [kMaxVersionsPerNote] 时删除最旧版本
   Future<void> _pruneVersions(String noteUuid) async {
     final db = await instance.database;
@@ -1434,6 +1452,9 @@ class NotesDatabase {
         await _addPurgedUuidInTxn(txn, uuid);
         // 元数据转为墓碑（同一事务）：告知远端"这条已删"，并擦除标签明文
         await _markNoteMetaDeletedInTxn(txn, uuid);
+        // 历史版本随笔记一起清理（同一事务）：否则密文快照 + 明文
+        // content_hash 永久残留磁盘，违背「不可恢复」承诺（发布评审 R3）
+        await _deleteVersionsForNoteInTxn(txn, uuid);
       }
     });
 
@@ -1443,7 +1464,7 @@ class NotesDatabase {
     // 不可恢复的破坏性操作，必须留痕
     Log.note.i(
       '永久删除笔记（不可恢复）uuid=$uuid id=$id rows=$deleted，'
-      '已加入 purged 列表待同步清理',
+      '已加入 purged 列表待同步清理，历史版本已清除',
     );
     return deleted;
   }
@@ -1467,13 +1488,14 @@ class NotesDatabase {
         await _addPurgedUuidInTxn(txn, uuid);
         // 元数据转为墓碑（同一事务），理由同 hardDelete
         await _markNoteMetaDeletedInTxn(txn, uuid);
+        // 版本清理移入事务（R3）：原先在事务提交后单独执行，崩溃窗口内
+        // 会留下孤儿版本行（密文快照 + 明文 content_hash 永久残留）
+        await _deleteVersionsForNoteInTxn(txn, uuid);
       }
     });
     if (deleted > 0) {
       _removeCacheEntry(uuid: uuid); // 笔记被删除：从缓存移除该条目
       _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
-      // 清理该笔记的所有历史版本（磁盘回收）
-      await deleteVersionsForNote(uuid);
       Log.note.i('永久删除笔记（GC 墓碑清理）uuid=$uuid rows=$deleted');
     }
     return deleted;
@@ -1501,6 +1523,16 @@ class NotesDatabase {
         removedIds.add(row[NoteFields.id] as int);
         removedUuids.add(row[NoteFields.uuid] as String);
       }
+      // 历史版本随笔记一起清理（同一事务，R3）：用子查询避免 IN 变量数上限，
+      // 必须在删 notes 行之前执行（子查询依赖 deleted=1 的行还在）
+      await txn.rawDelete(
+        'DELETE FROM $tableNoteVersions '
+        'WHERE ${NoteVersionFields.noteUuid} IN ('
+        '  SELECT ${NoteFields.uuid} FROM $tableNotes '
+        '  WHERE ${NoteFields.deleted} = ?'
+        ')',
+        [1],
+      );
       deleted = await txn.delete(
         tableNotes,
         where: '${NoteFields.deleted} = ?',
@@ -1522,7 +1554,7 @@ class NotesDatabase {
         _removeMetaCacheEntry(uuid); // 元数据已转墓碑：从元数据缓存移除
       }
       // 不可恢复的破坏性操作，必须留痕
-      Log.note.w('批量永久删除笔记（回收站清空，不可恢复）rows=$deleted');
+      Log.note.w('批量永久删除笔记（回收站清空，不可恢复）rows=$deleted，历史版本已清除');
     }
     return deleted;
   }

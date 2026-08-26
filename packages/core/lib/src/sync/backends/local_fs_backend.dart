@@ -412,9 +412,34 @@ class LocalFsBackend implements SyncBackend {
   bool get supportsMetaObjects => true;
 
   /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，这里只落盘）
+  ///
+  /// R4：写入前校验乐观锁——[ifMatch] 与当前内容 hash 不匹配、或
+  /// [createOnly] 但对象已存在时抛 [ConflictException]，由引擎重拉合并重试。
+  /// 校验与落盘非原子（本地文件系统单进程场景竞态窗口极小），语义上仍保证
+  /// 「检测得到他端先写」这一主路径正确。
   @override
-  Future<void> putMetaObject(Uint8List ciphertext) async {
+  Future<void> putMetaObject(
+    Uint8List ciphertext, {
+    String? ifMatch,
+    bool createOnly = false,
+  }) async {
     _ensureInitialized();
+    final file = File(_metaObjectPath);
+    final exists = await file.exists();
+    if (createOnly && exists) {
+      throw ConflictException(
+        'LocalFs: items.meta already exists (createOnly)',
+      );
+    }
+    if (ifMatch != null && ifMatch.isNotEmpty) {
+      final currentEtag = exists ? _computeEtag(await file.readAsBytes()) : '';
+      if (currentEtag != ifMatch) {
+        throw ConflictException(
+          'LocalFs: items.meta etag mismatch '
+          '(expected=$ifMatch, actual=$currentEtag)',
+        );
+      }
+    }
     // 原子写：先 .tmp 再 rename，避免半写文件被当作有效数据。
     // tmp 带微秒时间戳防并发碰撞，与 putBlob 的写法保持一致。
     final tmp = File(
@@ -425,14 +450,15 @@ class LocalFsBackend implements SyncBackend {
   }
 
   @override
-  Future<Uint8List?> getMetaObject() async {
+  Future<MetaRemoteObject?> getMetaObject() async {
     _ensureInitialized();
     final file = File(_metaObjectPath);
     if (!await file.exists()) return null;
     final bytes = await file.readAsBytes();
     // F-M04：大小上限（本地手改/异常膨胀兜底）
     checkRemoteReadSize(bytes, 'LocalFS meta', kRemoteMetaMaxBytes);
-    return bytes;
+    // 内容 SHA-256 作为强 ETag（本后端的统一约定，见类头注释）
+    return MetaRemoteObject(ciphertext: bytes, etag: _computeEtag(bytes));
   }
 
   @override

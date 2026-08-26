@@ -25,11 +25,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common/sqflite.dart';
 
-import 'package:safenotes/src/platform/data_dir_override.dart';
-import 'package:safenotes/src/platform/database_bootstrap.dart';
-import 'package:safenotes/src/platform/platform_io.dart'
-    show Directory, File, Platform;
-
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
@@ -37,6 +32,8 @@ import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/src/platform/data_dir_override.dart';
+import 'package:safenotes/src/platform/database_bootstrap.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/desktop_window.dart';
@@ -44,6 +41,10 @@ import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
+
+import 'package:safenotes/src/platform/platform_io.dart'
+    show Directory, File, Platform;
+
 
 /// 数据目录覆盖（集成测试 / 特殊构建用）。
 ///
@@ -144,6 +145,17 @@ void _installGlobalErrorHandlers() {
 Future<void> _bootstrap() async {
   // 桌面端窗口管理（最小尺寸 + 居中）：必须在 runApp 之前就绪
   await initDesktopWindowManager();
+
+  // R2：桌面端点 X 关窗前先保存未提交草稿并执行退出清理，再销毁窗口。
+  // 不拦截时异步保存与进程退出竞态，编辑中的内容会丢失。
+  desktopWindowCloseHandler = () async {
+    try {
+      await NoteEditorState().handleUngracefulNoteExit();
+    } on Object catch (e, st) {
+      Log.app.w('关窗保存草稿失败（忽略，继续退出）', error: e, stackTrace: st);
+    }
+    await _shutdown();
+  };
 
   // 平台数据库初始化（Native 桌面走 FFI，Web 走 WASM+IndexedDB，移动端走原生插件）
   await initDatabaseForPlatform(dataDirOverride: dataDirOverride);

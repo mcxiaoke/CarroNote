@@ -43,6 +43,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 // Package 导入
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:http/http.dart' as http;
 
 // Project 导入
@@ -771,12 +772,29 @@ class SafeServerBackend implements SyncBackend {
 
   /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，服务端只存字节）
   ///
-  /// 非 2xx 抛异常禁止"假成功"（与 putJournalObject 的 F-H07 修复同理由）；
-  /// 异常由引擎 meta 同步段的外层 catch 兜底，下次同步重试。
+  /// R4：带 If-Match / If-None-Match 乐观锁（v2.2 规范要求资源层返回 ETag）——
+  /// 412 抛 [ConflictException] 由引擎重拉合并重试；其余非 2xx 抛
+  /// [BackendUnavailableException] 禁止"假成功"（F-H07 同理由）。
   @override
-  Future<void> putMetaObject(Uint8List ciphertext) async {
+  Future<void> putMetaObject(
+    Uint8List ciphertext, {
+    String? ifMatch,
+    bool createOnly = false,
+  }) async {
     _ensureInitialized();
-    final res = await _putResource('items.meta', ciphertext);
+    final headers = <String, String>{};
+    if (ifMatch != null && ifMatch.isNotEmpty) {
+      headers['If-Match'] = '"$ifMatch"';
+    } else if (createOnly) {
+      headers['If-None-Match'] = '*';
+    }
+    final res = await _putResource('items.meta', ciphertext, headers: headers);
+    if (res.statusCode == 412) {
+      throw ConflictException(
+        '[SafeServer] items.meta CAS failed: remote changed '
+        '(ifMatch=$ifMatch createOnly=$createOnly)',
+      );
+    }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       // 统一抛 BackendUnavailableException（而非 StateError）：
       // 与网络层异常类型一致，便于引擎按类型分级日志/重试策略
@@ -787,7 +805,7 @@ class SafeServerBackend implements SyncBackend {
   }
 
   @override
-  Future<Uint8List?> getMetaObject() async {
+  Future<MetaRemoteObject?> getMetaObject() async {
     _ensureInitialized();
     try {
       final res = await _getResource('items.meta');
@@ -795,7 +813,11 @@ class SafeServerBackend implements SyncBackend {
       final bytes = res.bodyBytes;
       // F-M04：大小上限，防恶意服务端打爆内存
       checkRemoteReadSize(bytes, 'SafeServer meta', kRemoteMetaMaxBytes);
-      return bytes;
+      // R4：v2.2 要求返回 ETag；防御性兜底用内容 hash（服务器缺失时不至于
+      // 让乐观锁直接失效）
+      var etag = _normalizeEtag(res.headers['etag']);
+      if (etag.isEmpty) etag = sha256.convert(bytes).toString();
+      return MetaRemoteObject(ciphertext: bytes, etag: etag);
     } on Exception catch (e) {
       Log.sync.d('[SafeServer] items.meta 读取失败', error: e);
       return null;
@@ -829,12 +851,22 @@ class SafeServerBackend implements SyncBackend {
   }
 
   /// PUT `/api/v2/resources/<rel>`
-  Future<http.Response> _putResource(String rel, List<int> bytes) async {
+  ///
+  /// [headers] 额外请求头（如 If-Match / If-None-Match，R4 乐观锁用）。
+  Future<http.Response> _putResource(
+    String rel,
+    List<int> bytes, {
+    Map<String, String>? headers,
+  }) async {
     final uri = Uri.parse('$baseUrl$kSafeServerApiPrefix/resources/$rel');
     return _sendHttp(
       'PUT',
       uri,
-      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      headers: {
+        ..._authHeaders(),
+        'Content-Type': 'application/octet-stream',
+        ...?headers,
+      },
       bodyBytes: bytes,
     );
   }
