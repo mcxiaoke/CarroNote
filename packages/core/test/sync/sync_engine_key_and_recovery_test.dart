@@ -41,7 +41,9 @@ SafeNote _makeNote({
 }
 
 /// 具有高级故障注入能力的 FakeBackend
-class AdvFakeBackend with FakeJournalStore implements SyncBackend {
+class AdvFakeBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   Uint8List? manifestCiphertext;
   String etag = '';
   final Map<String, Uint8List> blobs = {};
@@ -644,7 +646,9 @@ void main() {
   });
 }
 
-class _RegetBackend with FakeJournalStore implements SyncBackend {
+class _RegetBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   final Uint8List firstCiphertext;
   final Uint8List secondCiphertext;
   int _getCalls = 0;

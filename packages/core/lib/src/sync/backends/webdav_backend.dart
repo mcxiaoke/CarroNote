@@ -788,6 +788,55 @@ class WebDavBackend implements SyncBackend {
     }
   }
 
+  // ──────────────────────────────────────────────
+  // 笔记元数据远端对象（vault 根目录 items.meta）
+  // ──────────────────────────────────────────────
+
+  @override
+  bool get supportsMetaObjects => true;
+
+  /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，网盘只存字节）
+  ///
+  /// 非 2xx 抛异常禁止"假成功"（与 putJournalObject 的 F-H07 修复同理由）；
+  /// 异常由引擎 meta 同步段的外层 catch 兜底，下次同步重试。
+  @override
+  Future<void> putMetaObject(Uint8List ciphertext) async {
+    _ensureInitialized();
+    final res = await _sendHttp(
+      'PUT',
+      Uri.parse('$baseUrl/items.meta'),
+      headers: {..._authHeaders(), 'Content-Type': 'application/octet-stream'},
+      bodyBytes: ciphertext,
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      // 统一抛 BackendUnavailableException（而非 StateError）：
+      // 与网络层异常类型一致，便于引擎按类型分级日志/重试策略
+      throw BackendUnavailableException(
+        '[WebDAV] items.meta 上传失败: ${res.statusCode}',
+      );
+    }
+  }
+
+  @override
+  Future<Uint8List?> getMetaObject() async {
+    _ensureInitialized();
+    try {
+      final res = await _sendHttp(
+        'GET',
+        Uri.parse('$baseUrl/items.meta'),
+        headers: _authHeaders(),
+      );
+      if (res.statusCode != 200) return null;
+      final bytes = res.bodyBytes;
+      // F-M04：大小上限，防恶意服务端打爆内存
+      checkRemoteReadSize(bytes, 'WebDAV meta', kRemoteMetaMaxBytes);
+      return bytes;
+    } on Exception catch (e) {
+      Log.sync.d('[WebDAV] items.meta 读取失败', error: e);
+      return null;
+    }
+  }
+
   /// P1-1 修复：manifest 代际备份（落地到服务端 `manifest-backup/` 子目录环形备份）
   ///
   /// 与 localFs / safeServer 后端一致：在"服务端"（用户网盘）的 `manifest-backup/`

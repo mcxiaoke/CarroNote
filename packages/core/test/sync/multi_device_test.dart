@@ -41,7 +41,9 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'sync_test_support.dart';
 
 /// 测试用 FakeBackend（内存实现，跨设备切换时持久化远端数据）
-class FakeBackend with FakeJournalStore implements SyncBackend {
+class FakeBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};

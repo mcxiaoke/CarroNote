@@ -182,3 +182,26 @@ mixin FakeJournalStore {
   Future<List<String>> listJournalObjects() async =>
       journalObjects.keys.toList()..sort();
 }
+
+/// 给 `implements SyncBackend` 的测试替身补齐 note_meta 三件套
+///
+/// 与 [FakeJournalStore] 同模式：存储是真实内存对象，测试可直接读写
+/// [metaObject] 断言远端 items.meta 内容，或手动塞入模拟「他端上传过」。
+///
+/// [supportsMeta] 置 false 可模拟不支持 meta 对象的后端
+/// （getMetaObject 恒 null、putMetaObject 抛错），验证引擎整段跳过。
+mixin FakeNoteMetaStore {
+  bool supportsMeta = true;
+  Uint8List? metaObject;
+
+  bool get supportsMetaObjects => supportsMeta;
+
+  Future<void> putMetaObject(Uint8List ciphertext) async {
+    if (!supportsMeta) {
+      throw StateError('backend does not support meta objects');
+    }
+    metaObject = ciphertext;
+  }
+
+  Future<Uint8List?> getMetaObject() async => supportsMeta ? metaObject : null;
+}

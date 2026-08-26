@@ -744,6 +744,46 @@ class SafeServerBackend implements SyncBackend {
     }
   }
 
+  // ──────────────────────────────────────────────
+  // 笔记元数据远端对象（v2.2 资源层根 items.meta）
+  // ──────────────────────────────────────────────
+
+  @override
+  bool get supportsMetaObjects => true;
+
+  /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，服务端只存字节）
+  ///
+  /// 非 2xx 抛异常禁止"假成功"（与 putJournalObject 的 F-H07 修复同理由）；
+  /// 异常由引擎 meta 同步段的外层 catch 兜底，下次同步重试。
+  @override
+  Future<void> putMetaObject(Uint8List ciphertext) async {
+    _ensureInitialized();
+    final res = await _putResource('items.meta', ciphertext);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      // 统一抛 BackendUnavailableException（而非 StateError）：
+      // 与网络层异常类型一致，便于引擎按类型分级日志/重试策略
+      throw BackendUnavailableException(
+        '[SafeServer] items.meta 上传失败: ${res.statusCode}',
+      );
+    }
+  }
+
+  @override
+  Future<Uint8List?> getMetaObject() async {
+    _ensureInitialized();
+    try {
+      final res = await _getResource('items.meta');
+      if (res.statusCode != 200) return null;
+      final bytes = res.bodyBytes;
+      // F-M04：大小上限，防恶意服务端打爆内存
+      checkRemoteReadSize(bytes, 'SafeServer meta', kRemoteMetaMaxBytes);
+      return bytes;
+    } on Exception catch (e) {
+      Log.sync.d('[SafeServer] items.meta 读取失败', error: e);
+      return null;
+    }
+  }
+
   /// POST `/api/v2/resources/<rel>` 扩展操作（move / mkdir / copy / propfind / stats）
   Future<http.Response> _postResource(
     String rel,

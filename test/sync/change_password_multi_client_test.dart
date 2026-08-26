@@ -89,7 +89,9 @@ class _FakePathProvider extends PathProviderPlatform {
 // ──────────────────────────────────────────────
 // 测试用 FakeBackend（内存实现，模拟远端）
 // ──────────────────────────────────────────────
-class FakeBackend with FakeJournalStore implements SyncBackend {
+class FakeBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};

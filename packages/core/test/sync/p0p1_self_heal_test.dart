@@ -39,7 +39,9 @@ import 'sync_test_support.dart';
 // ──────────────────────────────────────────────
 // 测试用 FakeBackend（内存实现，支持 P1-2 隔离区与 P1-1 备份记录）
 // ──────────────────────────────────────────────
-class FakeBackend with FakeJournalStore implements SyncBackend {
+class FakeBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   Uint8List? _manifestCiphertext;
   String _etag = '';
   final Map<String, Uint8List> _blobs = {};

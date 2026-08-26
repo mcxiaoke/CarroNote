@@ -402,6 +402,39 @@ class LocalFsBackend implements SyncBackend {
     return result;
   }
 
+  // ──────────────────────────────────────────────
+  // 笔记元数据远端对象（keyring 根目录 items.meta）
+  // ──────────────────────────────────────────────
+
+  String get _metaObjectPath => p.join(rootPath, 'items.meta');
+
+  @override
+  bool get supportsMetaObjects => true;
+
+  /// 写入 items.meta（内容已由引擎用 AES-GCM(dataKey) 加密，这里只落盘）
+  @override
+  Future<void> putMetaObject(Uint8List ciphertext) async {
+    _ensureInitialized();
+    // 原子写：先 .tmp 再 rename，避免半写文件被当作有效数据。
+    // tmp 带微秒时间戳防并发碰撞，与 putBlob 的写法保持一致。
+    final tmp = File(
+      '$_metaObjectPath.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    await tmp.writeAsBytes(ciphertext, flush: true);
+    await tmp.rename(_metaObjectPath);
+  }
+
+  @override
+  Future<Uint8List?> getMetaObject() async {
+    _ensureInitialized();
+    final file = File(_metaObjectPath);
+    if (!await file.exists()) return null;
+    final bytes = await file.readAsBytes();
+    // F-M04：大小上限（本地手改/异常膨胀兜底）
+    checkRemoteReadSize(bytes, 'LocalFS meta', kRemoteMetaMaxBytes);
+    return bytes;
+  }
+
   @override
   Future<void> close() async {
     // LocalFS 无需释放资源（文件句柄在每次操作后自动关闭）

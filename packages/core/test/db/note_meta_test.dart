@@ -106,6 +106,21 @@ SafeNote _makeNote({required String uuid}) {
   );
 }
 
+/// 构造指定 updatedAt 的元数据（同步配套测试用，LWW 锚点需可控）
+NoteMeta _metaAt(
+  String uuid, {
+  bool pinned = false,
+  bool archived = false,
+  int? updatedAt,
+  List<String> tags = const [],
+}) => NoteMeta(
+  uuid: uuid,
+  pinned: pinned,
+  archived: archived,
+  updatedAt: updatedAt ?? DateTime.now().millisecondsSinceEpoch,
+  tags: tags,
+);
+
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -482,6 +497,184 @@ void main() {
 
       final meta = await database.getNoteMeta(uuid);
       expect(meta!.tags, ['rotation-secret']);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // F. 同步配套（items.meta + per-note LWW，docs/note-meta-sync-plan.md C 组）
+  // ──────────────────────────────────────────────
+  group('note_meta 同步配套', () {
+    setUp(() async {
+      final db = await openDatabase(
+        ':memory:',
+        version: 2,
+        onCreate: NotesDatabase.createDBForTesting,
+      );
+      NotesDatabase.setDatabaseForTesting(db);
+      database = NotesDatabase.instance;
+      database.setDataKey(SyncCrypto.generateDataKey());
+    });
+
+    tearDown(() async {
+      await database.close();
+    });
+
+    test(
+      'readAllNoteMetaIncludingTombstones 含墓碑行，readAllNoteMeta 不含',
+      () async {
+        const alive = 'alive-1';
+        const gone = 'gone-1';
+        await database.setNotePinned(alive, true);
+        // 直接写墓碑行（模拟 hardDelete 的产物）
+        await (await NotesDatabase.instance.database).insert(tableNoteMeta, {
+          NoteMetaFields.uuid: gone,
+          NoteMetaFields.deleted: 1,
+          NoteMetaFields.payload: null,
+          NoteMetaFields.updatedAt: DateTime.now().millisecondsSinceEpoch,
+          NoteMetaFields.synced: 0,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        final withTomb = await database.readAllNoteMetaIncludingTombstones();
+        expect(withTomb[alive]?.pinned, isTrue);
+        expect(withTomb[gone]?.deleted, isTrue);
+
+        final activeOnly = await database.readAllNoteMeta();
+        expect(activeOnly.containsKey(gone), isFalse);
+        expect(activeOnly[alive]?.pinned, isTrue);
+      },
+    );
+
+    test('mergeRemoteNoteMetas：远端胜出写入且 synced=1；本地新/相等跳过', () async {
+      const uuid = 'lww-1';
+      // 本地已有较新条目
+      final localNew = await database.upsertNoteMeta(
+        _metaAt(uuid, pinned: true, updatedAt: 2000),
+      );
+      expect(localNew.synced, isFalse);
+
+      var applied = await database.mergeRemoteNoteMetas([
+        _metaAt(uuid, pinned: false, updatedAt: 1000), // 更旧 → 跳过
+        _metaAt('fresh-1', archived: true, updatedAt: 3000), // 缺失 → 插入
+      ]);
+      expect(applied, 1);
+
+      // 相等时间戳 → 跳过（保留本地）
+      applied = await database.mergeRemoteNoteMetas([
+        _metaAt(uuid, pinned: true, updatedAt: 2000),
+      ]);
+      expect(applied, 0);
+
+      // 远端更新 → 覆盖
+      applied = await database.mergeRemoteNoteMetas([
+        _metaAt(uuid, pinned: false, tags: ['from-remote'], updatedAt: 5000),
+      ]);
+      expect(applied, 1);
+
+      final merged = await database.getNoteMeta(uuid);
+      expect(merged!.pinned, isFalse);
+      expect(merged.tags, ['from-remote']);
+      expect(merged.synced, isTrue, reason: '远端胜出写入应视为已对齐');
+      expect(merged.updatedAt, 5000);
+
+      final fresh = await database.getNoteMeta('fresh-1');
+      expect(fresh!.archived, isTrue);
+      expect(fresh.synced, isTrue);
+    });
+
+    test('mergeRemoteNoteMetas：墓碑应用擦 payload 且 UI 视角不可见', () async {
+      const uuid = 'tomb-merge-1';
+      await database.setNoteTags(uuid, ['sensitive-tag']);
+
+      await database.mergeRemoteNoteMetas([
+        NoteMeta(
+          uuid: uuid,
+          deleted: true,
+          updatedAt: DateTime.now().millisecondsSinceEpoch + 10000,
+        ),
+      ]);
+
+      // 行保留为墓碑、payload 擦除
+      final rows = await (await NotesDatabase.instance.database).query(
+        tableNoteMeta,
+        where: '${NoteMetaFields.uuid} = ?',
+        whereArgs: [uuid],
+      );
+      expect(rows.length, 1);
+      expect(rows.first[NoteMetaFields.deleted], 1);
+      expect(rows.first[NoteMetaFields.payload], isNull);
+      expect(rows.first[NoteMetaFields.synced], 1);
+
+      // UI 读路径（readAllNoteMeta / getNoteMeta）不可见
+      expect(await database.getNoteMeta(uuid), isNull);
+      expect((await database.readAllNoteMeta()).containsKey(uuid), isFalse);
+    });
+
+    test('markNoteMetasSynced 条件保护：上传期间再改动不误标 synced', () async {
+      const uuid = 'cond-1';
+      final written = await database.setNoteTags(uuid, ['v1']);
+      // 模拟「快照后用户又改」：updatedAt 前进
+      await database.setNoteTags(uuid, ['v2']);
+
+      // M-1 回归锚点：先建立 _metaCache，让后续读走缓存命中路径——
+      // 修复前 markNoteMetasSynced 只写 DB 不刷缓存，此断言会读到脏缓存
+      await database.readAllNoteMeta();
+
+      // 用旧快照标记 → 不应命中 v2 行
+      await database.markNoteMetasSynced([written]);
+      final meta = await database.getNoteMeta(uuid);
+      expect(meta!.synced, isFalse, reason: '改动晚于快照，必须保持脏标记');
+      expect(
+        (await database.readAllNoteMeta())[uuid]!.synced,
+        isFalse,
+        reason: '缓存层同样不得误标',
+      );
+
+      // 用最新快照标记 → DB 与缓存都命中
+      await database.markNoteMetasSynced([meta]);
+      expect((await database.getNoteMeta(uuid))!.synced, isTrue);
+      expect(
+        (await database.readAllNoteMeta())[uuid]!.synced,
+        isTrue,
+        reason: 'markNoteMetasSynced 必须同步刷新 _metaCache（M-1）',
+      );
+    });
+
+    test('purgeReportedNoteMetaTombstones 只删已上报墓碑', () async {
+      Future<void> insertRow(String uuid, {required bool deleted}) async {
+        await (await NotesDatabase.instance.database).insert(tableNoteMeta, {
+          NoteMetaFields.uuid: uuid,
+          NoteMetaFields.deleted: deleted ? 1 : 0,
+          NoteMetaFields.payload: null,
+          NoteMetaFields.updatedAt: DateTime.now().millisecondsSinceEpoch,
+          NoteMetaFields.synced: 0,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      // 未上报墓碑（synced=0）：GC 必须保留
+      await insertRow('tomb-pending', deleted: true);
+      // 已上报墓碑（synced=1）：GC 目标
+      await (await NotesDatabase.instance.database).insert(tableNoteMeta, {
+        NoteMetaFields.uuid: 'tomb-reported',
+        NoteMetaFields.deleted: 1,
+        NoteMetaFields.payload: null,
+        NoteMetaFields.updatedAt: DateTime.now().millisecondsSinceEpoch,
+        NoteMetaFields.synced: 1,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      // 活跃已同步行：绝不能删
+      await insertRow('alive', deleted: false);
+      await database.markNoteMetasSynced([
+        await database.readAllNoteMetaIncludingTombstones().then(
+          (m) => m['alive']!,
+        ),
+      ]);
+
+      final purged = await database.purgeReportedNoteMetaTombstones();
+      expect(purged, 1);
+
+      final all = await database.readAllNoteMetaIncludingTombstones();
+      expect(all.containsKey('tomb-pending'), isTrue);
+      expect(all.containsKey('alive'), isTrue);
+      expect(all.containsKey('tomb-reported'), isFalse);
     });
   });
 

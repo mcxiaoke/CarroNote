@@ -47,7 +47,9 @@ import 'sync_test_support.dart';
 ///
 /// 与 sync_engine_test.dart 里的 FakeBackend 不同点：[blobs] 公开可读，
 /// 测试要直接检查「远端到底以什么键存了什么字节」。
-class _AddressingBackend with FakeJournalStore implements SyncBackend {
+class _AddressingBackend
+    with FakeJournalStore, FakeNoteMetaStore
+    implements SyncBackend {
   /// 远端 blob 存储：键即 blob id，值即 GCM 信封
   final Map<String, Uint8List> blobs = {};
 

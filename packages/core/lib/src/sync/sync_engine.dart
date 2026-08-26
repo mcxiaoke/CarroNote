@@ -51,9 +51,11 @@ import 'dart:typed_data';
 
 // Project 导入
 import 'package:core/src/db/database_handler.dart';
+import 'package:core/src/models/note_meta.dart';
 import 'package:core/src/models/safenote.dart';
 import 'package:core/src/crypto/crypto.dart';
 import 'package:core/src/sync/journal.dart';
+import 'package:core/src/sync/note_meta_sync.dart';
 import 'package:core/src/sync/sync_backend.dart';
 import 'package:core/src/sync/sync_error.dart';
 import 'package:core/src/logger/app_logger.dart';
@@ -182,6 +184,152 @@ class SyncEngine {
     }
   }
 
+  // ──────────────────────────────────────────────
+  // 笔记元数据同步（items.meta + per-note LWW，docs/note-meta-sync-plan.md）
+  // ──────────────────────────────────────────────
+
+  /// 笔记元数据同步段（items.meta），由 [sync] 在主链路成功后调用一次。
+  ///
+  /// 契约（对齐 [_uploadJournal]）：**永不抛异常、永不阻断同步主链路**。
+  /// 元数据是次要数据，meta 段失败只记日志与 journal 留痕，下次同步重试。
+  ///
+  /// 流程（Q1a/Q3a 定案见 docs/note-meta-sync-plan.md §5）：
+  ///   1. GET items.meta → 解密 → 解析：
+  ///      - 后端不支持（supportsMetaObjects=false）→ 整段跳过；
+  ///      - 解密失败（dataKey 迁移残留 / 文件损坏）→ 自愈：忽略远端内容，
+  ///        journal 留痕，下方用本地全量覆盖上传（能走到这里说明 manifest
+  ///        主链路刚成功、本端 dataKey 与远端一致，故覆盖恒正确）；
+  ///      - wire 版本高于本端 → 整体跳过本轮（不下也不上，防降级覆盖）。
+  ///   2. per-note LWW 合并入本地（远端胜出才写；synced=1 表「刚与远端
+  ///      对齐」，不产生新脏数据）。
+  ///   3. 本地有 synced=0 脏行或处于自愈场景 → 序列化全量（含待上报墓碑）
+  ///      → 上传 → 条件置 synced → 墓碑 GC；无脏行且非自愈不上传空文件。
+  Future<void> _syncNoteMeta() async {
+    if (!backend.supportsMetaObjects) return;
+    var forceUpload = false; // 自愈场景：即使无脏行也上传（覆盖坏文件）
+    try {
+      // ── 1. 下载与解析 ──
+      Map<String, NoteMeta>? remote;
+      var skipRound = false;
+      final ciphertext = await backend.getMetaObject();
+      if (ciphertext != null && ciphertext.isNotEmpty) {
+        Uint8List? plaintext;
+        var failureNote = '';
+        try {
+          plaintext = await NoteMetaSyncCodec.open(_dataKey, ciphertext);
+        } on SyncDecryptionException catch (e) {
+          failureNote = 'decrypt failed (${ciphertext.length} bytes)';
+          Log.sync.w('items.meta 解密失败，走自愈重建', error: e);
+        }
+        NoteMetaRemoteFile? parsed;
+        if (plaintext != null) {
+          parsed = NoteMetaSyncCodec.decode(plaintext);
+          if (parsed == null) {
+            failureNote = 'malformed wire json';
+            Log.sync.w('items.meta 结构损坏，走自愈重建');
+          } else if (parsed.version > kNoteMetaWireVersion) {
+            Log.sync.w(
+              'items.meta 为更新格式 (v${parsed.version})，跳过本轮 meta 同步'
+              '（防降级覆盖，请升级客户端）',
+            );
+            skipRound = true;
+          }
+        }
+        if (failureNote.isNotEmpty) {
+          journal.append(
+            type: JournalEventType.syncNoteMeta,
+            phase: JournalPhase.failed,
+            dataKeyEpoch: keyring.dataKeyEpoch,
+            note: '$failureNote, self-heal by local snapshot',
+          );
+          forceUpload = true;
+        } else if (!skipRound) {
+          remote = parsed?.metas ?? const {};
+        }
+      }
+      if (skipRound) {
+        journal.append(
+          type: JournalEventType.syncNoteMeta,
+          phase: JournalPhase.done,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note: 'future wire version, skipped',
+        );
+        return;
+      }
+
+      // ── 2. per-note LWW 合并 ──
+      var applied = 0;
+      if (remote != null && remote.isNotEmpty) {
+        applied = await database.mergeRemoteNoteMetas(remote.values.toList());
+      }
+
+      // ── 3. 上传（有脏行或自愈才传）──
+      final all = await database.readAllNoteMetaIncludingTombstones();
+      final hasDirty = all.values.any((m) => !m.synced);
+      if (!hasDirty && !forceUpload) {
+        journal.append(
+          type: JournalEventType.syncNoteMeta,
+          phase: JournalPhase.done,
+          dataKeyEpoch: keyring.dataKeyEpoch,
+          note: 'merged=$applied uploaded=0(clean)',
+        );
+        return;
+      }
+      final sealed = await NoteMetaSyncCodec.seal(
+        _dataKey,
+        NoteMetaSyncCodec.encode(all),
+      );
+      await backend.putMetaObject(sealed);
+      await database.markNoteMetasSynced(all.values);
+      final gc = await database.purgeReportedNoteMetaTombstones();
+      Log.sync.i(
+        'note_meta 同步完成: merged=$applied '
+        'uploaded=${all.length} tombstoneGc=$gc',
+      );
+      journal.append(
+        type: JournalEventType.syncNoteMeta,
+        phase: JournalPhase.done,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note: 'merged=$applied uploaded=${all.length} tombstoneGc=$gc',
+      );
+    } on Exception catch (e, st) {
+      Log.sync.w('note_meta 同步失败（不影响同步结果）', error: e, stackTrace: st);
+      journal.append(
+        type: JournalEventType.syncNoteMeta,
+        phase: JournalPhase.failed,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note: 'sync failed: $e',
+      );
+    } on Error catch (e, st) {
+      Log.sync.w('note_meta 同步异常（不影响同步结果）', error: e, stackTrace: st);
+      journal.append(
+        type: JournalEventType.syncNoteMeta,
+        phase: JournalPhase.failed,
+        dataKeyEpoch: keyring.dataKeyEpoch,
+        note: 'sync error: $e',
+      );
+    }
+  }
+
+  /// dataKey 迁移完成后用**新** dataKey 重封重传 items.meta 全量快照（Q2a）。
+  ///
+  /// 保住「迁移后一切远端对象都用新 key」不变式，避免迁移窗口期他端 meta 段
+  /// 解密失败。失败不阻断迁移流程（[_syncNoteMeta] 的自愈路径兜底）。
+  Future<void> _uploadNoteMetaSnapshot(String reason) async {
+    if (!backend.supportsMetaObjects) return;
+    try {
+      final all = await database.readAllNoteMetaIncludingTombstones();
+      final sealed = await NoteMetaSyncCodec.seal(
+        _dataKey,
+        NoteMetaSyncCodec.encode(all),
+      );
+      await backend.putMetaObject(sealed);
+      Log.sync.i('note_meta 快照已重传 (reason=$reason, entries=${all.length})');
+    } on Object catch (e, st) {
+      Log.sync.w('note_meta 快照重传失败（下次同步自愈兜底）', error: e, stackTrace: st);
+    }
+  }
+
   /// P3-a：blob 操作重试退避（网络抖动鲁棒性）
   ///
   /// 对 backend.putBlob / getBlob 调用做指数退避重试。仅对
@@ -272,6 +420,7 @@ class SyncEngine {
           'deleted=${result.deleted}, conflicts=${result.conflicts}, '
           'skipped=${result.skipped}, migrated=$totalMigrated)',
         );
+
         // 迁移后需要重新同步一次（用新 dataKey），但 _syncOnce 已处理
         return result.copyWith(migrated: totalMigrated);
       } on ConflictException catch (e, st) {
@@ -492,6 +641,12 @@ class SyncEngine {
     );
     // 重建路径也要把 journal 推到远端——这正是「manifest 丢了还能取真」
     // 的那份第二数据源
+    //
+    // L-2 修复：恢复轮同样执行 meta 段——重建可能发生在 dataKey 迁移窗口，
+    // items.meta 或为旧 key 残留，等下一轮才自愈会拉长解密失败窗口；
+    // 且恢复轮本身可能有未上报的 meta 脏行。与常规轮同序：meta 在前、
+    // journal 副本收尾（meta 留痕随本轮上传）。
+    await _syncNoteMeta();
     await _uploadJournal();
     return SyncResult.success(
       uploaded: _countActions(actions, SyncActionType.upload),
@@ -879,6 +1034,16 @@ class SyncEngine {
             'version=${merged.header.version}',
       );
 
+      // 笔记元数据同步段：skip-PUT 路径同样执行（meta 独立于 manifest 是否
+      // PUT；自身永不抛异常，见 _syncNoteMeta 文档）。
+      //
+      // L-1 修复：补推 journal 远端副本。skip-PUT 轮次刚追加了 syncRound done
+      // 与可能的 sync.noteMeta 条目，若不推送会延后一轮才入副本，拉宽
+      // 「本地有、副本无」的缺口窗口（chaos「远端副本完整覆盖本地」不变式）。
+      // syncToRemote 有水位控制：无新条目时 no-op，重复调用无害。
+      await _syncNoteMeta();
+      await _uploadJournal();
+
       return SyncResult.success(
         uploaded: 0,
         downloaded: 0,
@@ -954,6 +1119,11 @@ class SyncEngine {
     // P2 journal §3.3-4 / §3.6c：同步成功后把本地 journal 的加密副本推到远端。
     // 这是 journal「第二数据源」角色的落地点：本机沙盒被清、manifest 损坏时，
     // 仍能从远端 journal 还原出 keyState 与操作序列。失败不阻断同步。
+    //
+    // 注意顺序：_syncNoteMeta 的 journal 留痕必须发生在 _uploadJournal **之前**，
+    // 否则 meta 条目会晚一轮才进远端副本，造成「本地有、副本无」的缺口
+    // （chaos 测试「远端副本应完整覆盖本地 journal」锁定的不变式）。
+    await _syncNoteMeta();
     await _uploadJournal();
 
     // 统计结果
@@ -1316,6 +1486,10 @@ class SyncEngine {
       note: 'migrate to remote dataKey done',
     );
 
+    // Q2a：dataKey 已变更，用新 key 重封重传 items.meta，
+    // 保住「迁移后一切远端对象都用新 key」不变式（失败不阻断迁移）。
+    await _uploadNoteMetaSnapshot('post-migration');
+
     // 读取迁移的笔记数量（用于结果统计）
     final notes = await database.readAllNotesIncludingDeleted();
     // P3-log：迁移出口（携带新纪元与笔记数，便于审计）
@@ -1398,6 +1572,10 @@ class SyncEngine {
       keyState: _keyStateSnapshot,
       note: 'scenario-d migrate done',
     );
+
+    // Q2a：dataKey 已变更，用新 key 重封重传 items.meta
+    // （与 _executeMigration 尾部同理由；失败不阻断迁移）。
+    await _uploadNoteMetaSnapshot('post-migration-vault');
 
     // 读取迁移的笔记数量（用于结果统计）
     final notes = await database.readAllNotesIncludingDeleted();

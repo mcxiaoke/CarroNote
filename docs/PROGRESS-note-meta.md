@@ -76,19 +76,31 @@
 
 ## 阶段 3：侧栏与标签
 
-- [ ] 3.1 `home_navigation_rail.dart`（桌面）加「仅看星标」+「按标签」
-- [ ] 3.2 `drawer.dart`（移动）同步加（**易漏，必须两端**）
-- [ ] 3.3 标签选择弹窗
-- [ ] 3.4 `editor_state.dart` tags 编辑
-- [ ] 3.5 偏好持久化过滤态
+> 回填说明（2026-08-26）：阶段 3 实际由 `progress-note-lock-tags-task.md`
+> 记录的任务完成（含 FilterChip 标签弹层、Drawer/Rail 星标+标签组、
+> 过滤态 Chip 指示、managedTags 偏好池，并顺带交付 locked 列 schema v6），
+> 此处补勾选。
+
+- [x] 3.1 `home_navigation_rail.dart`（桌面）加「仅看星标」+「按标签」
+- [x] 3.2 `drawer.dart`（移动）同步加（**易漏，必须两端**）
+- [x] 3.3 标签选择弹窗（`tag_editor.dart` FilterChip + 全局标签管理）
+- [x] 3.4 `editor_state.dart`/编辑页 tags 编辑
+- [x] 3.5 偏好持久化过滤态（`PreferencesStorage.managedTags`）
 
 ## 阶段 4：items.meta 同步
 
-- [ ] 4.1 `sync_backend.dart` 加 `putMetaObject`/`getMetaObject`（默认空实现）
-- [ ] 4.2 三套后端实现（SafeServer / LocalFS / WebDAV）
-- [ ] 4.3 新增 `note_meta_sync.dart`（AES-GCM + per-note LWW 合并）
-- [ ] 4.4 `sync_engine.dart` 集成（manifest 阶段后，容错不阻断）
-- [ ] 4.5 同步测试
+> 实施记录见 `docs/note-meta-sync-plan.md` §7 与 `docs/CHANGES-20260826.md`。
+
+- [x] 4.1 `sync_backend.dart` 加 `putMetaObject`/`getMetaObject` +
+      `supportsMetaObjects` 能力标志 + `kRemoteMetaMaxBytes`
+- [x] 4.2 三套后端实现（SafeServer / LocalFS / WebDAV，服务端零改动）
+- [x] 4.3 新增 `note_meta_sync.dart`（AES-GCM 独立 AAD 域 + wire 编解码 +
+      per-note LWW 判定；wire 不含 locked）
+- [x] 4.4 `sync_engine.dart` 集成（PUT 路径置于 `_uploadJournal()` 前、
+      skip-PUT 路径同样执行；Q1a 解密失败自愈；Q2a 迁移尾部重封重传；
+      journal 事件 `sync.noteMeta`）
+- [x] 4.5 同步测试（codec 20 项 + DB 配套 5 项 + 引擎 7 项；
+      core 全量 483 通过 + 1 skip；flutter test 241 全过；build windows 成功）
 
 ## 阶段 5（独立任务，暂不做）
 
@@ -138,6 +150,9 @@
 
 ## 变更记录
 
+- **2026-08-26 12:58** 阶段 4（items.meta 同步）完成：后端三实现 + note_meta_sync
+  模块 + 引擎集成 + 测试（core 483+1skip / flutter test 241 / build 绿）。
+  回填阶段 3 勾选。详见 `note-meta-sync-plan.md` §7 / `CHANGES-20260826.md`。
 - **2026-08-19 09:04** 创建进度文件，任务分解完成，开始阶段 1。
 - **2026-08-19 09:20** 完成 1.1–1.5：`NoteMeta` 模型 + core.dart 导出 +
   note_meta 建表（单一副本接入三处）+ schema v4→v5 + 升级分支。

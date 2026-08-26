@@ -148,6 +148,14 @@ enum JournalEventType {
   /// 诊断「频繁冲突重试」类问题（多设备高并发写入竞争）。
   syncOptimisticLockRetry('sync.optimisticLockRetry'),
 
+  /// 笔记元数据同步轮次（items.meta，per-note LWW）
+  ///
+  /// 记录 meta 同步段的结果：phase=done 成功（note 携带 merged/uploaded/
+  /// tombstoneGc 统计）/ failed 失败（解密失败自愈、上传失败等，均不影响
+  /// 主同步结果）。元数据是次要数据，此事件只用于诊断「星标/标签为何没
+  /// 同步过去」类问题。
+  syncNoteMeta('sync.noteMeta'),
+
   /// 同步轮次边界（start/done）
   ///
   /// 记录每次 _syncOnce 的开始和结束。start 携带 attempt + 远端 manifest

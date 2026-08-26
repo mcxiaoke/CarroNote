@@ -26,6 +26,7 @@ export 'src/sync/backends/safe_server_backend.dart';
 export 'src/sync/backends/webdav_backend.dart';
 export 'src/sync/journal.dart';
 export 'src/sync/keyring.dart';
+export 'src/sync/note_meta_sync.dart';
 export 'src/sync/sync_backend.dart';
 export 'src/sync/sync_engine.dart';
 export 'src/sync/sync_error.dart';

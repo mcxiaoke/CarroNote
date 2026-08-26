@@ -225,6 +225,34 @@ abstract class SyncBackend {
   /// 返回空列表表示后端不支持枚举，恢复流程将跳过"远端第二数据源"。
   Future<List<String>> listJournalObjects() async => [];
 
+  // ──────────────────────────────────────────────
+  // 笔记元数据远端对象（items.meta，per-note LWW 合并）
+  // ──────────────────────────────────────────────
+
+  /// 是否支持笔记元数据远端对象（items.meta）
+  ///
+  /// 能力探测标志：SyncEngine 据此决定是否执行 meta 同步段。
+  /// 为什么不用「getMetaObject 返回 null」探测：null 与「远端暂无文件」
+  /// 是同一返回值，无法区分「不支持」和「不存在」——若不区分，不支持的
+  /// 后端会把本地脏行误标 synced=1（putMetaObject 默认空实现是 no-op，
+  /// 实际什么都没传），这些元数据将永远不会被同步出去。
+  ///
+  /// 默认 false（向后兼容）；三个内置后端均覆写为 true。
+  bool get supportsMetaObjects => false;
+
+  /// 写入笔记元数据加密对象（items.meta，单文件整体覆盖上传）
+  ///
+  /// [ciphertext] 已由调用方用 `AES-GCM(dataKey)` 整体加密的密文——
+  /// 后端不解析、不解密，远端永不落明文。合并语义由调用方负责：
+  /// 下载时逐条 per-note LWW（见 `note_meta_sync.dart`），
+  /// 文件级并发为 last-writer-wins，靠下一轮下载合并收敛。
+  ///
+  /// 默认空实现（no-op）：后端不支持时 meta 同步静默跳过，不影响主流程。
+  Future<void> putMetaObject(Uint8List ciphertext) async {}
+
+  /// 读取笔记元数据加密对象；不存在返回 null
+  Future<Uint8List?> getMetaObject() async => null;
+
   /// 释放后端资源（如关闭 HTTP 连接）
   ///
   /// 通常在应用退出或切换后端时调用。可选实现。
@@ -271,13 +299,15 @@ class BackendNotInitializedException implements Exception {
 /// manifest 代际备份环形份数（三个后端保持一致）
 const int kManifestBackupRingCount = 5;
 
-/// 远端 manifest / journal 密文的读取大小上限（F-M04）
+/// 远端 manifest / journal / note meta 密文的读取大小上限（F-M04）
 ///
 /// 防止恶意/损坏的服务端返回超大响应体打爆客户端内存。manifest 是全市笔记
 /// 元数据，正常远小于该值（万条笔记约几 MB）；journal 单文件受滚动阈值
-/// （100KB×3 份）约束。超限时视为「远端数据不合法」，抛异常中止本次读取。
+/// （100KB×3 份）约束；items.meta 每条约 100-200 字节 JSON，万条笔记约 2MB。
+/// 超限时视为「远端数据不合法」，抛异常中止本次读取。
 const int kRemoteManifestMaxBytes = 64 * 1024 * 1024; // 64 MB
 const int kRemoteJournalMaxBytes = 64 * 1024 * 1024; // 64 MB
+const int kRemoteMetaMaxBytes = 16 * 1024 * 1024; // 16 MB
 const int kRemoteBlobMaxBytes = 100 * 1024 * 1024; // 100 MB
 
 /// F-M04：校验远端响应体大小，超限抛 [BackendUnavailableException]

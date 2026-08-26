@@ -2363,6 +2363,135 @@ class NotesDatabase {
     return sorted;
   }
 
+  // ──────────────────────────────────────────────
+  // note_meta 同步配套（items.meta + per-note LWW，
+  // 设计 docs/note-meta-sync-plan.md；只服务同步层，UI 勿用）
+  // ──────────────────────────────────────────────
+
+  /// 含墓碑的全量读（供 items.meta 序列化上传与合并的本地基准）。
+  ///
+  /// 与 [readAllNoteMeta] 的区别：不过滤 `deleted=1`——待上报墓碑
+  /// （deleted=1 AND synced=0）必须随全量上传告知他端「此笔记已删」。
+  Future<Map<String, NoteMeta>> readAllNoteMetaIncludingTombstones() async {
+    final db = await instance.database;
+    final rows = await db.query(tableNoteMeta);
+    final map = <String, NoteMeta>{};
+    for (final row in rows) {
+      final meta = await _decodeMetaRow(row);
+      if (meta != null) map[meta.uuid] = meta;
+    }
+    return map;
+  }
+
+  /// per-note LWW 合并远端条目到本地，返回实际应用的条数。
+  ///
+  /// 判定：本地无行或远端 `updated_at` 更大 → 远端胜出写入；
+  /// 本地较新或相等 → 跳过（相等保留本地，减少抖动）。见
+  /// `NoteMetaSyncCodec.remoteWins`。
+  ///
+  /// 写入语义：
+  ///   - 普通条目：upsert 且 `synced=1`（刚与远端对齐，非本端脏数据）；
+  ///   - 墓碑条目：payload 置 NULL（顺带彻底擦除标签明文）+ 从 [_metaCache]
+  ///     移除，对齐 [_markNoteMetaDeletedInTxn] 的擦除语义。
+  ///
+  /// 单事务批量执行；缓存更新在事务成功后逐条进行（事务回滚则不动缓存）。
+  Future<int> mergeRemoteNoteMetas(List<NoteMeta> remoteEntries) async {
+    final db = await instance.database;
+    final applied = <NoteMeta>[];
+    await db.transaction((txn) async {
+      for (final remote in remoteEntries) {
+        final rows = await txn.query(
+          tableNoteMeta,
+          where: '${NoteMetaFields.uuid} = ?',
+          whereArgs: [remote.uuid],
+        );
+        if (rows.isNotEmpty) {
+          // LWW 只比 updated_at，无需解密 payload
+          final localUpdatedAt =
+              (rows.first[NoteMetaFields.updatedAt] as int?) ?? 0;
+          if (remote.updatedAt <= localUpdatedAt) continue;
+        }
+        final plaintext = remote.encodePayload();
+        final encrypted = (plaintext == null || plaintext.isEmpty)
+            ? null
+            : await _encryptField(_metaAad(remote.uuid), plaintext);
+        final merged = remote.copyWith(id: null, synced: true);
+        final row = merged.toRow(encryptedPayload: encrypted)
+          ..remove(NoteMetaFields.id);
+        await txn.insert(
+          tableNoteMeta,
+          row,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        applied.add(merged);
+      }
+    });
+    for (final m in applied) {
+      _upsertMetaCacheEntry(m);
+    }
+    if (applied.isNotEmpty) {
+      Log.db.i('note_meta 远端合并: 应用=${applied.length}/${remoteEntries.length}');
+    }
+    return applied.length;
+  }
+
+  /// items.meta 上传成功后按快照条件置 `synced=1`，返回提交的语句数。
+  ///
+  /// 条件带 `updated_at = 快照值 AND synced = 0`：防「序列化之后、标记之前
+  /// 用户又改动」——期间被改过的行 updatedAt 已变 / synced 仍为 0 的旧值不匹配，
+  /// 保持脏标记待下次上传（否则该次改动会被静默吞掉，永不外发）。
+  ///
+  /// M-1 修复：DB 置位的同时同步 [_metaCache] 对应 entry——否则命中缓存的
+  /// 读路径（readAllNoteMeta/getNoteMeta）仍看到 synced=false，任何基于
+  /// 缓存判断脏行的逻辑都会误触发无谓上传。与 notes 表 `_applySyncedToCache`
+  /// 同一模式；条件同样要求 updatedAt 匹配快照，防覆盖上传期间的并发改动。
+  /// 墓碑行不在缓存中（deleted 行已被移除），自然跳过。
+  Future<int> markNoteMetasSynced(Iterable<NoteMeta> snapshots) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final m in snapshots) {
+      batch.update(
+        tableNoteMeta,
+        {NoteMetaFields.synced: 1},
+        where:
+            '${NoteMetaFields.uuid} = ? AND ${NoteMetaFields.updatedAt} = ? '
+            'AND ${NoteMetaFields.synced} = 0',
+        whereArgs: [m.uuid, m.updatedAt],
+      );
+    }
+    await batch.commit(noResult: true);
+
+    final cache = _metaCache;
+    if (cache != null) {
+      for (final m in snapshots) {
+        final entry = cache[m.uuid];
+        // 与 DB 条件对齐：仅当缓存条目仍是快照时的版本才置位；
+        // 期间被改动的条目 updatedAt 已变，保持原样（其 synced 由写路径重置）
+        if (entry != null &&
+            !entry.deleted &&
+            entry.updatedAt == m.updatedAt &&
+            !entry.synced) {
+          cache[m.uuid] = entry.copyWith(synced: true);
+        }
+      }
+    }
+    return snapshots.length;
+  }
+
+  /// 物理删除「已上报」的墓碑行（deleted=1 AND synced=1），返回删除行数。
+  ///
+  /// 对应 purgedUuids 机制中 removePurgedUuids 的时机：items.meta 上传成功后
+  /// 调用（设计文档 §4.2 表格的「墓碑已告知远端 → 可安全物理删除」态）。
+  Future<int> purgeReportedNoteMetaTombstones() async {
+    final db = await instance.database;
+    final n = await db.delete(
+      tableNoteMeta,
+      where: '${NoteMetaFields.deleted} = 1 AND ${NoteMetaFields.synced} = 1',
+    );
+    if (n > 0) Log.db.i('note_meta 墓碑 GC: 已清理 $n 行');
+    return n;
+  }
+
   /// 事务版：写入元数据墓碑（供 hardDelete* 在同一事务内调用）。
   ///
   /// 与 [_addPurgedUuidInTxn] 同处一个事务：删行与写墓碑要么同时成功、
