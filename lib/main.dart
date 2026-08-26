@@ -85,11 +85,16 @@ Future<void> _initLogging() async {
   // 注入 dev 模式判断（读取 SharedPreferences，非 debug 构建生效）。
   // 必须在 AppLogFile.init() 之前注入，使默认日志级别按 dev 模式正确初始化。
   devModeProvider = () => PreferencesStorage.isDevMode;
+  // 解析应用私有数据目录（web 无物理目录概念，返回 null 降级）。
+  final appData = kIsWeb
+      ? null
+      : (dataDirOverride ?? (await getApplicationSupportDirectory()).path);
+  // 通用应用数据目录注入：core 纯 Dart 无 path_provider，由 App 侧提供。
+  // 供 core 内所有「非 DB 文件」落盘需求复用（日志目录、隔离副本等），
+  // 避免每个功能各自造一个 *Override 注入点。
+  AppPaths.appDataDir = appData;
   // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
-  logDirResolverOverride = () async {
-    if (kIsWeb) return null;
-    return dataDirOverride ?? (await getApplicationSupportDirectory()).path;
-  };
+  logDirResolverOverride = () async => appData;
   await AppLogFile.init();
   Log.app.i('════════ SafeNotes 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）

@@ -146,6 +146,10 @@ class CliContext {
     NotesDatabase.dbFactoryOverride = databaseFactoryFfi;
     NotesDatabase.dbPathOverride = abs;
 
+    // 通用应用数据目录注入：CLI 侧以 --data-dir 作为所有非 DB 落盘的根目录
+    // （与 App 侧 path_provider 注入语义一致，供 core 隔离副本等复用）。
+    AppPaths.appDataDir = abs;
+
     // CLI 侧日志目录注入（核心日志逻辑保持纯 Dart）。
     // 关闭 console 输出：核心 Log 走 print() 会污染命令 stdout（尤其 --json）。
     // 文件日志与内存缓冲仍启用，`log cat` / 诊断面板可正常使用。
