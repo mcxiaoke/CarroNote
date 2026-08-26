@@ -738,22 +738,17 @@ class SafeNotesConfig {
   static const String _encryptedExportFileNameExtension = '.snbak';
   static const String _backupExtension = '.snbak';
   static const String _backupFileNamePrefix = 'secure_notes_backup';
-  static const String _githubUrl = 'https://github.com/mcxiaoke/CarroNote';
-  static const String _faqsUrl = 'https://github.com/mcxiaoke/CarroNote';
   static const String _iosBackupDirectoryIndicativePath =
       '/On My iPhone/SecureNotes/';
   static const String _androidDownloadDirectory =
       '/storage/emulated/0/Download/';
   static const String _androidBackupDirectory =
       '/storage/emulated/0/Download/CarroNote/';
-  static const String _mailToForFeedback =
-      'https://github.com/mcxiaoke/CarroNote/issues';
   static const String _sourceCodeUrl = 'https://github.com/mcxiaoke/CarroNote';
   static const String _bugReportUrl =
       'https://github.com/mcxiaoke/CarroNote/issues';
   static const String _openSourceLicense =
       'https://github.com/mcxiaoke/CarroNote/blob/main/files/LICENSE';
-  static const String _playStorUrl = 'https://github.com/mcxiaoke/CarroNote';
 
   static final Map<String, Locale> _locales = {
     "Čeština": const Locale('cs'),
@@ -801,11 +796,8 @@ class SafeNotesConfig {
   static String get appVersion => _appVersion;
   static int get appVersionCode => _appVersionCode;
   static String get bugReportUrl => _bugReportUrl;
-  static String get mailToForFeedback => _mailToForFeedback;
   static String get sourceCodeUrl => _sourceCodeUrl;
   static String get openSourceLicense => _openSourceLicense;
-  static String get playStoreUrl => _playStorUrl;
-  static String get githubUrl => _githubUrl;
 
   /// 应用标语：跟随翻译（中文用中文文案，其它语言回落英文统一文案）。
   static String get appSlogan => 'AppSlogan'.tr();
@@ -816,7 +808,6 @@ class SafeNotesConfig {
   /// 导入允许的文件扩展名列表：明文 `.json` + 加密 `.snbak`
   static List<String> get importFileExtensions =>
       _allowedFileExtensionsForImport;
-  static String get faqsUrl => _faqsUrl;
   static String get androidDownloadDirectory => _androidDownloadDirectory;
   static String get androidBackupDirectory => _androidBackupDirectory;
   static String get iosBackupDirectoryIndicativePath =>

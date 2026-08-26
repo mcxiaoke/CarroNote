@@ -116,7 +116,7 @@ class AboutPage extends StatelessWidget {
                     context,
                     icon: LucideIcons.messagesSquare,
                     title: 'Help and Feedback'.tr(),
-                    onTap: () => _launch(SafeNotesConfig.mailToForFeedback),
+                    onTap: () => _launch(SafeNotesConfig.bugReportUrl),
                   ),
                 ]),
               ],
