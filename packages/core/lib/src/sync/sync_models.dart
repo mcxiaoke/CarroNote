@@ -341,12 +341,68 @@ class KdfParams {
   };
 
   factory KdfParams.fromJson(Map<String, dynamic> json) {
+    // 发布评审 H5：远端 manifest header 是**不可信输入**（恶意存储端可改写），
+    // 解析必须校验范围——否则 iterations=1 可弱化 KDF、iterations=10⁹ /
+    // 超大 memoryKiB 可让新设备派生时 CPU/内存挂死。边界与备份头的
+    // T-4 约束（parse_import.dart）保持一致，fail-closed。
+    final algorithm = json['algorithm'] as String?;
+    if (algorithm == null ||
+        !const {kPbkdf2Algorithm, kArgon2idAlgorithm}.contains(algorithm)) {
+      throw const FormatException('KDF 算法非法或不受支持');
+    }
+    final salt = json['salt'] as String?;
+    if (salt == null || salt.isEmpty) {
+      throw const FormatException('KDF salt 缺失');
+    }
+
+    // 安全上下界（下限防弱化攻击，上限防 DoS）
+    const minPbkdf2Iterations = 10000;
+    const maxPbkdf2Iterations = 600000;
+    const maxArgon2Iterations = 5;
+    const minArgon2MemoryKiB = 8 * 1024; // 8 MiB（本 app 合法值为 32 MiB）
+    const maxArgon2MemoryKiB = 256 * 1024; // 256 MB
+    const maxArgon2Parallelism = 8;
+
+    final iterations = json['iterations'];
+    if (iterations is! int || iterations <= 0) {
+      throw const FormatException('KDF 迭代次数非法');
+    }
+    int? memoryKiB;
+    int? parallelism;
+    if (algorithm == kPbkdf2Algorithm) {
+      if (iterations < minPbkdf2Iterations ||
+          iterations > maxPbkdf2Iterations) {
+        throw FormatException(
+          'PBKDF2 迭代次数越界（$iterations，'
+          '合法区间 [$minPbkdf2Iterations, $maxPbkdf2Iterations]）',
+        );
+      }
+    } else {
+      if (iterations < 1 || iterations > maxArgon2Iterations) {
+        throw FormatException(
+          'Argon2id 迭代次数越界（$iterations，合法区间 [1, $maxArgon2Iterations]）',
+        );
+      }
+      memoryKiB = json['memoryKiB'] as int?;
+      parallelism = json['parallelism'] as int?;
+      if (memoryKiB == null ||
+          memoryKiB < minArgon2MemoryKiB ||
+          memoryKiB > maxArgon2MemoryKiB) {
+        throw FormatException('Argon2id memoryKiB 非法（$memoryKiB）');
+      }
+      if (parallelism == null ||
+          parallelism < 1 ||
+          parallelism > maxArgon2Parallelism) {
+        throw FormatException('Argon2id parallelism 非法（$parallelism）');
+      }
+    }
+
     return KdfParams(
-      algorithm: json['algorithm'] as String,
-      salt: json['salt'] as String,
-      iterations: json['iterations'] as int,
-      memoryKiB: json['memoryKiB'] as int?,
-      parallelism: json['parallelism'] as int?,
+      algorithm: algorithm,
+      salt: salt,
+      iterations: iterations,
+      memoryKiB: memoryKiB,
+      parallelism: parallelism,
     );
   }
 

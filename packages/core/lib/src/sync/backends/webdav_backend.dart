@@ -543,7 +543,14 @@ class WebDavBackend implements SyncBackend {
   ///
   /// WebDAV 无"移动"语义，用 COPY + DELETE 模拟：先把 blob COPY 到隔离区
   /// （`blobs-orphan/`，与 `blobs/` 同级；文件名附时间戳 `hash.<epochMs>`），
-  /// 再删除原 blob。COPY 失败时退化为直接 DELETE 原 blob（硬删除），不阻断 GC。
+  /// 再删除原 blob。
+  ///
+  /// 发布评审 H9：COPY 失败（网络抖动/非 2xx）时**不再退化为硬删除**——
+  /// 那会让「30 天隔离恢复窗口」在最常用的后端上失效。改为抛出
+  /// [BackendUnavailableException] 跳过本轮（引擎按单个 blob 失败留痕，
+  /// 该 hash 下轮 GC 重新进入两阶段观察后重试），失败方向保守：宁可暂留
+  /// 孤儿 blob，不可丢失恢复窗口。COPY 成功后的原 blob DELETE 失败仍只
+  /// 记日志（隔离副本已落，主副本残留由 purgeOrphans 兜底）。
   @override
   Future<void> deleteBlobSoft(String hash) async {
     _ensureInitialized();
@@ -571,34 +578,34 @@ class WebDavBackend implements SyncBackend {
         },
       );
       if (copyHttp.statusCode >= 200 && copyHttp.statusCode < 300) {
-        // 隔离区已有副本：删除原 blob
-        await _sendHttp(
-          'DELETE',
-          Uri.parse('$_blobsUrl/$hash'),
-          headers: _authHeaders(),
-        );
+        // 隔离区已有副本：删除原 blob（失败仅留痕，不影响恢复窗口）
+        try {
+          await _sendHttp(
+            'DELETE',
+            Uri.parse('$_blobsUrl/$hash'),
+            headers: _authHeaders(),
+          );
+        } on Exception catch (e) {
+          Log.sync.w(
+            '[WebDAV] deleteBlobSoft: 删除原 blob 失败 '
+            '(隔离副本已保留) hash=${hash.substring(0, 8)}…',
+            error: e,
+          );
+        }
         return;
       }
-    } on Exception catch (e) {
-      // COPY 失败：退化为硬删除原 blob
-      Log.sync.w(
-        '[WebDAV] deleteBlobSoft: COPY 失败，退化为硬删除 '
-        'hash=${hash.substring(0, 8)}…',
-        error: e,
+      // H9：非 2xx 不硬删除，跳过本轮等待下轮 GC 重试
+      throw BackendUnavailableException(
+        '[WebDAV] deleteBlobSoft: COPY 返回 ${copyHttp.statusCode}，'
+        '本轮跳过删除 hash=${hash.substring(0, 8)}…',
       );
-    }
-    try {
-      await _sendHttp(
-        'DELETE',
-        Uri.parse('$_blobsUrl/$hash'),
-        headers: _authHeaders(),
-      );
+    } on BackendUnavailableException {
+      rethrow;
     } on Exception catch (e) {
-      // 删除失败不抛异常（GC 不阻断同步）
-      Log.sync.w(
-        '[WebDAV] deleteBlobSoft: 硬删除失败 '
-        'hash=${hash.substring(0, 8)}…',
-        error: e,
+      // H9：网络异常不硬删除，跳过本轮等待下轮 GC 重试
+      throw BackendUnavailableException(
+        '[WebDAV] deleteBlobSoft: COPY 网络失败，本轮跳过删除 '
+        'hash=${hash.substring(0, 8)}…: $e',
       );
     }
   }

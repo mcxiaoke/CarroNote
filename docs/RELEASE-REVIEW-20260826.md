@@ -21,16 +21,21 @@
 
 ## 🟠 高优先级（功能错误/安全语义）
 
-- ⬜ **编辑器无周期性自动保存**：只在退出页面/app 前后台切换时保存，崩溃断电即全丢。建议 30s 防抖定时保存 ｜ `lib/views/add_edit_note.dart`
-- ⬜ **Markdown 工具栏格式插错字段**：`_activeController` 是 build 时求值的 getter，焦点在标题↔正文切换不触发 rebuild，首次点加粗会插到正文 ｜ `add_edit_note.dart:75-79,235-255`
-- ⬜ **版本历史 diff 显示过期结果**：开关只在 `_diffResult == null` 时重算，切换版本后再开 diff 显示旧版本的 diff ｜ `version_history_page.dart:138-146`
-- ⬜ **自动保存失败仍无条件关页**：DB 异常只弹 toast 照样 `_closePage()`，改动直接丢 ｜ `add_edit_note.dart:258-282`
-- ⬜ **新设备加入完全信任 manifest 明文 header**：恶意 WebDAV 存储端可投喂弱 KDF + 自知 dataKey 的 keyring；且 `KdfParams.fromJson` 无范围校验（iterations 可为 1 或 10⁹ DoS）｜ `keyring.dart:554-595`、`sync_models.dart:343-351`
-- ⬜ **"删除 vs 编辑"冲突纯时钟 LWW 不留副本**：时钟偏慢设备的离线编辑会被旧删除覆盖，回收站 30 天后连同版本历史硬删 ｜ `sync_engine.dart:1899-1904,1621-1623`
-- ⬜ **无操作自动锁定不识别键盘输入**：`local_session_timeout` 只挂 `onPointerDown`，桌面端连续打字超时被强制登出 ｜ `lib/main.dart:361-367`
-- ⬜ **关闭空闲锁定后失焦锁定连带失效**：任何超时事件先 `stopListening` 再查开关，监听死了不会重启 ｜ `main.dart:372,401-409`
-- ⬜ **Windows 无单实例保护**：多开实例并发写同一 SQLite 库和固定名备份文件 ｜ `windows/runner/main.cpp`
-- ⬜ **WebDAV 软删除 COPY 失败退化为硬删除**：30 天恢复窗口在最常用后端失效 ｜ `webdav_backend.dart:562-589`
+- ✅ 已修复 **编辑器无周期性自动保存**：新增 30s 周期保存（内容无变化时跳过），崩溃断电最多丢一个周期 ｜ `lib/views/add_edit_note.dart`
+- ✅ 已修复 **Markdown 工具栏格式插错字段**：标题/正文焦点监听触发重建，工具栏始终持最新活跃 controller ｜ `add_edit_note.dart`
+- ✅ 已修复 **版本历史 diff 显示过期结果**：每次开启重算 + `_diffSeq` 代际防乱序竞态 + 加载失败/早退复位 loading（顺带修永久转圈）｜ `version_history_page.dart`
+- ✅ 已修复 **自动保存失败仍无条件关页**：`_performAutoSave` 返回 `(saved, failed)`，失败时留在页面可重试 ｜ `add_edit_note.dart`
+- ⬜ **新设备加入完全信任 manifest 明文 header**（信任锚需产品决策，见下方遗留说明）；其中 **KDF 参数范围校验已修复**：算法白名单 fail-closed + 迭代数/内存/并行度上下界（与备份头 T-4 一致）｜ `sync_models.dart KdfParams.fromJson`
+- ⬜ **"删除 vs 编辑"冲突纯时钟 LWW 不留副本**（产品决策，见下方遗留说明）｜ `sync_engine.dart:1899-1904,1621-1623`
+- ✅ 已修复 **无操作自动锁定不识别键盘输入**：全局 Keyboard handler 节流转发为用户活动，桌面端连续打字不再被登出 ｜ `lib/main.dart`
+- ✅ 已修复 **关闭空闲锁定后失焦锁定连带失效**：sessionHandler 先判定是否锁定再停监听；会话中重开开关即时生效 ｜ `main.dart`
+- ✅ 已修复 **Windows 无单实例保护**：命名互斥量 + 前置已有窗口（按固定窗口类名查找）｜ `windows/runner/main.cpp`
+- ✅ 已修复 **WebDAV 软删除 COPY 失败退化为硬删除**：COPY 失败抛异常跳过本轮，保留隔离恢复窗口，下轮 GC 重试 ｜ `webdav_backend.dart`
+
+> 遗留的产品决策项（建议先在 README 安全模型中披露，再评估代码方案）：
+> 1. 新设备加入信任锚：恶意存储端理论上可投喂弱 KDF keyring（KDF 参数校验已堵住
+>    弱化/DoS，但"攻击者自知 dataKey"的投喂场景需指纹带外核验才能根除）；
+> 2. 删除 vs 编辑冲突：时钟偏慢设备的离线编辑可能被旧删除覆盖，30 天后随墓碑 GC 消失。
 
 ## 🟡 中优先级（择要）
 
@@ -75,3 +80,20 @@
 验证结果：`flutter analyze` / core `dart analyze` 0 issues；
 根目录 `dart test` 相关 6 个测试文件 90 项全过；`flutter test scheduled_task_test` 5 项全过。
 改动明细见 `docs/CHANGES-20260826.md` 顶部。
+
+## 高优先级修复落地记录（2026-08-26 22:05）
+
+| # | 修复方式 | 验证 |
+|---|---------|------|
+| H1 编辑器周期保存 | 30s `Timer.periodic` → `_performAutoSave(keepEditing: true)`，无变化内部跳过 | 全套 flutter test 241 过 |
+| H2 工具栏错位 | 标题/正文 FocusNode listener 触发 setState，工具栏重建取新 controller | analyze + 手动路径 |
+| H3 diff 过期/竞态/转圈 | 开关每次开启重算；`_diffSeq` 丢乱序旧结果；加载失败降级空列表并复位 loading | analyze + note_diff_test |
+| H4 失败不关页 | `_performAutoSave` 返回 `(saved, failed)`，failed 时留在页面 | editor_state_guard_test 等 |
+| H5 KDF 参数校验 | fromJson 白名单 + 上下界（对齐备份头 T-4）；PIN 凭据不受影响（Argon2id 默认值在界内） | sync_models_test 新增 5 用例 |
+| H6 键盘活动转发 | HardwareKeyboard handler 节流 1s 转发 startListening 重置计时器，仅已登录会话 | session_lifecycle_test |
+| H7 先判定再停监听 | sessionHandler 按事件类型+开关判定 shouldLock，不锁定则保持监听 | session_lifecycle_test |
+| H8 单实例保护 | main.cpp 命名互斥量 + FindWindow(固定类名) 前置已有窗口（纯 ASCII 注释） | flutter build windows --debug 通过 |
+| H9 WebDAV 软删除 | COPY 失败抛 BackendUnavailableException 跳过本轮，引擎留痕下轮重试 | blob_addressing_test 等 core 子集 |
+
+遗留 ⬜：新设备信任锚、删除冲突副本策略（产品决策，已在上方注明披露建议）。
+改动明细见 `docs/CHANGES-20260826.md`。

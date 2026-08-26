@@ -78,6 +78,23 @@ class AddEditNotePageState extends State<AddEditNotePage>
   FocusNode get _activeFocusNode =>
       _titleFocusNode.hasFocus ? _titleFocusNode : _descriptionFocusNode;
 
+  // ── 发布评审 H1/H2 修复 ──
+
+  /// 周期性自动保存定时器：进程崩溃/断电时最多丢一个周期内的输入。
+  ///
+  /// 此前只有「退出页面」与「app 切后台」两个保存时机，桌面端长时间
+  /// 打字期间崩溃会丢失全部未落库内容。
+  Timer? _autoSaveTimer;
+
+  /// 自动保存周期（防抖语义由 [_performAutoSave] 的变更检测保证：
+  /// 内容无变化时直接跳过，不产生写库与版本快照）。
+  static const Duration _autoSaveInterval = Duration(seconds: 30);
+
+  /// 标题/正文焦点变化回调：驱动工具栏重建以拿到最新的活跃 controller。
+  void _onEditorFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
   /// 编辑会话级撤销/重做历史（双栈快照）。
   final NoteEditHistory _history = NoteEditHistory();
 
@@ -132,6 +149,10 @@ class AddEditNotePageState extends State<AddEditNotePage>
     // 控制器监听器统一驱动：预览态同步 + 撤销栈记录。
     _titleController.addListener(() => _onEdit('title'));
     _descriptionController.addListener(() => _onEdit('description'));
+    // H2：焦点变化时重建页面，让工具栏持有最新的活跃 controller——
+    // 否则焦点从正文切到标题后首次点格式按钮会插到旧 controller。
+    _titleFocusNode.addListener(_onEditorFocusChanged);
+    _descriptionFocusNode.addListener(_onEditorFocusChanged);
     // 新建笔记默认进入编辑模式，已有笔记打开后默认预览。
     _previewMode = widget.note != null;
     if (widget.note != null) {
@@ -140,6 +161,12 @@ class AddEditNotePageState extends State<AddEditNotePage>
     NoteEditorState.setSaveAttempted(false);
     NoteEditorState.setState(_effectiveNote, title, description);
     WidgetsBinding.instance.addObserver(this);
+    // H1：周期性自动保存——崩溃/断电时最多丢一个周期内的输入。
+    // 内容无变化时 _performAutoSave 内部直接跳过，无写库开销。
+    _autoSaveTimer = Timer.periodic(_autoSaveInterval, (_) {
+      if (!mounted) return;
+      unawaited(_performAutoSave(keepEditing: true));
+    });
     // 界面切换埋点：区分新建 / 编辑，只记录 uuid 与长度
     Log.ui.i(
       '进入笔记编辑页: 模式=${widget.note == null ? "新建" : "编辑"} '
@@ -150,8 +177,11 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     _titleController.dispose();
     _descriptionController.dispose();
+    _titleFocusNode.removeListener(_onEditorFocusChanged);
+    _descriptionFocusNode.removeListener(_onEditorFocusChanged);
     _titleFocusNode.dispose();
     _descriptionFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -273,7 +303,10 @@ class AddEditNotePageState extends State<AddEditNotePage>
     // 有未保存改动则自动保存，再关闭页面
     if (isNoteNewOrContentChanged()) {
       Log.note.i('退出编辑页自动保存: uuid=${_effectiveNote?.uuid ?? "(新建)"}');
-      await _performAutoSave(keepEditing: false);
+      final outcome = await _performAutoSave(keepEditing: false);
+      // H4：保存失败（DB 异常等）时留在页面——用户可重试退出或手动复制
+      // 内容，避免改动被静默丢弃。无改动/空内容的跳过路径 failed=false 照常关闭。
+      if (outcome.failed) return;
     } else {
       // 无改动也需清理编辑态
       NoteEditorState.destroyValue();
@@ -285,14 +318,20 @@ class AddEditNotePageState extends State<AddEditNotePage>
   ///
   /// [keepEditing] 为 true 时（后台）保留编辑态，[original] 更新为最新落库
   /// 笔记以避免新建笔记重复入库；为 false 时（退出）销毁静态状态。
-  Future<SafeNote?> _performAutoSave({required bool keepEditing}) async {
-    if (_isSaving || _isDeleting) return null;
-    if (_isLocked) return null;
-    if (!isNoteNewOrContentChanged()) return null;
+  ///
+  /// 返回 `(saved, failed)`：[failed] 仅在保存过程抛异常时为 true，
+  /// 调用方据此决定是否放行页面关闭（H4）；「无改动/内容为空」属于正常
+  /// 跳过，failed 为 false。
+  Future<({SafeNote? saved, bool failed})> _performAutoSave({
+    required bool keepEditing,
+  }) async {
+    if (_isSaving || _isDeleting) return (saved: null, failed: false);
+    if (_isLocked) return (saved: null, failed: false);
+    if (!isNoteNewOrContentChanged()) return (saved: null, failed: false);
     if (title.trim().isEmpty && description.trim().isEmpty) {
       Log.note.d('自动保存跳过: 内容为空');
       if (!keepEditing) NoteEditorState.destroyValue();
-      return null;
+      return (saved: null, failed: false);
     }
     // 确保静态状态与当前输入同步（预览模式下也可能有未同步的 title/description）
     NoteEditorState.setState(_effectiveNote, title, description);
@@ -310,7 +349,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
           if (_meta == null) _loadMeta();
         }
       }
-      return saved;
+      return (saved: saved, failed: false);
     } on Exception catch (e, st) {
       Log.note.e('自动保存失败', error: e, stackTrace: st);
       if (!keepEditing && mounted) {
@@ -319,7 +358,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
           'Failed to save note: {error}'.tr(namedArgs: {'error': '$e'}),
         );
       }
-      return null;
+      return (saved: null, failed: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

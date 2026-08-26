@@ -95,7 +95,14 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
 
   Future<void> _loadData() async {
     final uuid = widget.note.uuid;
-    final versions = await NotesDatabase.instance.readVersions(uuid);
+    List<NoteVersion> versions;
+    try {
+      versions = await NotesDatabase.instance.readVersions(uuid);
+    } on Exception catch (e, st) {
+      // H3：读取失败不能永久卡骨架屏——降级为空列表并提示
+      Log.note.e('版本历史加载失败', error: e, stackTrace: st);
+      versions = const [];
+    }
     final meta = await NotesDatabase.instance.getNoteMeta(uuid);
     if (!mounted) return;
     setState(() {
@@ -108,19 +115,30 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
     }
   }
 
+  /// diff 计算代际序号：快速连切版本时丢弃乱序返回的旧结果。
+  int _diffSeq = 0;
+
   Future<void> _updateDiff() async {
     if (_versions == null || _versions!.isEmpty) return;
+    final seq = ++_diffSeq;
     setState(() => _isLoading = true);
 
     final current = await NotesDatabase.instance.readNoteByUuid(
       widget.note.uuid,
     );
-    if (current == null || !mounted) return;
+    if (current == null || !mounted || seq != _diffSeq) {
+      // 笔记已不存在 / 页面已销毁 / 已有更新的请求在途：复位加载态，
+      // 避免永久转圈（H3）
+      if (mounted && seq == _diffSeq) {
+        setState(() => _isLoading = false);
+      }
+      return;
+    }
 
     final version = _versions![_selectedIndex];
     final diff = await computeNoteDiffAsync(current, version);
 
-    if (!mounted) return;
+    if (!mounted || seq != _diffSeq) return;
     setState(() {
       _diffResult = diff;
       _isLoading = false;
@@ -137,10 +155,9 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
 
   void _onToggleDiff(bool value) {
     setState(() => _showDiff = value);
-    if (value &&
-        _diffResult == null &&
-        _versions != null &&
-        _versions!.isNotEmpty) {
+    // H3：每次开启都必须重算——此前仅首次（_diffResult == null）计算，
+    // 「开→关→切版本→再开」会显示旧版本的过期 diff
+    if (value && _versions != null && _versions!.isNotEmpty) {
       _updateDiff();
     }
   }

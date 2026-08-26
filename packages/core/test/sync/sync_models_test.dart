@@ -556,6 +556,65 @@ void main() {
     });
   });
 
+  group('KdfParams.fromJson 恶意输入校验（H5：防弱化/DoS）', () {
+    Map<String, dynamic> validArgon2Json() => KdfParams(
+      algorithm: kArgon2idAlgorithm,
+      salt: base64Encode(SyncCrypto.generateSalt()),
+      iterations: kArgon2idIterations,
+      memoryKiB: kArgon2idMemoryKib,
+      parallelism: kArgon2idParallelism,
+    ).toJson();
+
+    Map<String, dynamic> validPbkdf2Json() => KdfParams(
+      algorithm: kPbkdf2Algorithm,
+      salt: base64Encode(SyncCrypto.generateSalt()),
+      iterations: kPbkdf2Iterations,
+    ).toJson();
+
+    void expectThrows(Map<String, dynamic> json, String reason) {
+      expect(
+        () => KdfParams.fromJson(json),
+        throwsFormatException,
+        reason: reason,
+      );
+    }
+
+    test('合法参数（Argon2id/PBKDF2 默认）解析通过', () {
+      expect(KdfParams.fromJson(validArgon2Json()), isA<KdfParams>());
+      expect(KdfParams.fromJson(validPbkdf2Json()), isA<KdfParams>());
+    });
+
+    test('未知算法 fail-closed', () {
+      final json = validArgon2Json()..['algorithm'] = 'SOME-WEAK-KDF';
+      expectThrows(json, '恶意端不能注入不受支持的弱算法');
+    });
+
+    test('PBKDF2 迭代次数下限（防弱化）与上限（防 DoS）', () {
+      final weak = validPbkdf2Json()..['iterations'] = 9999;
+      expectThrows(weak, 'iterations=9999 弱化攻击应被拒绝');
+      final dos = validPbkdf2Json()..['iterations'] = 1000000000;
+      expectThrows(dos, 'iterations=10^9 派生挂死应被拒绝');
+    });
+
+    test('Argon2id 参数越界被拒绝', () {
+      final highT = validArgon2Json()..['iterations'] = 6;
+      expectThrows(highT, 't=6 超上限');
+      final lowMem = validArgon2Json()..['memoryKiB'] = 1024;
+      expectThrows(lowMem, 'memory=1MiB 弱化应被拒绝');
+      final hugeMem = validArgon2Json()..['memoryKiB'] = 4 * 1024 * 1024;
+      expectThrows(hugeMem, 'memory=4GiB DoS 应被拒绝');
+      final badP = validArgon2Json()..['parallelism'] = 64;
+      expectThrows(badP, 'p=64 超上限');
+    });
+
+    test('缺失字段 / 非整数类型被拒绝', () {
+      final noSalt = validArgon2Json()..remove('salt');
+      expectThrows(noSalt, '缺 salt');
+      final strIter = validArgon2Json()..['iterations'] = '3';
+      expectThrows(strIter, '字符串迭代数');
+    });
+  });
+
   group('SyncResult & SyncAction 模型测试', () {
     test('SyncResult success & failure 构造与属性', () {
       final success = SyncResult.success(

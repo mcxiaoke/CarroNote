@@ -45,7 +45,6 @@ import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/src/platform/platform_io.dart'
     show Directory, File, Platform;
 
-
 /// 数据目录覆盖（集成测试 / 特殊构建用）。
 ///
 /// 读环境变量 `SN_DATA_DIR`：非空时把日志、prefs、数据库全部重定向到该目录，
@@ -318,6 +317,10 @@ class _SafeNotesAppState extends State<SafeNotesApp>
     // 原实现在 build() 里每次重建都 add，这里移入 initState 只发一次，
     // 语义保持不变（登录成功路由会再发 startListening）。
     sessionStateStream.add(SessionState.stopListening);
+    // H6：把键盘按下事件转发为用户活动（节流 1s）。local_session_timeout
+    // 包只监听 pointerDown，桌面端纯打字不会重置无操作锁定计时器，
+    // 连续写作会被强制登出。
+    HardwareKeyboard.instance.addHandler(_handleKeyboardActivity);
   }
 
   @override
@@ -325,11 +328,34 @@ class _SafeNotesAppState extends State<SafeNotesApp>
     // F-C03：取消会话订阅、释放 SessionConfig 的闭包 stream 并关闭 controller，
     // 避免重建时旧 listener 泄漏 / StreamController 永不关闭
     WidgetsBinding.instance.removeObserver(this);
+    HardwareKeyboard.instance.removeHandler(_handleKeyboardActivity);
     _sessionSubscription?.cancel();
     _prevSessionConfig?.dispose();
     _cachedSessionConfig?.dispose();
     sessionStateStream.close();
     super.dispose();
+  }
+
+  /// 最近一次键盘活动转发时间（节流用，与包内 1s 活动防抖对齐）。
+  DateTime? _lastKeyActivityForwardAt;
+
+  /// H6：键盘按下 → 转发为一次用户活动。
+  ///
+  /// 复用 `startListening` 的语义：SessionTimeoutManager 收到后调用
+  /// recordPointerEvent() 重置无操作计时器。仅已登录会话内生效
+  /// （与 onTimeOutDo 相同的 isEncryptionEnabled 登录判据），登录页/
+  /// 锁定页的键盘输入不会误启监听。返回 false 表示不消费事件。
+  bool _handleKeyboardActivity(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (!NotesDatabase.instance.isEncryptionEnabled) return false;
+    final now = DateTime.now();
+    final last = _lastKeyActivityForwardAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      return false;
+    }
+    _lastKeyActivityForwardAt = now;
+    sessionStateStream.add(SessionState.startListening);
+    return false;
   }
 
   /// F-C03：重建会话超时监听。
@@ -380,7 +406,22 @@ class _SafeNotesAppState extends State<SafeNotesApp>
   }
 
   Future<void> sessionHandler(SessionTimeoutState timeoutEvent) async {
-    // stop listening, as user will already be in auth page
+    // H7：先判定该事件是否需要锁定，再决定是否停监听。
+    // 旧实现无条件先 stopListening，导致：
+    //   1) 关闭「无操作锁定」后，首个空闲超时事件把监听永久关掉，
+    //      失焦锁定（appFocusTimeout）连带失效；
+    //   2) 会话中重新打开「无操作锁定」也无法生效（监听已死无人重启）。
+    final bool shouldLock = switch (timeoutEvent) {
+      SessionTimeoutState.userInactivityTimeout =>
+        PreferencesStorage.isInactivityTimeoutOn,
+      SessionTimeoutState.appFocusTimeout => true,
+    };
+    if (!shouldLock) {
+      // 无操作锁定已关闭：保持监听，等下一次用户活动重置计时器
+      return;
+    }
+
+    // 已确定要锁定：停止会话监听（用户将进入登录页）
     sessionStateStream.add(SessionState.stopListening);
 
     // 应用在后台时不做任何 UI 切换：记录待锁定事件，回到前台再执行。
