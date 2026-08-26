@@ -77,7 +77,7 @@ class NoteFormWidget extends StatelessWidget {
       autofocus: true,
       enableIMEPersonalizedLearning: enableIMEPLFlag,
       maxLines: null,
-      textDirection: getTextDirecton(titleController.text),
+      textDirection: getTextDirection(titleController.text),
       enableInteractiveSelection: true,
       // P1-19：编辑器标题走 EditorText.title（档位标题尺寸，默认 20 bold），
       // 仅调节编辑/预览页字体，沿用平台字体族。
@@ -119,7 +119,7 @@ class NoteFormWidget extends StatelessWidget {
       //maxLines: maxLinesToShowAtTimeDescription,
       maxLines: null,
       minLines: 1,
-      textDirection: getTextDirecton(descriptionController.text),
+      textDirection: getTextDirection(descriptionController.text),
       textAlign: EditorText.textAlign,
       enableInteractiveSelection: true,
       alignment: Alignment.topLeft,

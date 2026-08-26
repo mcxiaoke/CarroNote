@@ -150,7 +150,7 @@ class NoteCardBody extends StatelessWidget {
             Expanded(
               child: Text(
                 titleText,
-                textDirection: getTextDirecton(titleText),
+                textDirection: getTextDirection(titleText),
                 style: AppText.body.copyWith(
                   fontWeight: FontWeight.w500,
                   color: fontColor,
@@ -167,13 +167,13 @@ class NoteCardBody extends StatelessWidget {
         const SizedBox(height: AppSpace.xs),
         Text(
           time,
-          textDirection: getTextDirecton(time),
+          textDirection: getTextDirection(time),
           style: AppText.labelMini.copyWith(color: fontColor),
         ),
         const SizedBox(height: AppSpace.sm),
         Text(
           abstractText,
-          textDirection: getTextDirecton(abstractText),
+          textDirection: getTextDirection(abstractText),
           style: AppText.body.copyWith(color: fontColor),
           maxLines: bodyMaxLines,
           overflow: TextOverflow.ellipsis,
@@ -216,7 +216,7 @@ class NoteCardBody extends StatelessWidget {
         const SizedBox(height: AppSpace.xs),
         Text(
           time,
-          textDirection: getTextDirecton(time),
+          textDirection: getTextDirection(time),
           style: AppText.labelMini.copyWith(color: fontColor),
         ),
       ],

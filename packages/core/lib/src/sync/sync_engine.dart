@@ -363,6 +363,15 @@ class SyncEngine {
         return await op();
       } on BackendUnavailableException catch (e) {
         lastError = e;
+        // T-23 修复：认证失效（401/403）等确定性失败不重试
+        if (!e.retryable) {
+          Log.sync.w(
+            'blob $opName 失败（不可重试，如认证失效），放弃重试 '
+            '(hash=${_short(hash)})',
+            error: e,
+          );
+          break;
+        }
         if (attempt == maxAttempts) break;
         final delay = baseDelay * (1 << (attempt - 1)); // 200ms, 400ms
         Log.sync.w(
@@ -2271,7 +2280,8 @@ class SyncEngine {
             noteUuid: note.uuid,
             cause: e,
             stackTrace: st,
-            retryable: true,
+            // T-23：跟随异常的 retryable 语义，认证失效不再标记为可重试
+            retryable: e.retryable,
           ),
         ),
       );

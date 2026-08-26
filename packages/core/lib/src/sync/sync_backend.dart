@@ -281,10 +281,31 @@ class ConflictException implements Exception {
 /// SyncEngine 收到此异常后应中止本次同步，等待下次触发（不重试）。
 class BackendUnavailableException implements Exception {
   final String message;
-  BackendUnavailableException(this.message);
+
+  /// 是否值得重试（T-23）：网络抖动/临时 5xx 为 true；401/403 认证失效等
+  /// 确定性失败为 false——引擎与 blob 重试直接放弃，避免无意义重试。
+  final bool retryable;
+
+  BackendUnavailableException(this.message, {this.retryable = true});
+
+  /// 按 HTTP 状态码构造：401/403 视为认证失败（retryable=false），其余可重试
+  ///
+  /// 消息格式与历史抛出点一致：'$what failed: $statusCode $detail'。
+  factory BackendUnavailableException.http(
+    String what,
+    int statusCode, [
+    Object? detail,
+  ]) {
+    final isAuthFailure = statusCode == 401 || statusCode == 403;
+    return BackendUnavailableException(
+      '$what failed: $statusCode${detail == null ? '' : ' $detail'}',
+      retryable: !isAuthFailure,
+    );
+  }
 
   @override
-  String toString() => 'BackendUnavailableException: $message';
+  String toString() =>
+      'BackendUnavailableException(retryable=$retryable): $message';
 }
 
 /// 后端未初始化异常

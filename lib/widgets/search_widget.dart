@@ -91,7 +91,7 @@ class SearchWidgetState extends State<SearchWidget> {
             child: ShadInput(
               key: const Key('ui-home-search-input'),
               enableIMEPersonalizedLearning: enableIMEPLFlag,
-              textDirection: getTextDirecton(widget.text),
+              textDirection: getTextDirection(widget.text),
               controller: controller,
               enableInteractiveSelection: true,
               autofocus: false,

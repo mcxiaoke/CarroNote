@@ -17,4 +17,4 @@ import 'dart:ui' as ui;
 // 统一返回 LTR，避免对每条笔记正文做 Bidi 全文扫描。
 bool isRTL(String text) => false;
 
-ui.TextDirection getTextDirecton(String text) => ui.TextDirection.ltr;
+ui.TextDirection getTextDirection(String text) => ui.TextDirection.ltr;

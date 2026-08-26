@@ -198,11 +198,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     if (res.statusCode != 200) {
-      throw BackendUnavailableException(
-        'GET manifest failed: ${res.statusCode} ${res.body}',
+      throw BackendUnavailableException.http(
+        'GET manifest',
+        res.statusCode,
+        res.body,
       );
     }
 
@@ -261,11 +264,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw BackendUnavailableException(
-        'PUT manifest failed: ${res.statusCode} ${res.body}',
+      throw BackendUnavailableException.http(
+        'PUT manifest',
+        res.statusCode,
+        res.body,
       );
     }
 
@@ -299,11 +305,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     if (res.statusCode != 200) {
-      throw BackendUnavailableException(
-        'GET blob failed: ${res.statusCode} for hash=$hash',
+      throw BackendUnavailableException.http(
+        'GET blob',
+        res.statusCode,
+        'for hash=$hash',
       );
     }
     final bytes = res.bodyBytes;
@@ -334,11 +343,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw BackendUnavailableException(
-        'PUT blob failed: ${res.statusCode} for hash=$hash',
+      throw BackendUnavailableException.http(
+        'PUT blob',
+        res.statusCode,
+        'for hash=$hash',
       );
     }
   }
@@ -385,11 +397,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     // 其余状态视为真实故障，抛异常
-    throw BackendUnavailableException(
-      'DELETE blob failed: ${res.statusCode} for hash=$hash',
+    throw BackendUnavailableException.http(
+      'DELETE blob',
+      res.statusCode,
+      'for hash=$hash',
     );
   }
 
@@ -451,11 +466,14 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'SafeServer auth failed (401): check token',
+        retryable: false,
       );
     }
     if (res.statusCode != 200) {
-      throw BackendUnavailableException(
-        'GET blobs failed: ${res.statusCode} ${res.body}',
+      throw BackendUnavailableException.http(
+        'GET blobs',
+        res.statusCode,
+        res.body,
       );
     }
 

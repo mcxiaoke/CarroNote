@@ -1046,6 +1046,12 @@ class NotesDatabase {
     return notes;
   }
 
+  /// 在途缓存重建任务（T-24 修复）
+  ///
+  /// 缓存为 null 时并发调用共享同一次全量解密，避免各自查询解密后
+  /// 先后覆盖 [_notesCache]（后写者可能基于更旧的数据快照）。
+  Future<List<SafeNote>>? _cacheRebuilding;
+
   /// 读取所有笔记（含墓碑，同步引擎全量对账用，自动解密）
   ///
   /// 结果写入 [_notesCache]；命中缓存时直接返回副本，避免重复解密。
@@ -1054,7 +1060,27 @@ class NotesDatabase {
       Log.db.i('加载全量笔记（含墓碑）: 命中缓存，跳过解密（${_notesCache!.length} 条）');
       return List.of(_notesCache!);
     }
+    // T-24 修复：已有在途重建时复用其结果，不重复全量解密
+    final inFlight = _cacheRebuilding;
+    if (inFlight != null) {
+      Log.db.d('加载全量笔记（含墓碑）: 复用在途重建结果');
+      return List.of(await inFlight);
+    }
     final sw = Stopwatch()..start();
+    final task = _rebuildNotesCache(sw);
+    _cacheRebuilding = task;
+    try {
+      final notes = await task;
+      // 返回副本：避免调用方（如 _buildLocalManifest）在遍历时因
+      // hardDeleteByUuid 改写 _notesCache 而触发并发修改异常。
+      return List.of(notes);
+    } finally {
+      _cacheRebuilding = null;
+    }
+  }
+
+  /// 查询数据库并重建解密缓存（供 [readAllNotesIncludingDeleted] 排队复用）
+  Future<List<SafeNote>> _rebuildNotesCache(Stopwatch sw) async {
     final db = await instance.database;
     final result = await db.query(tableNotes, columns: NoteFields.values);
     final notes = await Future.wait(
@@ -1067,9 +1093,7 @@ class NotesDatabase {
       '(有效 ${notes.length - tombstones} / 墓碑 $tombstones), '
       '解密耗时 ${sw.elapsedMilliseconds}ms',
     );
-    // 返回副本：避免调用方（如 _buildLocalManifest）在遍历时因
-    // hardDeleteByUuid 改写 _notesCache 而触发并发修改异常。
-    return List.of(notes);
+    return notes;
   }
 
   /// 更新笔记（title/description 加密后存储）
@@ -2592,8 +2616,10 @@ class NotesDatabase {
   /// 返回完整字段（含 uuid/contentHash 等），导入时可直接通过 SafeNote.fromJson 解析。
   /// 注意：导出内容为明文 JSON，备份加密由上层 FileHandler 负责。
   Future<String> exportAll() async {
-    // 复用 readAllNotes（自动解密）
-    final notes = await readAllNotes();
+    // T-25 修复：改用含墓碑的全量读取——备份-恢复循环中保留删除状态，
+    // 避免已删笔记重导入后"复活"（导入侧 SafeNote.fromJson 完整还原
+    // deleted 字段，UI readAllNotes 按 deleted 过滤，墓碑不会出现在列表）。
+    final notes = await readAllNotesIncludingDeleted();
     final jsonList = notes.map((note) => note.toJson()).toList();
     return jsonEncode(jsonList).toString();
   }

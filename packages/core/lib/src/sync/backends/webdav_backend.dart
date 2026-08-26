@@ -313,8 +313,10 @@ class WebDavBackend implements SyncBackend {
       return (ciphertext: Uint8List(0), etag: '');
     }
     if (res.statusCode != 200) {
-      throw BackendUnavailableException(
-        'GET manifest failed: ${res.statusCode} ${res.body}',
+      throw BackendUnavailableException.http(
+        'GET manifest',
+        res.statusCode,
+        res.body,
       );
     }
 
@@ -382,8 +384,10 @@ class WebDavBackend implements SyncBackend {
       );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw BackendUnavailableException(
-        'PUT manifest failed: ${res.statusCode} ${res.body}',
+      throw BackendUnavailableException.http(
+        'PUT manifest',
+        res.statusCode,
+        res.body,
       );
     }
 
@@ -410,8 +414,10 @@ class WebDavBackend implements SyncBackend {
 
     if (res.statusCode == 404) return null;
     if (res.statusCode != 200) {
-      throw BackendUnavailableException(
-        'GET blob failed: ${res.statusCode} for hash=$hash',
+      throw BackendUnavailableException.http(
+        'GET blob',
+        res.statusCode,
+        'for hash=$hash',
       );
     }
     final bytes = res.bodyBytes;
@@ -440,8 +446,10 @@ class WebDavBackend implements SyncBackend {
 
     // WebDAV PUT 幂等：相同内容覆盖写
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw BackendUnavailableException(
-        'PUT blob failed: ${res.statusCode} for hash=$hash',
+      throw BackendUnavailableException.http(
+        'PUT blob',
+        res.statusCode,
+        'for hash=$hash',
       );
     }
   }
@@ -469,8 +477,10 @@ class WebDavBackend implements SyncBackend {
     // 404 Not Found = 已删除（幂等，视为成功）
     if (res.statusCode == 404) return;
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw BackendUnavailableException(
-        'DELETE blob failed: ${res.statusCode} for hash=$hash',
+      throw BackendUnavailableException.http(
+        'DELETE blob',
+        res.statusCode,
+        'for hash=$hash',
       );
     }
   }
@@ -1116,6 +1126,7 @@ class WebDavBackend implements SyncBackend {
     if (res.statusCode == 401) {
       throw BackendUnavailableException(
         'WebDAV auth failed (401): check username/password',
+        retryable: false,
       );
     }
     throw BackendUnavailableException(

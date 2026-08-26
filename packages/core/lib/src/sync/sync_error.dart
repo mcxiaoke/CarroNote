@@ -320,7 +320,13 @@ class SyncDecryptionException implements Exception {
   /// 涉及的 AAD 标识（如 blob hash 或 'manifest-items'）
   final String? aadId;
 
-  SyncDecryptionException(this.message, {this.aadId});
+  /// 是否为 GCM 认证标签失败（密钥不匹配/数据被篡改）
+  ///
+  /// N-10：true 才可归因于「密钥不对」（如密码错误）；false 表示信封
+  /// 格式/长度等结构性问题，上层不得据此提示用户重试密码。
+  final bool isTagError;
+
+  SyncDecryptionException(this.message, {this.aadId, this.isTagError = false});
 
   @override
   String toString() =>
@@ -342,7 +348,11 @@ SyncDecryptionException wrapDecryptionError(
   required bool isTagError,
 }) {
   if (isTagError) {
-    return SyncDecryptionException('GCM 认证标签验证失败（密钥错误或数据被篡改）', aadId: aadId);
+    return SyncDecryptionException(
+      'GCM 认证标签验证失败（密钥错误或数据被篡改）',
+      aadId: aadId,
+      isTagError: true,
+    );
   }
   return SyncDecryptionException('AES-GCM 解密失败: $error', aadId: aadId);
 }

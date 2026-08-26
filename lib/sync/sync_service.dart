@@ -32,8 +32,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-
 import 'package:flutter/foundation.dart';
 
 import 'package:core/core.dart';
@@ -364,14 +362,23 @@ class SyncService {
     );
   }
 
+  /// 关闭中标志（N-3 修复）：logout/dispose 开始时置位，阻止新的
+  /// sync()/repairRemote()/autoSync() 再启动，与 waitForSyncCompletion
+  /// 配合消除「等待期间新同步又启动」的 check-then-act 竞态。
+  bool _closing = false;
+
   /// 销毁同步服务（应用退出时调用）
   ///
   /// 日志 Web 服务器与日志文件的关闭由 main.dart 的 _shutdown 统一负责，
   /// 因为它们的生命周期是应用级的，比 SyncService 更长。
   Future<void> dispose() async {
     Log.sync.i('SyncService dispose');
+    // N-3 修复：先置关闭标志阻止新同步排程，再等在途同步跑完，
+    // 避免 engine.sync() 执行中途 journal/backend 被关闭（水位竞态）。
+    _closing = true;
     _autoSyncTimer?.cancel();
     _autoSyncFailureRetried = false; // P3-b：清理重试状态
+    await waitForSyncCompletion();
     // 先关 journal（内部会 flush 未落盘的缓冲），再关后端
     await _closeJournal();
     await _backend?.close();
@@ -410,8 +417,12 @@ class SyncService {
   ///   - _deviceId（设备 ID 不变，无需重新查询）
   ///   - SyncConfig（后端配置持久化在 SharedPreferences）
   Future<void> logout() async {
+    // N-3 修复：与 dispose 同款互斥——先阻止新同步，再等在途同步完成，
+    // 避免 inactivity 超时登出在 sync() 执行中途关闭 backend/journal。
+    _closing = true;
     _autoSyncTimer?.cancel();
     _autoSyncFailureRetried = false; // P3-b：清理重试状态
+    await waitForSyncCompletion();
     // journal 与金库绑定，登出后可能换金库登录，必须关掉（并 flush）
     await _closeJournal();
     await _backend?.close();
@@ -419,6 +430,8 @@ class SyncService {
     _backend = null;
     _engine = null;
     _backendReady = false;
+    // 服务保留复用（下次登录重新 initBackend），恢复同步入口
+    _closing = false;
     _updateState(const SyncServiceState(status: SyncStatus.uninitialized));
   }
 
@@ -433,6 +446,8 @@ class SyncService {
   ///
   /// 返回同步结果。如果未初始化或正在同步，返回 null。
   Future<SyncResult?> sync() async {
+    // N-3 修复：logout/dispose 关闭中，拒绝发起新同步
+    if (_closing) return null;
     // 总开关守卫：用户手动关闭同步后，任何路径都不得再碰远端。
     // applyConfigToService 通常已经把引擎拆掉了，这里是二道防线——
     // 覆盖"配置在别处被改、引擎还残留"的边界情况。
@@ -575,6 +590,8 @@ class SyncService {
   /// 委托给 [SyncEngine.repairRemote]。
   /// 返回修复结果；未初始化 / 正在同步时返回 null。
   Future<SyncResult?> repairRemote() async {
+    // N-3 修复：logout/dispose 关闭中，拒绝发起新修复
+    if (_closing) return null;
     // 评审 #6 修复（同 sync()）：互斥锁在入口第一行抢锁，避免修复与同步、
     // 修复与修复并发（原实现把 _syncInProgress 检查放在网络 await 之后）。
     if (_syncInProgress) return null;
@@ -714,6 +731,14 @@ class SyncService {
   ///   - **状态可见**：在 timer 触发/被跳过/re-schedule 各路径补 debug 日志，
   ///     便于排查「改了笔记怎么没同步」类问题。
   void autoSync() {
+    // N-3 修复：logout/dispose 关闭中不再排程
+    if (_closing) return;
+    // N-7 修复：尊重「自动同步」开关——用户关闭自动同步仅保留手动时，
+    // 笔记变更/回前台等被动路径不得再发起远端同步（手动 sync() 不受影响）。
+    if (SyncConfig.isInitialized && !SyncConfig.isAutoSyncEnabled) {
+      Log.sync.d('autoSync: 已跳过（自动同步开关已关闭）');
+      return;
+    }
     if (SyncConfig.isInitialized && !SyncConfig.isSyncEnabled) return;
     if (_engine == null) return;
 
@@ -806,6 +831,10 @@ class SyncService {
     required SyncBackend backend,
     required NotesDatabase database,
   }) async {
+    // N-3 修复：logout/dispose 关闭中拒绝切换，避免与关闭流程交错
+    if (_closing) {
+      throw StateError('Sync service is closing; cannot switch backend.'.tr());
+    }
     if (_syncInProgress) {
       // P3-log：拒绝切换（避免 StateError 抛出后从日志看不出原因）
       Log.sync.w('switchBackend 被拒绝（同步进行中），抛 StateError');
@@ -985,6 +1014,8 @@ class SyncService {
       safeServerUrl: _redactUrl(SyncConfig.safeServerUrl),
       syncEnabled: SyncConfig.isSyncEnabled,
       autoSyncEnabled: SyncConfig.isAutoSyncEnabled,
+      // T-6：WebDAV ETag 探测结果参与决策展示（诊断页据此标红）
+      etagSupported: backend is WebDavBackend ? backend.isEtagSupported : null,
       // Keyring 元数据
       vaultId: keyring?.vaultId,
       keyVersion: keyring?.keyVersion,
@@ -1039,6 +1070,7 @@ class SyncService {
         'backendReady': snap.backendReady,
         'syncEnabled': snap.syncEnabled,
         'autoSyncEnabled': snap.autoSyncEnabled,
+        'etagSupported': snap.etagSupported,
         'backendType': snap.backendType,
         'backendDisplayName': snap.backendDisplayName,
         'backendRuntimeType': snap.backendRuntimeType,

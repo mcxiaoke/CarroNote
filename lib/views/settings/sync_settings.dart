@@ -20,6 +20,8 @@
 
 // Flutter 导入
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:core/core.dart';
@@ -241,7 +243,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       );
     } else if (enabled && SyncService.instance.state.isInitialized) {
       // 刚启用就拉一次远端，行为与登录后一致
-      SyncService.instance.autoSync();
+      // N-7：这是用户显式动作，直接 sync() 不受自动同步开关约束
+      unawaited(SyncService.instance.sync());
     }
   }
 
@@ -275,7 +278,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     } else {
       _showMessage('Sync configuration saved'.tr());
       if (SyncConfig.isSyncReady && SyncService.instance.state.isInitialized) {
-        SyncService.instance.autoSync();
+        // N-7：保存配置是用户显式动作，直接 sync() 不受自动同步开关约束
+        unawaited(SyncService.instance.sync());
       }
     }
   }

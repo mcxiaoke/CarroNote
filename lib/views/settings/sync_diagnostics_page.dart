@@ -177,6 +177,16 @@ class _StatusTab extends StatelessWidget {
           if (snapshot.safeServerUrl.isNotEmpty)
             _KV('SafeServer URL', snapshot.safeServerUrl),
           _KV('Auto Sync'.tr(), snapshot.autoSyncEnabled.toString()),
+          // T-6：ETag 探测结果参与决策——不支持时诊断页标红，提示覆盖风险
+          if (snapshot.etagSupported != null)
+            _KV(
+              'WebDAV ETag'.tr(),
+              snapshot.etagSupported!
+                  ? 'Supported'.tr()
+                  : 'Not supported; concurrent edits may overwrite each other'
+                        .tr(),
+              color: snapshot.etagSupported! ? null : _semDanger(context),
+            ),
         ]),
         _buildSection(context, 'Keyring Metadata'.tr(), [
           _KV('Keyring ID', snapshot.vaultId ?? 'N/A'),

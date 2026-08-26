@@ -254,6 +254,13 @@ Future<void> _shutdown() async {
   } on Object catch (e, st) {
     Log.app.w('停止日志 Web 服务器失败', error: e, stackTrace: st);
   }
+  // N-5 修复：退出前销毁同步服务——等待在途同步结束、flush journal 内存
+  // 缓冲并关闭后端连接；失败不阻断退出。
+  try {
+    await SyncService.instance.dispose();
+  } on Object catch (e, st) {
+    Log.app.w('SyncService dispose 失败（忽略，继续退出）', error: e, stackTrace: st);
+  }
   Log.app.i('════════ SafeNotes 退出 ════════');
   // 最后关闭日志文件（flush 剩余缓冲）
   await AppLogFile.close();

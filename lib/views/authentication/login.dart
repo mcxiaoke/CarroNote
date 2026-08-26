@@ -529,7 +529,8 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
               );
             } else {
               // 登录后执行一次初始同步,拉取远端最新数据
-              SyncService.instance.autoSync();
+              // N-7：登录是用户显式动作，直接走 sync()，不受自动同步开关约束
+              unawaited(SyncService.instance.sync());
             }
           },
         ),

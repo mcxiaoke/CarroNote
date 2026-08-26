@@ -1136,6 +1136,12 @@ class SyncDiagnosticsSnapshot {
   final bool syncEnabled;
   final bool autoSyncEnabled;
 
+  /// WebDAV ETag 支持探测结果（T-6）
+  ///
+  /// 仅 WebDAV 后端有值；null = 非 WebDAV 或未探测。false 表示服务器不返回
+  /// ETag，乐观锁退化为"最后写入胜"，多端并发写入有覆盖风险（诊断页标红）。
+  final bool? etagSupported;
+
   // Keyring 元数据
   final String? vaultId;
   final int? keyVersion;
@@ -1183,6 +1189,7 @@ class SyncDiagnosticsSnapshot {
     required this.safeServerUrl,
     required this.syncEnabled,
     required this.autoSyncEnabled,
+    this.etagSupported,
     this.vaultId,
     this.keyVersion,
     this.dataKeyEpoch,
@@ -1232,6 +1239,12 @@ class SyncDiagnosticsSnapshot {
     }
     if (safeServerUrl.isNotEmpty) b.writeln('SafeServer URL: $safeServerUrl');
     b.writeln('自动同步: $autoSyncEnabled');
+    // T-6：ETag 探测结果参与诊断展示（false 时诊断页标红告警）
+    if (etagSupported != null) {
+      b.writeln(
+        'WebDAV ETag 支持: ${etagSupported! ? "是" : "否（乐观锁退化，多端并发有覆盖风险）"}',
+      );
+    }
     b.writeln('');
     b.writeln('-- Keyring 元数据 --');
     b.writeln('Keyring ID: $vaultId');

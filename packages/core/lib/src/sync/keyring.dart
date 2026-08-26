@@ -42,6 +42,7 @@ import 'dart:typed_data';
 // 项目导入
 import 'package:core/src/db/database_handler.dart';
 import 'package:core/src/crypto/crypto.dart';
+import 'package:core/src/sync/sync_error.dart';
 import 'package:core/src/sync/sync_models.dart';
 import 'package:core/src/logger/app_logger.dart';
 
@@ -610,10 +611,20 @@ class Keyring {
       return await SyncCrypto.unwrapDataKey(mk, rawBytes);
     } on WrongPasswordException {
       rethrow;
+    } on SyncDecryptionException catch (e) {
+      // N-10 修复：只有 GCM 认证标签失败（isTagError）才归因于密码错误；
+      // 信封长度不足等结构性解密异常归类为账本损坏，避免用户被反复提示
+      // 「密码错误」却永远无法解锁。
+      if (e.isTagError) {
+        Log.crypto.w('解包 dataKey 失败(GCM 认证失败，判定为密码错误)');
+        throw WrongPasswordException('无法解密 dataKey（GCM tag 验证失败）');
+      }
+      Log.crypto.e('解包 dataKey 失败(非密码因素的解密异常，账本可能损坏): $e');
+      throw KeyringCorruptedException('encryptedDataKey 解密失败: $e');
     } on Exception catch (e) {
-      // GCM tag 验证失败 = 密码错误
-      Log.crypto.w('解包 dataKey 失败(通常为密码错误): $e');
-      throw WrongPasswordException('无法解密 dataKey（GCM tag 验证失败）：$e');
+      // 其余未预期异常同样不归一化为密码错误
+      Log.crypto.e('解包 dataKey 失败(未预期异常): $e');
+      throw KeyringCorruptedException('encryptedDataKey 解包异常: $e');
     }
   }
 
@@ -851,11 +862,52 @@ class Keyring {
   ///
   /// 返回**新实例**（mk 变为新派生 MK），调用方必须替换持有的引用（评审 B-M3）。
   /// dataKey 值不变 → dataKeyEpoch 不变。
+  ///
+  /// N-9 收尾：所有账本轮换经静态队列串行执行——并发调用不再
+  /// last-writer-wins，后到者会在先到者 persist 后的乐观校验中中止；
+  /// 数据迁移（isMigrating）期间直接拒绝。
   Future<Keyring> changePassword({
     required String oldPassword,
     required String newPassword,
     required NotesDatabase database,
+  }) {
+    return _enqueueLedgerWrite(
+      () => _changePasswordLocked(
+        oldPassword: oldPassword,
+        newPassword: newPassword,
+        database: database,
+      ),
+    );
+  }
+
+  /// 账本写入串行化队列（N-9 收尾）
+  ///
+  /// 静态 Future 链：后到的写操作等先到的完成后再执行，配合方法内的
+  /// 乐观校验消除「校验通过 → persist 前被并发写穿插」的 TOCTOU 窗口。
+  static Future<void> _ledgerWriteQueue = Future<void>.value();
+
+  /// 把 [action] 追加到账本写入队列串行执行
+  ///
+  /// 吞掉排队链上的错误防止锁链断裂；错误仍由返回的 task 抛给调用方。
+  static Future<T> _enqueueLedgerWrite<T>(Future<T> Function() action) {
+    final task = _ledgerWriteQueue.then((_) => action());
+    _ledgerWriteQueue = task.then<void>((_) {}, onError: (_) {});
+    return task;
+  }
+
+  Future<Keyring> _changePasswordLocked({
+    required String oldPassword,
+    required String newPassword,
+    required NotesDatabase database,
   }) async {
+    // N-9 收尾：迁移流程（reEncryptAllNotesAtomically 等）进行中禁止改密码，
+    // 避免账本轮换与全库重加密事务交错
+    if (database.isMigrating) {
+      throw StateError(
+        'Keyring rotation rejected: data migration in progress. '
+        'Retry after migration completes.',
+      );
+    }
     final sw = Stopwatch()..start();
     Log.crypto.i(
       'Keyring 改密码开始: vaultId=$vaultId '
