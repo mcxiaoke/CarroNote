@@ -1,4 +1,4 @@
-# SafeNotes Web 版移植实施计划（WEB-PORT-EXECUTION-PLAN）
+# CarroNote Web 版移植实施计划（WEB-PORT-EXECUTION-PLAN）
 
 > 日期：2026-08-23
 > 目标：实现 `flutter build web` 成功出包，并以本地固定端口 **8000** 跑通完整用户流程。

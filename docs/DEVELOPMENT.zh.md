@@ -255,7 +255,7 @@ dart run scripts/generate_build_info.dart
 启动日志示例：
 
 ```
-════════ SafeNotes 启动 ════════
+════════ CarroNote 启动 ════════
 版本: 3.0.0 (build 30000)
 Git: 0a4d888 @ sync-refact-dev (工作区有未提交改动)
 Commit: 0a4d888c82a636d3394d6b6c939c61e2adfe4b7d

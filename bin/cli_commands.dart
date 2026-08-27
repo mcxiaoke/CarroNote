@@ -7,7 +7,7 @@
 
 */
 
-// SafeNotes CLI 命令层（纯 Dart）。
+// CarroNote CLI 命令层（纯 Dart）。
 //
 // 用 package:args 的 CommandRunner/Command 命令树实现（标准解析，不手写 parser）。
 // 每个叶子命令的 run() 返回输出字符串（main 统一打印），错误一律抛异常：

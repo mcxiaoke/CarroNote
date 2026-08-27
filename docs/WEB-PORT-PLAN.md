@@ -1,4 +1,4 @@
-# SafeNotes Web 版移植计划（WEB-PORT-PLAN）
+# CarroNote Web 版移植计划（WEB-PORT-PLAN）
 
 > 状态：**已完成**（已全量落地并通过自动化测试与生产出包验证）
 > 目标：让 `safenotes` 能以 `flutter build web` 出包，并在浏览器里跑通**完整用户流程**（建库→设密码→登录→增删改笔记→列表/搜索→设置→登出/会话超时）。

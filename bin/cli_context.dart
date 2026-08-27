@@ -7,7 +7,7 @@
 
 */
 
-// SafeNotes CLI 运行时上下文（纯 Dart，无 Flutter 依赖）。
+// CarroNote CLI 运行时上下文（纯 Dart，无 Flutter 依赖）。
 //
 // CLI 是核心逻辑的第二个前端（App 是第一个）。本文件只依赖纯 Dart 包
 // （core + sqflite_common_ffi + args + path），任何 Flutter 依赖都会导致
