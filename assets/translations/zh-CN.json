@@ -528,5 +528,9 @@
   "Many notes cannot be decrypted. This may be caused by an incorrect password or database corruption. Loading has stopped to protect your data; please restore from a backup.": "大量笔记无法解密，可能是密码错误或数据库损坏。为避免数据丢失，已停止加载；请从备份恢复后再试。",
   "Local notes cannot be decrypted (possibly wrong password or database corruption). Passphrase change is blocked to protect your data; please restore from a backup first.": "本地笔记无法解密，可能是密码错误或数据库损坏。为保护数据，已阻止修改密码；请先从备份恢复。",
   "Failed to load trash: {error}": "回收站加载失败：{error}",
-  "Back to Login": "返回登录"
+  "Back to Login": "返回登录",
+  "Saved": "已保存",
+  "No changes": "无改动",
+  "Failed to save": "保存失败",
+  "Empty note": "空笔记"
 }

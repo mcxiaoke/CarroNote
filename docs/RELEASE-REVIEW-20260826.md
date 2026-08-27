@@ -39,15 +39,14 @@
 
 ## 🟡 中优先级（择要）
 
-- ⬜ 单行解密失败导致整个库不可读（notes 表无降级容错，meta 表有）｜ `database_handler.dart:505-516`
-- ⬜ update 系列 rows==0 时仍写缓存产生幻影笔记 ｜ `database_handler.dart:1118-1124`
-- ⬜ 导入备份批内 uuid 重复导致整体回滚 ｜ `database_handler.dart:846-867`
-- ⬜ `markSynced` 系列 IN 子句超 SQLite 变量上限 ｜ `database_handler.dart:1973-2009`
-- ⬜ dev 模式 release 可开，`0.0.0.0` 日志服务器提供 `/api/download/db` 整库下载，注释与实际不符 ｜ `about_page.dart:200`、`log_webserver_io.dart:156,575`
-- ⬜ 锁定笔记前未保存改动静默丢弃；新建笔记未落库前"更多"菜单不存在 ｜ `add_edit_note.dart:568-581,217`
-- ⬜ 回收站恢复成功无提示、"清空成功"用 error 样式；清空文案暴露 tombstone 技术细节 ｜ `deleted_notes.dart:124-170`
-- ⬜ 版本历史/回收站页异常时永久转圈；宽屏无限宽约束无 Scrollbar
-- ⬜ 桌面端快捷键几乎为零（仅 Ctrl+Z/Y），缺 Ctrl+S/F/Esc
+- ✅ 单行解密失败导致整个库不可读（notes 表无降级容错，meta 表有）｜ `database_handler.dart:505-516`
+- ✅ update 系列 rows==0 时仍写缓存产生幻影笔记 ｜ `database_handler.dart:1118-1124`
+- ✅ 导入备份批内 uuid 重复导致整体回滚 ｜ `database_handler.dart:846-867`
+- ✅ `markSynced` 系列 IN 子句超 SQLite 变量上限 ｜ `database_handler.dart:1973-2009`
+- ✅ 锁定笔记前未保存改动静默丢弃；新建笔记未落库前"更多"菜单不存在 ｜ `add_edit_note.dart:568-581,217`
+- ✅ 回收站恢复成功无提示、"清空成功"用 error 样式；清空文案暴露 tombstone 技术细节 ｜ `deleted_notes.dart:124-170`
+- ✅ 版本历史/回收站页异常时永久转圈；宽屏无限宽约束无 Scrollbar
+- ✅ 桌面端快捷键几乎为零（仅 Ctrl+Z/Y），缺 Ctrl+S/F/Esc
 
 ## ⚪ 低优先级 / 打磨
 

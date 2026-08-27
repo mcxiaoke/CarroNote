@@ -16,6 +16,7 @@ import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:animations/animations.dart';
 import 'package:core/core.dart';
@@ -129,6 +130,10 @@ class HomePageState extends State<HomePage> with RouteAware {
   /// 多选模式下选中的笔记 uuid 集合。
   Set<String> _selectedUuids = {};
 
+  /// 桌面快捷键：页面级焦点与搜索框焦点。
+  final FocusNode _pageFocusNode = FocusNode(skipTraversal: true);
+  final FocusNode _searchFocusNode = FocusNode();
+
   //bool isListner = false;
   @override
   void initState() {
@@ -166,6 +171,8 @@ class HomePageState extends State<HomePage> with RouteAware {
     _sortMenuController.dispose();
     _notesListScroll.dispose();
     _notesGridScroll.dispose();
+    _pageFocusNode.dispose();
+    _searchFocusNode.dispose();
     // 注意：此处不停止日志 Web 服务器。
     // HomePage 会因登出 / 页面跳转等原因反复销毁重建，
     // 而日志服务器的生命周期是"应用级"的，只在应用退出时结束。
@@ -388,65 +395,71 @@ class HomePageState extends State<HomePage> with RouteAware {
     // 窗口宽度，等价且重建范围更小。
     // - Compact (< 600px)：保留移动端 Drawer（汉堡菜单）
     // - Medium/Expanded (≥ 600px)：左侧常驻 NavigationRail + 内容区
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool isCompact = constraints.maxWidth < kCompactBreakpoint;
+    return CallbackShortcuts(
+      bindings: _homeShortcuts,
+      child: Focus(
+        focusNode: _pageFocusNode,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isCompact = constraints.maxWidth < kCompactBreakpoint;
 
-        return GestureDetector(
-          onTap: dismissKeyboard,
-          onVerticalDragStart: dismissKeyboard,
-          onVerticalDragDown: dismissKeyboard,
-          child: PopScope(
-            canPop: !_isSelectionMode,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop && _isSelectionMode) {
-                _exitSelectionMode();
-              }
-            },
-            child: Scaffold(
-              key: const Key('ui-home-screen'),
-              drawer: isCompact ? _buildDrawer(context) : null,
-              appBar: _isSelectionMode
-                  ? _buildSelectionAppBar()
-                  : AppBar(
-                      actions: isLoading
-                          ? null
-                          : [
-                              if (_showStarredOnly || _activeTag != null)
-                                _filterIndicator(),
-                              _syncStatusButton(),
-                              _diagnosticsButton(),
-                              _shortNotes(),
-                            ],
-                    ),
-              body: isCompact
-                  ? _homeBody()
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        HomeSidebar(
-                          isCollapsed: _sidebarCollapsed,
-                          onToggleCollapsed: _toggleSidebarCollapsed,
-                          onAllNotesCallback: _clearFilters,
-                          onSettingsCallback: _navSettings,
-                          onDeletedNotesCallback: _navDeletedNotes,
-                          onStarredCallback: _enableStarredFilter,
-                          tags: PreferencesStorage.managedTags,
-                          activeTag: _activeTag,
-                          onTagSelected: _enableTagFilter,
-                          onManageTags: _manageTags,
-                          onLockCallback: _navLock,
+            return GestureDetector(
+              onTap: dismissKeyboard,
+              onVerticalDragStart: dismissKeyboard,
+              onVerticalDragDown: dismissKeyboard,
+              child: PopScope(
+                canPop: !_isSelectionMode,
+                onPopInvokedWithResult: (didPop, _) {
+                  if (!didPop && _isSelectionMode) {
+                    _exitSelectionMode();
+                  }
+                },
+                child: Scaffold(
+                  key: const Key('ui-home-screen'),
+                  drawer: isCompact ? _buildDrawer(context) : null,
+                  appBar: _isSelectionMode
+                      ? _buildSelectionAppBar()
+                      : AppBar(
+                          actions: isLoading
+                              ? null
+                              : [
+                                  if (_showStarredOnly || _activeTag != null)
+                                    _filterIndicator(),
+                                  _syncStatusButton(),
+                                  _diagnosticsButton(),
+                                  _shortNotes(),
+                                ],
                         ),
-                        Expanded(child: _homeBody()),
-                      ],
-                    ),
-              floatingActionButton: _isSelectionMode
-                  ? null
-                  : _addANewNoteButton(context),
-            ),
-          ),
-        );
-      },
+                  body: isCompact
+                      ? _homeBody()
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            HomeSidebar(
+                              isCollapsed: _sidebarCollapsed,
+                              onToggleCollapsed: _toggleSidebarCollapsed,
+                              onAllNotesCallback: _clearFilters,
+                              onSettingsCallback: _navSettings,
+                              onDeletedNotesCallback: _navDeletedNotes,
+                              onStarredCallback: _enableStarredFilter,
+                              tags: PreferencesStorage.managedTags,
+                              activeTag: _activeTag,
+                              onTagSelected: _enableTagFilter,
+                              onManageTags: _manageTags,
+                              onLockCallback: _navLock,
+                            ),
+                            Expanded(child: _homeBody()),
+                          ],
+                        ),
+                  floatingActionButton: _isSelectionMode
+                      ? null
+                      : _addANewNoteButton(context),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -818,6 +831,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     return SearchWidget(
       text: query,
       hintText: searchBoxHint,
+      focusNode: _searchFocusNode,
       onChanged: _searchNote,
     );
   }
@@ -1419,6 +1433,77 @@ class HomePageState extends State<HomePage> with RouteAware {
       );
     });
   }
+
+  // ── 桌面快捷键 ──
+
+  void _handleNewNoteShortcut() {
+    if (isLoading || _massDecryptError != null) return;
+    if (_isSelectionMode) return;
+    Log.ui.i('快捷键: Ctrl+N 新建笔记');
+    unawaited(_openAddNote());
+  }
+
+  void _handleSearchShortcut() {
+    Log.ui.d('快捷键: Ctrl+F 聚焦搜索');
+    if (_searchFocusNode.canRequestFocus) {
+      _searchFocusNode.requestFocus();
+    }
+  }
+
+  void _handleEscShortcut() {
+    if (_isSelectionMode) {
+      Log.ui.d('快捷键: Esc 退出多选');
+      _exitSelectionMode();
+      return;
+    }
+    if (query.isNotEmpty) {
+      Log.ui.d('快捷键: Esc 清空搜索');
+      _searchNote('');
+      _searchFocusNode.unfocus();
+      return;
+    }
+    // 主页根路由，无返回；Esc 无操作
+  }
+
+  void _handleSelectAllShortcut() {
+    if (notes.isEmpty) return;
+    Log.ui.d('快捷键: Ctrl+A 全选');
+    if (!_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = true;
+        _selectedUuids = notes.map((n) => n.uuid).toSet();
+      });
+    } else {
+      _toggleSelectAll();
+    }
+  }
+
+  void _handleSaveShortcut() {
+    // 主页无直接保存语义：触发刷新 + 同步（对标编辑页 Ctrl+S）
+    Log.ui.d('快捷键: Ctrl+S 刷新/同步');
+    SyncService.instance.autoSync();
+    refreshNotes();
+  }
+
+  Map<ShortcutActivator, VoidCallback> get _homeShortcuts => {
+    const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+        _handleNewNoteShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
+        _handleNewNoteShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+        _handleSearchShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+        _handleSearchShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+        _handleSaveShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+        _handleSaveShortcut,
+    const SingleActivator(LogicalKeyboardKey.escape): _handleEscShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyA, control: true):
+        _handleSelectAllShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyA, meta: true):
+        _handleSelectAllShortcut,
+  };
 
   void dismissKeyboard([Object? _]) {
     final FocusScopeNode currentScope = FocusScope.of(context);

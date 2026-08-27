@@ -131,6 +131,9 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// 当前标签列表（用于预览页标题下方浮层展示）。
   List<String> get _tags => _meta?.tags ?? const [];
 
+  /// 桌面快捷键：页面级焦点，供全局 Shortcuts 使用
+  final FocusNode _pageFocusNode = FocusNode(skipTraversal: true);
+
   @override
   void initState() {
     super.initState();
@@ -184,6 +187,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
     _descriptionFocusNode.removeListener(_onEditorFocusChanged);
     _titleFocusNode.dispose();
     _descriptionFocusNode.dispose();
+    _pageFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     // 若页面因非 pop 路径被 dispose（如会话超时登出），静默自动保存
     // 使用 destroyAfter=false 的路径由 handleUngracefulNoteExit 兜底，这里
@@ -221,38 +225,44 @@ class AddEditNotePageState extends State<AddEditNotePage>
       metaColor: _meta?.color,
       context: context,
     );
-    return PopScope(
-      // 仅当「已确认关闭 / 正在删除」时直接放行；有未保存改动时在 onPopInvoked
-      // 中自动保存后再放行（无弹框）。
-      canPop: _allowClose || _isDeleting,
-      onPopInvokedWithResult: (bool didPop, _) => _onPopInvoked(didPop),
-      child: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: Scaffold(
-          key: const Key('ui-note-screen'),
-          resizeToAvoidBottomInset: false,
-          backgroundColor: noteBg,
-          appBar: AppBar(
-            backgroundColor: noteBg,
-            actions: [
-              // 锁定笔记只读：AppBar 顶部用「已锁定」文本指示，正文布局不被改动。
-              if (_isLocked) _lockedIndicator(),
-              // 锁定笔记隐藏「编辑/预览」切换，仅保留操作菜单，
-              // 供复制 / 星标 / 解锁 / 标签 / 删除使用。
-              if (!_isLocked) _previewToggle(),
-              // 编辑态（非锁定）提供撤销 / 重做按钮，按 _canUndo/_canRedo 启用。
-              if (!_isLocked && !_previewMode) _undoRedoButtons(),
-              // 复制/星标/锁定/标签/删除/版本历史收进「更多」菜单，AppBar 仅保留预览切换。
-              // 新建笔记后台自动保存后 _effectiveNote 会被赋值，同样可调起菜单。
-              if (_effectiveNote != null) _moreButton(),
-            ],
+    return CallbackShortcuts(
+      bindings: _editorShortcuts,
+      child: Focus(
+        focusNode: _pageFocusNode,
+        child: PopScope(
+          // 仅当「已确认关闭 / 正在删除」时直接放行；有未保存改动时在 onPopInvoked
+          // 中自动保存后再放行（无弹框）。
+          canPop: _allowClose || _isDeleting,
+          onPopInvokedWithResult: (bool didPop, _) => _onPopInvoked(didPop),
+          child: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Scaffold(
+              key: const Key('ui-note-screen'),
+              resizeToAvoidBottomInset: false,
+              backgroundColor: noteBg,
+              appBar: AppBar(
+                backgroundColor: noteBg,
+                actions: [
+                  // 锁定笔记只读：AppBar 顶部用「已锁定」文本指示，正文布局不被改动。
+                  if (_isLocked) _lockedIndicator(),
+                  // 锁定笔记隐藏「编辑/预览」切换，仅保留操作菜单，
+                  // 供复制 / 星标 / 解锁 / 标签 / 删除使用。
+                  if (!_isLocked) _previewToggle(),
+                  // 编辑态（非锁定）提供撤销 / 重做按钮，按 _canUndo/_canRedo 启用。
+                  if (!_isLocked && !_previewMode) _undoRedoButtons(),
+                  // 复制/星标/锁定/标签/删除/版本历史收进「更多」菜单。
+                  // 新建笔记未落库前也展示入口：首次调起时自动落库后再展示选项。
+                  _moreButton(),
+                ],
+              ),
+              body: (_isLocked || _previewMode)
+                  ? _buildPreview(context)
+                  : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
+                    // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
+                    // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
+                    _KeyboardAwarePadding(child: _buildEditorLayout(noteBg)),
+            ),
           ),
-          body: (_isLocked || _previewMode)
-              ? _buildPreview(context)
-              : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
-                // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
-                // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
-                _KeyboardAwarePadding(child: _buildEditorLayout(noteBg)),
         ),
       ),
     );
@@ -435,6 +445,89 @@ class AddEditNotePageState extends State<AddEditNotePage>
     return KeyEventResult.ignored;
   }
 
+  // ── 桌面快捷键 ──
+
+  Future<void> _handleSaveShortcut() async {
+    if (_isLocked || _isDeleting || _isSaving) return;
+    if (!isNoteNewOrContentChanged()) {
+      if (mounted) showSnackBarMessage(context, 'No changes'.tr());
+      return;
+    }
+    Log.note.i('快捷键: Ctrl+S 保存 uuid=${_effectiveNote?.uuid ?? "(新建)"}');
+    final outcome = await _performAutoSave(keepEditing: true);
+    if (!mounted) return;
+    if (outcome.failed) {
+      showErrorToast(context, 'Failed to save'.tr());
+    } else if (outcome.saved != null) {
+      showSnackBarMessage(context, 'Saved'.tr());
+    }
+  }
+
+  void _handleNewShortcut() {
+    Log.ui.i('快捷键: Ctrl+N 新建笔记');
+    if (!_isLocked && isNoteNewOrContentChanged()) {
+      unawaited(_performAutoSave(keepEditing: true));
+    }
+    // 复用首页新建路由，需传递 sessionStateStream
+    if (mounted) {
+      Navigator.of(
+        context,
+      ).pushNamed('/addnote', arguments: widget.sessionStateStream);
+    }
+  }
+
+  void _handleEscShortcut() {
+    if (_isSaving || _isDeleting) return;
+    // 编辑态首按 Esc 切回预览，次按 Esc 再退出（桌面端常见两段式返回）
+    if (!_isLocked && !_previewMode) {
+      Log.ui.d('快捷键: Esc 切换至预览');
+      setState(() => _previewMode = true);
+      return;
+    }
+    Log.ui.d('快捷键: Esc 返回');
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  void _handleFindShortcut() {
+    Log.ui.d('快捷键: Ctrl+F 查找/聚焦标题');
+    if (_isLocked) return;
+    if (_previewMode) {
+      setState(() => _previewMode = false);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _titleFocusNode.requestFocus(),
+      );
+    } else {
+      _titleFocusNode.requestFocus();
+    }
+  }
+
+  void _handleCopyAllShortcut() {
+    Log.ui.d('快捷键: Ctrl+Shift+C 复制全文');
+    unawaited(_copyAll());
+  }
+
+  Map<ShortcutActivator, VoidCallback> get _editorShortcuts => {
+    const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
+        unawaited(_handleSaveShortcut()),
+    const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
+        unawaited(_handleSaveShortcut()),
+    const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+        _handleNewShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
+        _handleNewShortcut,
+    const SingleActivator(LogicalKeyboardKey.escape): _handleEscShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+        _handleFindShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+        _handleFindShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true):
+        _handleCopyAllShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyC, meta: true, shift: true):
+        _handleCopyAllShortcut,
+  };
+
   /// 编辑变更回调（controller 监听器）：同步预览态并向撤销栈记录一步。
   ///
   /// 光标/选区移动也会触发本回调，此时文本未变；是否入栈由
@@ -533,8 +626,25 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// 动作一律在 sheet 关闭之后执行（[showNoteActionsSheet] 只返回选择结果），
   /// 这样删除确认框与 toast 都挂在本页 context 上，不会用到已销毁的 sheet。
   Future<void> _onMorePressed() async {
-    final SafeNote? note = _effectiveNote;
-    if (note == null) return;
+    SafeNote? note = _effectiveNote;
+    // 新建态未落库：先尝试静默落库（keepEditing:true）以获得 uuid，再展示菜单。
+    // 覆盖“新建笔记更多菜单不存在”问题；空内容直接提示不落库。
+    if (note == null) {
+      if (title.trim().isEmpty && description.trim().isEmpty) {
+        if (mounted) showSnackBarMessage(context, 'Empty note'.tr());
+        return;
+      }
+      if (_isSaving || _isDeleting) return;
+      Log.note.i('新建笔记首次调起更多菜单，自动落库后展示选项');
+      final outcome = await _performAutoSave(keepEditing: true);
+      if (outcome.failed) return;
+      note = _effectiveNote;
+      if (note == null) {
+        Log.note.w('新建笔记自动保存后 _effectiveNote 仍为 null，更多菜单中止');
+        if (mounted) showErrorToast(context, 'Failed to save'.tr());
+        return;
+      }
+    }
 
     // 无 meta 行即视为未加星/未锁定：元数据是懒创建的，只有设置过才会有行。
     // 优先用已加载的 _meta；为避免状态漂移再查一枚最新值（星标/锁定/标签）。
@@ -603,8 +713,24 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   /// 切换锁定（只读）。锁定后本页刷新为只读预览；解锁后恢复可编辑。
   ///
-  /// 只写 note_meta，不动笔记正文与 `updated_at`。
+  /// 锁定前若有未保存改动先静默落库，避免 `_isLocked` 守卫导致改动静默丢弃。
+  /// 只写 note_meta，不动笔记正文与 `updated_at`（落库是独立的正文保存）。
   Future<void> _toggleLock(SafeNote note, bool locked) async {
+    // 锁定前未保存丢弃修复：先保存正文（keepEditing:true 保留编辑态，更新 _effectiveNote）
+    if (locked && isNoteNewOrContentChanged()) {
+      if (_isSaving || _isDeleting) return;
+      Log.note.i('锁定前检测到未保存改动，先自动保存 uuid=${note.uuid}');
+      final outcome = await _performAutoSave(keepEditing: true);
+      if (outcome.failed) {
+        if (mounted) {
+          showErrorToast(context, 'Failed to save'.tr());
+        }
+        return;
+      }
+      // _performAutoSave 已更新 _effectiveNote，刷新本地引用
+      final updated = _effectiveNote;
+      if (updated != null) note = updated;
+    }
     await NotesDatabase.instance.setNoteLocked(note.uuid, locked);
     Log.note.i('笔记锁定切换: uuid=${note.uuid} locked=$locked');
     if (!mounted) return;

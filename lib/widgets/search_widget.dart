@@ -23,12 +23,14 @@ class SearchWidget extends StatefulWidget {
   final String text;
   final ValueChanged<String> onChanged;
   final String hintText;
+  final FocusNode? focusNode;
 
   const SearchWidget({
     super.key,
     required this.text,
     required this.onChanged,
     required this.hintText,
+    this.focusNode,
   });
 
   @override
@@ -90,6 +92,7 @@ class SearchWidgetState extends State<SearchWidget> {
           Expanded(
             child: ShadInput(
               key: const Key('ui-home-search-input'),
+              focusNode: widget.focusNode,
               enableIMEPersonalizedLearning: enableIMEPLFlag,
               textDirection: getTextDirection(widget.text),
               controller: controller,
