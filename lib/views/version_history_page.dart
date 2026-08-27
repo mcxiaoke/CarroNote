@@ -26,6 +26,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/editor_text.dart';
 import 'package:safenotes/utils/note_diff.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/widgets/app_dialogs.dart';
 
@@ -87,23 +88,39 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
   /// 默认显示完整版本文本，开关打开后显示 diff
   bool _showDiff = false;
 
+  final ScrollController _fullScroll = ScrollController();
+  final ScrollController _diffScroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _fullScroll.dispose();
+    _diffScroll.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     final uuid = widget.note.uuid;
-    List<NoteVersion> versions;
+    List<NoteVersion> versions = const [];
+    NoteMeta? meta;
     try {
       versions = await NotesDatabase.instance.readVersions(uuid);
+      meta = await NotesDatabase.instance.getNoteMeta(uuid);
     } on Exception catch (e, st) {
       // H3：读取失败不能永久卡骨架屏——降级为空列表并提示
       Log.note.e('版本历史加载失败', error: e, stackTrace: st);
       versions = const [];
+      meta = null;
+    } catch (e, st) {
+      Log.note.e('版本历史加载失败(非Exception)', error: e, stackTrace: st);
+      versions = const [];
+      meta = null;
     }
-    final meta = await NotesDatabase.instance.getNoteMeta(uuid);
     if (!mounted) return;
     setState(() {
       _versions = versions;
@@ -123,26 +140,36 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
     final seq = ++_diffSeq;
     setState(() => _isLoading = true);
 
-    final current = await NotesDatabase.instance.readNoteByUuid(
-      widget.note.uuid,
-    );
-    if (current == null || !mounted || seq != _diffSeq) {
-      // 笔记已不存在 / 页面已销毁 / 已有更新的请求在途：复位加载态，
-      // 避免永久转圈（H3）
+    try {
+      final current = await NotesDatabase.instance.readNoteByUuid(
+        widget.note.uuid,
+      );
+      if (current == null || !mounted || seq != _diffSeq) {
+        // 笔记已不存在 / 页面已销毁 / 已有更新的请求在途：复位加载态，
+        // 避免永久转圈（H3）
+        if (mounted && seq == _diffSeq) {
+          setState(() => _isLoading = false);
+        }
+        return;
+      }
+
+      final version = _versions![_selectedIndex];
+      final diff = await computeNoteDiffAsync(current, version);
+
+      if (!mounted || seq != _diffSeq) return;
+      setState(() {
+        _diffResult = diff;
+        _isLoading = false;
+      });
+    } catch (e, st) {
+      Log.note.e('版本 diff 计算失败', error: e, stackTrace: st);
       if (mounted && seq == _diffSeq) {
         setState(() => _isLoading = false);
       }
-      return;
+      if (mounted) {
+        showErrorToast(context, 'Failed to compute diff: $e'.tr());
+      }
     }
-
-    final version = _versions![_selectedIndex];
-    final diff = await computeNoteDiffAsync(current, version);
-
-    if (!mounted || seq != _diffSeq) return;
-    setState(() {
-      _diffResult = diff;
-      _isLoading = false;
-    });
   }
 
   Future<void> _onVersionChanged(int? index) async {
@@ -193,8 +220,18 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Version History'.tr())),
-      body: _buildBody(),
-      bottomNavigationBar: _buildRestoreButton(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: SizedBox.expand(child: _buildBody()),
+        ),
+      ),
+      bottomNavigationBar: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: _buildRestoreButton(),
+        ),
+      ),
     );
   }
 
@@ -264,17 +301,22 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
   Widget _buildFullTextArea() {
     final version = _versions![_selectedIndex];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSelectableText(version.title, isTitle: true),
-          const SizedBox(height: 8),
-          const Divider(height: 1, thickness: 1),
-          const SizedBox(height: 8),
-          _buildSelectableText(version.description, isTitle: false),
-        ],
+    return Scrollbar(
+      controller: _fullScroll,
+      thumbVisibility: isDesktopPlatform,
+      child: SingleChildScrollView(
+        controller: _fullScroll,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSelectableText(version.title, isTitle: true),
+            const SizedBox(height: 8),
+            const Divider(height: 1, thickness: 1),
+            const SizedBox(height: 8),
+            _buildSelectableText(version.description, isTitle: false),
+          ],
+        ),
       ),
     );
   }
@@ -291,17 +333,22 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
     }
 
     // 标题始终显示，避免切换版本时布局跳动
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildDiffText(diff.titleDiff, isTitle: true),
-          const SizedBox(height: 8),
-          const Divider(height: 1, thickness: 1),
-          const SizedBox(height: 8),
-          _buildDiffText(diff.descriptionDiff, isTitle: false),
-        ],
+    return Scrollbar(
+      controller: _diffScroll,
+      thumbVisibility: isDesktopPlatform,
+      child: SingleChildScrollView(
+        controller: _diffScroll,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDiffText(diff.titleDiff, isTitle: true),
+            const SizedBox(height: 8),
+            const Divider(height: 1, thickness: 1),
+            const SizedBox(height: 8),
+            _buildDiffText(diff.descriptionDiff, isTitle: false),
+          ],
+        ),
       ),
     );
   }

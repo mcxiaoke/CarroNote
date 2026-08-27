@@ -32,6 +32,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/notes_color.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
@@ -50,12 +51,19 @@ class DeletedNotesPage extends StatefulWidget {
 class _DeletedNotesPageState extends State<DeletedNotesPage> {
   List<SafeNote> _deletedNotes = [];
   bool _isLoading = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     Log.ui.i('进入回收站页面（最近删除）');
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -114,7 +122,12 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: SizedBox.expand(child: _buildBody()),
+        ),
+      ),
     );
   }
 
@@ -129,19 +142,24 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
         text: 'No deleted notes'.tr(),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(14),
-      itemCount: _deletedNotes.length,
-      // 与主界面笔记列表 12px 间距保持一致。
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final note = _deletedNotes[index];
-        return _DeletedNoteTile(
-          note: note,
-          onRestore: () => _restoreNote(note),
-          onPermanentDelete: () => _permanentDelete(note),
-        );
-      },
+    return Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: isDesktopPlatform,
+      child: ListView.separated(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(14),
+        itemCount: _deletedNotes.length,
+        // 与主界面笔记列表 12px 间距保持一致。
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final note = _deletedNotes[index];
+          return _DeletedNoteTile(
+            note: note,
+            onRestore: () => _restoreNote(note),
+            onPermanentDelete: () => _permanentDelete(note),
+          );
+        },
+      ),
     );
   }
 
@@ -155,13 +173,12 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 触发自动同步（如果已启用）
     SyncService.instance.autoSync();
     if (mounted) {
-      // P2-3：信息提示走 ShadToast。
-      // showSnackBarMessage(
-      //   context,
-      //   'Restored: "{title}"'.tr(
-      //     namedArgs: {'title': _truncateTitle(note.title)},
-      //   ),
-      // );
+      showSnackBarMessage(
+        context,
+        'Restored: "{title}"'.tr(
+          namedArgs: {'title': _truncateTitle(note.title)},
+        ),
+      );
       _refresh();
     }
   }
@@ -173,8 +190,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
     SyncService.instance.autoSync();
     if (mounted) {
-      // P2-3：信息提示走 ShadToast。
-      showErrorToast(
+      showSnackBarMessage(
         context,
         'Permanently deleted: "{title}"'.tr(
           namedArgs: {'title': _truncateTitle(note.title)},
@@ -219,8 +235,7 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
     SyncService.instance.autoSync();
     if (mounted) {
-      // P2-3：信息提示走 ShadToast。
-      showErrorToast(
+      showSnackBarMessage(
         context,
         'Cleared {count} notes'.tr(namedArgs: {'count': '$deleted'}),
       );

@@ -985,17 +985,27 @@ class NotesDatabase {
     _checkNotMigrating();
     final db = await instance.database;
 
+    // 批内去重：同一备份批内若含重复 uuid，仅保留首个，避免 UNIQUE 整体回滚
+    final seenBatch = <String>{};
+    final deduped = <SafeNote>[];
+    for (final n in notes) {
+      if (seenBatch.add(n.uuid)) deduped.add(n);
+    }
+    final batchDupSkipped = notes.length - deduped.length;
+    if (batchDupSkipped > 0) {
+      Log.note.i('事务批量新增: 跳过 $batchDupSkipped/${notes.length} 条批内重复 uuid');
+    }
     // 幂等去重：先查候选 uuid 是否已存在于库（含墓碑，墓碑同样占用唯一键），
     // 已存在的跳过，避免裸 INSERT 触发 UNIQUE 约束整体回滚。
-    final existingUuids = await _existingUuids(db, notes.map((n) => n.uuid));
+    final existingUuids = await _existingUuids(db, deduped.map((n) => n.uuid));
     final toInsert = existingUuids.isEmpty
-        ? notes
-        : notes.where((n) => !existingUuids.contains(n.uuid)).toList();
+        ? deduped
+        : deduped.where((n) => !existingUuids.contains(n.uuid)).toList();
     final skipped = notes.length - toInsert.length;
     if (skipped > 0) {
       Log.note.i(
         '事务批量新增: 跳过 $skipped/${notes.length} 条已存在 uuid'
-        '（幂等去重）',
+        '（含批内 $batchDupSkipped 条，库中 ${skipped - batchDupSkipped} 条）',
       );
     }
 
@@ -1273,7 +1283,7 @@ class NotesDatabase {
         where: '${NoteFields.id} = ?',
         whereArgs: [note.id],
       );
-      _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
+      if (rows > 0) _upsertCacheEntry(note); // rows==0 时不写缓存，避免幻影笔记
 
       // P0-log：若 syncedHash 被回退（新值 ≠ 旧值且新值 ≠ null 且新值 ≠ contentHash）
       // 说明 UI 路径可能写入了过时的 base，发出 WARN
@@ -1318,7 +1328,7 @@ class NotesDatabase {
         where: '${NoteFields.uuid} = ?',
         whereArgs: [note.uuid],
       );
-      _upsertCacheEntry(note); // 单条修改：直接更新缓存，避免全量重解密
+      if (rows > 0) _upsertCacheEntry(note); // rows==0 时不写缓存，避免幻影笔记
       Log.note.i(
         '按 uuid 更新笔记 uuid=${note.uuid} '
         'hash=${_hashBrief(note.contentHash)} '
@@ -2158,15 +2168,55 @@ class NotesDatabase {
       return;
     }
     final db = await instance.database;
-    final placeholders = List.filled(exclude.length, '?').join(',');
-    final rows = await db.rawUpdate(
-      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
-      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
-      '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
-      'WHERE ${NoteFields.uuid} NOT IN ($placeholders)',
-      exclude.toList(),
-    );
-    Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
+    // SQLite 单条语句变量上限 999，NOT IN 不能简单按 chunk 拆成多条
+    // UPDATE（会把应排除的行在另一 chunk 中误标）。大集合走补集路径：
+    // 查全量 uuid → 补集用白名单分片标记，复用 markSyncedForUuids 的 IN 分片。
+    const safeLimit = 900;
+    if (exclude.length <= safeLimit) {
+      final placeholders = List.filled(exclude.length, '?').join(',');
+      final rows = await db.rawUpdate(
+        'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+        '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+        '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
+        'WHERE ${NoteFields.uuid} NOT IN ($placeholders)',
+        exclude.toList(),
+      );
+      Log.db.i('标记笔记为已同步: $rows 条已标记, ${exclude.length} 条本轮未收敛被排除');
+      _applySyncedToCache(uuids: exclude, exclude: true);
+      return;
+    }
+    // 大集合：读全量 uuid 求补集，再走 IN 分片（事务内批量）
+    final allRows = await db.query(tableNotes, columns: [NoteFields.uuid]);
+    final allUuids = <String>{
+      for (final r in allRows)
+        if (r[NoteFields.uuid] is String) r[NoteFields.uuid] as String,
+    };
+    final toMark = allUuids.difference(exclude);
+    if (toMark.isEmpty) {
+      Log.db.i('标记笔记为已同步: 0 条已标记(大集合补集为空), ${exclude.length} 条被排除');
+      _applySyncedToCache(uuids: exclude, exclude: true);
+      return;
+    }
+    // 复用分片白名单标记（与 markSyncedForUuids 同 chunk 逻辑）
+    const chunkSize = 400;
+    final list = toMark.toList();
+    var totalRows = 0;
+    await db.transaction((txn) async {
+      for (var i = 0; i < list.length; i += chunkSize) {
+        var end = i + chunkSize;
+        if (end > list.length) end = list.length;
+        final chunk = list.sublist(i, end);
+        final placeholders = List.filled(chunk.length, '?').join(',');
+        totalRows += await txn.rawUpdate(
+          'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+          '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+          '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
+          'WHERE ${NoteFields.uuid} IN ($placeholders)',
+          chunk,
+        );
+      }
+    });
+    Log.db.i('标记笔记为已同步(大集合补集分片): $totalRows 条已标记, ${exclude.length} 条被排除');
     _applySyncedToCache(uuids: exclude, exclude: true);
   }
 
@@ -2188,15 +2238,37 @@ class NotesDatabase {
       return;
     }
     final db = await instance.database;
-    final placeholders = List.filled(uuids.length, '?').join(',');
-    final rows = await db.rawUpdate(
-      'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
-      '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
-      '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
-      'WHERE ${NoteFields.uuid} IN ($placeholders)',
-      uuids.toList(),
-    );
-    Log.db.i('按 uuid 集合标记已同步: $rows 条已标记 (请求 ${uuids.length} 个)');
+    // 分片：SQLite 单条语句变量上限 999，chunk 400 兜底
+    const chunkSize = 400;
+    final list = uuids.toList();
+    var totalRows = 0;
+    if (list.length <= chunkSize) {
+      final placeholders = List.filled(list.length, '?').join(',');
+      totalRows = await db.rawUpdate(
+        'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+        '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+        '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
+        'WHERE ${NoteFields.uuid} IN ($placeholders)',
+        list,
+      );
+    } else {
+      await db.transaction((txn) async {
+        for (var i = 0; i < list.length; i += chunkSize) {
+          var end = i + chunkSize;
+          if (end > list.length) end = list.length;
+          final chunk = list.sublist(i, end);
+          final placeholders = List.filled(chunk.length, '?').join(',');
+          totalRows += await txn.rawUpdate(
+            'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
+            '${NoteFields.syncedHash} = ${NoteFields.contentHash}, '
+            '${NoteFields.syncedDeleted} = ${NoteFields.deleted} '
+            'WHERE ${NoteFields.uuid} IN ($placeholders)',
+            chunk,
+          );
+        }
+      });
+    }
+    Log.db.i('按 uuid 集合标记已同步: $totalRows 条已标记 (请求 ${uuids.length} 个)');
     _applySyncedToCache(uuids: uuids, exclude: false);
   }
 
