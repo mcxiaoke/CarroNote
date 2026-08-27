@@ -473,7 +473,7 @@ void main() {
       expect(blobs.contains('not-a-valid-hash'), isFalse);
     });
 
-    test('deleteBlobSoft: COPY 失败退化为硬删除且不抛异常', () async {
+    test('deleteBlobSoft: COPY 失败抛 BackendUnavailableException 且不硬删除（H9）', () async {
       var deleteCalled = false;
       final client = MockClient((req) async {
         if (req.method == 'MKCOL') return http.Response('', 201);
@@ -493,8 +493,11 @@ void main() {
         client: client,
       );
       await backend.init();
-      await expectLater(backend.deleteBlobSoft('somehash'), completes);
-      expect(deleteCalled, isTrue, reason: 'COPY 失败后应退化为 DELETE');
+      await expectLater(
+        backend.deleteBlobSoft('somehash'),
+        throwsA(isA<BackendUnavailableException>()),
+      );
+      expect(deleteCalled, isFalse, reason: 'H9：COPY 失败不应退化为 DELETE，需保留隔离恢复窗口');
     });
   });
 }

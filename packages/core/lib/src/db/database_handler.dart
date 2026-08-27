@@ -96,6 +96,28 @@ class MigrationInProgressException implements Exception {
   String toString() => 'MigrationInProgressException: $message';
 }
 
+/// 大批量笔记解密失败异常（M1）
+///
+/// 理论上同一 dataKey 加密下**单行**不会单独解不开：单行失败属隔离损坏
+/// （存储/传输损坏），删除该行即可，不应影响整库读取。但**多条同时失败**
+/// 说明是系统性故障（dataKey 不匹配 / 整库损坏），此时删除等于批量丢数据。
+/// 读路径遇到该异常应停止一切删除并**强提示用户**（可能是密码错误或数据库
+/// 损坏，建议从备份恢复），由用户决定恢复手段。
+class MassDecryptionFailureException implements Exception {
+  final int brokenCount;
+  final int totalCount;
+
+  MassDecryptionFailureException({
+    required this.brokenCount,
+    required this.totalCount,
+  });
+
+  @override
+  String toString() =>
+      'MassDecryptionFailureException: $brokenCount/$totalCount 条笔记无法解密'
+      '（可能是密码错误或数据库损坏）';
+}
+
 class MetaFields {
   static const String key = 'key';
   static const String value = 'value';
@@ -396,7 +418,13 @@ class NotesDatabase {
   NotesDatabase._init();
 
   /// 设置 dataKey（登录/解锁 keyring 后调用）
-  void setDataKey(Uint8List key) => _dataKey = Uint8List.fromList(key);
+  ///
+  /// 同时清空解密缓存：旧缓存由旧 key 解出，若用新/错误 key 覆盖 dataKey 后
+  /// 命中缓存会直接跳过 [_decryptRowsWithGuard]，系统性失败检测完全失效。
+  void setDataKey(Uint8List key) {
+    _dataKey = Uint8List.fromList(key);
+    _invalidateCache();
+  }
 
   /// 清除 dataKey（登出时调用）
   void clearDataKey() {
@@ -513,6 +541,122 @@ class NotesDatabase {
       encryptedDesc,
     );
     return SafeNote.fromJson(decrypted);
+  }
+
+  // ──────────────────────────────────────────────
+  // M1：解密失败容错（单行删除 vs 批量系统性抛异常）
+  // ──────────────────────────────────────────────
+  //
+  // 背景：notes 表无降级容错，此前任何一行解密失败都会让整个查询抛异常
+  // （readAllNotes / 回收站 / 同步全部不可用，乃至整库"不可读"）。
+  //
+  // 取舍：单行失败是存储/传输损坏（隔离损坏），原始删除该行即可——密文本就
+  // 解不开、无明文价值，且**不进 purgedUuids**：云端仍持有 blob，下次同步
+  // "仅远端有"自动拉回；或从每日备份恢复。数据由既有自愈机制兜底，
+  // 不做隔离落盘（取证的恢复 UI 成本远高于该三重低概率场景的收益）。
+  // 多条同时失败则说明系统性故障（dataKey 不匹配 / 整库损坏），此时删除
+  // 等于批量丢数据，改为抛 [MassDecryptionFailureException] 由 UI 强提示用户。
+
+  /// M1：批量解密失败的系统性判定（满足任一即系统性）：
+  /// 绝对量 >= 10，或相对量 >= 3 且占比 >= 10%（防"小库 + 密码不对"误删全部），
+  /// 或**全部失败**（broken == total）——全损必为系统性（错误 key / 整库损坏），
+  /// 单行隔离损坏不可能恰好每行都坏，此时若按隔离删除会悄悄删光后"成功"。
+  static bool _isMassDecryptionFailure(int broken, int total) =>
+      broken >= 10 || (broken >= 3 && broken * 10 >= total) || broken == total;
+
+  /// M1：原始删除无法解密的行（不进 purgedUuids，云端可复活）。
+  ///
+  /// 删除包事务（避免崩溃半删）；同时从 [_notesCache] 移除坏行——否则
+  /// readDeletedNotes / readUnsyncedNotes / 单行守卫删行后缓存仍残留，
+  /// 下次 readAllNotesIncludingDeleted 命中缓存会"复活"幽灵行。
+  Future<void> _deleteBrokenRows(
+    Database db,
+    List<Map<String, dynamic>> broken,
+  ) async {
+    final uuids = <String>[
+      for (final row in broken)
+        if (row[NoteFields.uuid] is String &&
+            (row[NoteFields.uuid] as String).isNotEmpty)
+          row[NoteFields.uuid] as String,
+    ];
+    if (uuids.isEmpty) return;
+    await db.transaction((txn) async {
+      for (final uuid in uuids) {
+        await txn.delete(
+          tableNotes,
+          where: '${NoteFields.uuid} = ?',
+          whereArgs: [uuid],
+        );
+      }
+    });
+    for (final uuid in uuids) {
+      _removeCacheEntry(uuid: uuid); // 缓存一致：坏行不再存活于 _notesCache
+      Log.db.w('已删除无法解密的笔记（原始删除，不进 purgedUuids）: uuid=$uuid');
+    }
+  }
+
+  /// M1：批量解密守卫（列表读取用）。
+  ///
+  /// 返回健康行；失败行按 [\_isMassDecryptionFailure] 判定：
+  /// - 系统性 → 抛 [MassDecryptionFailureException]，**不做任何删除**；
+  /// - 隔离损坏（少数）→ 原始删除（云端/备份自愈）。
+  Future<List<SafeNote>> _decryptRowsWithGuard(
+    Database db,
+    List<Map<String, dynamic>> rows, {
+    required String op,
+  }) async {
+    // 注意：返回可增长列表而非 `const []`——结果会赋给 _notesCache 供后续
+    // _removeCacheEntry / _upsertCacheEntry 等原地修改，const 列表会抛
+    // UnsupportedError（Cannot remove from an unmodifiable list）。
+    if (rows.isEmpty) return <SafeNote>[];
+    final healthy = <SafeNote>[];
+    final broken = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      try {
+        healthy.add(await _fromEncryptedRow(row));
+      } on Object catch (e, st) {
+        final uuid = row[NoteFields.uuid] as String? ?? '?';
+        Log.db.e(
+          '[$op] 笔记解密失败: uuid=${_hashBrief(uuid)}',
+          error: e,
+          stackTrace: st,
+        );
+        broken.add(row);
+      }
+    }
+    if (broken.isEmpty) return healthy;
+    if (_isMassDecryptionFailure(broken.length, rows.length)) {
+      throw MassDecryptionFailureException(
+        brokenCount: broken.length,
+        totalCount: rows.length,
+      );
+    }
+    await _deleteBrokenRows(db, broken);
+    return healthy;
+  }
+
+  /// M1：单行读取守卫（readNote / readNoteByUuid / readNoteByContentHash 用）。
+  ///
+  /// 解密失败视为"该行损坏"：原始删除，返回 null（调用方按"笔记不存在"
+  /// 处理）。不判阈值——单次读取最多见一行，系统性判定由
+  /// [\_decryptRowsWithGuard] 在列表/缓存重建处兜底（启动即执行）。
+  Future<SafeNote?> _decryptRowWithGuard(
+    Database db,
+    Map<String, dynamic> row, {
+    required String op,
+  }) async {
+    try {
+      return await _fromEncryptedRow(row);
+    } on Object catch (e, st) {
+      final uuid = row[NoteFields.uuid] as String? ?? '?';
+      Log.db.e(
+        '[$op] 笔记解密失败（已删除该行）: uuid=${_hashBrief(uuid)}',
+        error: e,
+        stackTrace: st,
+      );
+      await _deleteBrokenRows(db, [row]);
+      return null;
+    }
   }
 
   /// 当前 schema 版本。
@@ -930,10 +1074,10 @@ class NotesDatabase {
     );
 
     if (maps.isNotEmpty) {
-      return await _fromEncryptedRow(maps.first);
-    } else {
-      throw Exception('ID $id not found');
+      final note = await _decryptRowWithGuard(db, maps.first, op: 'readNote');
+      if (note != null) return note;
     }
+    throw Exception('ID $id not found');
   }
 
   /// 按 uuid 读取单条笔记（同步用，自动解密）
@@ -948,7 +1092,7 @@ class NotesDatabase {
       limit: 1,
     );
     if (maps.isNotEmpty) {
-      return await _fromEncryptedRow(maps.first);
+      return _decryptRowWithGuard(db, maps.first, op: 'readNoteByUuid');
     }
     return null;
   }
@@ -970,7 +1114,7 @@ class NotesDatabase {
       limit: 1,
     );
     if (maps.isNotEmpty) {
-      return await _fromEncryptedRow(maps.first);
+      return _decryptRowWithGuard(db, maps.first, op: 'readNoteByContentHash');
     }
     return null;
   }
@@ -1021,9 +1165,7 @@ class NotesDatabase {
       where: '${NoteFields.deleted} = 1',
       orderBy: '${NoteFields.updatedAt} DESC',
     );
-    final notes = await Future.wait(
-      result.map((json) => _fromEncryptedRow(json)).toList(),
-    );
+    final notes = await _decryptRowsWithGuard(db, result, op: '回收站');
     Log.db.i(
       '加载回收站笔记: ${notes.length} 条（已删除）, '
       '解密耗时 ${sw.elapsedMilliseconds}ms',
@@ -1039,9 +1181,7 @@ class NotesDatabase {
       columns: NoteFields.values,
       where: '${NoteFields.synced} = 0',
     );
-    final notes = await Future.wait(
-      result.map((json) => _fromEncryptedRow(json)).toList(),
-    );
+    final notes = await _decryptRowsWithGuard(db, result, op: '待同步');
     Log.db.d('加载待同步笔记: ${notes.length} 条（synced=0）');
     return notes;
   }
@@ -1083,9 +1223,8 @@ class NotesDatabase {
   Future<List<SafeNote>> _rebuildNotesCache(Stopwatch sw) async {
     final db = await instance.database;
     final result = await db.query(tableNotes, columns: NoteFields.values);
-    final notes = await Future.wait(
-      result.map((json) => _fromEncryptedRow(json)).toList(),
-    );
+    // M1：解密失败按阈值处理（隔离删除少数坏行 / 系统性抛异常强提示用户）
+    final notes = await _decryptRowsWithGuard(db, result, op: '缓存重建');
     _notesCache = notes;
     final tombstones = notes.where((n) => n.deleted).length;
     Log.db.i(
@@ -1094,6 +1233,19 @@ class NotesDatabase {
       '解密耗时 ${sw.elapsedMilliseconds}ms',
     );
     return notes;
+  }
+
+  /// M1：迁移专用严格全量读取（reEncryptAllNotes* 用）。
+  ///
+  /// 与 [readAllNotesIncludingDeleted] 的区别：**不套用** [_decryptRowsWithGuard]
+  /// 的隔离删除容错。迁移是"全成或全败"的精确操作——任何一行解密失败都必须
+  /// 抛异常让整个事务回滚：错误 oldKey / 整库损坏属系统性故障，若按阈值走
+  /// 隔离删除，小库（<3 条）会在阈值不生效时被**悄悄删光后"成功"**，比旧行为
+  /// 更糟。故此处严格解密，失败即抛（SyncDecryptionException），由迁移调用方
+  /// catch 恢复原 dataKey 后 rethrow。
+  Future<List<SafeNote>> _readAllNotesStrict(Database db) async {
+    final result = await db.query(tableNotes, columns: NoteFields.values);
+    return Future.wait(result.map((json) => _fromEncryptedRow(json)).toList());
   }
 
   /// 更新笔记（title/description 加密后存储）
@@ -1701,7 +1853,9 @@ class NotesDatabase {
 
     try {
       // 2. 读取所有笔记（含墓碑），此时返回的是明文 SafeNote 对象
-      final notes = await readAllNotesIncludingDeleted();
+      //    M1：迁移必须**严格**解密（全成或全败），不套用隔离删除容错——
+      //    错误 oldKey 下小库会被阈值误判为隔离损坏而悄悄删光。
+      final notes = await _readAllNotesStrict(db);
 
       // 2b. 用 oldKey 解出 note_meta.payload 明文。
       //     **必须与笔记一同迁移**：payload 与 title/description 用同一把
@@ -1838,7 +1992,9 @@ class NotesDatabase {
 
     try {
       // 1. 用 oldKey 读取所有笔记（自动解密为明文）
-      final notes = await readAllNotesIncludingDeleted();
+      //    M1：迁移必须**严格**解密（全成或全败），不套用隔离删除容错——
+      //    错误 oldKey 下小库会被阈值误判为隔离损坏而悄悄删光。
+      final notes = await _readAllNotesStrict(db);
 
       // 1b. 用 oldKey 解出 note_meta.payload 明文。
       //     **必须与笔记一同迁移**：payload 与 title/description 用同一把

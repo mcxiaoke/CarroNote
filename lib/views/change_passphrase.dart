@@ -501,17 +501,34 @@ class ChangePassphraseState extends State<ChangePassphrase> {
       if (online) {
         await SyncService.instance.sync();
         // 2c. 检查本地是否 clean（同步后仍可能有 blob missing 等情况）
-        final unsynced = await NotesDatabase.instance.readUnsyncedNotes();
-        if (unsynced.isNotEmpty && mounted) {
-          final proceed = await _showWarningDialog(
-            title: 'Unsynchronized Notes Remain'.tr(),
-            content:
-                '{count} notes are not yet synced (the remote may be temporarily unreachable).\nThey will remain local and be pushed on the next sync.\n\nContinue changing the passphrase anyway?'
-                    .tr(namedArgs: {'count': '${unsynced.length}'}),
-            confirmText: 'Continue Changing Passphrase'.tr(),
-            cancelText: 'Cancel'.tr(),
-          );
-          if (!proceed) return false;
+        try {
+          final unsynced = await NotesDatabase.instance.readUnsyncedNotes();
+          if (unsynced.isNotEmpty && mounted) {
+            final proceed = await _showWarningDialog(
+              title: 'Unsynchronized Notes Remain'.tr(),
+              content:
+                  '{count} notes are not yet synced (the remote may be temporarily unreachable).\nThey will remain local and be pushed on the next sync.\n\nContinue changing the passphrase anyway?'
+                      .tr(namedArgs: {'count': '${unsynced.length}'}),
+              confirmText: 'Continue Changing Passphrase'.tr(),
+              cancelText: 'Cancel'.tr(),
+            );
+            if (!proceed) return false;
+          }
+        } on MassDecryptionFailureException catch (e) {
+          // M1：本地存在系统性解密失败（密码错/整库损坏），此时改密码会
+          // 用错误数据源重加密，**必须阻止**并提示先处理数据问题。
+          Log.ui.e('改密码前检查：本地解密系统性失败，已阻止继续', error: e);
+          if (mounted) {
+            await _showWarningDialog(
+              title: 'Database decryption failed'.tr(),
+              content:
+                  'Local notes cannot be decrypted (possibly wrong password or database corruption). Passphrase change is blocked to protect your data; please restore from a backup first.'
+                      .tr(),
+              confirmText: 'OK'.tr(),
+              cancelText: 'OK'.tr(),
+            );
+          }
+          return false;
         }
       }
     }

@@ -523,5 +523,10 @@
   "Link": "超链接",
   "Horizontal Rule": "分割线",
   "Markdown Toolbar": "Markdown 工具栏",
-  "Show formatting toolbar and auto-indent in note editor.": "在笔记编辑页显示格式工具栏与列表自动续行。"
+  "Show formatting toolbar and auto-indent in note editor.": "在笔记编辑页显示格式工具栏与列表自动续行。",
+  "Database decryption failed": "笔记解密失败",
+  "Many notes cannot be decrypted. This may be caused by an incorrect password or database corruption. Loading has stopped to protect your data; please restore from a backup.": "大量笔记无法解密，可能是密码错误或数据库损坏。为避免数据丢失，已停止加载；请从备份恢复后再试。",
+  "Local notes cannot be decrypted (possibly wrong password or database corruption). Passphrase change is blocked to protect your data; please restore from a backup first.": "本地笔记无法解密，可能是密码错误或数据库损坏。为保护数据，已阻止修改密码；请先从备份恢复。",
+  "Failed to load trash: {error}": "回收站加载失败：{error}",
+  "Back to Login": "返回登录"
 }

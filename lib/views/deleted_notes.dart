@@ -60,13 +60,41 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Future<void> _refresh() async {
     setState(() => _isLoading = true);
-    final notes = await NotesDatabase.instance.readDeletedNotes();
-    Log.ui.i('回收站列表已装载: ${notes.length} 条已删除笔记');
-    if (mounted) {
-      setState(() {
-        _deletedNotes = notes;
-        _isLoading = false;
-      });
+    try {
+      final notes = await NotesDatabase.instance.readDeletedNotes();
+      Log.ui.i('回收站列表已装载: ${notes.length} 条已删除笔记');
+      if (mounted) {
+        setState(() {
+          _deletedNotes = notes;
+          _isLoading = false;
+        });
+      }
+    } on MassDecryptionFailureException catch (e) {
+      // M1：回收站大量坏行 = 系统性故障，不删数据但需让用户知情。
+      // 清空列表避免卡 loading，toast 提示（主页全屏阻塞态已兜底主路径）。
+      Log.ui.e('回收站解密系统性失败，已清空列表', error: e);
+      if (mounted) {
+        setState(() {
+          _deletedNotes = <SafeNote>[];
+          _isLoading = false;
+        });
+        showErrorToast(
+          context,
+          'Failed to load trash: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
+      }
+    } on Exception catch (e) {
+      Log.ui.e('加载回收站失败，已清空列表以保持界面可交互', error: e);
+      if (mounted) {
+        setState(() {
+          _deletedNotes = <SafeNote>[];
+          _isLoading = false;
+        });
+        showErrorToast(
+          context,
+          'Failed to load trash: {error}'.tr(namedArgs: {'error': '$e'}),
+        );
+      }
     }
   }
 

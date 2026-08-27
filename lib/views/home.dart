@@ -72,6 +72,12 @@ class HomePageState extends State<HomePage> with RouteAware {
   late List<SafeNote> allnotes;
   bool isLoading = false;
   String query = '';
+
+  /// M1 强提示：系统性解密失败（大量笔记无法解密）时的全屏阻塞错误信息。
+  ///
+  /// 非 null 时主列表区域渲染阻塞错误态（替代普通 toast），直到用户主动
+  /// 重试或返回登录；与"单行损坏自动删除"的隔离容错语义互补。
+  String? _massDecryptError;
   bool isNewFirst = PreferencesStorage.isNewFirst;
 
   /// 笔记元数据全量快照（key = note uuid），由 [_sortAndStoreNotes] 维护。
@@ -170,10 +176,13 @@ class HomePageState extends State<HomePage> with RouteAware {
   ///
   /// 排序字段（修改日期/创建日期）由设置页切换，不会经过主页顶栏的方向按钮，
   /// 故需在返回时主动重排，否则要等下次进入主页才生效。
+  /// 走 [refreshNotes] 而非裸 [_sortAndStoreNotes]：统一异常处理——系统性
+  /// 解密失败（mass）时进入全屏阻塞态，其他异常清空列表 toast，而非让
+  /// RouteAware 回调里的异常裸奔。
   @override
   void didPopNext() {
     if (!mounted) return;
-    _sortAndStoreNotes();
+    refreshNotes();
   }
 
   /// 启动日志 Web 服务器（幂等，失败不影响主流程）
@@ -292,9 +301,24 @@ class HomePageState extends State<HomePage> with RouteAware {
   }
 
   Future<void> refreshNotes() async {
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+      // 重试时清除阻塞错误态（若仍系统性失败会再次置位）
+      _massDecryptError = null;
+    });
     try {
       await _sortAndStoreNotes();
+    } on MassDecryptionFailureException catch (e) {
+      // M1 强提示：大量笔记无法解密 = 系统性故障（密码错误 / 整库损坏）。
+      // 此时**不能**轻量 toast 了事——数据风险须全屏阻塞展示，引导用户
+      // 从备份恢复，避免继续操作造成二次损失（隔离单行损坏语义的互补）。
+      Log.ui.f('笔记解密系统性失败，已停止加载', error: e);
+      if (mounted) {
+        setState(() {
+          allnotes = notes = <SafeNote>[];
+          _massDecryptError = '$e';
+        });
+      }
     } on Exception catch (e) {
       Log.ui.e('刷新笔记列表失败, 已清空列表以保持界面可交互', error: e);
       // 防御层：避免任何异常（如 dataKey 不匹配、db 损坏、迁移进行中）
@@ -670,9 +694,13 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   Widget _handleAndBuildNotes() {
     final String noNotes = 'No Notes'.tr();
+    final String? massError = _massDecryptError;
 
     return Expanded(
-      child: !isLoading
+      child: massError != null
+          // M1 强提示：系统性解密失败时全屏阻塞，不渲染列表/空态/加载态
+          ? _buildMassDecryptError(massError)
+          : !isLoading
           ? notes.isEmpty
                 // P3-15：搜索无结果与空库区分，避免用户以为笔记被删。
                 ? query.isNotEmpty
@@ -692,6 +720,66 @@ class HomePageState extends State<HomePage> with RouteAware {
                         )
                 : (isGridView ? _buildNotes() : _buildNotesTile())
           : loadingState(),
+    );
+  }
+
+  /// M1 强提示：系统性解密失败的全屏阻塞错误态。
+  ///
+  /// 与普通错误 toast 不同——这是数据风险（密码错误 / 整库损坏），
+  /// 只提示一次不够，须持续展示到用户主动处理（重试 / 返回登录）。
+  Widget _buildMassDecryptError(String error) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpace.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.circleAlert, size: 48, color: colorScheme.error),
+            const SizedBox(height: AppSpace.lg),
+            Text(
+              'Database decryption failed'.tr(),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(color: colorScheme.error),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpace.md),
+            Text(
+              'Many notes cannot be decrypted. This may be caused by an incorrect password or database corruption. Loading has stopped to protect your data; please restore from a backup.'
+                  .tr(),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpace.lg),
+            Text(
+              error,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpace.xl),
+            Wrap(
+              spacing: AppSpace.md,
+              runSpacing: AppSpace.md,
+              alignment: WrapAlignment.center,
+              children: [
+                ShadButton.outline(
+                  onPressed: refreshNotes,
+                  child: Text('Retry'.tr()),
+                ),
+                ShadButton.destructive(
+                  onPressed: _logoutToLogin,
+                  child: Text('Back to Login'.tr()),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

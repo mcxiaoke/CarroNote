@@ -523,5 +523,10 @@
   "Link": "Link",
   "Horizontal Rule": "Horizontal Rule",
   "Markdown Toolbar": "Markdown Toolbar",
-  "Show formatting toolbar and auto-indent in note editor.": "Show formatting toolbar and auto-indent in note editor."
+  "Show formatting toolbar and auto-indent in note editor.": "Show formatting toolbar and auto-indent in note editor.",
+  "Database decryption failed": "Database decryption failed",
+  "Many notes cannot be decrypted. This may be caused by an incorrect password or database corruption. Loading has stopped to protect your data; please restore from a backup.": "Many notes cannot be decrypted. This may be caused by an incorrect password or database corruption. Loading has stopped to protect your data; please restore from a backup.",
+  "Local notes cannot be decrypted (possibly wrong password or database corruption). Passphrase change is blocked to protect your data; please restore from a backup first.": "Local notes cannot be decrypted (possibly wrong password or database corruption). Passphrase change is blocked to protect your data; please restore from a backup first.",
+  "Failed to load trash: {error}": "Failed to load trash: {error}",
+  "Back to Login": "Back to Login"
 }

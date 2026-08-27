@@ -169,6 +169,8 @@ void main() {
         // 构造在执行过程中抛异常：用错误格式触发异常或数据库操作失败
         // 我们通过关闭数据库或者故意注入不可加密的数据来制造异常
         // 验证在原子化迁移抛错后，状态正确回滚
+        // M1：错误的 oldKey 使全量行解密失败 → 迁移严格读取抛异常回滚
+        //（reEncryptAllNotes* 走 _readAllNotesStrict，任何失败即抛 SyncDecryptionException）
         try {
           await database.reEncryptAllNotesAtomically(
             oldKey: Uint8List.fromList(
@@ -202,6 +204,8 @@ void main() {
           );
           fail('Should throw exception');
         } catch (e) {
+          // M1：错误 oldKey → 迁移严格读取（_readAllNotesStrict）解密失败即抛，
+          // 不会走隔离删除容错把小库悄悄删光；异常向上传播由调用方回滚。
           expect(e, isA<SyncDecryptionException>());
         }
 
@@ -361,7 +365,7 @@ void main() {
       expect(summary['titleHash'], isNotNull);
     });
 
-    test('_decryptField 对非法 Base64 包装为 SyncDecryptionException', () async {
+    test('M1：读路径遇非法 Base64 坏行返回 null（隔离删除，不再抛异常）', () async {
       // 插入一条 title 包含非法 base64 的行 (safe_notes 表)
       final db = await database.database;
       await db.insert('safe_notes', {
@@ -376,17 +380,16 @@ void main() {
         'synced_deleted': 0,
       });
 
-      // 读取该笔记时解密失败抛出 SyncDecryptionException
-      expect(
-        () async => await database.readNoteByUuid('uuid-bad-b64'),
-        throwsA(
-          isA<SyncDecryptionException>().having(
-            (e) => e.aadId,
-            'aadId',
-            equals('uuid-bad-b64'),
-          ),
-        ),
+      // M1：单行解密失败（隔离损坏）→ 视为"笔记不存在"返回 null，
+      // 原始加密行先隔离落盘再删除（详见 m1_decrypt_failure_test.dart）。
+      expect(await database.readNoteByUuid('uuid-bad-b64'), isNull);
+
+      final rows = await db.query(
+        'safe_notes',
+        where: 'uuid = ?',
+        whereArgs: ['uuid-bad-b64'],
       );
+      expect(rows, isEmpty, reason: 'M1：坏行应被原始删除');
     });
 
     test('exportAll 与 ImportParser 闭环无损', () async {
