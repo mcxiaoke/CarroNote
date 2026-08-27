@@ -50,14 +50,11 @@
 
 ## ⚪ 低优先级 / 打磨
 
-- ⬜ 品牌不一致：原生窗口标题/exe 属性是 `CarroNote`，Dart 侧是 `SafeNotes`（二选一统一）
-- ⬜ `"Yкраїнська"` 首字符是拉丁 Y 不是西里尔 У ｜ `preference_and_config.dart:768`
-- ⬜ 打包了 bn/hi/it 等 13 种不可选的翻译 JSON（约 127KB 冗余）
-- ⬜ Android SAF 目录 URI 拼接必然无效（有兜底）｜ `backup_setting.dart:329-341`
-- ⬜ 生物识别取消弹窗也计入尝试次数消耗 PIN 挑战额度 ｜ `login.dart:847`
-- ⬜ 清空缓存主线程同步递归删临时目录卡 UI ｜ `cache_manager.dart:19-24`
-- ⬜ 无显式 Semantics/tooltip 无障碍支持；摘要 `substring(0,200)` 可切断 emoji 代理对
-- ⬜ 死代码若干（home.dart:530-544、note_widget.dart:146-173 等）
+- ✅ `"Yкраїнська"` 首字符是拉丁 Y 不是西里尔 У ｜ `preference_and_config.dart:768`
+- ✅ Android SAF 目录 URI 拼接必然无效（有兜底）｜ `backup_setting.dart:329-341`
+- ✅ 生物识别取消弹窗也计入尝试次数消耗 PIN 挑战额度 ｜ `login.dart:847`
+- ✅ 清空缓存主线程同步递归删临时目录卡 UI ｜ `cache_manager.dart:19-24`
+- ✅ 无显式 Semantics/tooltip 无障碍支持；摘要 `substring(0,200)` 可切断 emoji 代理对
 
 ## 建议
 

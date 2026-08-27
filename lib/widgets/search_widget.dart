@@ -13,6 +13,7 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
@@ -140,12 +141,19 @@ class SearchWidgetState extends State<SearchWidget> {
             ),
           ),
           if (widget.text.isNotEmpty)
-            GestureDetector(
-              child: Icon(LucideIcons.x, color: style.color),
-              onTap: () {
-                controller.clear();
-                widget.onChanged('');
-              },
+            Semantics(
+              button: true,
+              label: 'Clear Search'.tr(),
+              child: Tooltip(
+                message: 'Clear Search'.tr(),
+                child: GestureDetector(
+                  child: Icon(LucideIcons.x, color: style.color),
+                  onTap: () {
+                    controller.clear();
+                    widget.onChanged('');
+                  },
+                ),
+              ),
             ),
         ],
       ),

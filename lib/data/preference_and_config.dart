@@ -765,7 +765,7 @@ class SafeNotesConfig {
     "Português": const Locale('pt'),
     "Русский": const Locale('ru'),
     "Türk": const Locale('tr'),
-    "Yкраїнська": const Locale('uk'),
+    "Українська": const Locale('uk'),
   };
 
   // set timeago local for all supported language

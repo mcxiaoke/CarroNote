@@ -23,6 +23,7 @@ import 'dart:math' show Random;
 import 'dart:typed_data';
 
 // 项目导入
+import 'package:characters/characters.dart';
 import 'package:core/src/crypto/crypto.dart';
 
 const String tableNotes = 'safe_notes';
@@ -111,8 +112,10 @@ class SafeNote {
   static const int abstractMaxLength = 200;
 
   String get abstractText {
-    if (description.length <= abstractMaxLength) return description;
-    return description.substring(0, abstractMaxLength);
+    if (description.characters.length <= abstractMaxLength) {
+      return description;
+    }
+    return description.characters.take(abstractMaxLength).toString();
   }
 
   /// 最后修改时间（由 [updatedAt] 的 Unix 毫秒转换）。

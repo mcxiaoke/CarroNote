@@ -19,7 +19,14 @@ class CacheManager {
   static Future<void> emptyCache() async {
     if (kIsWeb) return;
     final dir = await getTemporaryDirectory();
-    dir.deleteSync(recursive: true);
-    dir.create();
+    try {
+      // 异步递归删除，避免主线程同步阻塞卡 UI
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+      await dir.create(recursive: true);
+    } catch (_) {
+      // 删除失败（文件被占用等）静默忽略，不影响主流程
+    }
   }
 }

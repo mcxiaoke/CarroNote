@@ -311,33 +311,18 @@ Future<void> startExportNotes(BuildContext context) async {
 ///
 /// - 桌面（Windows/Linux/macOS）：launchUrl(file://) 用系统文件管理器打开目录
 /// - iOS：shareddocuments:// 跳转到应用 Documents
-/// - Android：先尝试 file:// URI，再试 SAF content:// URI，失败则显示路径
+/// - Android：尝试 file:// URI，失败则显示路径（移除无效 SAF 拼接，有兜底）
 Future<void> openBackupDirectory(String directory, BuildContext context) async {
   try {
     if (isIOS) {
       await launchUrl(Uri.parse('shareddocuments://$directory'));
       return;
     }
-    // Android / 桌面：优先尝试 file:// URI
+    // Android / 桌面：尝试 file:// URI
     final uri = Uri.directory(directory);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
       return;
-    }
-    // Android：尝试 SAF DocumentsProvider URI
-    if (isAndroid) {
-      try {
-        final encoded = directory.replaceAll('/', '%2F');
-        final safUri = Uri.parse(
-          'content://com.android.externalstorage.documents/tree/primary%3A$encoded',
-        );
-        if (await canLaunchUrl(safUri)) {
-          await launchUrl(safUri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (_) {
-        // SAF URI 失败，静默降级
-      }
     }
     // 全失败：显示路径让用户手动导航
     if (context.mounted) {

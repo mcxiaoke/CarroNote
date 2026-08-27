@@ -844,21 +844,38 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                 .tr(),
       );
     } else {
-      PreferencesStorage.incrementBiometricAttemptAllTimeCount();
+      bool didCancel = false;
       try {
         authenticated = await auth.authenticate(
           localizedReason: 'Login using your biometric credential'.tr(),
           persistAcrossBackgrounding: true,
         );
+        // false 返回多为用户取消（系统弹窗“取消”/“使用密码”），不计次
+        if (!authenticated) didCancel = true;
       } catch (e, st) {
         // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
         Log.auth.w('生物识别认证失败', error: e, stackTrace: st);
+        final msg = e.toString().toLowerCase();
+        if (msg.contains('cancel') ||
+            msg.contains('user_cancel') ||
+            msg.contains('dismiss') ||
+            msg.contains('auth_in_progress')) {
+          didCancel = true;
+        }
+        authenticated = false;
       }
       if (authenticated) {
         final success = await _login(await BiometricAuth.authKey);
         if (success) await _pushHome();
+      } else if (!didCancel) {
+        // 真失败才计次，取消不计（修复：取消弹窗不消耗 PIN 额度）
+        PreferencesStorage.incrementBiometricAttemptAllTimeCount();
       }
-      if (authenticated) Log.auth.i('生物识别认证通过');
+      if (authenticated) {
+        Log.auth.i('生物识别认证通过');
+      } else if (didCancel) {
+        Log.auth.i('生物识别取消，未计次');
+      }
     }
     // 上面的 [_login] + [_pushHome] 成功后会跳转主界面并销毁本页，await 返回后
     // 可能已 unmounted；不判空直接 setState 会触发 "setState() called after dispose"
