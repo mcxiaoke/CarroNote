@@ -256,7 +256,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
                 ],
               ),
               body: (_isLocked || _previewMode)
-                  ? _buildPreview(context)
+                  ? _buildPreview(context, noteBg)
                   : // 编辑区由 NoteFormWidget 自带的 SingleChildScrollView 负责滚动；
                     // 键盘避让交给局部 _KeyboardAwarePadding（只重建底部 padding，
                     // 避免键盘动画期间整页 Scaffold 每帧 rebuild）。
@@ -880,7 +880,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
         .merge(base);
   }
 
-  Widget _buildPreview(BuildContext context) {
+  Widget _buildPreview(BuildContext context, Color? noteBg) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ListView(
@@ -902,7 +902,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
             MarkdownBody(
               data: MarkdownFormatter.prepareMarkdownForRendering(description),
               selectable: true,
-              styleSheet: _markdownStyleSheet(context),
+              styleSheet: _markdownStyleSheet(context, noteBg),
               // 隐私：不加载任何网络/本地图片，避免泄露 IP / 元数据
               imageBuilder: (uri, _, _) => const SizedBox.shrink(),
               onTapLink: (text, href, _) {
@@ -964,7 +964,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// P1-20：Markdown 预览暂不支持自定义字号，正文/标题固定用 AppText.body
   /// 基准与 24/20/18/17 固定层级（与编辑/预览页的 EditorText 调节解耦），
   /// 避免 Markdown 众多标签（列表/引用/代码/表格等）字号联动失控、排印错乱。
-  MarkdownStyleSheet _markdownStyleSheet(BuildContext context) {
+  MarkdownStyleSheet _markdownStyleSheet(BuildContext context, Color? noteBg) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final TextStyle uiBase = _editorLikeStyle(
@@ -979,6 +979,16 @@ class AddEditNotePageState extends State<AddEditNotePage>
     // 亮/暗模式下对比度失衡。
     final baseCode = base.code ?? AppText.body;
     const mono = 'monospace';
+    // 代码块底色：跟随笔记颜色（noteBg）。
+    // - noteBg 为 null（未设笔记色）→ 回退主题容器色，行为不变；
+    // - 已设笔记色 → 基于 noteBg 派生一档稍深的底色，与整页背景拉开区分、
+    //   保留笔记色相，避免代码块停留在固定主题色而"不变色"。
+    //   暗色模式压暗更深一档（黑 10%），亮色模式仅压暗 6%，做到"稍微有区别"。
+    final Color codeBlockBg = noteBg == null
+        ? cs.surfaceContainerHighest
+        : (PreferencesStorage.isThemeDark
+            ? Color.alphaBlend(Colors.black.withValues(alpha: 0.10), noteBg)
+            : Color.alphaBlend(Colors.black.withValues(alpha: 0.06), noteBg));
     return base.copyWith(
       p: uiBase,
       // 标题层级：h1=24 起逐级递减，h5/h6 不小于正文（16），仅用字重/颜色区分。
@@ -1003,7 +1013,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
       code: baseCode.copyWith(fontFamily: mono, fontSize: 14),
       codeblockPadding: const EdgeInsets.all(10),
       codeblockDecoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: codeBlockBg,
         borderRadius: BorderRadius.circular(8),
       ),
     );

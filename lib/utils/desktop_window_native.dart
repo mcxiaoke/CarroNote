@@ -49,6 +49,11 @@ class _AppWindowListener with WindowListener {
   void onWindowClose() async {
     if (_isClosing) return;
     _isClosing = true;
+    // 先立即隐藏窗口给用户「秒关」的视觉反馈，清理在不可见状态下进行，
+    // 最后再 destroy。否则关窗前的清理（保存草稿/停同步等，最长 10s）
+    // 会让窗口停在原地，表现为点 X 后卡顿。
+    await windowManager.hide();
+    final sw = Stopwatch()..start();
     try {
       final handler = desktopWindowCloseHandler;
       if (handler != null) {
@@ -57,6 +62,12 @@ class _AppWindowListener with WindowListener {
     } on Object catch (e, st) {
       Log.app.w('窗口关闭前清理失败（忽略，继续退出）', error: e, stackTrace: st);
     } finally {
+      final elapsed = sw.elapsed;
+      // 正常清理应在百毫秒级；超 1s 说明关窗链路有慢步骤（如在途同步），
+      // 用 warn 级别保证 release（默认 warn）下也能看到。
+      if (elapsed > const Duration(seconds: 1)) {
+        Log.app.w('窗口关闭前清理耗时较长: ${elapsed.inMilliseconds}ms');
+      }
       await windowManager.destroy();
     }
   }
