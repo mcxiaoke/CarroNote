@@ -109,6 +109,11 @@ class SyncService {
 
   SyncService._();
 
+  /// P1-11：单轮同步总超时。防互斥锁永久持有（详见 sync() 内注释）。
+  /// 大库 + 慢网可能超过该值——超时只复位互斥锁让下轮可自愈，不取消在途
+  /// 引擎，因此偏保守取 10 分钟。
+  static const Duration _syncTotalTimeout = Duration(minutes: 10);
+
   // ──────────────────────────────────────────────
   // 依赖
   // ──────────────────────────────────────────────
@@ -544,7 +549,19 @@ class SyncService {
         }
       }
 
-      final result = await engine.sync();
+      // P1-11：总超时兜底。单请求已由 http_util 的读取超时保护，但引擎内
+      // 部有多次请求 + 本地 DB 操作，任何一处卡死都会让 _syncInProgress
+      // 永久为 true（之后所有 sync() 直接 return，只能杀进程）。超时后
+      // 强制复位互斥锁与状态，让下一轮同步可自愈。
+      // 注意：超时不取消在途引擎（引擎可能仍在后台完成本轮），但互斥锁
+      // 复位后新同步与旧引擎并发是已知取舍——彻底方案见 P1-15（取消机制）。
+      final result = await engine.sync().timeout(
+        _syncTotalTimeout,
+        onTimeout: () => throw TimeoutException(
+          'sync total timeout after $_syncTotalTimeout',
+          _syncTotalTimeout,
+        ),
+      );
       _updateState(
         state.copyWith(
           status: result.success ? SyncStatus.success : SyncStatus.error,

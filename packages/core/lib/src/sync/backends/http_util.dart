@@ -133,7 +133,24 @@ Future<http.Response> sendWithRedirectPolicy({
     }
     final builder = BytesBuilder(copy: false);
     var bytesReceived = 0;
-    await for (final chunk in streamed.stream) {
+    // P1-11：响应体读取超时。client.send(...).timeout 只护到「收到响应头」，
+    // 恶意/故障服务端可以先回 200 头再以极慢速度吐 body，让 await for 永不
+    // 结束（同步互斥锁永久持有）。Stream.timeout 保证任意相邻 chunk 间隔
+    // 超过 [timeout] 即报错断流。
+    final chunkStream = streamed.stream.timeout(
+      timeout,
+      onTimeout: (sink) {
+        sink.addError(
+          http.ClientException(
+            'Response body read timed out after $timeout '
+            '($method $current)',
+            current,
+          ),
+        );
+        sink.close();
+      },
+    );
+    await for (final chunk in chunkStream) {
       bytesReceived += chunk.length;
       if (bytesReceived > maxResponseBodyBytes) {
         throw http.ClientException(

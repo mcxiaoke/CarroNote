@@ -329,9 +329,13 @@ class AddEditNotePageState extends State<AddEditNotePage>
   /// [keepEditing] 为 true 时（后台）保留编辑态，[original] 更新为最新落库
   /// 笔记以避免新建笔记重复入库；为 false 时（退出）销毁静态状态。
   ///
-  /// 返回 `(saved, failed)`：[failed] 仅在保存过程抛异常时为 true，
-  /// 调用方据此决定是否放行页面关闭（H4）；「无改动/内容为空」属于正常
-  /// 跳过，failed 为 false。
+  /// 返回 `(saved, failed)`：[failed] 仅在保存过程抛异常或防重入重试仍被
+  /// 跳过时为 true，调用方据此决定是否放行页面关闭（H4）；「无改动/内容
+  /// 为空」属于正常跳过，failed 为 false。
+  ///
+  /// P0-7：被并发保存（周期保存/后台保存/超时退出）跳过时，等待在途保存
+  /// 完成后用最新输入重试一次——在途保存的内容快照早于用户最新输入，
+  /// 直接关页会静默丢弃这段改动。
   Future<({SafeNote? saved, bool failed})> _performAutoSave({
     required bool keepEditing,
   }) async {
@@ -347,9 +351,25 @@ class AddEditNotePageState extends State<AddEditNotePage>
     NoteEditorState.setState(_effectiveNote, title, description);
     if (mounted) setState(() => _isSaving = true);
     try {
-      final saved = await NoteEditorState().addOrUpdateNote(
+      var result = await NoteEditorState().addOrUpdateNote(
         destroyAfter: !keepEditing,
       );
+      if (result.skipped) {
+        // P0-7：在途保存持锁（周期/后台/超时路径）。等它完成后，
+        // 重新同步静态状态（在途保存可能已更新或销毁 original）再重试。
+        Log.note.w('自动保存被在途保存跳过, 等待后重试以保存最新输入');
+        await NoteEditorState.waitForSave();
+        NoteEditorState.setState(_effectiveNote, title, description);
+        result = await NoteEditorState().addOrUpdateNote(
+          destroyAfter: !keepEditing,
+        );
+        if (result.skipped) {
+          // 极端并发下仍被跳过：视为失败留在页面（H4），绝不静默关页丢内容。
+          Log.note.e('自动保存重试仍被跳过, 退出保存判定为失败');
+          return (saved: null, failed: true);
+        }
+      }
+      final saved = result.saved;
       if (saved != null) {
         _effectiveNote = saved;
         if (keepEditing && mounted) {

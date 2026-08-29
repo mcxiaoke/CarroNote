@@ -26,7 +26,9 @@ tasks:
   gen-build-info:
     desc: Regenerate lib/utils/build_info.dart (git hash + build time)
     cmds:
-      - python scripts/generate_build_info.py
+      # P2-30：脚本是 Dart（scripts/generate_build_info.dart），原 .py 引用
+      # 不存在，导致 get/run/build-* 全部失败。与 CI（flutter-ci.yml）对齐。
+      - dart run scripts/generate_build_info.dart
 
   cli-build:
     desc: Build the pure-Dart CLI (AOT bundle with sqlite3)

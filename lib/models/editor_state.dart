@@ -38,6 +38,19 @@ class NoteEditorState {
   // 幂等竞态/重复入库。静态字段共享实例，进入即置位、完成才复位。
   static bool _isSaving = false;
 
+  // P0-7：在途保存完成信号。防重入跳过时调用方必须能等待在途保存结束，
+  // 否则「跳过」会被误当作「成功」，退出页面的最新改动被静默丢弃。
+  static Completer<void>? _saveCompleter;
+
+  /// 是否有保存在途（供 UI 展示保存状态/守卫判断）。
+  static bool get isSaving => _isSaving;
+
+  /// 等待在途保存完成；无在途保存时立即返回。
+  static Future<void> waitForSave() async {
+    final completer = _saveCompleter;
+    if (completer != null) await completer.future;
+  }
+
   static void destroyValue() {
     original = null;
     title = description = '';
@@ -65,14 +78,24 @@ class NoteEditorState {
   /// [destroyAfter] 为 true 时保存后清理静态状态（用于退出页面）；
   /// 为 false 时保留状态但将 [original] 更新为最新已保存的笔记（用于后台保存后
   /// 仍停留在编辑页，避免新建笔记重复入库或旧引用导致版本捕获错位）。
-  Future<SafeNote?> addOrUpdateNote({bool destroyAfter = true}) async {
+  ///
+  /// 返回 `(saved, skipped)`：
+  /// - [skipped] 为 true 表示被防重入守卫跳过（有并发保存在途），**一行都没
+  ///   写库**——调用方必须等待在途保存完成后重试，绝不能当作成功关闭页面
+  ///   （P0-7：跳过曾被误判为成功，退出时最新输入被静默丢弃）。
+  /// - [saved] 为落库后的笔记；「内容未变化」或「内容为空」时为 null 且
+  ///   skipped 为 false，属正常跳过。
+  Future<({SafeNote? saved, bool skipped})> addOrUpdateNote({
+    bool destroyAfter = true,
+  }) async {
     // 评审 #13：防重入，避免超时保存与正常保存并发双写。
-    // 若已有保存在进行中，直接返回（后台保存会覆盖同一份 title/description）。
+    // 若已有保存在进行中，返回 skipped 让调用方等待后重试。
     if (_isSaving) {
       Log.note.d('笔记保存已在进行中, 本次调用跳过 uuid=${original?.uuid ?? "(新建)"}');
-      return null;
+      return (saved: null, skipped: true);
     }
     _isSaving = true;
+    _saveCompleter = Completer<void>();
     SafeNote? saved;
     try {
       // if atleast one of the field is non empty save note
@@ -108,9 +131,11 @@ class NoteEditorState {
         original = saved;
         // title/description 已是归一化后的值（空串已补空格）
       }
-      return saved;
+      return (saved: saved, skipped: false);
     } finally {
       _isSaving = false;
+      _saveCompleter?.complete();
+      _saveCompleter = null;
     }
   }
 

@@ -173,7 +173,26 @@ class SyncConfig {
 
   static Future<void> setWebdavUrl(String url) async {
     await _prefs?.setString(_keyWebdavUrl, url);
-    Log.sync.d('WebDAV URL 已设置: $url');
+    // P1-12：URL 可能内嵌 user:pass@，原样打日志会让网盘密码明文常驻
+    // 日志文件（用户"导出诊断+日志"即完整泄露）。统一走脱敏。
+    Log.sync.d('WebDAV URL 已设置: ${_redactUrlForLog(url)}');
+  }
+
+  /// P1-12：URL 日志脱敏——掩去 userinfo 与 query（可能携带凭据/token）。
+  static String _redactUrlForLog(String url) {
+    if (url.isEmpty) return url;
+    try {
+      var u = Uri.parse(url.trim());
+      if (u.userInfo.isNotEmpty) u = u.replace(userInfo: '***');
+      if (u.hasQuery) u = u.replace(query: '***');
+      return u.toString();
+    } on FormatException {
+      // 非法 URL：对常见 `scheme://user:pass@` 前缀做正则掩码
+      return url.replaceAllMapped(
+        RegExp(r'(https?://)[^/@\s]+@'),
+        (m) => '${m[1]}***@',
+      );
+    }
   }
 
   /// WebDAV 用户名
@@ -228,7 +247,8 @@ class SyncConfig {
 
   static Future<void> setSafeServerUrl(String url) async {
     await _prefs?.setString(_keySafeServerUrl, url);
-    Log.sync.d('SafeServer URL 已设置: $url');
+    // P1-12：与 setWebdavUrl 同口径，防 URL 内嵌凭据入日志
+    Log.sync.d('SafeServer URL 已设置: ${_redactUrlForLog(url)}');
   }
 
   /// SafeServer Bearer Token（部署时配置的固定 Token）
@@ -340,15 +360,50 @@ class SyncBackendDraft {
   ///
   /// 密码与 Token **不去空白**——它们可能合法地包含首尾空格，
   /// 擅自裁剪会造成"看起来对但认证失败"的诡异问题。
-  SyncBackendDraft normalized() => SyncBackendDraft(
-    type: type,
-    localFsPath: localFsPath.trim(),
-    webdavUrl: webdavUrl.trim(),
-    webdavUsername: webdavUsername.trim(),
-    webdavPassword: webdavPassword,
-    safeServerUrl: safeServerUrl.trim(),
-    safeServerToken: safeServerToken,
-  );
+  ///
+  /// P1-12：URL 内嵌的 userinfo（`https://user:pass@host/`，密码管理器
+  /// 复制粘贴的常见格式）在此剥离——凭据必须走独立的 username/password
+  /// 字段（H3 secure storage）；留在 URL 里会明文进日志与异常 message。
+  /// 规则：userinfo 抽出填入**为空**的 username/password（用户显式填写的
+  /// 字段优先），URL 本身一律剥离 userinfo。
+  SyncBackendDraft normalized() {
+    var url = webdavUrl.trim();
+    var username = webdavUsername.trim();
+    var password = webdavPassword;
+    try {
+      final uri = Uri.parse(url);
+      if (uri.userInfo.isNotEmpty) {
+        final idx = uri.userInfo.indexOf(':');
+        final rawUser = idx >= 0
+            ? uri.userInfo.substring(0, idx)
+            : uri.userInfo;
+        final rawPass = idx >= 0 ? uri.userInfo.substring(idx + 1) : '';
+        if (username.isEmpty) username = _decodeUserInfo(rawUser);
+        if (password.isEmpty) password = _decodeUserInfo(rawPass);
+        url = uri.replace(userInfo: '').toString();
+        Log.sync.w('同步 URL 含内嵌凭据, 已剥离并填入独立字段');
+      }
+    } on FormatException {
+      // 非法 URL：保持原样，buildBackend / init 阶段会给出明确错误
+    }
+    return SyncBackendDraft(
+      type: type,
+      localFsPath: localFsPath.trim(),
+      webdavUrl: url,
+      webdavUsername: username,
+      webdavPassword: password,
+      safeServerUrl: safeServerUrl.trim(),
+      safeServerToken: safeServerToken,
+    );
+  }
+
+  static String _decodeUserInfo(String s) {
+    try {
+      return Uri.decodeComponent(s);
+    } on Exception {
+      return s; // 非法百分号序列：按原样使用
+    }
+  }
 
   /// 当前类型的必填字段是否齐全（能否构造出后端实例）
   ///

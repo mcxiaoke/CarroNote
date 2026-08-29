@@ -415,6 +415,12 @@ class SafeServerBackend implements SyncBackend {
   /// 把损坏的 `manifest` 移动到 keyring 根的 `.corrupt-<ts>`，让其脱离 manifest 端点，
   /// 随后 SyncEngine 用本地数据重建 manifest 上传（PUT If-None-Match:* 成功）。
   /// 客户端要求服务端必须实现 v2.2 资源层。
+  ///
+  /// P1-14：move 返回 204（移走）/ 404（本就不存在）之外的一切状态码
+  /// （尤其 5xx/401/403/405——旧版服务端不支持 move）都**必须中止**并抛
+  /// `BackendUnavailableException`，绝不退化为 DELETE 物理删除远端 manifest：
+  /// 瞬时 500 或旧服务端 405 都曾是删库的触发条件，而此时"损坏副本"已
+  /// 不在原位，删掉后只能靠本地重建——本机数据更旧时等于全端数据回退。
   @override
   Future<void> backupCorruptManifest(Uint8List ciphertext) async {
     _ensureInitialized();
@@ -428,20 +434,11 @@ class SafeServerBackend implements SyncBackend {
     if (res.statusCode == 204 || res.statusCode == 404) {
       return; // 已移走（manifest 端点失效）或本就不存在
     }
-    // move 意外失败（如资源层异常）：退化为 DELETE 兜底
-    try {
-      await _sendHttp(
-        'DELETE',
-        Uri.parse(_manifestUrl),
-        headers: _authHeaders(),
-      );
-    } on Exception catch (e) {
-      // 删除失败不抛异常，让 SyncEngine 的 PUT 覆盖
-      Log.sync.w(
-        '[SafeServer] backupCorruptManifest: 删除失败，退化为 PUT 覆盖',
-        error: e,
-      );
-    }
+    throw BackendUnavailableException.http(
+      'move manifest to backup (expected 204/404)',
+      res.statusCode,
+      'refusing to delete remote manifest; move failed',
+    );
   }
 
   /// 列出所有 blob hash（GC 用）

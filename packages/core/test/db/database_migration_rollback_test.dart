@@ -312,6 +312,77 @@ void main() {
     });
   });
 
+  group('评审第一批修复回归（P0-3 / P1-3）', () {
+    test(
+      'P1-3：queryTableRows(sync_meta) 不返回 value 列（keyring 材料不可泄露）',
+      () async {
+        await database.setMeta(
+          MetaKeys.keyring,
+          '{"encryptedDataKey":"secret"}',
+        );
+
+        final rows = await database.queryTableRows('sync_meta');
+        expect(rows, isNotEmpty);
+        for (final row in rows) {
+          expect(
+            row.containsKey('value'),
+            isFalse,
+            reason:
+                'sync_meta.value 含 keyring JSON（encryptedDataKey + KDF '
+                'salt + iterations），泄露等同交出可离线爆破的密码哈希',
+          );
+          expect(row.containsKey('key'), isTrue);
+        }
+      },
+    );
+
+    test('P0-3：迁移窗口内 8 处写路径全部抛 MigrationInProgressException', () async {
+      final note = _makeNote(uuid: 'uuid-guard-1', title: 'Guard');
+      final stored = await database.storeNote(note);
+
+      database.migratingForTesting = true;
+      try {
+        expect(
+          () => database.upsertNoteMeta(NoteMeta.defaults('uuid-guard-1')),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.softDelete(stored.id!),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.hardDelete(stored.id!),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.hardDeleteByUuid('uuid-guard-1'),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.restoreNote(stored.id!),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.markSynced('uuid-guard-1'),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.markAllSynced(),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+        expect(
+          () => database.markSyncedForUuids({'uuid-guard-1'}),
+          throwsA(isA<MigrationInProgressException>()),
+        );
+      } finally {
+        database.migratingForTesting = false;
+      }
+
+      // 复位后写路径恢复正常（守卫不残留）
+      await database.markSynced('uuid-guard-1');
+    });
+  });
+
   group('restoreNote 与缓存状态测试', () {
     test('restoreNote 后 deleted=0, synced=0 且 updatedAt 刷新', () async {
       final note = _makeNote(

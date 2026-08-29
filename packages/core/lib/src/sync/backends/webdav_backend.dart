@@ -1163,7 +1163,22 @@ class WebDavBackend implements SyncBackend {
       );
     }
     throw BackendUnavailableException(
-      'MKCOL $url failed: ${res.statusCode} ${res.body}',
+      // P1-12：绝不拼完整 $url——用户把凭据嵌在 URL 里时（密码管理器
+      // 粘贴的常见格式）密码会明文常驻日志；只拼 origin。
+      // P2-9：响应体只保留前 200 字符，避免 HTML 错误页刷爆日志。
+      'MKCOL ${_urlOrigin(url)} failed: ${res.statusCode} '
+      '${res.body.length > 200 ? res.body.substring(0, 200) : res.body}',
     );
+  }
+
+  /// P1-12：URL → `scheme://host[:port]`，剥离 userinfo 与路径（含凭据）。
+  static String _urlOrigin(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return '${uri.scheme}://${uri.host}'
+          '${uri.hasPort ? ':${uri.port}' : ''}';
+    } on FormatException {
+      return '(invalid-url)';
+    }
   }
 }

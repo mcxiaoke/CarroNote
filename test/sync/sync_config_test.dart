@@ -167,6 +167,42 @@ void main() {
       expect(n.webdavPassword, equals('  p@ss '));
     });
 
+    test('P1-12：normalized 剥离 URL 内嵌 userinfo 并填入空缺的凭据字段', () {
+      final draft = SyncBackendDraft(
+        type: SyncBackendType.webdav,
+        webdavUrl: 'https://alice:s3cret@dav.example.com/dav/',
+      );
+      final n = draft.normalized();
+      expect(n.webdavUrl, equals('https://dav.example.com/dav/'));
+      expect(n.webdavUsername, equals('alice'));
+      expect(n.webdavPassword, equals('s3cret'));
+    });
+
+    test('P1-12：URL 内嵌 userinfo 不覆盖用户显式填写的凭据字段', () {
+      final draft = SyncBackendDraft(
+        type: SyncBackendType.webdav,
+        webdavUrl: 'https://wrong:wrong@dav.example.com/dav/',
+        webdavUsername: 'alice',
+        webdavPassword: 'explicit-pass',
+      );
+      final n = draft.normalized();
+      // URL 仍剥离，但显式字段优先
+      expect(n.webdavUrl, equals('https://dav.example.com/dav/'));
+      expect(n.webdavUsername, equals('alice'));
+      expect(n.webdavPassword, equals('explicit-pass'));
+    });
+
+    test('P1-12：仅含用户名的 userinfo 只填用户名，密码保持为空', () {
+      final draft = SyncBackendDraft(
+        type: SyncBackendType.webdav,
+        webdavUrl: 'https://alice@dav.example.com/dav/',
+      );
+      final n = draft.normalized();
+      expect(n.webdavUrl, equals('https://dav.example.com/dav/'));
+      expect(n.webdavUsername, equals('alice'));
+      expect(n.webdavPassword, isEmpty);
+    });
+
     test('connectionSignature 随当前类型字段变化，且只覆盖当前类型', () {
       const pwd = 'pw';
       final webdav = SyncBackendDraft(

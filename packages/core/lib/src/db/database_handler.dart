@@ -55,7 +55,14 @@ const String tableMeta = 'sync_meta';
 /// notes 表的 title / description 是字段级加密的密文包络，DB Inspector 仅用于
 /// 排查本地库结构，无需展示这两列（既避免噪声，也遵循隐私红线不暴露笔记字段）。
 /// note_meta 表的 payload 同理（内含标签等用户输入文本的密文）。
-const Set<String> _inspectorHiddenColumns = {'title', 'description', 'payload'};
+/// sync_meta 表的 value 必须隐藏：keyring JSON 含 encryptedDataKey + KDF
+/// salt + iterations，泄露等同交出可离线爆破的密码哈希（P1-3 修复）。
+const Set<String> _inspectorHiddenColumns = {
+  'title',
+  'description',
+  'payload',
+  'value',
+};
 
 /// 隐私红线：日志中**绝不允许**出现笔记标题 / 正文明文。
 ///
@@ -447,6 +454,14 @@ class NotesDatabase {
     return Uint8List.fromList(key);
   }
 
+  /// P0-3 测试钩子：直接置位/复位迁移中标志。
+  ///
+  /// 生产代码只允许 reEncryptAllNotesAtomically 内部修改（try/finally 保证
+  /// 复位）；测试用它模拟「迁移窗口内并发调用写路径」，断言守卫抛
+  /// MigrationInProgressException。调用方负责在 tearDown 复位。
+  @visibleForTesting
+  set migratingForTesting(bool value) => _isMigrating = value;
+
   /// 获取 dataKey（未设置时抛异常）
   Uint8List get _requireDataKey {
     final key = _dataKey;
@@ -461,6 +476,11 @@ class NotesDatabase {
   /// reEncryptAllNotes 期间 _dataKey 被临时切换，UI 并发读取会用错误 key 解密。
   /// 面向 UI 的公共读方法（readNote/readNoteByUuid/readAllNotes/readDeletedNotes）
   /// 调用此守卫，迁移中抛 MigrationInProgressException。
+  ///
+  /// P0-3 修复：**所有加密写路径**（upsertNoteMeta）与会被迁移事务整行覆盖
+  /// 覆写的写路径（softDelete/hardDelete/restoreNote/markSynced*）同样加守卫——
+  /// 迁移窗口（秒级）内并发写入会产生旧 key 密文或被迁移快照覆盖，
+  /// 导致数据静默丢失。快速失败让上层稍后重试。
   ///
   /// readAllNotesIncludingDeleted 不加守卫——它被同步引擎内部调用，
   /// 且 reEncryptAllNotes 自身需要调用它读取明文。
@@ -1541,6 +1561,7 @@ class NotesDatabase {
 
   /// 软删除笔记（标记为墓碑，不真正删除行）
   Future<int> softDelete(int id) async {
+    _checkNotMigrating(); // P0-3：迁移窗口内的删除意图会被迁移快照覆盖
     final db = await instance.database;
     final now = DateTime.now().millisecondsSinceEpoch;
     try {
@@ -1586,6 +1607,7 @@ class NotesDatabase {
   /// 堵住「永久删除复活」——若删行成功但 purged 未写（中途崩溃），该 uuid
   /// 会从远端 manifest 重新下载复活。
   Future<int> hardDelete(int id) async {
+    _checkNotMigrating(); // P0-3：迁移窗口内并发硬删除与迁移事务竞争同一行
     final db = await instance.database;
 
     // 1. 读取 uuid
@@ -1638,6 +1660,7 @@ class NotesDatabase {
   /// B4：防止删行成功但 purged 未写导致墓碑从远端复活）。
   /// 不存在时返回 0（幂等）。
   Future<int> hardDeleteByUuid(String uuid) async {
+    _checkNotMigrating(); // P0-3：迁移窗口内 GC 删除与迁移事务竞争同一行
     final db = await instance.database;
     var deleted = 0;
     await db.transaction((txn) async {
@@ -1788,6 +1811,7 @@ class NotesDatabase {
   ///   - updatedAt 设为当前时间（触发同步：本地新版本，远端会被覆盖）
   ///   - synced 设为 0（标记为待同步）
   Future<int> restoreNote(int id) async {
+    _checkNotMigrating(); // P0-3：迁移窗口内的恢复意图会被迁移快照覆盖
     final db = await instance.database;
     final now = DateTime.now().millisecondsSinceEpoch;
     try {
@@ -2128,6 +2152,7 @@ class NotesDatabase {
   /// 当前 deleted——这一刻本地与远端已一致，当前 (hash, deleted) 二元组即成为
   /// 下一轮冲突判定的共同祖先 base。
   Future<void> markSynced(String uuid) async {
+    _checkNotMigrating(); // P0-3：迁移快照整行覆盖会回写 synced 状态
     final db = await instance.database;
     await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
@@ -2145,6 +2170,7 @@ class NotesDatabase {
   /// deleted：同步流程结束时本地库已是收敛后的最终状态，此刻记下的
   /// (hash, deleted) 就是下一轮判定单边/并发的 base。
   Future<void> markAllSynced() async {
+    _checkNotMigrating(); // P0-3：迁移快照整行覆盖会回写 synced 状态
     final db = await instance.database;
     final rows = await db.rawUpdate(
       'UPDATE $tableNotes SET ${NoteFields.synced} = 1, '
@@ -2163,6 +2189,7 @@ class NotesDatabase {
   /// _mergeAndTransfer 的 shouldPreserveCopy 判定）。排除后这些笔记保持
   /// synced=0、synced_hash 为旧 base，下次同步照常重试。
   Future<void> markAllSyncedExcept(Set<String> exclude) async {
+    _checkNotMigrating(); // P0-3：迁移快照整行覆盖会回写 synced 状态
     if (exclude.isEmpty) {
       await markAllSynced();
       return;
@@ -2237,6 +2264,7 @@ class NotesDatabase {
       Log.db.i('按 uuid 集合标记已同步: 空集合，跳过');
       return;
     }
+    _checkNotMigrating(); // P0-3：迁移快照整行覆盖会回写 synced 状态
     final db = await instance.database;
     // 分片：SQLite 单条语句变量上限 999，chunk 400 兜底
     const chunkSize = 400;
@@ -2537,6 +2565,10 @@ class NotesDatabase {
   ///
   /// **不碰 notes 表与 [_notesCache]**（本区块规则 1）。
   Future<NoteMeta> upsertNoteMeta(NoteMeta meta) async {
+    // P0-3：payload 用当前 _dataKey 加密。迁移窗口内 _dataKey 已切到 oldKey，
+    // 此时写入的 payload 是旧 key 密文且不在迁移快照内，迁移完成后永久无法
+    // 解密（还会被 P1-4 的降级链覆盖为 NULL）。快速失败，稍后重试。
+    _checkNotMigrating();
     final db = await instance.database;
 
     final plaintext = meta.encodePayload();
