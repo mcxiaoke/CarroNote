@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // lib/src/platform/io_stub.dart
 // 仅用于让 Web 编译通过；Web 上这些符号不会被真实调用，或返回安全默认值。
 // ignore_for_file: constant_identifier_names, annotate_overrides

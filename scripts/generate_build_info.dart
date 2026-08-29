@@ -1,12 +1,11 @@
-//
-// Copyright (C) Keshav Priyadarshi and others - All Rights Reserved.
-//
-// SPDX-License-Identifier: GPL-3.0-or-later
-// You may use, distribute and modify this code under the
-// terms of the GPL-3.0+ license.
-//
-// See https://safenotes.dev for support or download.
-//
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
 
 // 生成 lib/generated/build_info.g.dart —— 在构建期把 Git 提交信息与构建时间注入到应用。
 //

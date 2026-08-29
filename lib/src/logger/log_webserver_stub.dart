@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // lib/src/logger/log_webserver_stub.dart
 // Web 环境下的日志 WebServer 桩实现（Web 无原生 Socket 支持，恒为 disabled）
 

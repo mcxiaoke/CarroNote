@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // 桌面端窗口关闭拦截回调的共享声明。
 //
 // 独立成文件是为了让 native / stub 两个平台实现与调用方（main.dart）

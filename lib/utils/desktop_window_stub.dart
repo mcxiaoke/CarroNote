@@ -1,3 +1,12 @@
+/*
+* Copyright (C) mcxiaoke 2026 - All Rights Reserved.
+*
+* SPDX-License-Identifier: GPL-3.0-or-later
+* You may use, distribute and modify this code under the
+* terms of the GPL-3.0+ license.
+
+*/
+
 // lib/utils/desktop_window_stub.dart
 // Web / 非桌面环境下的窗口管理桩实现
 import 'dart:ui' show Offset, Size;
