@@ -1058,9 +1058,14 @@ void main() {
     });
 
     test('SafeServerBackend.listBlobs() 通过客户端调用返回 blob 列表', () async {
+      // P1-7：blob 名必须用合法 sha256 hex——listBlobs 现按
+      // `^[a-f0-9]{64}$` 白名单过滤（与 webdav/localfs 对齐），
+      // 非 hash 命名的 blob 一律不返回。
+      final blobName = '5' * 64;
+
       // 先上传 blob
       await http.put(
-        Uri.parse('${server.baseUrl}/api/v2/blob/backend-list-test'),
+        Uri.parse('${server.baseUrl}/api/v2/blob/$blobName'),
         headers: {
           'Authorization': 'Bearer $kTestToken',
           'Content-Type': 'application/octet-stream',
@@ -1070,7 +1075,7 @@ void main() {
 
       // 通过 SafeServerBackend 调用
       final blobs = await backend.listBlobs();
-      expect(blobs, contains('backend-list-test'));
+      expect(blobs, contains(blobName));
     });
 
     test('GET /api/v2/blobs 空目录时返回空数组', () async {

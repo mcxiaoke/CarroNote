@@ -477,7 +477,13 @@ class SafeServerBackend implements SyncBackend {
 
     try {
       final List<dynamic> hashes = jsonDecode(res.body);
-      return hashes.whereType<String>().toList();
+      // P1-7：hash 白名单过滤——服务端（或被 MITM 的明文连接）返回
+      // "../manifest" 之类路径片段时，会被 GC 当孤儿执行
+      // move blobs/../manifest → 隔离区，毁掉远端 manifest。与
+      // webdav/localfs 的 `^[a-f0-9]{64}$` 过滤对齐（Dart Uri.parse
+      // 不做 dot-segment 归一化，必须在源头拦截）。
+      final hashRegex = RegExp(r'^[a-f0-9]{64}$');
+      return hashes.whereType<String>().where(hashRegex.hasMatch).toList();
     } on FormatException {
       throw BackendUnavailableException(
         'GET blobs failed: invalid JSON response',
@@ -751,7 +757,13 @@ class SafeServerBackend implements SyncBackend {
       final result = <String>[];
       for (final e in entries) {
         final name = (e is Map ? e['name'] : null)?.toString() ?? '';
-        if (name.endsWith('.json')) result.add(name);
+        // P1-7：名字白名单——服务端返回 "../x.json" 时会被拼进
+        // _getResource('journal/$name') 造成路径逃逸。只放行
+        // [A-Za-z0-9._-] 且不含 ".." 的 .json 文件名。
+        if (!name.endsWith('.json')) continue;
+        if (!RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(name)) continue;
+        if (name.contains('..')) continue;
+        result.add(name);
       }
       return result;
     } on Exception catch (e) {

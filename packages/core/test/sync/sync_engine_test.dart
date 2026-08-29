@@ -1199,5 +1199,81 @@ void main() {
       // 验证：无孤儿时 blob 数量不变
       expect(backend._blobs.length, beforeCount);
     });
+
+    test('P1-7：listBlobs 返回恶意路径条目时不触发 deleteBlobSoft（hash 白名单兜底）', () async {
+      // 恶意后端：listBlogs 在真实 blob 之外注入路径穿越条目
+      final evil = MaliciousListBackend();
+      final note = _makeNote(uuid: 'gc-p17-1', title: 'P17 Guard');
+      await database.storeNote(note);
+      final engine = _makeEngine(backend: evil, database: database);
+
+      // 合法孤儿（模拟历史遗留）：应照常走两阶段隔离，证明过滤不误伤正常 GC
+      final orphanHash = 'e' * 64;
+      await evil.putBlob(orphanHash, Uint8List.fromList([1]));
+
+      // 第 1 次同步：上传笔记（远端 manifest 为空 → skipGc，GC 未观察）
+      final r1 = await engine.sync();
+      expect(r1.success, isTrue);
+
+      // 第 2 次同步：两阶段 GC 首次观察（登记候选，不隔离）
+      final r2 = await engine.sync();
+      expect(r2.success, isTrue);
+      expect(
+        evil.deleteBlobSoftCalls,
+        isEmpty,
+        reason: '两阶段 GC：首次观察只登记候选，不应隔离',
+      );
+
+      // 第 3 次同步：连续第二次观察仍为孤儿 → 隔离
+      final r3 = await engine.sync();
+      expect(r3.success, isTrue);
+
+      // 核心断言：恶意条目绝不能进入删除/隔离路径
+      //（修复前 "../manifest" 会经 deleteBlobSoft 拼进资源路径，毁掉远端 manifest）
+      expect(
+        evil.deleteBlobSoftCalls,
+        isNot(contains('../manifest')),
+        reason: '路径穿越条目必须被引擎侧 hash 白名单拦截',
+      );
+      expect(
+        evil.deleteBlobSoftCalls,
+        everyElement(matches(r'^[a-f0-9]{64}$')),
+        reason: 'deleteBlobSoft 只允许接收合法 sha256 hex hash',
+      );
+      // 恶意条目也不得污染候选表
+      final candidates = await database.getGcOrphanCandidates();
+      expect(candidates.containsKey('../manifest'), isFalse);
+
+      // 正常 GC 未被过滤误伤：合法孤儿在第二次观察后被隔离
+      expect(evil.deleteBlobSoftCalls, contains(orphanHash));
+      // 本端笔记 blob 保留
+      expect(await evil.getBlob(note.contentHash), isNotNull);
+    });
   });
+}
+
+/// P1-7 测试用：模拟被劫持/恶意的后端——listBlobs 枚举结果中
+/// 混入路径穿越与非法格式条目，并记录 deleteBlobSoft 的全部调用。
+class MaliciousListBackend extends FakeBackend {
+  final List<String> deleteBlobSoftCalls = [];
+
+  /// 模拟恶意服务端在 GET /api/v2/blobs 里返回的注入条目
+  static final List<String> maliciousEntries = [
+    '../manifest', // 路径穿越：move blobs/../manifest → 毁掉远端 manifest
+    'zz', // 长度不足
+    'g' * 63, // 长度 63（差一位）
+    'G' * 64, // 大写十六进制（规范要求小写）
+  ];
+
+  @override
+  Future<List<String>> listBlobs() async {
+    final real = await super.listBlobs();
+    return [...real, ...maliciousEntries];
+  }
+
+  @override
+  Future<void> deleteBlobSoft(String hash) async {
+    deleteBlobSoftCalls.add(hash);
+    await super.deleteBlobSoft(hash);
+  }
 }

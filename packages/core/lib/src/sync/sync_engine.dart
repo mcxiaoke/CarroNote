@@ -2916,6 +2916,19 @@ class SyncEngine {
       final remoteBlobs = await backend.listBlobs();
       if (remoteBlobs.isEmpty) return; // 后端不支持枚举，跳过 GC
 
+      // P1-7：引擎侧统一兜底校验——后端实现不一致（历史上唯 SafeServer
+      // 缺 hash 白名单）时，恶意 "../manifest" 类条目会经 GC 的
+      // deleteBlobSoft 拼进资源路径，毁掉远端 manifest。此处过滤后，
+      // 非法条目既不进候选表也不触发隔离。
+      final gcSafeBlobs = remoteBlobs
+          .where((h) => RegExp(r'^[a-f0-9]{64}$').hasMatch(h))
+          .toList();
+      if (gcSafeBlobs.length != remoteBlobs.length) {
+        Log.sync.w(
+          '_gcOrphanBlobs: listBlobs 返回 ${remoteBlobs.length - gcSafeBlobs.length} 个非法 hash 条目，已过滤',
+        );
+      }
+
       // 当前 manifest 引用的所有 blob hash
       final referenced = <String>{};
       for (final item in merged.items.values) {
@@ -2925,13 +2938,13 @@ class SyncEngine {
         }
       }
 
-      // 孤儿 = 远端有但 manifest 不引用的
-      final orphans = remoteBlobs.where((h) => !referenced.contains(h)).toSet();
+      // 孤儿 = 远端有但 manifest 不引用的（仅限通过白名单校验的合法 hash）
+      final orphans = gcSafeBlobs.where((h) => !referenced.contains(h)).toSet();
 
       // P3-log：GC 入口与扫描结果（GC 是删除远端数据的唯一路径，必须留痕）
       Log.sync.i(
         '_gcOrphanBlobs: 扫描完成 '
-        '(remote=${remoteBlobs.length}, referenced=${referenced.length}, '
+        '(remote=${gcSafeBlobs.length}, referenced=${referenced.length}, '
         'orphans=${orphans.length})',
       );
 
