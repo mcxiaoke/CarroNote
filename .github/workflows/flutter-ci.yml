@@ -29,7 +29,7 @@ jobs:
           architecture: x64
 
       - name: Generate build info
-        run: python scripts/generate_build_info.py
+        run: dart run scripts/generate_build_info.dart
 
       - name: Get flutter dependencies
         run: flutter pub get

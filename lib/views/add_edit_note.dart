@@ -889,7 +889,10 @@ class AddEditNotePageState extends State<AddEditNotePage>
                 // 用户主动点击才打开，外部浏览器；不做自动加载
                 if (href != null) {
                   unawaited(
-                    launchUrlExternal(Uri.parse(href)).catchError((_) {}),
+                    launchUrlExternal(Uri.parse(href)).catchError((e) {
+                      // 平台无对应 handler（如未安装浏览器）时记录，便于排查"点链接没反应"
+                      Log.ui.w('预览点击链接打开失败: $href', error: e);
+                    }),
                   );
                 }
               },

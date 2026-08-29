@@ -33,7 +33,7 @@ clean:
 # Generate build info (Git commit hash + build time) and inject it into lib/utils/build_info.dart
 gen-build-info:
 	@echo "-> Generate build info (git hash + build time)"
-	python scripts/generate_build_info.py
+	dart run scripts/generate_build_info.dart
 
 # Build the pure-Dart CLI as an AOT bundle (exe + sqlite3.dll). Requires a recent
 # Dart SDK: `dart compile exe` cannot run build hooks (sqlite3), so use `dart build cli`.

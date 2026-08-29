@@ -57,9 +57,8 @@ def get_destination():
 
 def generate_build_info():
     """构建前注入最新 Git 提交信息与构建时间，确保产物携带准确版本元数据。"""
-    script = ROOT / "scripts" / "generate_build_info.py"
     print("-> 生成构建信息（git hash + 构建时间）")
-    run(f"python \"{script}\"")
+    run("dart run scripts/generate_build_info.dart")
 
 
 def copy_apk(src: str, dst: str, newdir: Path):
