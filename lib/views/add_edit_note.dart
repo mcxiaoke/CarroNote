@@ -674,12 +674,27 @@ class AddEditNotePageState extends State<AddEditNotePage>
     final bool pinned = meta?.pinned ?? false;
     final bool locked = meta?.locked ?? false;
 
+    // 记录打开前 Markdown 开关状态，关闭后对比决定是否刷新预览
+    final bool beforeMarkdown = PreferencesStorage.isMarkdownEnabled;
     final NoteAction? action = await showNoteActionsSheet(
       context,
       pinned: pinned,
       locked: locked,
+      onMarkdownChanged: (v) {
+        if (mounted) setState(() {});
+      },
     );
-    if (!mounted || action == null) return;
+    if (!mounted) return;
+    // Sheet 内 Markdown 开关已即时写入偏好并通过回调刷新；此处兜底：
+    // 若开关在 sheet 内被切换（onMarkdownChanged 已触发过 setState），
+    // 仍需保证关闭后预览状态最终一致（callback 期间 setState 可能与
+    // sheet 动画帧重叠，这里再补一次）。
+    if (PreferencesStorage.isMarkdownEnabled != beforeMarkdown) {
+      setState(() {});
+      // 若用户仅切换开关后关闭（未选动作），此时 action==null，直接刷新即可返回
+      if (action == null) return;
+    }
+    if (action == null) return;
 
     switch (action) {
       case NoteAction.copyAll:
@@ -987,8 +1002,8 @@ class AddEditNotePageState extends State<AddEditNotePage>
     final Color codeBlockBg = noteBg == null
         ? cs.surfaceContainerHighest
         : (PreferencesStorage.isThemeDark
-            ? Color.alphaBlend(Colors.black.withValues(alpha: 0.10), noteBg)
-            : Color.alphaBlend(Colors.black.withValues(alpha: 0.06), noteBg));
+              ? Color.alphaBlend(Colors.black.withValues(alpha: 0.10), noteBg)
+              : Color.alphaBlend(Colors.black.withValues(alpha: 0.06), noteBg));
     return base.copyWith(
       p: uiBase,
       // 标题层级：h1=24 起逐级递减，h5/h6 不小于正文（16），仅用字重/颜色区分。
