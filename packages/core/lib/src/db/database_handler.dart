@@ -540,6 +540,40 @@ class NotesDatabase {
     }
   }
 
+  /// 校验候选 dataKey 能否解密本库现有密文（H-4）。
+  ///
+  /// 用 [candidateKey]（不改变本实例 [_dataKey]）抽样试解若干条笔记 title。
+  /// 返回语义：
+  ///   - 库为空 → `true`（无本地数据，切 key 无损失）
+  ///   - 任一行试解成功 → `true`（候选 key 与本地一致，正常多设备/同 vault 场景）
+  ///   - 抽样行**全部**试解失败 → `false`（本地 notes 用另一把 key 加密，
+  ///     账本/notes 密钥不一致，绝不应静默覆盖）
+  Future<bool> verifyDataKey(Uint8List candidateKey) async {
+    const sampleRows = 5;
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNotes,
+      columns: [NoteFields.uuid, NoteFields.title],
+      limit: sampleRows,
+    );
+    if (rows.isEmpty) return true;
+    var decryptedAny = false;
+    for (final row in rows) {
+      final uuid = row[NoteFields.uuid] as String?;
+      final title = row[NoteFields.title] as String?;
+      if (uuid == null || title == null || title.isEmpty) continue;
+      try {
+        final envelope = base64.decode(title);
+        await SyncCrypto.open(candidateKey, uuid, envelope);
+        decryptedAny = true;
+        break; // 认出候选 key 即可
+      } on Object {
+        // 单行失败（可能恰为损坏行），继续试下一行
+      }
+    }
+    return decryptedAny;
+  }
+
   /// 将明文 SafeNote 转为加密的数据库行（用于 insert/update）
   Future<Map<String, dynamic>> _toEncryptedRow(SafeNote note) async {
     final json = note.toJson();

@@ -412,3 +412,18 @@ class ManifestKeyMismatchException implements Exception {
   String toString() =>
       'ManifestKeyMismatchException: $message${cause != null ? ' (cause: $cause)' : ''}';
 }
+
+/// H-4：本地库的 notes 密文无法用「远端 dataKey」解密。
+///
+/// 触发于 `unlockFromRemoteManifest` 采用远端 key 前的校验失败，说明本地账本与
+/// notes 表的密钥不一致（账本被旧备份回滚 / 只恢复了 notes 表 / 跨 vault 混数据）。
+/// 此时**不能**静默把本地 dataKey 覆盖为远端值——那会把本可挽救的本地数据变成
+/// 永久不可解。上层应拒绝覆盖并提示用户从备份恢复，而非当作登录成功继续。
+class LocalVaultKeyMismatchException implements Exception {
+  final String message;
+
+  const LocalVaultKeyMismatchException(this.message);
+
+  @override
+  String toString() => 'LocalVaultKeyMismatchException: $message';
+}

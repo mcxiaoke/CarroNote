@@ -874,6 +874,84 @@ void main() {
       );
     });
   });
+
+  group('H-4 - 远端 key 覆盖前本地可解性校验', () {
+    test('verifyDataKey：空库 true、匹配 key true、不匹配 key false', () async {
+      final k = SyncCrypto.generateDataKey();
+      // 空库 → true（无本地数据，切 key 无损失）
+      expect(await database.verifyDataKey(k), isTrue);
+
+      final k2 = SyncCrypto.generateDataKey();
+      if (k2.toString() == k.toString()) {
+        // 理论不可达，避免后续断言误判
+        fail('意外生成相同 key');
+      }
+      database.setDataKey(k);
+      await database.storeNote(
+        SafeNote(
+          uuid: 'h4-vk-1',
+          title: 'note-a',
+          description: 'desc',
+          contentHash: SafeNote.computeHash('note-a', 'desc'),
+          createdTime: DateTime.now(),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      expect(await database.verifyDataKey(k), isTrue, reason: '匹配 key 应通过');
+      expect(await database.verifyDataKey(k2), isFalse, reason: '不匹配 key 应失败');
+    });
+
+    test(
+      'unlockFromRemoteManifest：本地库与远端 key 不一致时抛 LocalVaultKeyMismatchException',
+      () async {
+        // 远端 vault（模拟其他设备用 'shared-password' 上传的 manifest）
+        final vaultA = await Keyring.createNew(
+          password: 'shared-password',
+          database: database,
+        );
+        final manifest = _makeRemoteManifest(
+          version: 1,
+          vaultId: vaultA.vaultId,
+          encryptedDataKey: vaultA.encryptedDataKey,
+          keyFingerprint: vaultA.keyFingerprint,
+          keyVersion: vaultA.keyVersion,
+          kdf: vaultA.kdf,
+          createdAt: vaultA.createdAt,
+        );
+
+        // 本地"只恢复了 notes 表"：用与 vaultA 不同的 key 加密一条笔记
+        final localKey = SyncCrypto.generateDataKey();
+        expect(localKey.toString(), isNot(equals(vaultA.dataKey.toString())));
+        database.setDataKey(localKey);
+        await database.storeNote(
+          SafeNote(
+            uuid: 'h4-mm-1',
+            title: 'local-note',
+            description: 'd',
+            contentHash: SafeNote.computeHash('local-note', 'd'),
+            createdTime: DateTime.now(),
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+
+        // 用远端 key 尝试解锁本地库 → verifyDataKey 失败 → 拒绝覆盖并抛专属异常
+        await expectLater(
+          Keyring.unlockFromRemoteManifest(
+            password: 'shared-password',
+            remoteVaultId: manifest.vaultId,
+            remoteEncryptedDataKey: manifest.encryptedDataKey,
+            remoteKdf: manifest.header.kdf,
+            remoteKeyFingerprint: manifest.header.keyFingerprint,
+            remoteKeyVersion: manifest.header.keyVersion,
+            remoteCreatedAt: manifest.header.createdAt,
+            database: database,
+          ),
+          throwsA(isA<LocalVaultKeyMismatchException>()),
+        );
+      },
+    );
+  });
 }
 
 /// 测试辅助：构造 SafeNote（避免外部依赖）

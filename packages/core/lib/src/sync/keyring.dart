@@ -571,6 +571,16 @@ class Keyring {
     final mk = await _deriveMk(password, kdf: remoteKdf);
     final dataKey = await _unwrapOrThrow(mk, remoteEncryptedDataKey);
 
+    // H-4 修复：采用远端 dataKey 前，先验证它能否解密本地已有密文。
+    // 若本地 notes 是用另一把 key 加密（账本被旧备份回滚 / 只恢复 notes 表 /
+    // 跨 vault 混数据），静默覆盖为远端 key 会把本可挽救的数据变成永久不可解。
+    // 库为空或能解 → 正常多设备/新设备场景，放行；否则拒绝覆盖并抛专属异常。
+    if (!await database.verifyDataKey(dataKey)) {
+      throw LocalVaultKeyMismatchException(
+        '本地库现有密文无法用远端 dataKey 解密，已拒绝覆盖（本地账本与 notes 密钥不一致，请从备份恢复或走迁移）',
+      );
+    }
+
     final keyring = Keyring(
       vaultId: remoteVaultId,
       kdf: remoteKdf,

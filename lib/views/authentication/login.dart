@@ -483,6 +483,15 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           );
           return false;
         }
+        if (remoteResult == RemoteVerifyResult.localVaultMismatch) {
+          // H-4：密码正确（已通过远端验证），但本地库现有密文是另一把 key 加密。
+          // 拒绝覆盖远端 key 以免本地数据永久不可解，提示从备份恢复。
+          _showError(
+            'Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.'
+                .tr(),
+          );
+          return false;
+        }
         // remoteResult == wrongPassword:继续走失败流程
       }
 
@@ -596,17 +605,23 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       }
 
       // fingerprint 匹配 → 密码正确,用远端 encryptedDataKey 解锁
-      await Keyring.unlockFromRemoteManifest(
-        password: passphrase,
-        remoteVaultId: header.vaultId,
-        remoteEncryptedDataKey: header.encryptedDataKey,
-        remoteKdf: header.kdf,
-        remoteKeyFingerprint: header.keyFingerprint,
-        remoteKeyVersion: header.keyVersion,
-        remoteDataKeyEpoch: header.dataKeyEpoch,
-        remoteCreatedAt: header.createdAt,
-        database: database,
-      );
+      // H-4 修复：若本地已有另一把 key 加密的密文无法用远端 key 解，拒绝覆盖。
+      try {
+        await Keyring.unlockFromRemoteManifest(
+          password: passphrase,
+          remoteVaultId: header.vaultId,
+          remoteEncryptedDataKey: header.encryptedDataKey,
+          remoteKdf: header.kdf,
+          remoteKeyFingerprint: header.keyFingerprint,
+          remoteKeyVersion: header.keyVersion,
+          remoteDataKeyEpoch: header.dataKeyEpoch,
+          remoteCreatedAt: header.createdAt,
+          database: database,
+        );
+      } on LocalVaultKeyMismatchException catch (e) {
+        Log.auth.w('本地 vault 密钥与远端不一致，拒绝覆盖远端 key: ${e.message}');
+        return RemoteVerifyResult.localVaultMismatch;
+      }
 
       // unlockFromRemoteManifest 内部已持久化 keyring 元数据,
       // 但没有调用 database.setDataKey,需要补上
@@ -904,6 +919,11 @@ bool isPassphraseRememberChallenge() {
 ///   - verified: 密码正确,已通过远端 manifest header 验证并解锁
 ///   - wrongPassword: fingerprint 不匹配,密码错误,扣尝试次数
 ///   - unreachable: 网络故障/后端不可达,不扣尝试次数
-enum RemoteVerifyResult { verified, wrongPassword, unreachable }
+enum RemoteVerifyResult {
+  verified,
+  wrongPassword,
+  unreachable,
+  localVaultMismatch,
+}
 
 enum _BiometricState { unknown, supported, unsupported }

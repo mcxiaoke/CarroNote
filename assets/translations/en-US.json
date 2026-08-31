@@ -217,6 +217,7 @@
   "Processing...": "Processing...",
   "Verifying...": "Verifying...",
   "Unable to verify password (network unavailable). Check your connection and try again.": "Unable to verify password (network unavailable). Check your connection and try again.",
+  "Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.": "Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.",
   "Unknown error": "Unknown error",
   "Keyring not initialized. Please log in again.": "Keyring not initialized. Please log in again.",
   "Backend initialization failed": "Backend initialization failed",
