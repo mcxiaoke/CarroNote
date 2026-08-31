@@ -217,7 +217,7 @@
   "Processing...": "Processing...",
   "Verifying...": "Verifying...",
   "Unable to verify password (network unavailable). Check your connection and try again.": "Unable to verify password (network unavailable). Check your connection and try again.",
-  "Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.": "Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.",
+  "Your passphrase does not match the local vault data (likely another or an older vault). If this local data is obsolete, go back and use \"Forgot Passphrase → Reset Local Data\" (an encrypted backup is saved first), then log in with the correct passphrase. Otherwise, retry your correct local passphrase.": "Your passphrase does not match the local vault data (likely another or an older vault). If this local data is obsolete, go back and use \"Forgot Passphrase → Reset Local Data\" (an encrypted backup is saved first), then log in with the correct passphrase. Otherwise, retry your correct local passphrase.",
   "Unknown error": "Unknown error",
   "Keyring not initialized. Please log in again.": "Keyring not initialized. Please log in again.",
   "Backend initialization failed": "Backend initialization failed",

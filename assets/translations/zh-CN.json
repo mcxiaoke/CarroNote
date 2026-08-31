@@ -217,7 +217,7 @@
   "Processing...": "处理中...",
   "Verifying...": "验证中...",
   "Unable to verify password (network unavailable). Check your connection and try again.": "无法验证密码(网络不可用),请检查网络后重试",
-  "Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.": "本地保险库无法用此密码解密,请先从备份恢复再登录",
+  "Your passphrase does not match the local vault data (likely another or an older vault). If this local data is obsolete, go back and use \"Forgot Passphrase → Reset Local Data\" (an encrypted backup is saved first), then log in with the correct passphrase. Otherwise, retry your correct local passphrase.": "该密码无法解密本地保险库的数据（本地可能是另一个或更早的保险库）。若这份本地数据已废弃，请返回并使用「忘记密码 → 重置本地数据」（重置前会先保存加密备份），然后用正确的密码登录；否则请重试正确的本地密码。",
   "Unknown error": "未知错误",
   "Keyring not initialized. Please log in again.": "Keyring 未初始化,请重新登录",
   "Backend initialization failed": "后端初始化失败",

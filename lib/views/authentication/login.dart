@@ -485,9 +485,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         }
         if (remoteResult == RemoteVerifyResult.localVaultMismatch) {
           // H-4：密码正确（已通过远端验证），但本地库现有密文是另一把 key 加密。
-          // 拒绝覆盖远端 key 以免本地数据永久不可解，提示从备份恢复。
+          // 拒绝覆盖远端 key 以免本地数据永久不可解。
+          // 引导到登录页已有的"忘记密码 → 重置本地数据"逃生通道（重置前会导出加密快照）。
           _showError(
-            'Local vault cannot be decrypted with this passphrase. Restore from a backup before logging in.'
+            'Your passphrase does not match the local vault data (likely another or an older vault). If this local data is obsolete, go back and use "Forgot Passphrase → Reset Local Data" (an encrypted backup is saved first), then log in with the correct passphrase. Otherwise, retry your correct local passphrase.'
                 .tr(),
           );
           return false;
