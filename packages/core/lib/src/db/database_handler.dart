@@ -3018,6 +3018,28 @@ class NotesDatabase {
     return jsonEncode(jsonList).toString();
   }
 
+  /// 读取各笔记的 (uuid, contentHash, deleted) 三元组，用于备份去重指纹。
+  ///
+  /// **只读哈希/元数据列，不下发解密全库密文**，代价远低于 [exportAll]——
+  /// 供自动备份在「判断数据是否有变化」时用（见 backup-scheme-revamp-20260831.md）。
+  /// contentHash 由 title+description 派生，内容变化即变化；含 deleted 以感知删除。
+  Future<List<({String uuid, String contentHash, int deleted})>>
+  readBackupFingerprintRows() async {
+    final db = await instance.database;
+    final rows = await db.query(
+      tableNotes,
+      columns: [NoteFields.uuid, NoteFields.contentHash, NoteFields.deleted],
+    );
+    return [
+      for (final r in rows)
+        (
+          uuid: r[NoteFields.uuid] as String,
+          contentHash: (r[NoteFields.contentHash] as String?) ?? '',
+          deleted: (r[NoteFields.deleted] as int?) ?? 0,
+        ),
+    ];
+  }
+
   Future<void> close() async {
     final db = _database;
     if (db != null) {

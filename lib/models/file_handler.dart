@@ -47,14 +47,16 @@ class FileHandler {
     return decoded.cast<Map<String, dynamic>>();
   }
 
-  /// 计算待备份笔记数据的指纹（仅对明文 records，不含备份头/时间戳）。
+  /// 计算待备份笔记数据的指纹（供自动备份去重，见 docs/backup-scheme-revamp-20260831.md）。
   ///
-  /// 同一次数据集指纹稳定，且不受 AES-GCM 每次随机 nonce 影响——
-  /// 供自动备份去重用（见 docs/backup-scheme-revamp-20260831.md）。
+  /// 直接读取数据库的 (uuid, contentHash, deleted) 列（**不下发解密全库密文**），
+  /// 按 uuid 排序后取 sha256——同一数据集指纹稳定，且零解密开销。
   static Future<String> recordsFingerprint() async {
-    final records = await loadRecordsForExport();
-    final bytes = utf8.encode(jsonEncode(records));
-    return sha256.convert(bytes).toString();
+    final rows = await NotesDatabase.instance.readBackupFingerprintRows();
+    final lines =
+        rows.map((r) => '${r.uuid}:${r.contentHash}:${r.deleted}').toList()
+          ..sort();
+    return sha256.convert(utf8.encode(lines.join('\n'))).toString();
   }
 
   /// 明文导出备份内容（plaintext-v1，与旧格式全兼容）
