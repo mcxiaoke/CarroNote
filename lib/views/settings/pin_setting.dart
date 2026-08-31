@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -499,10 +500,24 @@ class _PinFlowState extends State<_PinFlow> {
       });
       return;
     }
-    await PinAuth.setPin(
-      pin,
-      policy: PinPolicy(length: _length, charset: _charset, shuffle: _shuffle),
-    );
+    try {
+      // L-23 修复：setPin 抛异常时复位 _busy，避免界面永久卡死（用户已输两遍 PIN
+      // 却失败后无任何响应，只能杀进程）。
+      await PinAuth.setPin(
+        pin,
+        policy: PinPolicy(
+          length: _length,
+          charset: _charset,
+          shuffle: _shuffle,
+        ),
+      );
+    } on Exception catch (e) {
+      Log.ui.e('设置 PIN 失败', error: e);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showErrorToast(context, 'Failed to enable PIN lock'.tr());
+      return;
+    }
     if (!mounted) return;
     showSnackBarMessage(context, 'PIN Lock enabled'.tr());
     widget.onDone();

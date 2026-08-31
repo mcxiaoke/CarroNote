@@ -102,9 +102,10 @@
 
 * **建议**：至少给 `:925` 加 `catch` 转明确 failure（触发迁移/重登录语义），其余视同通用错误。
 
-### M-3. 无 onConfigure（WAL/busy_timeout）+ 无 onDowngrade + 幂等 ALTER（原 P1-5 / P1-6 / C5）〔✅ 已随第二批修复〕
+### M-3. 无 onConfigure（WAL/busy\_timeout）+ 无 onDowngrade + 幂等 ALTER（原 P1-5 / P1-6 / C5）〔✅ 已随第二批修复〕
 
 * **位置**：`database_handler.dart:711-730` `OpenDatabaseOptions` 原无 `onConfigure` / `onDowngrade`；`_onUpgrade` 的 `ALTER ADD COLUMN` 原无 `IF NOT EXISTS` 守卫。
+
 * **修复**：`_initDB` 补 `onConfigure`（`journal_mode=WAL`、`busy_timeout=5000`、`synchronous=NORMAL`，best-effort 静默降级）与 `onDowngrade`（非破坏仅记日志）；新增 `_columnExists` 使 `_onUpgrade` 两个 `ALTER ADD COLUMN` 幂等。
 
 ### M-4. 在途同步无取消 / 10s 后硬关 backend（原 P1-15）〔搁置〕
@@ -165,7 +166,8 @@
 
 ## 四、🟡 低优先 —— 防御纵深 / 性能 / 工程质量
 
-> 均为原 P2 / L 级，属实存在但不紧急。
+> 均为原 P2 / L 级。**2026-08-31 第三批已修复**：L-3、L-8、L-10、L-11、L-22、L-23、L-31、M-2；
+> **L-21 按用户要求标记搁置**；其余仍待修。
 
 | 编号   | 问题                                                                                            | 位置                                                                          | 备注                                    |
 | ---- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------- |
@@ -189,7 +191,7 @@
 | L-18 | 无盐标题 SHA-256 前 8 位（原 P2-18）                                                                   | `database_handler.dart:199-202`                                             | 隐私口径，可删或加盐                            |
 | L-19 | 非原子/公开 API 未加标注（原 P2-19）                                                                      | `database_handler.dart:1870/2172/2191/2262`                                 | 加 `@Deprecated`/`@visibleForTesting`  |
 | L-20 | PIN 失败计数存明文 prefs（原 P2-20）                                                                    | `pin_auth.dart`、`preference_and_config.dart:451-455`                        | 已有上限 5，建议计数入 secure storage           |
-| L-21 | 复制全文不清剪贴板（原 P2-21）                                                                            | `add_edit_note.dart:720-736`                                                | 60s 后写空串                              |
+| L-21 | 复制全文不清剪贴板（原 P2-21）〔搁置〕                                                                       | `add_edit_note.dart:720-736`                                                | 60s 后写空串                              |
 | L-22 | 删除/恢复/清空回收站无异常兜底（原 P2-23）                                                                     | `deleted_notes.dart:170-244`                                                | 已加成功提示，异常仍裸奔                          |
 | L-23 | `setPin` 抛异常后 `_busy` 卡死（原 P2-24）                                                             | `pin_setting.dart:502-509`                                                  | try/catch 后复位 `_busy`                 |
 | L-24 | 路由 `'/'` 未关闭 StreamController + 多 public State 类（原 P2-25 / L-16）                              | `route_generator.dart:66-70`、各 `State`                                      | 泄漏 + 封装                               |
@@ -251,11 +253,12 @@
 **已完成：**
 
 1. **第一批（小改动、高收益）**：H-1（webdav 白名单）、H-2（pending uuid 抛异常）、H-6（补 5 处迁移守卫）、M-5（Ctrl+N）、M-6（滚动 try/catch）——2026-08-31 修复并提交（`92eccd1` / `dc63919`）。
-2. **第二批（中）**：M-3（`onConfigure` WAL/busy_timeout + `onDowngrade` + 幂等 ALTER）——2026-08-31 修复。
+2. **第二批（中）**：M-3（`onConfigure` WAL/busy_timeout + `onDowngrade` + 幂等 ALTER）——2026-08-31 修复并提交（`f68bb52`）。
+3. **第三批（防御/兜底）**：L-3、L-8、L-10、L-11、L-22、L-23、L-31、M-2——2026-08-31 修复（待提交）。
 
 **已决定搁置（触及同步核心迁移/损坏恢复/取消路径，触发前提窄，与先前 B5/C1/C2 有意搁置一致）：**
 
-- H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-4（取消机制）。
+* H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-4（取消机制）。
 
 **后续批量（工程化/UX）**：L-2/L-3/L-3x 死代码与一致性清理、L-28 lint 收紧、L-6 i18n、L-29 依赖治理。
 

@@ -657,7 +657,9 @@ class HomePageState extends State<HomePage> with RouteAware {
           onChanged: (v) {
             setState(() => isNewFirst = v);
             PreferencesStorage.setIsNewFirst(isNewFirst);
-            _sortAndStoreNotes();
+            // 复用 refreshNotes 的 MassDecryptionFailureException/Exception 统一处理，
+            // 避免系统性解密失败时异常直落 Zone（P1-22）。
+            unawaited(refreshNotes());
           },
         ),
         row(
@@ -668,7 +670,8 @@ class HomePageState extends State<HomePage> with RouteAware {
           onChanged: (v) {
             // 排序字段切换走同一套排序入口（内部 setState 刷新列表）。
             PreferencesStorage.setIsSortByModified(v);
-            _sortAndStoreNotes();
+            // 复用 refreshNotes 的统一异常处理（P1-22）。
+            unawaited(refreshNotes());
           },
         ),
         row(
@@ -1352,9 +1355,13 @@ class HomePageState extends State<HomePage> with RouteAware {
     await showDeleteConfirmation(
       context: context,
       onConfirm: () async {
-        final ids = _selectedUuids.map((uuid) {
-          return allnotes.firstWhere((n) => n.uuid == uuid).id!;
-        }).toList();
+        // 预建 uuid→note 映射，避免 firstWhere 在同步刷新导致 uuid 不在列表中时抛
+        // StateError（L-11/P2-33）。跳过多选后已被同步移除的 uuid。
+        final byUuid = <String, SafeNote>{for (final n in allnotes) n.uuid: n};
+        final ids = _selectedUuids
+            .map((uuid) => byUuid[uuid]?.id)
+            .whereType<int>()
+            .toList();
         await Future.wait(
           ids.map((id) => NotesDatabase.instance.softDelete(id)),
         );

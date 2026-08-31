@@ -47,6 +47,9 @@ import 'package:core/src/logger/app_logger.dart';
 /// [rootPath] 必须是绝对路径，由上层（SyncService/Keyring）使用 path_provider
 /// 解析后传入。LocalFsBackend 自身不依赖 path_provider，便于单元测试。
 class LocalFsBackend implements SyncBackend {
+  /// journal/metadata 对象名白名单：仅 `[A-Za-z0-9._-]`（不含路径分隔/`..`），对齐 WebDAV/SafeServer
+  static final RegExp _safeJournalNameRe = RegExp(r'^[A-Za-z0-9._-]+$');
+
   /// keyring 根目录绝对路径
   final String rootPath;
 
@@ -93,6 +96,8 @@ class LocalFsBackend implements SyncBackend {
       return (ciphertext: Uint8List(0), etag: '');
     }
     final bytes = await file.readAsBytes();
+    // F-M03：manifest 大小上限（对齐 WebDAV/SafeServer，防恶意/损坏的巨型 manifest 整读入内存）
+    checkRemoteReadSize(bytes, 'LocalFS manifest', kRemoteManifestMaxBytes);
     return (ciphertext: bytes, etag: _computeEtag(bytes));
   }
 
@@ -233,22 +238,20 @@ class LocalFsBackend implements SyncBackend {
     final dst = File(p.join(orphanDir.path, '$hash.$ts'));
     try {
       await src.rename(dst.path);
+    } on BackendUnavailableException {
+      rethrow;
     } on Exception catch (e) {
-      // 重命名失败（跨文件系统）：退化为硬删除
+      // 对齐 WebDAV H9：重命名失败**不退化硬删除**（硬删会丢 30 天恢复窗口）。
+      // 保持原 blob 不动，抛异常让 GC 本轮跳过、等下轮重试。
       Log.sync.w(
-        'LocalFs deleteBlobSoft: 重命名失败，退化为硬删除 '
+        'LocalFs deleteBlobSoft: 重命名失败，跳过本轮删除（保留 30 天恢复窗口）'
         'hash=${hash.substring(0, 8)}…',
         error: e,
       );
-      try {
-        await src.delete();
-      } on Exception catch (e2) {
-        Log.sync.w(
-          'LocalFs deleteBlobSoft: 硬删除也失败 '
-          'hash=${hash.substring(0, 8)}…',
-          error: e2,
-        );
-      }
+      throw BackendUnavailableException(
+        '[LocalFs] deleteBlobSoft: 重命名失败，本轮跳过删除 '
+        'hash=${hash.substring(0, 8)}…: $e',
+      );
     }
   }
 
@@ -396,7 +399,11 @@ class LocalFsBackend implements SyncBackend {
       if (entity is File) {
         final name = p.basename(entity.path);
         // 过滤中间态 .tmp 文件
-        if (name.endsWith('.json')) result.add(name);
+        if (!name.endsWith('.json')) continue;
+        // 防路径遍历/非法名：仅白名单字符集且不含 ..（与 WebDAV/SafeServer 对齐）
+        if (!_safeJournalNameRe.hasMatch(name)) continue;
+        if (name.contains('..')) continue;
+        result.add(name);
       }
     }
     return result;

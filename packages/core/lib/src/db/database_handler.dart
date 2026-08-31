@@ -532,8 +532,10 @@ class NotesDatabase {
     } on SyncDecryptionException {
       // 解密失败：dataKey 不匹配或数据损坏，保留原始异常类型向上传递
       rethrow;
-    } catch (e) {
-      // 其他异常（如 base64 解码失败）仍包装为可捕获的异常
+    } on Exception catch (e) {
+      // 其他异常（如 base64 解码失败）仍包装为可捕获的异常。
+      // 收窄为 on Exception：裸 catch 会误捕 Error 子类型（如编程错误），
+      // 掩盖真实 bug，且这类 Error 本不该被当成"解密失败"。
       throw SyncDecryptionException('字段解密失败: $e', aadId: uuid);
     }
   }

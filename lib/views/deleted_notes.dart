@@ -169,7 +169,16 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
 
   Future<void> _restoreNote(SafeNote note) async {
     Log.note.i('用户从回收站恢复笔记: uuid=${note.uuid} id=${note.id}');
-    await NotesDatabase.instance.restoreNote(note.id!);
+    try {
+      await NotesDatabase.instance.restoreNote(note.id!);
+    } on Exception catch (e) {
+      // L-22 修复：失败不静默，明确提示并保持列表可交互
+      Log.note.w('恢复笔记失败: uuid=${note.uuid}', error: e);
+      if (mounted) {
+        showErrorToast(context, 'Failed to restore note'.tr());
+      }
+      return;
+    }
     // 触发自动同步（如果已启用）
     SyncService.instance.autoSync();
     if (mounted) {
@@ -186,7 +195,17 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
   Future<void> _permanentDelete(SafeNote note) async {
     // 不可恢复的破坏性操作，用 warning 级别突出显示
     Log.note.w('用户从回收站永久删除笔记(不可恢复): uuid=${note.uuid} id=${note.id}');
-    await NotesDatabase.instance.hardDelete(note.id!);
+    try {
+      await NotesDatabase.instance.hardDelete(note.id!);
+    } on Exception catch (e) {
+      // L-22 修复：永久删除失败不静默，保持列表可交互
+      Log.note.w('永久删除笔记失败: uuid=${note.uuid}', error: e);
+      if (mounted) {
+        showErrorToast(context, 'Failed to delete note'.tr());
+        _refresh();
+      }
+      return;
+    }
     // 永久删除后触发自动同步，让远端记录该 uuid 已被 purged（不复活）
     SyncService.instance.autoSync();
     if (mounted) {
@@ -230,7 +249,18 @@ class _DeletedNotesPageState extends State<DeletedNotesPage> {
     // 批量不可恢复删除：起止都必须留痕（条数 + 耗时）
     Log.note.w('开始清空回收站(不可恢复): 共 $total 条');
     // 单事务批量硬删除（删行 + purged 列表原子写入），替代逐条 hardDelete 的 N 次事务
-    final deleted = await NotesDatabase.instance.hardDeleteAllDeleted();
+    final int deleted;
+    try {
+      deleted = await NotesDatabase.instance.hardDeleteAllDeleted();
+    } on Exception catch (e) {
+      // L-22 修复：清空是**不可恢复**操作，失败静默最危险——明确提示并保留列表
+      Log.note.w('清空回收站失败', error: e);
+      if (mounted) {
+        showErrorToast(context, 'Failed to clear deleted notes'.tr());
+        _refresh();
+      }
+      return;
+    }
     Log.note.w('清空回收站完成: 已永久删除 $deleted 条, 耗时 ${sw.elapsedMilliseconds}ms');
     // 批量永久删除后触发一次自动同步（debounce 合并，只同步一次）
     SyncService.instance.autoSync();
