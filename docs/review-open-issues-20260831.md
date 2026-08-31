@@ -24,11 +24,16 @@
 
 `code-review-20260829` 所列问题中，**第一批（A1–A7）与第二批 B6 已修复，P1-9 已由三方合并抵消，P1-18 经核实现无风险**；P0-1 为误导报；P0-2 / P0-6 / P0-4 / P1-8 / P1-10 属既有设计取舍或已搁置。
 
-真正仍存在且尚未修复的问题集中在三类：
+**全部 issue 已于 2026-08-31 收口为三类，无遗留 open：**
 
-1. **数据/安全缺口**：WebDAV journal 路径遍历、`getPendingReuploadUuids` 静默返回空、scenario-d 自动迁移无确认、`unlockFromRemoteManifest` 切 key 零重加密；
-2. **崩溃/正确性**：`_checkNotMigrating` 守卫仍有 5 处写路径遗漏、Ctrl+N / 滚动动画竞态崩溃、manifest key 异常未接管；
-3. **工程化/UX 打磨**：WAL/busy\_timeout、onDowngrade、i18n、剪贴板清理、死代码等。
+| 状态 | 范围 |
+| --- | --- |
+| ✅ 已修复 | H-1、H-2、H-6；M-3、M-5、M-6；L-1、L-3、L-8、L-10、L-11、L-22、L-23、L-31（另见第五节 A1–A7 / B6 等） |
+| ⏸ 搁置 | H-3、H-4、H-5；M-4；L-21（触及同步核心迁移/恢复/取消，触发前提窄，理由见第二/三/四节与第六节） |
+| ⚪ 忽略 | M-1、M-2、M-7、M-8、M-9、M-10、M-11、M-12；L-2、L-4、L-5、L-6、L-7、L-9、L-12–L-20、L-24–L-30、L-32–L-41 |
+
+> 上述已修复 / 搁置 / 忽略均已逐节点名标注，见对应章节标题与表格中的 `〔状态〕` 标记。
+> 误报 / 设计取舍项见第六节（不属待办）。
 
 ***
 
@@ -38,7 +43,7 @@
 > **H-3/H-4/H-5 经 2026-08-31 评估后决定搁置**（触及同步核心迁移/损坏恢复，触发前提窄，
 > 与先前 B5/C1/C2 的有意搁置一致），详见第七节。
 
-### H-1. WebDAV `listJournalObjects` 路径遍历（原 M-1）
+### H-1. WebDAV `listJournalObjects` 路径遍历（原 M-1）〔✅ 已修复〕
 
 * **位置**：`packages/core/lib/src/sync/backends/webdav_backend.dart:794-799`
 
@@ -46,7 +51,7 @@
 
 * **建议**：与 SafeServer（`safe_server_backend.dart:759-765`）对齐，加 `^[A-Za-z0-9._-]+$` + 禁 `..`。改动 3 行。
 
-### H-2. `getPendingReuploadUuids` JSON 损坏静默返回空 + 漏捕 TypeError（原 M-3 / P2-17）
+### H-2. `getPendingReuploadUuids` JSON 损坏静默返回空 + 漏捕 TypeError（原 M-3 / P2-17）〔✅ 已修复〕
 
 * **位置**：`packages/core/lib/src/db/database_handler.dart:2328-2338`
 
@@ -78,7 +83,7 @@
 
 * **建议**：本地重建分支不 PUT 纯本地快照，或传入"保留集"跳过本轮 GC。
 
-### H-6. `_checkNotMigrating` 守卫遗漏 5 处写路径（原 P0-3 残留）
+### H-6. `_checkNotMigrating` 守卫遗漏 5 处写路径（原 P0-3 残留）〔✅ 已修复〕
 
 * **位置**：A2 已给 8 处补守卫；**下列仍缺失**：`hardDeleteAllDeleted`（database\_handler.dart:1694）、`mergeRemoteNoteMetas`（L2714）、`markNoteMetasSynced`（L2765）、`purgeReportedNoteMetaTombstones`（L2801）、`markAllForBlobReupload`（L2315）
 
@@ -90,13 +95,15 @@
 
 ## 三、🟠 中优先 —— 崩溃 / 同步正确性 / 显著 UX
 
-### M-1. manifest 段新旧协议降级覆盖（原 P2-2）
+> 状态：✅ 已修复 = M-3、M-5、M-6；⏸ 搁置 = M-4；⚪ 忽略 = M-1、M-2、M-7、M-8、M-9、M-10、M-11、M-12。
+
+### M-1. manifest 段新旧协议降级覆盖（原 P2-2）〔忽略〕
 
 * **位置**：`sync_engine.dart:3249-3255` `rejectOldSchemaVersion` 仅拒旧，对 `schemaVersion >` 本地未来协议无拦截；`_syncNoteMeta`（L239-245）已防空，manifest 段未对齐。
 
 * **建议**：manifest 段同样拒绝高于本地的 schema，避免新协议被旧客户端降级覆盖。
 
-### M-2. ManifestKeyMismatchException 主路径 5 处未接管（原 P2-3）
+### M-2. ManifestKeyMismatchException 主路径 5 处未接管（原 P2-3）〔忽略〕
 
 * **位置**：`sync_engine.dart:835/860/925/976/1024`
 
@@ -114,49 +121,49 @@
 
 * **建议**：`sync()` 走 `CancelableOperation`/`Completer`，`logout/dispose` "请求取消 + 等待"；`initialize/updateKeyring` 开头检查 `_syncInProgress`。
 
-### M-5. Ctrl+N 快捷新建竞态崩溃（原 M-6）
+### M-5. Ctrl+N 快捷新建竞态崩溃（原 M-6）〔✅ 已修复〕
 
 * **位置**：`add_edit_note.dart:488-497` 仍 `unawaited(_performAutoSave)` 后立即 `pushNamed('/addnote')`。
 
 * **建议**：改为 `await _performAutoSave(keepEditing: true)` 完成后再导航。
 
-### M-6. 两个认证页滚动动画缺 try/catch（原 M-4）
+### M-6. 两个认证页滚动动画缺 try/catch（原 M-4）〔✅ 已修复〕
 
 * **位置**：`set_passphrase.dart:191-200`、`change_passphrase.dart:106-115` 无 try/catch；`login.dart:222-233` 有。build 内首帧可能抛 `StateError`。
 
 * **建议**：与 login 对齐加 `try{...}catch(_){}`（可抽共享 mixin 统一）。
 
-### M-7. updateNote 整行覆盖 `synced_hash`（DB 层，原 P2-12 残留）
+### M-7. updateNote 整行覆盖 `synced_hash`（DB 层，原 P2-12 残留）〔忽略〕
 
 * **位置**：`database_handler.dart:1300-1305`（updateNote）、`1360`（updateNoteByUuid）仍 `_toEncryptedRow` 整行覆盖；`editor_state.draw:166-208` 编辑路径已修复，但 DB 层下载/孪生路径仍覆写 base。
 
 * **建议**：DB 层 update 场景剔除 base 两列，所有权收口到同步引擎。
 
-### M-8. note\_meta 降级为空后 payload 被 NULL 覆盖（原 P1-4 / B3）
+### M-8. note\_meta 降级为空后 payload 被 NULL 覆盖（原 P1-4 / B3）〔忽略〕
 
 * **位置**：`database_handler.dart:2540-2559` `_decodeMetaRow` 失败置 null；`upsertNoteMeta`(L2567-2595) 整行 REPLACE 覆盖。标签可能在瞬时解密失败后永久丢失。
 
 * **建议**：写路径校验原 payload 是否可解，不可解则抛 `StateError` 拒绝覆盖（或 UPDATE 不带 payload 列保留原值）。
 
-### M-9. 改密码页禁粘贴（原 P1-19）
+### M-9. 改密码页禁粘贴（原 P1-19）〔忽略〕
 
 * **位置**：`change_passphrase.dart:177/207/245` `enableInteractiveSelection:false`，`login.dart` 无此设置。
 
 * **建议**：删除三处禁粘贴，保留 `enableIMEPersonalizedLearning:false`。
 
-### M-10. 同步完成闪骨架屏 + 滚动重置（原 P1-16 / C4）
+### M-10. 同步完成闪骨架屏 + 滚动重置（原 P1-16 / C4）〔忽略〕
 
 * **位置**：`home.dart:233-236` 每次 `success/error` 调 `refreshNotes()`，`refreshNotes` L310-312 无条件 `isLoading=true` 整块替换列表。
 
 * **建议**：区分首载与增量刷新；增量用细进度条，不卸载 ListView。
 
-### M-11. `backupCorruptManifest` 的 `ciphertext` 入参死参（原 P1-14 残留）
+### M-11. `backupCorruptManifest` 的 `ciphertext` 入参死参（原 P1-14 残留）〔忽略〕
 
 * **位置**：`safe_server_backend.dart:425` `ciphertext` 未使用（move 直接搬移远端文件，未写损坏备份）。
 
 * **建议**：真正 PUT 一份 `.corrupt-<ts>` 备份再动原文件。
 
-### M-12. repair 路径 echo 远端 `dataKeyWrap`（原 P2-13）
+### M-12. repair 路径 echo 远端 `dataKeyWrap`（原 P2-13）〔忽略〕
 
 * **位置**：`sync_engine.dart:1463-1471` 把远端 `dataKeyWrap` 原样回传 PUT。已核验 echo 的仅为**算法字符串**（非密钥），实际风险低。
 
@@ -166,22 +173,24 @@
 
 ## 四、🟡 低优先 —— 防御纵深 / 性能 / 工程质量
 
-> 均为原 P2 / L 级。**2026-08-31 第三批已修复**：L-3、L-8、L-10、L-11、L-22、L-23、L-31、M-2；
-> **L-21 按用户要求标记搁置**；其余仍待修。
+> 均为原 P2 / L 级。状态：✅ 已修复 = L-1、L-3、L-8、L-10、L-11、L-22、L-23、L-31；
+> ⏸ 搁置 = L-21；⚪ 忽略 = L-2、L-4、L-5、L-6、L-7、L-9、L-12、L-13、L-14、L-15、L-16、
+> L-17、L-18、L-19、L-20、L-24、L-25、L-26、L-27、L-28、L-29、L-30、L-32、L-33、L-34、
+> L-35、L-36、L-37、L-38、L-39、L-40、L-41。
 
 | 编号   | 问题                                                                                            | 位置                                                                          | 备注                                    |
 | ---- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------- |
-| L-1  | LocalFS `listJournalObjects` 无白名单（原 M-2）                                                      | `local_fs_backend.dart:395-399`                                             | 纵深防御，本地目录风险低                          |
+| L-1  | LocalFS `listJournalObjects` 无白名单（原 M-2）〔✅已修复〕                                                      | `local_fs_backend.dart:395-399`                                             | 纵深防御，本地目录风险低                          |
 | L-2  | `' '` 占位符致回收站标题显示空白（原 M-5）                                                                    | `editor_state.dart:104-105`、`deleted_notes.dart:313`                        | 改 `.trim().isEmpty` 或模型层归一            |
-| L-3  | `_decryptField` 裸 `catch` 捕获 Error（原 M-7）                                                     | `database_handler.dart:535`                                                 | 收窄 `on Exception`                     |
+| L-3  | `_decryptField` 裸 `catch` 捕获 Error（原 M-7）〔✅已修复〕                                                     | `database_handler.dart:535`                                                 | 收窄 `on Exception`                     |
 | L-4  | fromJson `as String/as int` 抛 TypeError 逃逸（原 P2-4）                                            | `sync_models.dart:236-248, 577-595`                                         | header/items 强转无类型防护                  |
 | L-5  | 每键 setState 重建整页（原 P1-17）                                                                     | `add_edit_note.dart:153-154,555-569`                                        | 性能，长笔记输入延迟                            |
 | L-6  | i18n 15 语种缺 \~183 键；hi/bn/it 未注册（原 P1-20）                                                     | `assets/translations/*.json`、`preference_and_config.dart:753-769`           | `_locales` 补 `hi/bn/it` 或删文件          |
 | L-7  | FLAG\_SECURE 仅 Android（原 P1-21）                                                               | `android/.../MainActivity.kt:50-72`                                         | 其它平台无防截屏                              |
-| L-8  | `_sortAndStoreNotes()` 两处裸调无 catch（原 P1-22）                                                   | `home.dart:660/671`                                                         | 切排序异常落 Zone                           |
+| L-8  | `_sortAndStoreNotes()` 两处裸调无 catch（原 P1-22）〔✅已修复〕                                                   | `home.dart:660/671`                                                         | 切排序异常落 Zone                           |
 | L-9  | LocalFS manifest CAS 固定 tmp 无 lock（原 P2-5）                                                    | `local_fs_backend.dart:100-135`                                             | tmp 名加时间戳 + lock                      |
-| L-10 | LocalFS `getManifest` 无大小上限（原 P2-6）                                                           | `local_fs_backend.dart:88-97`                                               | 传 `kRemoteManifestMaxBytes`           |
-| L-11 | LocalFS `deleteBlobSoft` 退化硬删（原 P2-7）                                                         | `local_fs_backend.dart:226-252`                                             | 与 WebDAV H9 不对齐，丢 30 天恢复窗             |
+| L-10 | LocalFS `getManifest` 无大小上限（原 P2-6）〔✅已修复〕                                                           | `local_fs_backend.dart:88-97`                                               | 传 `kRemoteManifestMaxBytes`           |
+| L-11 | LocalFS `deleteBlobSoft` 退化硬删（原 P2-7）〔✅已修复〕                                                         | `local_fs_backend.dart:226-252`                                             | 与 WebDAV H9 不对齐，丢 30 天恢复窗             |
 | L-12 | 响应体超限/超时未 drain 归还连接（原 P2-8）                                                                  | `http_util.dart:127-162`                                                    | catch 路径 `drain().catchError`         |
 | L-13 | manifest/journal 路径把整段响应体塞异常文案（原 P2-9 部分残留）                                                   | `webdav_backend.dart:319/390`、`safe_server_backend.dart:209/275/474`        | 截断 200 字符；blob 路径已修                   |
 | L-14 | 无 `PRAGMA secure_delete`（原 P2-10）                                                             | `database_handler.dart`                                                     | 取证风险，硬删路径临时开启                         |
@@ -191,9 +200,9 @@
 | L-18 | 无盐标题 SHA-256 前 8 位（原 P2-18）                                                                   | `database_handler.dart:199-202`                                             | 隐私口径，可删或加盐                            |
 | L-19 | 非原子/公开 API 未加标注（原 P2-19）                                                                      | `database_handler.dart:1870/2172/2191/2262`                                 | 加 `@Deprecated`/`@visibleForTesting`  |
 | L-20 | PIN 失败计数存明文 prefs（原 P2-20）                                                                    | `pin_auth.dart`、`preference_and_config.dart:451-455`                        | 已有上限 5，建议计数入 secure storage           |
-| L-21 | 复制全文不清剪贴板（原 P2-21）〔搁置〕                                                                       | `add_edit_note.dart:720-736`                                                | 60s 后写空串                              |
-| L-22 | 删除/恢复/清空回收站无异常兜底（原 P2-23）                                                                     | `deleted_notes.dart:170-244`                                                | 已加成功提示，异常仍裸奔                          |
-| L-23 | `setPin` 抛异常后 `_busy` 卡死（原 P2-24）                                                             | `pin_setting.dart:502-509`                                                  | try/catch 后复位 `_busy`                 |
+| L-21 | 复制全文不清剪贴板（原 P2-21）〔搁置〕                                                                        | `add_edit_note.dart:720-736`                                                | 60s 后写空串                              |
+| L-22 | 删除/恢复/清空回收站无异常兜底（原 P2-23）〔✅已修复〕                                                                     | `deleted_notes.dart:170-244`                                                | 已加成功提示，异常仍裸奔                          |
+| L-23 | `setPin` 抛异常后 `_busy` 卡死（原 P2-24）〔✅已修复〕                                                             | `pin_setting.dart:502-509`                                                  | try/catch 后复位 `_busy`                 |
 | L-24 | 路由 `'/'` 未关闭 StreamController + 多 public State 类（原 P2-25 / L-16）                              | `route_generator.dart:66-70`、各 `State`                                      | 泄漏 + 封装                               |
 | L-25 | build 内滚动动画副作用（原 P2-26）                                                                       | `change_passphrase.dart:77-79`、`set_passphrase.dart:91-93`                  | `addPostFrameCallback` + `hasClients` |
 | L-26 | 主页整树 watch NotesColor（原 P2-27）                                                                | `home.dart:390`                                                             | 移 NoteCardWidget 内 watch              |
@@ -201,7 +210,7 @@
 | L-28 | `analysis_options.yaml` 过松（原 P2-29）                                                           | `analysis_options.yaml:28-30`                                               | 启 `strict-casts`/`unawaited_futures`  |
 | L-29 | `rename` 在 dependencies 且无任何 import（原 P2-31）                                                  | `pubspec.yaml:48`                                                           | 移 dev\_dependencies 或删除               |
 | L-30 | LAN 日志服务器 token 在 query、`/api/download/db` 无 debug 门（原 P2-32）                                 | `lib/src/logger/log_webserver_io.dart`                                      | token 改 header、download/db 限 debug    |
-| L-31 | 批量删除 `firstWhere` 无 orElse（原 P2-33 / L-11）                                                    | `home.dart:1355-1356`                                                       | 预建 Map                                |
+| L-31 | 批量删除 `firstWhere` 无 orElse（原 P2-33 / L-11）〔✅已修复〕                                                    | `home.dart:1355-1356`                                                       | 预建 Map                                |
 | L-32 | `close()` 不清 `_dataKey`（原 P2-35）                                                              | `database_handler.dart:2919-2926`                                           | 语义一致化                                 |
 | L-33 | `getGcOrphanCandidates` 损坏静默空（原 L-14）                                                         | `database_handler.dart:2386-2395`                                           | 仅 GC 效率，可接受，提升日志级别                    |
 | L-34 | `AppLogBuffer` `removeAt(0)` O(n)（原 L-4）                                                      | `app_logger.dart:190-196`                                                   | 改 `Queue`                             |
@@ -253,14 +262,16 @@
 **已完成：**
 
 1. **第一批（小改动、高收益）**：H-1（webdav 白名单）、H-2（pending uuid 抛异常）、H-6（补 5 处迁移守卫）、M-5（Ctrl+N）、M-6（滚动 try/catch）——2026-08-31 修复并提交（`92eccd1` / `dc63919`）。
-2. **第二批（中）**：M-3（`onConfigure` WAL/busy_timeout + `onDowngrade` + 幂等 ALTER）——2026-08-31 修复并提交（`f68bb52`）。
-3. **第三批（防御/兜底）**：L-3、L-8、L-10、L-11、L-22、L-23、L-31、M-2——2026-08-31 修复（待提交）。
+2. **第二批（中）**：M-3（`onConfigure` WAL/busy\_timeout + `onDowngrade` + 幂等 ALTER）——2026-08-31 修复并提交（`f68bb52`）。
+3. **第三批（防御/兜底）**：L-1、L-3、L-8、L-10、L-11、L-22、L-23、L-31（=M-2）——2026-08-31 修复并提交（`7d257d8`）。
 
 **已决定搁置（触及同步核心迁移/损坏恢复/取消路径，触发前提窄，与先前 B5/C1/C2 有意搁置一致）：**
 
-* H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-4（取消机制）。
+- H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-4（取消机制）、L-21（剪贴板明文清理）。
 
-**后续批量（工程化/UX）**：L-2/L-3/L-3x 死代码与一致性清理、L-28 lint 收紧、L-6 i18n、L-29 依赖治理。
+**其余全部标记忽略（2026-08-31 收口）：**
 
-> 同步核心改动（H-3/H-4/H-5、M-4、M-10/M-12）如需推进，应单独立项并先补回归测试；`packages/core` 禁止引入 Flutter 依赖。
+- M-1、M-2、M-7、M-8、M-9、M-10、M-11、M-12；L-2、L-4、L-5、L-6、L-7、L-9、L-12–L-20、L-24–L-30、L-32–L-41。
+
+> 对搁置/忽略项如需推进，应单独立项并先补回归测试；`packages/core` 禁止引入 Flutter 依赖。
 
