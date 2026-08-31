@@ -43,6 +43,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/device_id.dart';
+import 'package:safenotes/utils/scheduled_task.dart';
 
 // 第三方导入
 
@@ -228,6 +229,7 @@ class SyncService {
       passphraseProvider: () => PhraseHandler.getPass,
       // B2：迁移成功后回写 _keyring，避免上层持旧 keyring（旧 dataKey）
       onKeyringChanged: (k) => _keyring = k,
+      preMigrationHook: _preMigrationBackup,
     );
 
     // 启动自检：上次进程有没有写到一半就挂掉的两阶段操作。
@@ -355,6 +357,7 @@ class SyncService {
         passphraseProvider: () => PhraseHandler.getPass,
         // B2：迁移成功后回写 _keyring
         onKeyringChanged: (k) => _keyring = k,
+        preMigrationHook: _preMigrationBackup,
       );
     }
 
@@ -826,6 +829,10 @@ class SyncService {
   /// 不暴露给外部，仅 autoSync 内部维护。
   bool _autoSyncFailureRetried = false;
 
+  /// 数据 vault 迁移（scenario-d）前的强制备份（注入 SyncEngine.preMigrationHook）
+  Future<bool> _preMigrationBackup() =>
+      ScheduledTask.forceBackup(scene: BackupScene.migrate);
+
   /// 等待当前在途同步完成（用于改密码等关键操作前排空同步任务）
   Future<void> waitForSyncCompletion({
     Duration timeout = const Duration(seconds: 10),
@@ -892,6 +899,7 @@ class SyncService {
         passphraseProvider: () => PhraseHandler.getPass,
         // B2：迁移成功后回写 _keyring
         onKeyringChanged: (k) => _keyring = k,
+        preMigrationHook: _preMigrationBackup,
       );
     }
 

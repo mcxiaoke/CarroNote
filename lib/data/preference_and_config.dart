@@ -31,6 +31,7 @@ class PreferencesStorage {
   static const _keyPreInactivityLogoutCounter = 'preInactivityLogoutCounter';
   static const _keyIsColorful = 'isColorful';
   static const _keyLastBackupTime = 'lastBackupTime';
+  static const _keyLastBackupFingerprint = 'lastBackupFingerprint';
   static const _keyIsBackupOn = 'isBackupOn';
   static const _keyColorfulNotesColorIndex = 'colorfulNotesColorIndex';
   static const _keyIsGridView = 'isGridView';
@@ -287,13 +288,24 @@ class PreferencesStorage {
     _logPrefChange('上次备份时间', old, now, important: false);
   }
 
-  static bool get isBackupOn =>
-      _preferences?.getBool(_keyIsBackupOn) ?? false; //true;
+  static bool get isBackupOn => _preferences?.getBool(_keyIsBackupOn) ?? true;
 
   static Future<void> setIsBackupOn(bool flag) async {
     final old = _preferences?.getBool(_keyIsBackupOn);
     await _preferences?.setBool(_keyIsBackupOn, flag);
     _logPrefChange('自动备份开关', old, flag);
+  }
+
+  /// 最后一次「成功自动备份」的笔记数据指纹（用于去重，见 backup-scheme-revamp-20260831.md）。
+  ///
+  /// 仅自动备份读写；强制备份（改密/迁移/手动）不参与去重。
+  static String get lastBackupFingerprint =>
+      _preferences?.getString(_keyLastBackupFingerprint) ?? '';
+
+  static Future<void> setLastBackupFingerprint(String fingerprint) async {
+    final old = _preferences?.getString(_keyLastBackupFingerprint);
+    await _preferences?.setString(_keyLastBackupFingerprint, fingerprint);
+    _logPrefChange('上次自动备份指纹', old, fingerprint, important: false);
   }
 
   static bool get isColorful => _preferences?.getBool(_keyIsColorful) ?? false;
@@ -721,6 +733,17 @@ class ImportPassPhraseHandler {
       importPassPhraseHash = imPhraseHash;
 }
 
+/// 备份场景：决定备份文件名中的简短后缀，便于识别与排查（见 backup-scheme-revamp-20260831.md）。
+enum BackupScene {
+  auto('auto'),
+  changepw('changepw'),
+  migrate('migrate'),
+  manual('manual');
+
+  final String label;
+  const BackupScene(this.label);
+}
+
 class SafeNotesConfig {
   static const String _appVersion = '3.0.0';
   static const int _appVersionCode = 30000;
@@ -730,14 +753,14 @@ class SafeNotesConfig {
   // 运行期按 Theme 主色着色（见 login/about 页面 SvgPicture + ColorFilter）。
   static const String _appLogoSvgPath =
       'assets/images/icon-round-simple-chip.svg';
-  static const String _exportFileNamePrefix = 'safenotes_';
+  static const String _exportFileNamePrefix = 'carronote_';
   // 导入允许的扩展名：明文 .json + 加密 .snbak（见 docs/
   // backup-encryption-design-20260810.md §4，双扩展名均需文件选择器可识别）
   static const List<String> _allowedFileExtensionsForImport = ['json', 'snbak'];
   static const String _exportFileNameExtension = '.json';
   static const String _encryptedExportFileNameExtension = '.snbak';
   static const String _backupExtension = '.snbak';
-  static const String _backupFileNamePrefix = 'secure_notes_backup';
+  static const String _backupFileNamePrefix = 'carronote';
   static const String _iosBackupDirectoryIndicativePath =
       '/On My iPhone/SecureNotes/';
   static const String _androidDownloadDirectory =
@@ -832,25 +855,28 @@ class SafeNotesConfig {
     return mapLocaleName;
   }
 
-  static String get backupFileName {
-    String redundancyCounter = PreferencesStorage.backupRedundancyCounter
-        .toString();
-    if (redundancyCounter == '0') {
-      return '$_backupFileNamePrefix$_backupExtension';
-    }
-    return '$_backupFileNamePrefix$redundancyCounter$_backupExtension';
+  static String get backupFileName => backupFileNameForScene(BackupScene.auto);
+
+  /// 手动备份文件名：带场景后缀 + 时间戳，避免同目录覆盖。
+  static String get manualBackupFileName =>
+      backupFileNameForScene(BackupScene.manual);
+
+  /// 按备份场景生成文件名：`carronote_<scene>_<yyyyMMdd_HHMMSS>.snbak`
+  ///
+  /// 场景后缀（auto/changepw/migrate/manual）便于识别与排查（见
+  /// docs/backup-scheme-revamp-20260831.md）。统一带时间戳，避免同目录覆盖。
+  static String backupFileNameForScene(BackupScene scene) {
+    return '${_backupFileNamePrefix}_${scene.label}_${_backupTimestamp()}$_backupExtension';
   }
 
-  /// 手动备份文件名：带时间戳（safenotes_backup_YYYYMMDD_HHMMSS.snbak），
-  /// 避免同目录覆盖，用于「立即备份」等手动触发场景。
-  static String get manualBackupFileName {
+  static String _backupTimestamp() {
     var now = DateTime.now()
         .toString()
         .replaceAll('-', '')
         .replaceAll(' ', '_')
         .replaceAll(':', '')
         .substring(0, 15);
-    return '${_backupFileNamePrefix}_$now$_backupExtension';
+    return now;
   }
 
   static String get exportFileName => exportFileNameFor(encrypted: false);

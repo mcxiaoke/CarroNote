@@ -39,8 +39,6 @@ import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/desktop_window.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
-import 'package:safenotes/utils/scheduled_task.dart';
-import 'package:safenotes/views/settings/backup_setting.dart';
 
 import 'package:safenotes/src/platform/platform_io.dart'
     show Directory, File, Platform;
@@ -195,7 +193,6 @@ Future<void> _bootstrap() async {
 
   WidgetsBinding.instance.addObserver(
     AppLifecycleEventHandler(
-      inactiveCallBack: ScheduledTask.backup,
       resumeCallBack: () async {
         Log.app.i('应用回到前台');
         // App 回前台时触发自动同步，拉取期间其他端可能产生的远端变更
@@ -521,17 +518,8 @@ void onAppUpdate() async {
       '${PreferencesStorage.appVersionCode} → '
       '${SafeNotesConfig.appVersionCode}',
     );
-    // 先同步写入版本号，再做异步备份：避免备份期间进程被杀死后重复执行
+    // 仅更新版本号；不在这里做备份（备份改为「登录后自动备份」驱动，
+    // 见 docs/backup-scheme-revamp-20260831.md）。
     PreferencesStorage.setAppVersionCodeToCurrent();
-
-    if (PreferencesStorage.isBackupOn) {
-      try {
-        if (await handleBackupPermissionAndLocation()) {
-          await ScheduledTask.backup();
-        }
-      } on Object catch (e, st) {
-        Log.backup.e('升级后自动备份失败', error: e, stackTrace: st);
-      }
-    }
   }
 }

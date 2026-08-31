@@ -38,6 +38,16 @@ class ScheduledTask {
       return;
     }
 
+    // 去重（v2 设计）：笔记数据无变化则不重复写盘。
+    // 指纹只对明文 records，不受 AES-GCM 随机 nonce 影响（见 docs/
+    // backup-scheme-revamp-20260831.md）。强制备份不走本入口，不去重。
+    final fingerprint = await FileHandler.recordsFingerprint();
+    if (fingerprint.isNotEmpty &&
+        fingerprint == PreferencesStorage.lastBackupFingerprint) {
+      Log.backup.d('自动备份跳过：笔记数据无变化（指纹一致），不上传新文件');
+      return;
+    }
+
     int maxAttempt = PreferencesStorage.maxBackupRetryAttempts;
     Log.backup.i(
       '开始自动备份 平台=${Platform.operatingSystem} '
@@ -56,9 +66,11 @@ class ScheduledTask {
         lastBackupError ??= '备份重试达到总超时上限';
         break;
       }
-      if (await unitBackupAttempt() == true) {
+      if (await unitBackupAttempt(scene: BackupScene.auto) == true) {
         final ms = DateTime.now().difference(startedAt).inMilliseconds;
         Log.backup.i('自动备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
+        // 仅在成功落盘后更新指纹，避免"失败但指纹已更新导致下次跳过"。
+        await PreferencesStorage.setLastBackupFingerprint(fingerprint);
         return;
       }
       Log.backup.w(
@@ -90,8 +102,11 @@ class ScheduledTask {
     return FileHandler.defaultBackupDirectory();
   }
 
-  static Future<bool> unitBackupAttempt({String? fileName}) async {
-    // 自动/改密前备份统一走「加密导出」（docs/backup-encryption-design-20260810.md
+  static Future<bool> unitBackupAttempt({
+    String? fileName,
+    BackupScene scene = BackupScene.auto,
+  }) async {
+    // 所有备份统一走「加密导出」（docs/backup-encryption-design-20260810.md
     // §6 密码来源落地 1）：用会话内存密码 PhraseHandler.getPass 派生 B-KEY。
     // 密码为空说明会话态异常，如实失败（不能写明文备份）。
     if (PhraseHandler.getPass.isEmpty) {
@@ -99,14 +114,15 @@ class ScheduledTask {
       lastBackupError ??= '会话密码不可用，无法加密备份';
       return false;
     }
+    // 默认文件名按场景生成（carronote_<scene>_<ts>.snbak），保留显式 fileName 覆盖。
+    final effectiveName =
+        fileName ?? SafeNotesConfig.backupFileNameForScene(scene);
     if (isAndroid) {
-      return androidBackup(customFileName: fileName);
+      return androidBackup(customFileName: effectiveName);
     } else if (isIOS) {
-      return iosBackup(customFileName: fileName);
+      return iosBackup(customFileName: effectiveName);
     }
-    // 评审 #2 修复 + 本设计补全：桌面端此前直接 return true 造成"假备份"。
-    // 现在实现真实桌面端备份通道（写应用文档目录，加密内容）。
-    return desktopBackup(customFileName: fileName);
+    return desktopBackup(customFileName: effectiveName);
   }
 
   /// 上一次备份失败时的简要错误信息，供调用方（如改密码前置检查）展示。
@@ -272,17 +288,18 @@ class ScheduledTask {
     }
   }
 
-  /// 强制备份一次（绕过 isBackupOn 开关）
+  /// 强制备份一次（绕过 isBackupOn 开关，且不去重）
   ///
-  /// 用于改密码等关键操作前的数据保护：
+  /// 用于关键操作前的数据保护：
   ///   - 无论用户是否开启自动备份，都强制写入一份本地完整备份
   ///   - 失败会重试 maxBackupRetryAttempts 次
   ///
-  /// [fileName] 可指定备份文件名，默认使用 [SafeNotesConfig.backupFileName]。
-  /// 手动备份时传入 [SafeNotesConfig.manualBackupFileName] 以带时间戳。
+  /// [scene] 决定文件名后缀（changepw / migrate / manual），便于识别备份来源。
   ///
   /// 返回 true 表示备份成功，false 表示失败（调用方可据此决定是否继续操作）。
-  static Future<bool> forceBackup({String? fileName}) async {
+  static Future<bool> forceBackup({
+    BackupScene scene = BackupScene.manual,
+  }) async {
     if (kIsWeb) return true;
     int maxAttempt = PreferencesStorage.maxBackupRetryAttempts;
     // 强制备份通常发生在改密码等高风险操作前，起止必须留痕
@@ -302,7 +319,7 @@ class ScheduledTask {
         lastBackupError ??= '备份重试达到总超时上限';
         break;
       }
-      if (await unitBackupAttempt(fileName: fileName) == true) {
+      if (await unitBackupAttempt(scene: scene) == true) {
         final ms = DateTime.now().difference(startedAt).inMilliseconds;
         Log.backup.i('强制备份成功 第 $attempt/$maxAttempt 次尝试, 耗时 ${ms}ms');
         return true;

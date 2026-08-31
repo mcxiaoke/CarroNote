@@ -33,6 +33,7 @@ import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
+import 'package:safenotes/utils/scheduled_task.dart';
 import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
@@ -508,6 +509,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   Future<void> _onLoginSuccess(String passphrase) async {
     Session.login(passphrase);
     Log.auth.i('登录成功：进入主界面（密码登录）');
+
+    // 会话进入后触发一次自动备份（受 isBackupOn 开关 + 数据去重控制），
+    // 替换旧的后台/登出/升级事件触发（见 docs/backup-scheme-revamp-20260831.md）。
+    unawaited(ScheduledTask.backup());
 
     // BUG 修复：登录成功即 keyring 已解锁，同步刷新 AuthWall 启动缓存，
     // 确保空闲锁定 logout 回 /authwall 时走登录页而非误进设置密码页。

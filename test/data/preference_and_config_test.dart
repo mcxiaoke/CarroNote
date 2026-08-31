@@ -90,39 +90,43 @@ void main() {
   });
 
   group('SafeNotesConfig 备份与导出文件名生成', () {
-    test('backupFileName 冗余计数为 0 时无数字后缀，递增后带数字后缀', () async {
-      expect(PreferencesStorage.backupRedundancyCounter, 0);
-      expect(SafeNotesConfig.backupFileName, 'secure_notes_backup.snbak');
-
-      await PreferencesStorage.incrementBackupRedundancyCounter();
-      expect(PreferencesStorage.backupRedundancyCounter, 1);
-      expect(SafeNotesConfig.backupFileName, 'secure_notes_backup1.snbak');
-
-      await PreferencesStorage.incrementBackupRedundancyCounter();
-      expect(PreferencesStorage.backupRedundancyCounter, 2);
-      expect(SafeNotesConfig.backupFileName, 'secure_notes_backup2.snbak');
+    test('backupFileNameForScene 生成 carronote_<scene>_<ts>.snbak', () {
+      for (final scene in BackupScene.values) {
+        final name = SafeNotesConfig.backupFileNameForScene(scene);
+        expect(
+          RegExp(
+            r'^carronote_'
+            '${scene.label}'
+            r'_\d{8}_\d{6}\.snbak$',
+          ).hasMatch(name),
+          isTrue,
+          reason: '场景 ${scene.label} 实际文件名: $name',
+        );
+      }
     });
 
-    test('manualBackupFileName 包含时间戳且格式合法', () {
-      final fileName = SafeNotesConfig.manualBackupFileName;
+    test('backupFileName / manualBackupFileName 分别映射 auto / manual 场景', () {
       expect(
-        RegExp(r'^secure_notes_backup_\d{8}_\d{6}\.snbak$').hasMatch(fileName),
+        SafeNotesConfig.backupFileName.contains('carronote_auto_'),
         isTrue,
-        reason: '实际文件名: $fileName',
+      );
+      expect(
+        SafeNotesConfig.manualBackupFileName.contains('carronote_manual_'),
+        isTrue,
       );
     });
 
     test('exportFileNameFor 加密与明文导出格式正确且带时间戳', () {
       final encryptedName = SafeNotesConfig.exportFileNameFor(encrypted: true);
       expect(
-        RegExp(r'^safenotes_\d{8}_\d{6}\.snbak$').hasMatch(encryptedName),
+        RegExp(r'^carronote_\d{8}_\d{6}\.snbak$').hasMatch(encryptedName),
         isTrue,
         reason: '实际加密导出名: $encryptedName',
       );
 
       final plaintextName = SafeNotesConfig.exportFileNameFor(encrypted: false);
       expect(
-        RegExp(r'^safenotes_\d{8}_\d{6}\.json$').hasMatch(plaintextName),
+        RegExp(r'^carronote_\d{8}_\d{6}\.json$').hasMatch(plaintextName),
         isTrue,
         reason: '实际明文导出名: $plaintextName',
       );

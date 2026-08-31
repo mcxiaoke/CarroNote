@@ -20,7 +20,6 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/utils/scheduled_task.dart';
 
 class Session {
   static void login(String passphrase) {
@@ -52,8 +51,8 @@ class Session {
     final sw = Stopwatch()..start();
     Log.auth.i('会话登出: 开始清理会话与敏感数据');
 
-    // Take care of backup if enabled
-    await ScheduledTask.backup();
+    // 备份改为「登录后自动备份」驱动（见 docs/backup-scheme-revamp-20260831.md），
+    // 登出不再触发备份（登出不产生数据变更）。
 
     // 清除同步相关敏感数据（与 UI 的"先导航、再清状态"顺序配合：
     // 导航走 /authwall 后 HomePage 已卸载，此时清 key 不会再打到挂载中的页面，

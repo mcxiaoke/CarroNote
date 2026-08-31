@@ -46,6 +46,8 @@ void main() {
     await PreferencesStorage.setBackupDirectory(tempBackupDir.path);
     await PreferencesStorage.setIsBackupOn(true);
     await PreferencesStorage.setIsBackupNeeded(true);
+    // 重置去重指纹，避免上一个测试写入的指纹让本测试被「无变化跳过」
+    await PreferencesStorage.setLastBackupFingerprint('');
     ScheduledTask.lastBackupError = null;
   });
 
@@ -91,7 +93,11 @@ void main() {
 
       final files = tempBackupDir.listSync().whereType<File>().toList();
       expect(files.length, 1);
-      expect(files.first.path.endsWith(SafeNotesConfig.backupFileName), isTrue);
+      expect(
+        files.first.path.contains('carronote_auto_'),
+        isTrue,
+        reason: '自动备份文件名应为 carronote_auto_<ts>.snbak',
+      );
 
       expect(PreferencesStorage.lastBackupTime, isNotNull);
 
@@ -106,6 +112,26 @@ void main() {
       expect(decoded.length, 1);
       expect((decoded.first as Map)['title'], '秘密笔记');
       expect((decoded.first as Map)['description'], '绝密内容123456');
+    });
+
+    test('去重：数据无变化时再次备份不产生新文件', () async {
+      PhraseHandler.initPass('test.password.123');
+
+      // 第一次：数据未变，应生成 1 个文件并写入指纹
+      await ScheduledTask.backup();
+      expect(
+        tempBackupDir.listSync().whereType<File>().length,
+        1,
+        reason: '首次备份应落盘',
+      );
+
+      // 第二次：数据完全相同，去重跳过，不再产生新文件
+      await ScheduledTask.backup();
+      expect(
+        tempBackupDir.listSync().whereType<File>().length,
+        1,
+        reason: '数据无变化时应由指纹去重跳过，不新增文件',
+      );
     });
   });
 
@@ -129,12 +155,26 @@ void main() {
       await PreferencesStorage.setIsBackupNeeded(false);
       PhraseHandler.initPass('test.password.123');
 
-      final customName = 'forced_backup_test.snbak';
-      final ok = await ScheduledTask.forceBackup(fileName: customName);
-
+      // 场景化文件名：carronote_manual_<ts>.snbak
+      final ok = await ScheduledTask.forceBackup(scene: BackupScene.manual);
       expect(ok, isTrue);
-      final targetFile = File('${tempBackupDir.path}/$customName');
-      expect(targetFile.existsSync(), isTrue);
+
+      final backups = tempBackupDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.snbak'))
+          .toList();
+      expect(
+        backups,
+        isNotEmpty,
+        reason: 'forceBackup 应生成 carronote_manual_*.snbak',
+      );
+      final targetFile = backups.first;
+      expect(
+        targetFile.path.contains('carronote_manual_'),
+        isTrue,
+        reason: '文件名应含场景后缀 manual（carronote_<scene>_<ts>.snbak）',
+      );
 
       final backupStr = targetFile.readAsStringSync();
       final parsed = BackupFileCodec.parse(backupStr);

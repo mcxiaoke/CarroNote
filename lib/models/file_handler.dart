@@ -13,6 +13,7 @@
 
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 
 import 'package:safenotes/src/platform/platform_io.dart';
@@ -44,6 +45,16 @@ class FileHandler {
       throw const FormatException('导出数据解析失败：顶层不是数组');
     }
     return decoded.cast<Map<String, dynamic>>();
+  }
+
+  /// 计算待备份笔记数据的指纹（仅对明文 records，不含备份头/时间戳）。
+  ///
+  /// 同一次数据集指纹稳定，且不受 AES-GCM 每次随机 nonce 影响——
+  /// 供自动备份去重用（见 docs/backup-scheme-revamp-20260831.md）。
+  static Future<String> recordsFingerprint() async {
+    final records = await loadRecordsForExport();
+    final bytes = utf8.encode(jsonEncode(records));
+    return sha256.convert(bytes).toString();
   }
 
   /// 明文导出备份内容（plaintext-v1，与旧格式全兼容）

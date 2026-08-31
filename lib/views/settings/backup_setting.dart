@@ -240,15 +240,14 @@ class BackupSettingState extends State<BackupSetting> {
         return;
       }
     }
-    // 手动备份必须真正落盘，绕过 isBackupOn 开关（R1 修复后自动备份不再
-    // 依赖 isBackupNeeded 标记，手动路径与自动路径语义已一致）。
-    final manualFileName = SafeNotesConfig.manualBackupFileName;
-    final success = await ScheduledTask.forceBackup(fileName: manualFileName);
+    // 手动备份必须真正落盘，绕过 isBackupOn 开关（场景=manual，文件名带 manual 后缀）。
+    final fileName = SafeNotesConfig.backupFileNameForScene(BackupScene.manual);
+    final success = await ScheduledTask.forceBackup(scene: BackupScene.manual);
     if (!mounted) return;
     if (success) {
       final dir = await ScheduledTask.resolveBackupDirectory();
       if (!mounted) return;
-      final actualPath = dir.isEmpty ? '' : p.join(dir, manualFileName);
+      final actualPath = dir.isEmpty ? '' : p.join(dir, fileName);
       showSnackBarMessage(
         context,
         'Backup written to: {path}'.tr(namedArgs: {'path': actualPath}),

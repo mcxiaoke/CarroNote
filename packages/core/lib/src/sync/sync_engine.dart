@@ -100,6 +100,12 @@ class SyncEngine {
   /// 为 null 时退回原逻辑（直接报 dataKey 迁移失败）。
   final String? Function()? passphraseProvider;
 
+  /// 数据 vault 迁移（scenario-d 整库改嫁）前强制备份的钩子。
+  ///
+  /// 由上层（SyncService）注入真正的备份实现（加密导出到用户可见目录）。
+  /// 迁移是不可逆改写，备份失败时应返回 false，引擎据此中止迁移以免无备份丢数据。
+  final Future<bool> Function()? preMigrationHook;
+
   /// 最大重试次数（乐观锁冲突时）
   static const int maxRetries = 3;
 
@@ -154,6 +160,7 @@ class SyncEngine {
     required this.journal,
     this.passphraseProvider,
     this.onKeyringChanged,
+    this.preMigrationHook,
     Duration orphanRetention = _orphanRetention,
   }) : _orphanRetentionEffective = orphanRetention;
 
@@ -1009,6 +1016,21 @@ class SyncEngine {
           // 场景 d：密码相同、salt 不同 → 完整 keyring 迁移
           // 用远端 dataKey 重新加密所有本地笔记，更新本地 keyring 元数据
           Log.sync.i('检测到场景 d（密码相同、salt 不同），开始完整 keyring 迁移');
+
+          // 数据 vault 迁移前强制备份（若注入 preMigrationHook；备份失败则中止迁移，
+          // 避免不可逆改写发生在无备份时）。
+          if (preMigrationHook != null) {
+            final backupOk = await preMigrationHook!();
+            if (!backupOk) {
+              Log.sync.e('scenario-d 迁移前备份失败，中止迁移（避免无备份改写）');
+              return SyncResult.failure(
+                'vault 迁移前备份失败，已中止迁移（请检查备份后可重试）',
+                attempts: attempt,
+                requiresRelogin: true,
+              );
+            }
+          }
+
           final migratedCount = await _executeMigrationVault(
             remoteDataKey: remoteResult.dataKey,
             remoteEncryptedDataKey: remoteHeader.encryptedDataKey,

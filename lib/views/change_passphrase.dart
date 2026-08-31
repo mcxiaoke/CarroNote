@@ -21,6 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -471,8 +472,10 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   ///
   /// 返回 true 表示可以继续改密码，false 表示用户取消或检查未通过。
   Future<bool> _preChangeCheck() async {
-    // 1. 强制本地完整备份（绕过 isBackupOn 开关）
-    final backupOk = await ScheduledTask.forceBackup();
+    // 1. 强制本地完整备份（绕过开关，场景=changepw，文件名带 changepw 后缀）
+    final backupOk = await ScheduledTask.forceBackup(
+      scene: BackupScene.changepw,
+    );
     if (!backupOk && mounted) {
       final errMsg = ScheduledTask.lastBackupError;
       final proceed = await _showWarningDialog(
