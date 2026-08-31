@@ -28,6 +28,7 @@ type ObservableVault struct {
 
 	debounceMu    sync.Mutex
 	debounceTimer *time.Timer
+	wg              sync.WaitGroup
 }
 
 // NewObservableVault 创建包装器
@@ -100,7 +101,9 @@ func (v *ObservableVault) notifyWrite() {
 	defer v.debounceMu.Unlock()
 
 	if v.debounceTimer != nil {
-		v.debounceTimer.Stop()
+		if v.debounceTimer.Stop() {
+			v.wg.Done()
+		}
 	}
 
 	debounceMs := v.engine.cfg.WriteDebounceMs
@@ -108,18 +111,24 @@ func (v *ObservableVault) notifyWrite() {
 		debounceMs = 5000
 	}
 
+	v.wg.Add(1)
 	v.debounceTimer = time.AfterFunc(time.Duration(debounceMs)*time.Millisecond, func() {
+		defer v.wg.Done()
 		// 触发的快照失败不影响后续定时（CreateSnapshot 自身含互斥锁）
 		_ = v.engine.CreateSnapshot()
 	})
 }
 
 // Stop 停止去抖定时器（服务关闭时调用，避免进程退出前的幽灵快照）
+// 若快照已在执行中，会等待其安全结束再返回。
 func (v *ObservableVault) Stop() {
 	v.debounceMu.Lock()
-	defer v.debounceMu.Unlock()
 	if v.debounceTimer != nil {
-		v.debounceTimer.Stop()
+		if v.debounceTimer.Stop() {
+			v.wg.Done()
+		}
 		v.debounceTimer = nil
 	}
+	v.debounceMu.Unlock()
+	v.wg.Wait()
 }

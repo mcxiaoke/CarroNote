@@ -131,7 +131,7 @@ func (s *Server) Run() error {
 		s.logger.Info("SafeServer v2.2 (Go) starting",
 			"addr", s.cfg.Addr,
 			"data_dir", s.cfg.DataDir,
-			"token_mask", strings.Repeat("*", len(s.cfg.Token)),
+			"token_mask", "******",
 			"rate_limit", fmt.Sprintf("%d/min (0=disabled)", s.cfg.RateLimit),
 			"max_body_bytes", s.cfg.MaxBodyBytes,
 			"read_timeout", s.cfg.ReadTimeout.String(),

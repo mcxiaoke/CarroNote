@@ -120,13 +120,13 @@ type Storage interface {
 
 // ValidateHash 校验 blob hash 是否合法（防路径穿越）
 //
-// 拒绝：空 hash、含路径分隔符（/ \）、含 .. 、含 NUL 字节。
+// 拒绝：空 hash、含路径分隔符（/ \）、含 .. 、含 NUL 字节、含冒号（Windows ADS）。
 // 这是安全红线，缺失会导致目录穿越漏洞。
 func ValidateHash(hash string) error {
 	if hash == "" {
 		return ErrInvalidHash
 	}
-	if strings.ContainsAny(hash, "/\\") {
+	if strings.ContainsAny(hash, "/\\:") {
 		return ErrInvalidHash
 	}
 	if strings.Contains(hash, "..") {
@@ -135,13 +135,16 @@ func ValidateHash(hash string) error {
 	if strings.ContainsRune(hash, 0) {
 		return ErrInvalidHash
 	}
+	if isWindowsReservedName(hash) {
+		return ErrInvalidHash
+	}
 	return nil
 }
 
 // ValidateVaultPath 校验 vault 内相对路径是否合法（允许子目录，禁止路径穿越）
 //
 // 与 ValidateHash 的区别：允许一个相对子目录（如 "blobs-orphan/<hash>.<ts>"），
-// 但仍禁止绝对路径、空路径、含 NUL 字节，以及任何 ".." 逃逸段。
+// 但仍禁止绝对路径、空路径、含 NUL 字节、含冒号（Windows ADS），以及任何 ".." 逃逸段。
 // 这是通用资源层（v2.2）的安全红线。
 func ValidateVaultPath(rel string) error {
 	if rel == "" {
@@ -150,7 +153,7 @@ func ValidateVaultPath(rel string) error {
 	if strings.ContainsRune(rel, 0) {
 		return ErrInvalidPath
 	}
-	if strings.ContainsAny(rel, "\\") {
+	if strings.ContainsAny(rel, "\\:") {
 		return ErrInvalidPath
 	}
 	clean := filepath.Clean(rel)
@@ -168,13 +171,46 @@ func ValidateVaultPath(rel string) error {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return ErrInvalidPath
 	}
-	// 拒绝任何路径段为 ".."
+	// 拒绝任何路径段为 ".." 或 Windows 保留设备名
 	for _, seg := range strings.Split(clean, string(filepath.Separator)) {
 		if seg == ".." {
 			return ErrInvalidPath
 		}
+		if isWindowsReservedName(seg) {
+			return ErrInvalidPath
+		}
 	}
 	return nil
+}
+
+// isWindowsReservedName 检测 Windows 保留设备名（CON, PRN, AUX, NUL, COM1-9, LPT1-9）
+//
+// 匹配规则：大小写不敏感，忽略扩展名（"." 后的部分），并去除尾部空格和点（Windows 会自动截断）。
+// 例如 "CON", "con.txt", "COM1", "lpt9.dat" 均命中。
+func isWindowsReservedName(seg string) bool {
+	// 取扩展名前的主名
+	base := seg
+	if idx := strings.Index(seg, "."); idx >= 0 {
+		base = seg[:idx]
+	}
+	// Windows 会忽略尾部空格和点
+	base = strings.TrimRight(base, " .")
+	if base == "" {
+		return false
+	}
+	upper := strings.ToUpper(base)
+	switch upper {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(upper) == 4 {
+		prefix := upper[:3]
+		suffix := upper[3:]
+		if (prefix == "COM" || prefix == "LPT") && suffix >= "1" && suffix <= "9" {
+			return true
+		}
+	}
+	return false
 }
 
 // ComputeETag 计算内容的 SHA-256 作为强 ETag（带引号）

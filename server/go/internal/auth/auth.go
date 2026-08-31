@@ -17,6 +17,7 @@ package auth
 
 import (
 	"crypto/subtle"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -64,7 +65,6 @@ func (t *FailTracker) IsRateLimited(ip string, limit int) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := time.Now()
-	t.lastAccess[ip] = now
 	cutoff := now.Add(-t.window)
 	// 清理该 IP 的过期记录
 	failures := t.failures[ip]
@@ -74,7 +74,14 @@ func (t *FailTracker) IsRateLimited(ip string, limit int) bool {
 			valid = append(valid, ts)
 		}
 	}
+	if len(valid) == 0 {
+		// 无有效失败时不驻留空条目，避免海量探测 IP 膨胀 map 并频繁触发 evict 全表扫描
+		delete(t.failures, ip)
+		delete(t.lastAccess, ip)
+		return false
+	}
 	t.failures[ip] = valid
+	t.lastAccess[ip] = now
 	// 超上限时淘汰
 	if len(t.failures) > t.maxIPs {
 		t.evict()
@@ -171,23 +178,32 @@ func ExtractIP(r *http.Request, trustProxy bool) string {
 		}
 	}
 	host := r.RemoteAddr
-	// 处理 IPv6 格式：[::1]:port
-	if strings.HasPrefix(host, "[") {
-		if idx := strings.LastIndex(host, "]"); idx > 0 {
-			return host[1:idx]
+	// 优先使用标准库解析，健壮处理 IPv6、IPv4-mapped 及无端口/畸形地址
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	} else {
+		// 无端口或畸形时回退到手写逻辑（兼容测试中的简写地址）
+		if strings.HasPrefix(host, "[") {
+			if idx := strings.LastIndex(host, "]"); idx > 0 {
+				return host[1:idx]
+			}
 		}
+		if idx := strings.LastIndex(host, ":"); idx > 0 {
+			// 区分 IPv4-mapped 前缀
+			if strings.HasPrefix(host, "::ffff:") {
+				rest := host[len("::ffff:"):]
+				if cidx := strings.LastIndex(rest, ":"); cidx > 0 {
+					return rest[:cidx]
+				}
+				return rest
+			}
+			return host[:idx]
+		}
+		return host
 	}
-	// 处理 IPv4-mapped IPv6：::ffff:127.0.0.1:port
+	// net.SplitHostPort 已去除括号，仍需处理 ::ffff: 前缀的 IPv4 映射
 	if strings.HasPrefix(host, "::ffff:") {
-		rest := host[len("::ffff:"):]
-		if idx := strings.LastIndex(rest, ":"); idx > 0 {
-			return rest[:idx]
-		}
-		return rest
-	}
-	// 普通 IPv4：127.0.0.1:port
-	if idx := strings.LastIndex(host, ":"); idx > 0 {
-		return host[:idx]
+		return strings.TrimPrefix(host, "::ffff:")
 	}
 	return host
 }

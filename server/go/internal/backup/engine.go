@@ -291,12 +291,7 @@ func (e *Engine) pruneArchives() {
 	if e.cfg.Archive.MaxArchives <= 0 {
 		return
 	}
-	format := e.cfg.Archive.Format
-	if format == "" {
-		format = "zip"
-	}
 	prefix := "vault-"
-	suffix := "." + format
 	entries, err := os.ReadDir(e.cfg.Archive.Path)
 	if err != nil {
 		return
@@ -304,8 +299,13 @@ func (e *Engine) pruneArchives() {
 
 	var archives []string
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) && strings.HasSuffix(entry.Name(), suffix) {
-			archives = append(archives, entry.Name())
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		// 匹配所有支持的归档扩展名，避免格式切换后产生孤儿文件
+		name := entry.Name()
+		if strings.HasSuffix(name, ".zip") || strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+			archives = append(archives, name)
 		}
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(archives)))

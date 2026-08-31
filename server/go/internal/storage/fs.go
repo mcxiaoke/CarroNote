@@ -163,16 +163,25 @@ func (v *fsVault) DeleteManifest() error {
 
 // GetBlob 读取指定 hash 的 blob 密文（委托到资源层 blobs/<hash>）
 func (v *fsVault) GetBlob(hash string) ([]byte, error) {
+	if err := ValidateHash(hash); err != nil {
+		return nil, err
+	}
 	return v.GetResource("blobs/" + hash)
 }
 
 // PutBlob 写入 blob（幂等，相同 hash 覆盖写；委托到资源层）
 func (v *fsVault) PutBlob(hash string, data []byte) error {
+	if err := ValidateHash(hash); err != nil {
+		return err
+	}
 	return v.PutResource("blobs/"+hash, data, PutOptions{})
 }
 
 // DeleteBlob 删除 blob（幂等，不存在返回 nil；委托到资源层）
 func (v *fsVault) DeleteBlob(hash string) error {
+	if err := ValidateHash(hash); err != nil {
+		return err
+	}
 	return v.DeleteResource("blobs/" + hash)
 }
 
@@ -240,7 +249,10 @@ func (v *fsVault) PutResource(rel string, data []byte, opts PutOptions) error {
 		return err
 	}
 	// 可选乐观锁（普通文件资源；blob 等不使用）
+	// 持锁保证「校验 ETag + 写入」在同一临界区完成，消除 TOCTOU 竞争。
 	if opts.IfNoneMatch || opts.IfMatch != "" {
+		v.mu.Lock()
+		defer v.mu.Unlock()
 		if _, statErr := os.Stat(p); statErr == nil {
 			if opts.IfNoneMatch {
 				return ErrPreconditionFailed
@@ -262,6 +274,7 @@ func (v *fsVault) PutResource(rel string, data []byte, opts PutOptions) error {
 		} else {
 			return statErr
 		}
+		return atomicWrite(p, data, 0o644)
 	}
 	return atomicWrite(p, data, 0o644)
 }
@@ -305,6 +318,15 @@ func (v *fsVault) moveResourceLocked(src, dst string, overwrite bool) error {
 	dp, err := v.resolveResourcePath(dst)
 	if err != nil {
 		return err
+	}
+	// 拒绝目录资源的文件级移动（明确错误，避免 ReadFile 对目录返回 is a directory）
+	if fi, statErr := os.Stat(sp); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return ErrNotFound
+		}
+		return statErr
+	} else if fi.IsDir() {
+		return ErrInvalidPath
 	}
 	if fi, statErr := os.Stat(dp); statErr == nil {
 		if !overwrite {
@@ -351,6 +373,14 @@ func (v *fsVault) CopyResource(src, dst string, overwrite bool) error {
 	dp, err := v.resolveResourcePath(dst)
 	if err != nil {
 		return err
+	}
+	if fi, statErr := os.Stat(sp); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return ErrNotFound
+		}
+		return statErr
+	} else if fi.IsDir() {
+		return ErrInvalidPath
 	}
 	if fi, statErr := os.Stat(dp); statErr == nil {
 		if !overwrite {

@@ -213,65 +213,82 @@ func ParseFlags() *Config {
 // set 记录命令行显式设置的 flag 名；只有 set 中不存在的字段才允许配置文件覆盖，
 // 从而保证「命令行优先级 > 配置文件」的约定（修复 M-1）。
 //
+// 使用指针字段区分“未配置”与“显式配置为零值”（如 rateLimit=0 表示禁用），
+// 从而正确支持显式零值覆盖（修复配置文件 0 零值覆盖缺陷）。
+//
 // duration 字段通过自定义 duration 类型解析，支持 "60s" 字符串，不再导致整体解析失败（修复 S-1）。
 func loadConfigFile(c *Config, path string, set map[string]bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	var fileCfg Config
+	// 指针字段：nil 表示 JSON 中未出现该键，非 nil 则为显式配置（含零值）
+	var fileCfg struct {
+		Addr         *string       `json:"addr"`
+		DataDir      *string       `json:"dataDir"`
+		Token        *string       `json:"token"`
+		RateLimit    *int          `json:"rateLimit"`
+		MaxBodyBytes *int64        `json:"maxBodyBytes"`
+		ReadTimeout  *duration     `json:"readTimeout"`
+		WriteTimeout *duration     `json:"writeTimeout"`
+		IdleTimeout  *duration     `json:"idleTimeout"`
+		BehindProxy  *bool         `json:"behindProxy"`
+		CertFile     *string       `json:"certFile"`
+		KeyFile      *string       `json:"keyFile"`
+		LogLevelStr  *string       `json:"logLevel"`
+		LogFile      *string       `json:"logFile"`
+		LogJSON      *bool         `json:"logJSON"`
+		Backup       *BackupConfig `json:"backup"`
+	}
 	if err := json.Unmarshal(data, &fileCfg); err != nil {
 		return err
 	}
-	// 仅当对应 flag 未被命令行显式设置，且文件字段非零时才覆盖。
-	if !set["addr"] && fileCfg.Addr != "" {
-		c.Addr = fileCfg.Addr
+	if !set["addr"] && fileCfg.Addr != nil {
+		c.Addr = *fileCfg.Addr
 	}
-	if !set["data"] && fileCfg.DataDir != "" {
-		c.DataDir = fileCfg.DataDir
+	if !set["data"] && fileCfg.DataDir != nil {
+		c.DataDir = *fileCfg.DataDir
 	}
-	// token 不允许被配置文件覆盖显式 flag（显式 flag 已在 ParseFlags 处理，这里 set["token"] 为命令行标记）
-	if !set["token"] && fileCfg.Token != "" {
-		c.Token = fileCfg.Token
+	if !set["token"] && fileCfg.Token != nil {
+		c.Token = *fileCfg.Token
 	}
-	if !set["rate-limit"] && fileCfg.RateLimit != 0 {
-		c.RateLimit = fileCfg.RateLimit
+	if !set["rate-limit"] && fileCfg.RateLimit != nil {
+		c.RateLimit = *fileCfg.RateLimit
 	}
-	if !set["max-body"] && fileCfg.MaxBodyBytes != 0 {
-		c.MaxBodyBytes = fileCfg.MaxBodyBytes
+	if !set["max-body"] && fileCfg.MaxBodyBytes != nil {
+		c.MaxBodyBytes = *fileCfg.MaxBodyBytes
 	}
-	if !set["read-timeout"] && fileCfg.ReadTimeout != 0 {
-		c.ReadTimeout = fileCfg.ReadTimeout
+	if !set["read-timeout"] && fileCfg.ReadTimeout != nil {
+		c.ReadTimeout = *fileCfg.ReadTimeout
 	}
-	if !set["write-timeout"] && fileCfg.WriteTimeout != 0 {
-		c.WriteTimeout = fileCfg.WriteTimeout
+	if !set["write-timeout"] && fileCfg.WriteTimeout != nil {
+		c.WriteTimeout = *fileCfg.WriteTimeout
 	}
-	if !set["idle-timeout"] && fileCfg.IdleTimeout != 0 {
-		c.IdleTimeout = fileCfg.IdleTimeout
+	if !set["idle-timeout"] && fileCfg.IdleTimeout != nil {
+		c.IdleTimeout = *fileCfg.IdleTimeout
 	}
-	// behind-proxy / TLS 仅在未显式设置时从配置文件读取
-	if !set["behind-proxy"] && fileCfg.BehindProxy {
-		c.BehindProxy = fileCfg.BehindProxy
+	if !set["behind-proxy"] && fileCfg.BehindProxy != nil {
+		c.BehindProxy = *fileCfg.BehindProxy
 	}
-	if !set["cert"] && fileCfg.CertFile != "" {
-		c.CertFile = fileCfg.CertFile
+	if !set["cert"] && fileCfg.CertFile != nil {
+		c.CertFile = *fileCfg.CertFile
 	}
-	if !set["key"] && fileCfg.KeyFile != "" {
-		c.KeyFile = fileCfg.KeyFile
+	if !set["key"] && fileCfg.KeyFile != nil {
+		c.KeyFile = *fileCfg.KeyFile
 	}
-	if !set["log-level"] && fileCfg.LogLevelStr != "" {
-		c.LogLevelStr = fileCfg.LogLevelStr
+	if !set["log-level"] && fileCfg.LogLevelStr != nil {
+		c.LogLevelStr = *fileCfg.LogLevelStr
 	}
-	if !set["log-file"] && fileCfg.LogFile != "" {
-		c.LogFile = fileCfg.LogFile
+	if !set["log-file"] && fileCfg.LogFile != nil {
+		c.LogFile = *fileCfg.LogFile
 	}
-	if !set["log-json"] && fileCfg.LogJSON {
-		c.LogJSON = fileCfg.LogJSON
+	if !set["log-json"] && fileCfg.LogJSON != nil {
+		c.LogJSON = *fileCfg.LogJSON
 	}
 	// 备份配置：没有对应 CLI flag，配置文件一旦出现 backup 段就整体采用
 	// （其零值字段即文档默认值，无需与默认值做差分）。
-	if !set["backup"] {
-		c.Backup = fileCfg.Backup
+	if fileCfg.Backup != nil {
+		c.Backup = *fileCfg.Backup
 	}
 	return nil
 }

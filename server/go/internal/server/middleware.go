@@ -143,8 +143,11 @@ func (s *Server) Recover(next http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"stack", string(debug.Stack()),
 				)
-				ww := w.(*statusWriter)
-				if !ww.wroteHead {
+				if ww, ok := w.(*statusWriter); ok {
+					if !ww.wroteHead {
+						http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					}
+				} else {
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
 			}

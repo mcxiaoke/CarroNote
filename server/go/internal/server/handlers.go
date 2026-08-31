@@ -111,6 +111,10 @@ func (s *Server) handleDeleteManifest(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v2/blob/<hash>
 func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request, hash string) {
+	if err := storage.ValidateHash(hash); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	data, err := s.vault.GetBlob(hash)
 	if err != nil {
 		switch {
@@ -130,6 +134,10 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request, hash stri
 // PUT /api/v2/blob/<hash>（幂等）
 func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash string) {
 	defer r.Body.Close() // 修复 L-7：尽早注册关闭
+	if err := storage.ValidateHash(hash); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if isPayloadTooLarge(err) {
@@ -154,6 +162,10 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, hash stri
 
 // DELETE /api/v2/blob/<hash>（GC 用，幂等）
 func (s *Server) handleDeleteBlob(w http.ResponseWriter, r *http.Request, hash string) {
+	if err := storage.ValidateHash(hash); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := s.vault.DeleteBlob(hash); err != nil {
 		switch {
 		case errors.Is(err, storage.ErrInvalidHash), errors.Is(err, storage.ErrInvalidPath):
@@ -287,6 +299,7 @@ func (s *Server) handleDeleteResource(w http.ResponseWriter, r *http.Request, re
 
 // POST /api/v2/resources/<path> → 扩展操作（move / mkdir / copy / propfind / stats）
 func (s *Server) handleResourceOp(w http.ResponseWriter, r *http.Request, rel string) {
+	defer r.Body.Close()
 	if rel == "" {
 		http.Error(w, "resource path required", http.StatusBadRequest)
 		return
