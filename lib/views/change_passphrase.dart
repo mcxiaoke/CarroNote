@@ -104,14 +104,23 @@ class ChangePassphraseState extends State<ChangePassphrase> {
   }
 
   void scrollToBottomIfOnScreenKeyboard() {
-    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        // P1-11：300ms → AppMotion.normal。
-        duration: AppMotion.normal,
-        curve: Curves.ease,
-      );
-    }
+    // build 首帧 _scrollController 可能尚未 attach 到 ScrollView；延到 postFrame
+    // 校验 hasClients 后再滚动，避免副作用 + StateError。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        if (MediaQuery.viewInsetsOf(context).bottom > 0 &&
+            _scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            // P1-11：300ms → AppMotion.normal。
+            duration: AppMotion.normal,
+            curve: Curves.ease,
+          );
+        }
+      } catch (e) {
+        Log.ui.d('滚动到底部失败（忽略）', error: e);
+      }
+    });
   }
 
   Widget _buildPassphraseChangeWorkflow(BuildContext context) {

@@ -279,9 +279,25 @@ void main() {
         await database.removePendingReuploadUuids({'uuid-reup-2'});
         expect((await database.getPendingReuploadUuids()).isEmpty, isTrue);
 
-        // 损坏 JSON 容错降级返回空集合
+        // 损坏 JSON：与 purgedUuids（_parseUuidList）同一容错策略——不静默返回空，
+        // 否则同步会认为"无需重传"导致旧 key blob 永久残留远端，显式抛异常中止链路。
         await database.setMeta(MetaKeys.blobReuploadPending, 'corrupt-json');
-        expect(await database.getPendingReuploadUuids(), isEmpty);
+        await expectLater(
+          database.getPendingReuploadUuids(),
+          throwsA(isA<FormatException>()),
+        );
+
+        // 非数组 / 元素非法 type 同样抛 FormatException
+        await database.setMeta(MetaKeys.blobReuploadPending, '{"a":1}');
+        await expectLater(
+          database.getPendingReuploadUuids(),
+          throwsA(isA<FormatException>()),
+        );
+        await database.setMeta(MetaKeys.blobReuploadPending, '["x", 1]');
+        await expectLater(
+          database.getPendingReuploadUuids(),
+          throwsA(isA<FormatException>()),
+        );
       },
     );
 

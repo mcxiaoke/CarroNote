@@ -71,6 +71,9 @@ const String kWebDavVaultSubdir = 'safenotes-vault';
 ///
 /// [username] / [password] 是 WebDAV 账号密码（坚果云需使用应用专用密码）
 class WebDavBackend implements SyncBackend {
+  /// journal 副本对象名白名单：仅 `[A-Za-z0-9._-]`（不含路径分隔/`..`），对齐 SafeServer
+  static final RegExp _safeJournalNameRe = RegExp(r'^[A-Za-z0-9._-]+$');
+
   /// WebDAV keyring 根 URL（用户 baseUrl + 自动附加的 safenotes-vault 子目录，不带末尾斜杠）
   final String baseUrl;
 
@@ -796,7 +799,11 @@ class WebDavBackend implements SyncBackend {
         final parts = href.split('/').where((s) => s.isNotEmpty);
         if (parts.isEmpty) continue;
         final decoded = Uri.decodeComponent(parts.last);
-        if (decoded.endsWith('.json')) result.add(decoded);
+        // 防路径遍历/非法名：仅接受白名单字符集且不含 .. 的 .json（对齐 SafeServer listJournalObjects）
+        if (!decoded.endsWith('.json')) continue;
+        if (!_safeJournalNameRe.hasMatch(decoded)) continue;
+        if (decoded.contains('..')) continue;
+        result.add(decoded);
       }
       return result;
     } on Exception catch (e) {

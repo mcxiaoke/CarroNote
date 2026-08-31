@@ -1692,6 +1692,7 @@ class NotesDatabase {
   /// purged 列表，全部在**单个事务**内完成，避免 N 次事务往返与
   /// 「删到一半崩溃留下中间状态」。返回删除的行数。
   Future<int> hardDeleteAllDeleted() async {
+    _checkNotMigrating();
     final db = await instance.database;
 
     var deleted = 0;
@@ -2313,6 +2314,7 @@ class NotesDatabase {
 
   /// 标记全部未删除笔记需重传 blob（密钥变更后调用）
   Future<void> markAllForBlobReupload() async {
+    _checkNotMigrating();
     final db = await instance.database;
     final maps = await db.query(
       tableNotes,
@@ -2325,15 +2327,27 @@ class NotesDatabase {
   }
 
   /// 读取待重传 blob 的 uuid 集合（空集合表示无）
+  ///
+  /// 与 [_parseUuidList]（purgedUuids）同一容错策略：JSON 损坏时**绝不静默返回空
+  /// 集合**——否则同步会认为"无需重传"，dataKey 迁移后旧密钥 blob 永久残留远端，
+  /// 其它设备用新 dataKey 无法解密。这里显式抛异常让同步链路中止。
   Future<Set<String>> getPendingReuploadUuids() async {
     final raw = await getMeta(MetaKeys.blobReuploadPending);
     if (raw == null || raw.isEmpty) return {};
+    final Object? decoded;
     try {
-      final list = jsonDecode(raw) as List<dynamic>;
-      return list.map((e) => e as String).toSet();
-    } on Exception catch (e) {
-      Log.db.w('blobReuploadPending JSON 解析失败，返回空集合', error: e);
-      return {};
+      decoded = jsonDecode(raw);
+    } on Object catch (e) {
+      throw FormatException('MetaKeys.blobReuploadPending 解析失败（JSON 损坏）: $e');
+    }
+    if (decoded is! List) {
+      throw FormatException('MetaKeys.blobReuploadPending 解析失败（非数组）: $decoded');
+    }
+    try {
+      return decoded.map((e) => e as String).toSet();
+    } on Object catch (e) {
+      // 元素类型不符抛 TypeError（Error，非 Exception），需显式捕获
+      throw FormatException('MetaKeys.blobReuploadPending 元素类型校验失败: $e');
     }
   }
 
@@ -2712,6 +2726,7 @@ class NotesDatabase {
   ///
   /// 单事务批量执行；缓存更新在事务成功后逐条进行（事务回滚则不动缓存）。
   Future<int> mergeRemoteNoteMetas(List<NoteMeta> remoteEntries) async {
+    _checkNotMigrating();
     final db = await instance.database;
     final applied = <NoteMeta>[];
     await db.transaction((txn) async {
@@ -2763,6 +2778,7 @@ class NotesDatabase {
   /// 同一模式；条件同样要求 updatedAt 匹配快照，防覆盖上传期间的并发改动。
   /// 墓碑行不在缓存中（deleted 行已被移除），自然跳过。
   Future<int> markNoteMetasSynced(Iterable<NoteMeta> snapshots) async {
+    _checkNotMigrating();
     final db = await instance.database;
     final batch = db.batch();
     for (final m in snapshots) {
@@ -2799,6 +2815,7 @@ class NotesDatabase {
   /// 对应 purgedUuids 机制中 removePurgedUuids 的时机：items.meta 上传成功后
   /// 调用（设计文档 §4.2 表格的「墓碑已告知远端 → 可安全物理删除」态）。
   Future<int> purgeReportedNoteMetaTombstones() async {
+    _checkNotMigrating();
     final db = await instance.database;
     final n = await db.delete(
       tableNoteMeta,

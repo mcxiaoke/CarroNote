@@ -483,17 +483,21 @@ class AddEditNotePageState extends State<AddEditNotePage>
     }
   }
 
-  void _handleNewShortcut() {
+  Future<void> _handleNewShortcut() async {
+    // 防双击/与在途保存冲突：保存或删除中忽略新建
+    if (_isSaving || _isDeleting) return;
     Log.ui.i('快捷键: Ctrl+N 新建笔记');
     if (!_isLocked && isNoteNewOrContentChanged()) {
-      unawaited(_performAutoSave(keepEditing: true));
+      // 必须在保存完成后再导航：新页 initState 会 setState(null,'','') 覆盖
+      // 静态 original/title，若发生在在途 updateNote 的 await 之间，会导致
+      // original!.xxx（空值断言）崩溃并静默丢弃原页改动（M-6）。
+      await _performAutoSave(keepEditing: true);
     }
     // 复用首页新建路由，需传递 sessionStateStream
-    if (mounted) {
-      Navigator.of(
-        context,
-      ).pushNamed('/addnote', arguments: widget.sessionStateStream);
-    }
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamed('/addnote', arguments: widget.sessionStateStream);
   }
 
   void _handleEscShortcut() {
@@ -533,10 +537,10 @@ class AddEditNotePageState extends State<AddEditNotePage>
         unawaited(_handleSaveShortcut()),
     const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () =>
         unawaited(_handleSaveShortcut()),
-    const SingleActivator(LogicalKeyboardKey.keyN, control: true):
-        _handleNewShortcut,
-    const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-        _handleNewShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+        unawaited(_handleNewShortcut()),
+    const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
+        unawaited(_handleNewShortcut()),
     const SingleActivator(LogicalKeyboardKey.escape): _handleEscShortcut,
     const SingleActivator(LogicalKeyboardKey.keyF, control: true):
         _handleFindShortcut,
