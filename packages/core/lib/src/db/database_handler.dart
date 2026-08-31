@@ -719,6 +719,8 @@ class NotesDatabase {
           version: _schemaVersion,
           onCreate: _createDB,
           onUpgrade: _onUpgrade,
+          onConfigure: _onConfigure,
+          onDowngrade: _onDowngrade,
         ),
       );
       Log.db.i('数据库已打开: $path (version=$_schemaVersion)');
@@ -727,6 +729,35 @@ class NotesDatabase {
       Log.db.f('数据库打开失败: $path', error: e, stackTrace: st);
       rethrow;
     }
+  }
+
+  /// 连接级 PRAGMA 初始化（WAL / busy_timeout / synchronous）
+  ///
+  /// best-effort：某些平台（如 Web/WASM 的 IndexedDB 后端）不支持 WAL 或部分
+  /// PRAGMA 时静默降级，不影响可用性。
+  static Future<void> _onConfigure(Database db) async {
+    for (final pragma in const <String>[
+      'PRAGMA journal_mode = WAL',
+      'PRAGMA busy_timeout = 5000',
+      'PRAGMA synchronous = NORMAL',
+    ]) {
+      try {
+        await db.execute(pragma);
+      } on Object catch (e) {
+        Log.db.d('PRAGMA 初始化跳过（平台不支持）: $pragma ($e)');
+      }
+    }
+  }
+
+  /// 版本回退兜底：仅记录日志，不做任何破坏性变更。
+  ///
+  /// 避免在 `onDowngrade == null` 时 sqflite 对降级库的非预期处理，保留表结构。
+  static Future<void> _onDowngrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    Log.db.w('数据库版本回退被忽略: $oldVersion → $newVersion（仅记录，保留表结构）');
   }
 
   /// 测试专用：注入 in-memory 数据库
@@ -908,6 +939,16 @@ class NotesDatabase {
     await _createNoteVersionsTable(db);
   }
 
+  /// 判断物理列是否存在（幂等 ALTER 防护）
+  static Future<bool> _columnExists(
+    Database db,
+    String table,
+    String column,
+  ) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    return rows.any((r) => r['name'] == column);
+  }
+
   /// schema 升级回调（version 3 → 4：新增 synced_deleted 列）
   ///
   /// 历史背景：
@@ -916,7 +957,7 @@ class NotesDatabase {
   ///     (hash, deleted) 二元组，解决软删除不改 hash 导致 fast-forward
   ///     误判「双方都没改」的 bug（详见 sync_engine _mergeAndTransfer 注释）
   ///
-  /// 老库升级策略：ALTER TABLE ADD COLUMN ... DEFAULT 0
+  /// 老库升级策略：ALTER TABLE ADD COLUMN ... DEFAULT 0（幂等：预查列后再 ALTER）
   ///   - 老数据的 synced_deleted 全部初始化为 0（未删除）
   ///   - 已同步且 synced=1 的笔记：synced_deleted 应等于当前 deleted，
   ///     但因 synced_hash 已是收敛 hash，对应 deleted 状态也是 false
@@ -930,11 +971,15 @@ class NotesDatabase {
   ) async {
     Log.db.i('数据库升级: $oldVersion → $newVersion');
     if (oldVersion < 4) {
-      await db.execute(
-        'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedDeleted} '
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-      Log.db.i('已添加列: ${NoteFields.syncedDeleted}');
+      if (!await _columnExists(db, tableNotes, NoteFields.syncedDeleted)) {
+        await db.execute(
+          'ALTER TABLE $tableNotes ADD COLUMN ${NoteFields.syncedDeleted} '
+          'INTEGER NOT NULL DEFAULT 0',
+        );
+        Log.db.i('已添加列: ${NoteFields.syncedDeleted}');
+      } else {
+        Log.db.d('列已存在，跳过 ALTER: ${NoteFields.syncedDeleted}');
+      }
     }
     // v4 → v5：新增 note_meta 表（笔记级元数据）
     //
@@ -946,13 +991,17 @@ class NotesDatabase {
       Log.db.i('已创建表: $tableNoteMeta');
     } else if (oldVersion < 6) {
       // v5 → v6：note_meta 表已存在（旧表无 locked 列），仅补列。
-      // 注意：仅当旧库已有 note_meta 时才 ALTER，否则第一次建表已含 locked，
-      // 重复 ADD COLUMN 会报 duplicate column name。
-      await db.execute(
-        'ALTER TABLE $tableNoteMeta ADD COLUMN '
-        '${NoteMetaFields.locked} INTEGER NOT NULL DEFAULT 0',
-      );
-      Log.db.i('已添加列: ${NoteMetaFields.locked}');
+      // 幂等防护：先查 PRAGMA table_info，物理列已存在时跳过 ALTER，
+      // 避免降级再升级或异常中间态导致 `duplicate column name`。
+      if (!await _columnExists(db, tableNoteMeta, NoteMetaFields.locked)) {
+        await db.execute(
+          'ALTER TABLE $tableNoteMeta ADD COLUMN '
+          '${NoteMetaFields.locked} INTEGER NOT NULL DEFAULT 0',
+        );
+        Log.db.i('已添加列: ${NoteMetaFields.locked}');
+      } else {
+        Log.db.d('列已存在，跳过 ALTER: ${NoteMetaFields.locked}');
+      }
     }
     // v6 → v7：新增 note_versions 表（笔记历史版本）
     //

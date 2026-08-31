@@ -34,7 +34,9 @@
 
 ## 二、🔴 高优先 —— 数据 / 安全，建议尽早修复
 
-> 触发概率 × 影响综合最高。多数为小改动。
+> 触发概率 × 影响综合最高。多数为小改动。注：H-1/H-2/H-6 已随第一批修复落地；
+> **H-3/H-4/H-5 经 2026-08-31 评估后决定搁置**（触及同步核心迁移/损坏恢复，触发前提窄，
+> 与先前 B5/C1/C2 的有意搁置一致），详见第七节。
 
 ### H-1. WebDAV `listJournalObjects` 路径遍历（原 M-1）
 
@@ -52,7 +54,7 @@
 
 * **建议**：改为损坏即 `throw FormatException`，并对齐类型校验。
 
-### H-3. scenario-d 自动整库迁移无确认、无 vaultId 校验（原 P1-2 / C2）
+### H-3. scenario-d 自动整库迁移无确认、无 vaultId 校验（原 P1-2 / C2）〔搁置〕
 
 * **位置**：`sync_engine.dart:1009-1031` → `_executeMigrationVault`（L1587-1666）
 
@@ -60,7 +62,7 @@
 
 * **建议**：迁移前弹确认（展示远端 vaultId/创建时间 + 强制备份）；校验远端 vaultId 不等于本地任何历史 vaultId。
 
-### H-4. `unlockFromRemoteManifest` 切 dataKey 零重加密（原 P1-1 / C1）
+### H-4. `unlockFromRemoteManifest` 切 dataKey 零重加密（原 P1-1 / C1）〔搁置〕
 
 * **位置**：`keyring.dart:554-589`，调用链 `login.dart:599-618`
 
@@ -68,7 +70,7 @@
 
 * **建议**：切换前后校验 local 库可解性；dataKey 不同则走重加密。
 
-### H-5. 远端 manifest 损坏 → 本地重建丢弃"仅远端有"条目（原 P0-5）
+### H-5. 远端 manifest 损坏 → 本地重建丢弃"仅远端有"条目（原 P0-5）〔搁置〕
 
 * **位置**：`sync_engine.dart:572-734` 的 `remote==null` 分支（L1768-1787）＋空 etag PUT（L694-698）
 
@@ -100,13 +102,12 @@
 
 * **建议**：至少给 `:925` 加 `catch` 转明确 failure（触发迁移/重登录语义），其余视同通用错误。
 
-### M-3. 无 onConfigure（WAL/busy\_timeout）+ 无 onDowngrade + 幂等 ALTER（原 P1-5 / P1-6 / C5）
+### M-3. 无 onConfigure（WAL/busy_timeout）+ 无 onDowngrade + 幂等 ALTER（原 P1-5 / P1-6 / C5）〔✅ 已随第二批修复〕
 
-* **位置**：`database_handler.dart:711-730` `OpenDatabaseOptions` 无 `onConfigure` / `onDowngrade`；`_onUpgrade` 的 `ALTER ADD COLUMN` 无 `IF NOT EXISTS` 守卫。
+* **位置**：`database_handler.dart:711-730` `OpenDatabaseOptions` 原无 `onConfigure` / `onDowngrade`；`_onUpgrade` 的 `ALTER ADD COLUMN` 原无 `IF NOT EXISTS` 守卫。
+* **修复**：`_initDB` 补 `onConfigure`（`journal_mode=WAL`、`busy_timeout=5000`、`synchronous=NORMAL`，best-effort 静默降级）与 `onDowngrade`（非破坏仅记日志）；新增 `_columnExists` 使 `_onUpgrade` 两个 `ALTER ADD COLUMN` 幂等。
 
-* **建议**：加 `onConfigure`（`journal_mode=WAL`、`busy_timeout=5000`）；`ALTER` 前 `PRAGMA table_info` 判存在；给 `onDowngrade` 非破坏实现（只记日志不删表）。
-
-### M-4. 在途同步无取消 / 10s 后硬关 backend（原 P1-15）
+### M-4. 在途同步无取消 / 10s 后硬关 backend（原 P1-15）〔搁置〕
 
 * **位置**：`sync_service.dart:830-837` `waitForSyncCompletion` 固定 10s；`dispose`/`logout` 超时后仍 `_backend?.close()`；`initialize`（L188）与 `updateKeyring`（L306）无 `_syncInProgress` 互斥。
 
@@ -245,11 +246,18 @@
 
 ***
 
-## 七、建议推进顺序
+## 七、推进状态与顺序
 
-1. **优先（小改动、高收益）**：H-1（webdav 白名单）→ H-2（pending uuid 抛异常）→ H-6（补 5 处迁移守卫）→ M-5（Ctrl+N）→ M-6（滚动 try/catch）。
-2. **次之（需谨慎评估）**：H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-3（WAL+onDowngrade）、M-4（取消机制）。
-3. **批量/工程化**：L-2/L-3/L-3x 死代码与一致性清理、L-28 lint 收紧、L-6 i18n、L-29 依赖治理。
+**已完成：**
 
-> 涉及同步核心（H-3/H-4/H-5、M-10/M-12）与迁移逻辑的改动，建议先补回归测试再实施；`packages/core` 禁止引入 Flutter 依赖。
+1. **第一批（小改动、高收益）**：H-1（webdav 白名单）、H-2（pending uuid 抛异常）、H-6（补 5 处迁移守卫）、M-5（Ctrl+N）、M-6（滚动 try/catch）——2026-08-31 修复并提交（`92eccd1` / `dc63919`）。
+2. **第二批（中）**：M-3（`onConfigure` WAL/busy_timeout + `onDowngrade` + 幂等 ALTER）——2026-08-31 修复。
+
+**已决定搁置（触及同步核心迁移/损坏恢复/取消路径，触发前提窄，与先前 B5/C1/C2 有意搁置一致）：**
+
+- H-3（scenario-d 确认+vaultId）、H-4（unlock 切 key 重加密）、H-5（损坏重建保留）、M-4（取消机制）。
+
+**后续批量（工程化/UX）**：L-2/L-3/L-3x 死代码与一致性清理、L-28 lint 收紧、L-6 i18n、L-29 依赖治理。
+
+> 同步核心改动（H-3/H-4/H-5、M-4、M-10/M-12）如需推进，应单独立项并先补回归测试；`packages/core` 禁止引入 Flutter 依赖。
 
