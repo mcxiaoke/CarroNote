@@ -223,7 +223,7 @@ class FileHandler {
     String? errorText;
     while (true) {
       if (!context.mounted) {
-        return (records: const [], cancelled: true);
+        return (records: const <dynamic>[], cancelled: true);
       }
       final String? entered = await showAppPassword(
         context,
@@ -236,7 +236,7 @@ class FileHandler {
         errorText: errorText,
       );
       if (entered == null) {
-        return (records: const [], cancelled: true);
+        return (records: const <dynamic>[], cancelled: true);
       }
       try {
         return (

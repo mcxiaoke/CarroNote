@@ -24,7 +24,7 @@ import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/widgets/shad_settings_tiles.dart';
 
 void showThemeBottomSheet(BuildContext context) {
-  showShadSheet(
+  showShadSheet<void>(
     context: context,
     side: ShadSheetSide.bottom,
     builder: (context) => ShadSheet(

@@ -253,7 +253,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     if (state.lastResult?.requiresRelogin != true) return;
 
     _passwordChangedDialogShown = true;
-    showAppDialog(
+    showAppDialog<void>(
       context: context,
       // 强制：不可点击遮罩关闭，用户必须处理"重新登录"
       barrierDismissible: false,

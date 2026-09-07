@@ -24,7 +24,7 @@ void main() {
     var checked = 0;
     for (final theme in allNotesColorTheme) {
       for (final rawColor in theme.colorList) {
-        final raw = rawColor as Color;
+        final raw = rawColor;
         // 与 NotesColor._lightenAmount 保持一致：浅色模式提亮 40%。
         final lightened = Color.lerp(raw, Colors.white, 0.4)!;
         for (final bg in [raw, lightened]) {

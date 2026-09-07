@@ -208,7 +208,7 @@ Color noteColorDarkVariant(int lightArgb) {
 class NotesColorTheme {
   final String prefix;
   final String? helper;
-  final List colorList;
+  final List<Color> colorList;
   const NotesColorTheme({
     required this.prefix,
     this.helper,

@@ -112,7 +112,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: () async {
             await Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const NoteStylePicker()),
+              MaterialPageRoute<NoteStylePicker>(
+                builder: (_) => const NoteStylePicker(),
+              ),
             );
             _refresh();
           },

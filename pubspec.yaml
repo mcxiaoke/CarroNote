@@ -90,6 +90,7 @@ dev_dependencies:
   dependency_validator: ^5.0.5
   flutter_lints: ^6.0.0
   material_color_utilities: ^0.13.0
+  very_good_analysis: ^10.3.0
 
 
 # ============================================================

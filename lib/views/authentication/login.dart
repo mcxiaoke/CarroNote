@@ -688,7 +688,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
   ///   - 明确告知数据不可恢复
   ///   - 执行后删除 db 文件 + keyring 元数据,重启走首次设置流程
   void _showForgotPassphraseDialog() {
-    showAppDialog(
+    showAppDialog<void>(
       context: context,
       builder: (dialogContext) => ShadDialog(
         constraints: kAppDialogConstraints,
@@ -741,7 +741,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   /// 二次确认清空本地数据
   void _confirmResetLocalData() {
-    showAppDialog(
+    showAppDialog<void>(
       context: context,
       builder: (dialogContext) => ShadDialog(
         constraints: kAppDialogConstraints,

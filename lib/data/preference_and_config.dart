@@ -104,7 +104,7 @@ class PreferencesStorage {
     await setManagedTags(current.where((t) => t != tag).toList());
   }
 
-  static Future init() async {
+  static Future<void> init() async {
     _preferences = await SharedPreferences.getInstance();
     // 简化方案:清理旧版 passPhraseHash 残留 key
     // (开发阶段不做数据迁移,但残留 key 会引起歧义,这里清掉)

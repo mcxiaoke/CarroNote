@@ -840,7 +840,11 @@ class AddEditNotePageState extends State<AddEditNotePage>
   Future<void> _openVersionHistory(SafeNote note) async {
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => VersionHistoryPage(note: note)));
+    ).push(
+      MaterialPageRoute<VersionHistoryPage>(
+        builder: (_) => VersionHistoryPage(note: note),
+      ),
+    );
     // 返回后重新从数据库加载笔记（恢复操作可能改变了内容）
     if (mounted) {
       final updated = await NotesDatabase.instance.readNoteByUuid(note.uuid);
@@ -928,7 +932,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
                 // 用户主动点击才打开，外部浏览器；不做自动加载
                 if (href != null) {
                   unawaited(
-                    launchUrlExternal(Uri.parse(href)).catchError((e) {
+                    launchUrlExternal(Uri.parse(href)).catchError((Object e) {
                       // 平台无对应 handler（如未安装浏览器）时记录，便于排查"点链接没反应"
                       Log.ui.w('预览点击链接打开失败: $href', error: e);
                     }),

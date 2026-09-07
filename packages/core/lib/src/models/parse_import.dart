@@ -29,8 +29,10 @@ class ImportParser {
   });
 
   factory ImportParser.fromJson(Map<String, dynamic> json) {
-    Iterable list = json['records'];
-    List<SafeNote> notes = list.map((i) => SafeNote.fromJson(i)).toList();
+    final records = json['records'] as List<dynamic>;
+    List<SafeNote> notes = records
+        .map((i) => SafeNote.fromJson(i as Map<String, dynamic>))
+        .toList();
 
     return ImportParser(
       parsedNotes: notes,
@@ -50,7 +52,9 @@ class ImportParser {
     List<dynamic> records, {
     int? expectedTotal,
   }) {
-    List<SafeNote> notes = records.map((i) => SafeNote.fromJson(i)).toList();
+    List<SafeNote> notes = records
+        .map((i) => SafeNote.fromJson(i as Map<String, dynamic>))
+        .toList();
     return ImportParser(
       parsedNotes: notes,
       importHandlerPhrase: 'plaintext-v1',

@@ -49,7 +49,7 @@ import 'package:safenotes/src/platform/platform_io.dart'
 /// 让测试跑在完全独立的数据环境，避免污染本机真实数据。null 表示未覆盖。
 String? dataDirOverride;
 
-Future main() async {
+Future<void> main() async {
   // runZonedGuarded 捕获所有异步未捕获异常（Zone 级兜底）。
   // 必须把 ensureInitialized 和 runApp 放在同一个 Zone 内，
   // 否则 Flutter 会抛 "Zone mismatch" 错误。

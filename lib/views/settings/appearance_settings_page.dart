@@ -115,7 +115,9 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             onTap: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const FontSettingsPicker()),
+                MaterialPageRoute<FontSettingsPicker>(
+                  builder: (_) => const FontSettingsPicker(),
+                ),
               );
               _refresh();
             },
@@ -177,7 +179,9 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             onTap: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const NoteStylePicker()),
+                MaterialPageRoute<NoteStylePicker>(
+                  builder: (_) => const NoteStylePicker(),
+                ),
               );
               _refresh();
             },

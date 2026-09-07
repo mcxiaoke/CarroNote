@@ -476,7 +476,7 @@ class SafeServerBackend implements SyncBackend {
     }
 
     try {
-      final List<dynamic> hashes = jsonDecode(res.body);
+      final List<dynamic> hashes = jsonDecode(res.body) as List<dynamic>;
       // P1-7：hash 白名单过滤——服务端（或被 MITM 的明文连接）返回
       // "../manifest" 之类路径片段时，会被 GC 当孤儿执行
       // move blobs/../manifest → 隔离区，毁掉远端 manifest。与
@@ -542,7 +542,7 @@ class SafeServerBackend implements SyncBackend {
       );
     }
     try {
-      final List<dynamic> entries = jsonDecode(res.body);
+      final List<dynamic> entries = jsonDecode(res.body) as List<dynamic>;
       final result = <String>[];
       for (final e in entries) {
         final name = (e is Map ? e['name'] : null)?.toString() ?? '';
@@ -571,7 +571,7 @@ class SafeServerBackend implements SyncBackend {
     }
     final cutoff = DateTime.now().subtract(retention).millisecondsSinceEpoch;
     try {
-      final List<dynamic> entries = jsonDecode(res.body);
+      final List<dynamic> entries = jsonDecode(res.body) as List<dynamic>;
       for (final e in entries) {
         final name = (e is Map ? e['name'] : null)?.toString() ?? '';
         final dot = name.indexOf('.');
@@ -653,7 +653,7 @@ class SafeServerBackend implements SyncBackend {
     try {
       final res = await _postResource('manifest-backup', 'propfind', depth: 1);
       if (res.statusCode != 200) return const [];
-      final List<dynamic> entries = jsonDecode(res.body);
+      final List<dynamic> entries = jsonDecode(res.body) as List<dynamic>;
       final names = <String>[];
       for (final e in entries) {
         final name = (e is Map ? e['name'] : null)?.toString() ?? '';
@@ -753,7 +753,7 @@ class SafeServerBackend implements SyncBackend {
     try {
       final res = await _postResource('journal', 'propfind', depth: 1);
       if (res.statusCode != 200) return [];
-      final List<dynamic> entries = jsonDecode(res.body);
+      final List<dynamic> entries = jsonDecode(res.body) as List<dynamic>;
       final result = <String>[];
       for (final e in entries) {
         final name = (e is Map ? e['name'] : null)?.toString() ?? '';

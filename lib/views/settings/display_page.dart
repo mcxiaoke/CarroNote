@@ -70,7 +70,9 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
             onTap: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const FontSettingsPicker()),
+                MaterialPageRoute<FontSettingsPicker>(
+                  builder: (_) => const FontSettingsPicker(),
+                ),
               );
               if (mounted) setState(() {});
             },
