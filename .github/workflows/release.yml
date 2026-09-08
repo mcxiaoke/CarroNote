@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - name: Generate build info
+        run: dart run scripts/generate_build_info.dart
+
+      - name: Get flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows app (release)
+        run: flutter build windows --release
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/CarroNote-$version-Windows-x64.zip"
+          Get-ChildItem dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/CarroNote-*.zip
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - name: Generate build info
+        run: dart run scripts/generate_build_info.dart
+
+      - name: Get flutter dependencies
+        run: flutter pub get
+
+      - name: Decode keystore
+        env:
+          KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PWD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_PWD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KS_BASE64" | base64 -d > android/app/keystore.jks
+          echo "storePassword=$STORE_PWD" > android/key.properties
+          echo "keyPassword=$KEY_PWD" >> android/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          echo "storeFile=keystore.jks" >> android/key.properties
+
+      - name: Build split APKs (release)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build fat APK (release)
+        run: flutter build apk --release
+
+      - name: Rename APKs
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          APK_DIR=$(find build/app/outputs -name "app-arm64-v8a-release.apk" -exec dirname {} \; | head -1)
+          FAT_APK=$(find build/app/outputs -name "app-release.apk" | head -1)
+          echo "APK directory: $APK_DIR"
+          echo "Fat APK: $FAT_APK"
+          mkdir -p dist
+          cp "$APK_DIR/app-arm64-v8a-release.apk"   "dist/CarroNote-${VERSION}-arm64-v8a.apk"
+          cp "$APK_DIR/app-armeabi-v7a-release.apk" "dist/CarroNote-${VERSION}-armeabi-v7a.apk"
+          cp "$APK_DIR/app-x86_64-release.apk"      "dist/CarroNote-${VERSION}-x86_64.apk"
+          cp "$FAT_APK"                             "dist/CarroNote-${VERSION}-fat.apk"
+          ls -lh dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: dist/CarroNote-*.apk
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          for name in \
+            "CarroNote-${VERSION}-Windows-x64.zip" \
+            "CarroNote-${VERSION}-arm64-v8a.apk" \
+            "CarroNote-${VERSION}-armeabi-v7a.apk" \
+            "CarroNote-${VERSION}-x86_64.apk" \
+            "CarroNote-${VERSION}-fat.apk"; do
+            src=$(find artifacts -type f -name "$name" -print -quit)
+            if [ -z "$src" ]; then
+              echo "::error::Missing release asset: $name"
+              find artifacts -type f | sed 's/^/  found: /'
+              exit 1
+            fi
+            cp "$src" "release-assets/$name"
+          done
+          ls -lh release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "Release v${VERSION} already exists, uploading assets instead"
+            gh release upload "v${VERSION}" release-assets/* --clobber
+          else
+            gh release create "v${VERSION}" release-assets/* \
+              --title "CarroNote v${VERSION}" \
+              --notes-file CHANGELOG.md
+          fi

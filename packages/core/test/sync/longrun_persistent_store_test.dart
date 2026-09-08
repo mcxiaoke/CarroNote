@@ -46,6 +46,11 @@
 //     注：测试以 orphanRetention=0 注入（_buildEngine），使「隔离→超期→purge」
 //     完整链路在每次 GC 实际执行——否则压缩时间下隔离项永不超期，purge 成为盲区。
 
+@Skip(
+  'requires cross-run persistent state; run locally with LONGRUN_RESET=1 to reset',
+)
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';

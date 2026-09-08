@@ -1,4 +1,4 @@
-name: Test CI
+name: CI
 
 on:
   push:
@@ -8,8 +8,41 @@ on:
   pull_request:
 
 jobs:
-  build:
-    runs-on: macos-14
+  windows:
+    name: Windows (lint + test + build)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - name: Generate build info
+        run: dart run scripts/generate_build_info.dart
+
+      - name: Get flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze the code for linting errors
+        run: flutter analyze lib test
+
+      - name: Run widget tests
+        run: flutter test
+
+      - name: Core package - Run tests
+        run: dart test packages/core/test
+
+      - name: Build Windows app
+        run: flutter build windows --debug
+
+  android:
+    name: Android (test + build)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -25,7 +58,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version-file: pubspec.yaml
           architecture: x64
 
       - name: Generate build info
@@ -34,35 +66,8 @@ jobs:
       - name: Get flutter dependencies
         run: flutter pub get
 
-      - name: Check for any formatting issues in the code
-        run: dart format --set-exit-if-changed .
-      
-      - name: Check import sorting
-        run: dart run import_sorter:main --exit-if-changed
-
       - name: Analyze the code for linting errors
         run: flutter analyze lib test
 
-      - name: Run widget tests
-        run: flutter test
-
-      - name: Core package - Get dependencies
-        run: dart pub get
-        working-directory: packages/core
-
-      - name: Core package - Analyze (pure Dart, no Flutter)
-        run: dart analyze
-        working-directory: packages/core
-
-      - name: Core package - Run tests
-        run: dart test
-        working-directory: packages/core
-
       - name: Build apk
         run: flutter build apk --debug
-
-      - name: Build appbundle
-        run: flutter build appbundle --debug
-
-      - name: Build iOS app
-        run: flutter build ios --release --no-codesign

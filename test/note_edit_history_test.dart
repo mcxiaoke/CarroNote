@@ -17,8 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safenotes/utils/note_edit_history.dart';
 
 /// 构造带光标（selection）的 [TextEditingValue]；[sel] 缺省为 -1（无选中）。
-TextEditingValue tv(String text, [int sel = -1]) =>
-    TextEditingValue(text: text, selection: TextSelection.collapsed(offset: sel));
+TextEditingValue tv(String text, [int sel = -1]) => TextEditingValue(
+  text: text,
+  selection: TextSelection.collapsed(offset: sel),
+);
 
 void main() {
   group('NoteEditHistory 基础撤销/重做', () {
