@@ -67,37 +67,28 @@ void main() {
     await PreferencesStorage.init();
   });
 
-  testWidgets(
-    'NoteFormWidget 用 controller 驱动输入并保留测试 Key',
-    (tester) async {
-      final titleC = TextEditingController();
-      final descC = TextEditingController();
-      await tester.pumpWidget(
-        wrapScreen(
-          NoteFormWidget(
-            titleController: titleC,
-            descriptionController: descC,
-            sessionStateStream: StreamController<SessionState>(),
-          ),
+  testWidgets('NoteFormWidget 用 controller 驱动输入并保留测试 Key', (tester) async {
+    final titleC = TextEditingController();
+    final descC = TextEditingController();
+    await tester.pumpWidget(
+      wrapScreen(
+        NoteFormWidget(
+          titleController: titleC,
+          descriptionController: descC,
+          sessionStateStream: StreamController<SessionState>(),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      // 两个测试 Key 必须保留（集成测试依赖）
-      expect(find.byKey(const Key('ui-note-field-title')), findsOneWidget);
-      expect(find.byKey(const Key('ui-note-field-body')), findsOneWidget);
+    // 两个测试 Key 必须保留（集成测试依赖）
+    expect(find.byKey(const Key('ui-note-field-title')), findsOneWidget);
+    expect(find.byKey(const Key('ui-note-field-body')), findsOneWidget);
 
-      // 输入经 controller 写回（而非旧 onChanged 回调）
-      await tester.enterText(
-        find.byKey(const Key('ui-note-field-title')),
-        '标题',
-      );
-      await tester.enterText(
-        find.byKey(const Key('ui-note-field-body')),
-        '正文',
-      );
-      expect(titleC.text, '标题');
-      expect(descC.text, '正文');
-    },
-  );
+    // 输入经 controller 写回（而非旧 onChanged 回调）
+    await tester.enterText(find.byKey(const Key('ui-note-field-title')), '标题');
+    await tester.enterText(find.byKey(const Key('ui-note-field-body')), '正文');
+    expect(titleC.text, '标题');
+    expect(descC.text, '正文');
+  });
 }

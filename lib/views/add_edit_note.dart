@@ -838,9 +838,7 @@ class AddEditNotePageState extends State<AddEditNotePage>
 
   /// 打开版本历史页面，返回后刷新编辑页状态（恢复操作可能改变了笔记内容）。
   Future<void> _openVersionHistory(SafeNote note) async {
-    await Navigator.of(
-      context,
-    ).push(
+    await Navigator.of(context).push(
       MaterialPageRoute<VersionHistoryPage>(
         builder: (_) => VersionHistoryPage(note: note),
       ),

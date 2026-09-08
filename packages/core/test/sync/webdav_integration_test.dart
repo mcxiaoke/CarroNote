@@ -24,6 +24,7 @@
 // 如果 webdav.exe 不在 C:\Home\Develop\tools\ 下，测试自动跳过。
 
 // 库级注解：启动服务器可能需要时间
+@Skip('requires webdav.exe binary and Windows paths; run locally on Windows')
 @Timeout(Duration(seconds: 120))
 library;
 

@@ -33,6 +33,7 @@
 // 如果 go 和 node 都不在 PATH 中，测试自动跳过。
 
 // 库级注解：构建二进制 + 启动 server 可能需要时间
+@Skip('requires Go server binary and PS cleanup; run locally from repo root')
 @Timeout(Duration(seconds: 180))
 library;
 

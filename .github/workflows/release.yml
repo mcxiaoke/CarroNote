@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - name: Generate build info
+        run: dart run scripts/generate_build_info.dart
+
+      - name: Get flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows app (release)
+        run: flutter build windows --release
+
+      - name: Create zip
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath CarroNote-${{ steps.version.outputs.VERSION }}-Windows-x64.zip
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: CarroNote-${{ steps.version.outputs.VERSION }}-Windows-x64.zip
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - name: Generate build info
+        run: dart run scripts/generate_build_info.dart
+
+      - name: Get flutter dependencies
+        run: flutter pub get
+
+      - name: Build split APKs (release)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build fat APK (release)
+        run: flutter build apk --release
+
+      - name: Rename APKs
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          cd build/app/outputs/apk/release
+          cp app-arm64-v8a-release.apk "CarroNote-${VERSION}-arm64-v8a.apk"
+          cp app-armeabi-v7a-release.apk "CarroNote-${VERSION}-armeabi-v7a.apk"
+          cp app-x86_64-release.apk "CarroNote-${VERSION}-x86_64.apk"
+          cp app-release.apk "CarroNote-${VERSION}-fat.apk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: |
+            build/app/outputs/apk/release/CarroNote-*.apk
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          gh release create "v${VERSION}" \
+            artifacts/windows-build/CarroNote-${VERSION}-Windows-x64.zip \
+            artifacts/android-build/CarroNote-${VERSION}-arm64-v8a.apk \
+            artifacts/android-build/CarroNote-${VERSION}-armeabi-v7a.apk \
+            artifacts/android-build/CarroNote-${VERSION}-x86_64.apk \
+            artifacts/android-build/CarroNote-${VERSION}-fat.apk \
+            --title "CarroNote v${VERSION}" \
+            --notes-file CHANGELOG.md
