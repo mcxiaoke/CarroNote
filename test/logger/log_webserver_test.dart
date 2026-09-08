@@ -158,10 +158,7 @@ void main() {
       );
       final res = await req.close();
       expect(res.statusCode, HttpStatus.ok);
-      expect(
-        res.headers.contentType?.mimeType,
-        'application/json',
-      );
+      expect(res.headers.contentType?.mimeType, 'application/json');
 
       final body = await utf8.decoder.bind(res).join();
       final decoded = jsonDecode(body) as Map<String, dynamic>;

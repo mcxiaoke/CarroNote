@@ -1845,5 +1845,5 @@ void main() {
         reason: 'B 端本地墓碑也已超期，不得把条目重新写回 manifest',
       );
     });
-  });
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }

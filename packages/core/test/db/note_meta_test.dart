@@ -613,6 +613,8 @@ void main() {
       const uuid = 'cond-1';
       final written = await database.setNoteTags(uuid, ['v1']);
       // 模拟「快照后用户又改」：updatedAt 前进
+      // 等待确保 updatedAt 严格递增（同毫秒内两次写入会导致 WHERE 条件误命中）
+      await Future.delayed(const Duration(milliseconds: 5));
       await database.setNoteTags(uuid, ['v2']);
 
       // M-1 回归锚点：先建立 _metaCache，让后续读走缓存命中路径——
