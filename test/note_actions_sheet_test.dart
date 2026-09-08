@@ -97,7 +97,9 @@ void main() {
     expect(action, NoteAction.copyAll);
   });
 
-  testWidgets('锁定项：未锁定时显示「Lock note」，点击返回 toggleLock', (WidgetTester tester) async {
+  testWidgets('锁定项：未锁定时显示「Lock note」，点击返回 toggleLock', (
+    WidgetTester tester,
+  ) async {
     final completer = await openSheet(tester, false, locked: false);
 
     expect(find.byKey(const Key('ui-note-action-lock')), findsOneWidget);
@@ -109,7 +111,9 @@ void main() {
     expect(action, NoteAction.toggleLock);
   });
 
-  testWidgets('已锁定时：锁定项显示「Unlock note」且用 lockOpen 图标', (WidgetTester tester) async {
+  testWidgets('已锁定时：锁定项显示「Unlock note」且用 lockOpen 图标', (
+    WidgetTester tester,
+  ) async {
     final completer = await openSheet(tester, false, locked: true);
 
     expect(find.text('Unlock note'), findsOneWidget);

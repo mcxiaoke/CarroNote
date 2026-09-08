@@ -285,7 +285,7 @@ class LocalFsBackend implements SyncBackend {
         final dot = name.indexOf('.');
         if (dot > 0) {
           final ts = int.tryParse(name.substring(dot + 1));
-          if (ts != null && ts < cutoff) {
+          if (ts != null && ts <= cutoff) {
             try {
               await entity.delete();
             } on Exception {

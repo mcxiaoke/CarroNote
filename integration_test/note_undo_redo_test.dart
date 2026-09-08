@@ -71,176 +71,179 @@ Future<void> main() async {
   safenotes.dataDirOverride = override;
 
   group('note undo/redo', () {
-    testWidgets(
-      'undo: AppBar buttons + keyboard restore title and body together',
-      (WidgetTester tester) async {
-        await _loginToHome(tester);
-        final stamp = DateTime.now().millisecondsSinceEpoch;
-        final title = 'Undo测试标题 $stamp';
-        final body = 'Undo测试正文 $stamp';
+    testWidgets('undo: AppBar buttons + keyboard restore title and body together', (
+      WidgetTester tester,
+    ) async {
+      await _loginToHome(tester);
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final title = 'Undo测试标题 $stamp';
+      final body = 'Undo测试正文 $stamp';
 
-        await _createNote(tester, title, body);
-        await _openNoteByTitle(tester, title);
-        await _settle(tester); // 编辑器（预览态）完全就绪
+      await _createNote(tester, title, body);
+      await _openNoteByTitle(tester, title);
+      await _settle(tester); // 编辑器（预览态）完全就绪
 
-        // 进入编辑态（预览→编辑切换按钮）。
-        await tester.tap(find.byKey(_kPreviewToggle));
-        await tester.pumpAndSettle();
-        await _waitFor(tester, () => tester.any(find.byKey(_kFieldTitle)));
-        await _settle(tester);
+      // 进入编辑态（预览→编辑切换按钮）。
+      await tester.tap(find.byKey(_kPreviewToggle));
+      await tester.pumpAndSettle();
+      await _waitFor(tester, () => tester.any(find.byKey(_kFieldTitle)));
+      await _settle(tester);
 
-        // 记录初始值，再整体改写标题+正文（一次编辑=一个撤销步）。
-        final originalTitle = title;
-        final originalBody = body;
-        const editedTitle = '已编辑标题 EDITED';
-        const editedBody = '已编辑正文 EDITED BODY';
-        await tester.enterText(find.byKey(_kFieldTitle), editedTitle);
-        await tester.enterText(find.byKey(_kFieldBody), editedBody);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          editedTitle,
-          reason: 'title should reflect the edit',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          editedBody,
-          reason: 'body should reflect the edit',
-        );
-        // 此时历史栈有 2 步：①改标题 ②改正文（每字段独立成步）。
+      // 记录初始值，再整体改写标题+正文（一次编辑=一个撤销步）。
+      final originalTitle = title;
+      final originalBody = body;
+      const editedTitle = '已编辑标题 EDITED';
+      const editedBody = '已编辑正文 EDITED BODY';
+      await tester.enterText(find.byKey(_kFieldTitle), editedTitle);
+      await tester.enterText(find.byKey(_kFieldBody), editedBody);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        editedTitle,
+        reason: 'title should reflect the edit',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        editedBody,
+        reason: 'body should reflect the edit',
+      );
+      // 此时历史栈有 2 步：①改标题 ②改正文（每字段独立成步）。
 
-        // --- 撤销第 1 次（AppBar 按钮）：回退“改正文”那一步 ---
-        // 双字段编辑后 body 字段处于聚焦态，点击 AppBar 按钮前先聚焦回 title，
-        // 避免外层 GestureDetector(unfocus) 与按钮手势竞争导致 onPressed 不触发。
-        await tester.tap(find.byKey(_kFieldTitle));
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        final undoBtn = find.byKey(const Key('ui-note-button-undo'));
-        await tester.ensureVisible(undoBtn);
-        await tester.pumpAndSettle();
-        // ignore: avoid_print
-        print('[DIAG-A] before undo tap: undoDisabled=${_isUndoButtonDisabled(tester)} '
-            'title=${_fieldText(tester, _kFieldTitle)} '
-            'body=${_fieldText(tester, _kFieldBody)}');
-        await tester.tap(undoBtn, warnIfMissed: false);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1)); // 等布局/动画就绪
-        await tester.pumpAndSettle();
-        // ignore: avoid_print
-        print('[DIAG-B] after undo tap: undoDisabled=${_isUndoButtonDisabled(tester)} '
-            'title=${_fieldText(tester, _kFieldTitle)} '
-            'body=${_fieldText(tester, _kFieldBody)}');
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          editedTitle,
-          reason: 'after 1st undo (revert body) title stays edited',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          originalBody,
-          reason: 'after 1st undo (revert body) body restored',
-        );
+      // --- 撤销第 1 次（AppBar 按钮）：回退“改正文”那一步 ---
+      // 双字段编辑后 body 字段处于聚焦态，点击 AppBar 按钮前先聚焦回 title，
+      // 避免外层 GestureDetector(unfocus) 与按钮手势竞争导致 onPressed 不触发。
+      await tester.tap(find.byKey(_kFieldTitle));
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      final undoBtn = find.byKey(const Key('ui-note-button-undo'));
+      await tester.ensureVisible(undoBtn);
+      await tester.pumpAndSettle();
+      // ignore: avoid_print
+      print(
+        '[DIAG-A] before undo tap: undoDisabled=${_isUndoButtonDisabled(tester)} '
+        'title=${_fieldText(tester, _kFieldTitle)} '
+        'body=${_fieldText(tester, _kFieldBody)}',
+      );
+      await tester.tap(undoBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1)); // 等布局/动画就绪
+      await tester.pumpAndSettle();
+      // ignore: avoid_print
+      print(
+        '[DIAG-B] after undo tap: undoDisabled=${_isUndoButtonDisabled(tester)} '
+        'title=${_fieldText(tester, _kFieldTitle)} '
+        'body=${_fieldText(tester, _kFieldBody)}',
+      );
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        editedTitle,
+        reason: 'after 1st undo (revert body) title stays edited',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        originalBody,
+        reason: 'after 1st undo (revert body) body restored',
+      );
 
-        // --- 撤销第 2 次（AppBar 按钮）：回退“改标题”那一步 ---
-        await tester.tap(find.byKey(_kFieldTitle));
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.ensureVisible(undoBtn);
-        await tester.pumpAndSettle();
-        await tester.tap(undoBtn, warnIfMissed: false);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1)); // 等布局/动画就绪
-        await tester.pumpAndSettle();
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          originalTitle,
-          reason: 'after 2nd undo (revert title) title restored',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          originalBody,
-          reason: 'after 2nd undo body stays restored',
-        );
+      // --- 撤销第 2 次（AppBar 按钮）：回退“改标题”那一步 ---
+      await tester.tap(find.byKey(_kFieldTitle));
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.ensureVisible(undoBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(undoBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1)); // 等布局/动画就绪
+      await tester.pumpAndSettle();
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        originalTitle,
+        reason: 'after 2nd undo (revert title) title restored',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        originalBody,
+        reason: 'after 2nd undo body stays restored',
+      );
 
-        // --- 重做第 1 次（AppBar 按钮）：恢复“改标题”那一步 ---
-        await tester.tap(find.byKey(_kFieldTitle));
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        final redoBtn = find.byKey(const Key('ui-note-button-redo'));
-        await tester.ensureVisible(redoBtn);
-        await tester.pumpAndSettle();
-        await tester.tap(redoBtn, warnIfMissed: false);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pumpAndSettle();
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          editedTitle,
-          reason: 'after 1st redo title restored to edited',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          originalBody,
-          reason: 'after 1st redo body stays restored',
-        );
+      // --- 重做第 1 次（AppBar 按钮）：恢复“改标题”那一步 ---
+      await tester.tap(find.byKey(_kFieldTitle));
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      final redoBtn = find.byKey(const Key('ui-note-button-redo'));
+      await tester.ensureVisible(redoBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(redoBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        editedTitle,
+        reason: 'after 1st redo title restored to edited',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        originalBody,
+        reason: 'after 1st redo body stays restored',
+      );
 
-        // --- 重做第 2 次（AppBar 按钮）：恢复“改正文”那一步 ---
-        await tester.tap(find.byKey(_kFieldTitle));
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.ensureVisible(redoBtn);
-        await tester.pumpAndSettle();
-        await tester.tap(redoBtn, warnIfMissed: false);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pumpAndSettle();
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          editedTitle,
-          reason: 'after 2nd redo title stays edited',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          editedBody,
-          reason: 'after 2nd redo body restored to edited',
-        );
+      // --- 重做第 2 次（AppBar 按钮）：恢复“改正文”那一步 ---
+      await tester.tap(find.byKey(_kFieldTitle));
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.ensureVisible(redoBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(redoBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        editedTitle,
+        reason: 'after 2nd redo title stays edited',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        editedBody,
+        reason: 'after 2nd redo body restored to edited',
+      );
 
-        // --- 再撤销 2 次回到全原始（键盘，验证多步键盘路径）---
-        await tester.tap(find.byKey(_kFieldTitle));
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await _sendUndoCombo(tester);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pumpAndSettle();
-        await _sendUndoCombo(tester);
-        await tester.pumpAndSettle();
-        await _settle(tester);
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pumpAndSettle();
-        expect(
-          _fieldText(tester, _kFieldTitle),
-          originalTitle,
-          reason: 'Ctrl+Z x2 returns title to original',
-        );
-        expect(
-          _fieldText(tester, _kFieldBody),
-          originalBody,
-          reason: 'Ctrl+Z x2 returns body to original',
-        );
+      // --- 再撤销 2 次回到全原始（键盘，验证多步键盘路径）---
+      await tester.tap(find.byKey(_kFieldTitle));
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await _sendUndoCombo(tester);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await _sendUndoCombo(tester);
+      await tester.pumpAndSettle();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(
+        _fieldText(tester, _kFieldTitle),
+        originalTitle,
+        reason: 'Ctrl+Z x2 returns title to original',
+      );
+      expect(
+        _fieldText(tester, _kFieldBody),
+        originalBody,
+        reason: 'Ctrl+Z x2 returns body to original',
+      );
 
-        await _popTopRoute(tester); // 自动保存并退出
-        await _waitFor(tester, () => _isHome(tester));
-        await _settle(tester);
-        await _deleteNoteByTitle(tester, title);
-      },
-    );
+      await _popTopRoute(tester); // 自动保存并退出
+      await _waitFor(tester, () => _isHome(tester));
+      await _settle(tester);
+      await _deleteNoteByTitle(tester, title);
+    });
 
     testWidgets(
       'undo: redo stack cleared after a fresh edit; preview disables controls',
@@ -390,11 +393,7 @@ Future<void> _backToHome(WidgetTester tester) async {
   }
 }
 
-Future<void> _createNote(
-  WidgetTester tester,
-  String title,
-  String body,
-) async {
+Future<void> _createNote(WidgetTester tester, String title, String body) async {
   await _backToHome(tester);
   expect(
     find.byKey(_kFabNewNote),
@@ -483,8 +482,11 @@ Future<void> _waitForFirstScreen(WidgetTester tester) async {
 Future<void> _ensureVaultReady(WidgetTester tester) async {
   if (tester.any(find.byKey(_kPassphrase))) return;
   final fields = find.byType(EditableText);
-  expect(fields, findsNWidgets(2),
-      reason: 'Unexpected first screen: expected login or set-passphrase');
+  expect(
+    fields,
+    findsNWidgets(2),
+    reason: 'Unexpected first screen: expected login or set-passphrase',
+  );
   await tester.enterText(fields.at(0), 'hello.1111');
   await tester.enterText(fields.at(1), 'hello.1111');
   await tester.pumpAndSettle();
@@ -494,10 +496,7 @@ Future<void> _ensureVaultReady(WidgetTester tester) async {
   await _settle(tester);
 }
 
-Future<void> _waitFor(
-  WidgetTester tester,
-  bool Function() condition,
-) async {
+Future<void> _waitFor(WidgetTester tester, bool Function() condition) async {
   const maxAttempts = 100;
   for (var i = 0; i < maxAttempts; i++) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -542,7 +541,10 @@ bool _isRedoButtonDisabled(WidgetTester tester) {
 
 /// Sends a Ctrl+Z key combo (undo) via the page-level Focus.onKeyEvent path.
 Future<void> _sendUndoCombo(WidgetTester tester) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.control, platform: 'windows');
+  await tester.sendKeyDownEvent(
+    LogicalKeyboardKey.control,
+    platform: 'windows',
+  );
   await tester.pumpAndSettle();
   await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
   await tester.pumpAndSettle();

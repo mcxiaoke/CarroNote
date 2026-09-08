@@ -199,6 +199,7 @@ Future<int> main() async {
       stdout.writeln('[build_info] 已生成 ${out.path}');
     }
   } else {
+    await out.parent.create(recursive: true);
     await out.writeAsString(source);
     stdout.writeln('[build_info] 已生成 ${out.path}');
   }
