@@ -23,9 +23,9 @@ import 'package:safenotes/src/platform/platform_io.dart';
 
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/src/platform/data_dir_override.dart';
 
 /// 保留的重置前快照份数（超出删除最旧）
 const int maxKeptBackups = 5;
@@ -37,8 +37,10 @@ const int maxKeptBackups = 5;
 ///   - safenotes_sync.db      加密数据库文件（笔记 + keyring 元数据）
 ///   - preferences.json       偏好设置 dump（明文，仅 UI/功能开关）
 ///
-/// 应用数据根目录取 getApplicationSupportDirectory()
-/// （Windows=`%APPDATA%\<app>`，macOS=`~/Library/Application Support/<app>`，
+/// 应用数据根目录取 getEffectiveAppSupportPath()
+/// （优先使用 portable mode / 测试覆盖目录，否则回退到
+/// getApplicationSupportDirectory()：Windows=`%APPDATA%\<app>`，
+/// macOS=`~/Library/Application Support/<app>`，
 /// 移动端=应用沙箱数据目录），不随 db 目录（移动端在 databases/ 子目录）漂移。
 ///
 /// 返回创建的备份目录；失败抛异常，调用方应中止重置。
@@ -50,8 +52,8 @@ Future<Directory> backupVaultBeforeReset() async {
   }
 
   final stamp = _timestamp();
-  final appDataRoot = await getApplicationSupportDirectory();
-  final backupRoot = Directory(p.join(appDataRoot.path, 'backups'));
+  final appDataRoot = await getEffectiveAppSupportPath();
+  final backupRoot = Directory(p.join(appDataRoot, 'backups'));
   final target = Directory(p.join(backupRoot.path, 'pre-reset-$stamp'));
   await target.create(recursive: true);
 

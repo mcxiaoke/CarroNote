@@ -205,7 +205,8 @@ class LogWebServer {
 
     for (final ws in _websockets) {
       try {
-        await ws.close();
+        // 200ms 超时：对端不响应 close handshake 时不再挂起关闭流程
+        await ws.close().timeout(const Duration(milliseconds: 200));
       } on Object {
         // 单个连接关闭失败不影响整体
       }

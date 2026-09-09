@@ -40,6 +40,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/src/platform/data_dir_override.dart';
 import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/utils/device_id.dart';
@@ -270,12 +271,8 @@ class SyncService {
       // Web 环境无本地物理沙盒目录，使用内存模式 Journal
       return Journal.inMemory(vaultId: vaultId, deviceId: deviceId);
     }
-    final dir = await getApplicationSupportDirectory();
-    return Journal.open(
-      baseDir: dir.path,
-      vaultId: vaultId,
-      deviceId: deviceId,
-    );
+    final dir = await getEffectiveAppSupportPath();
+    return Journal.open(baseDir: dir, vaultId: vaultId, deviceId: deviceId);
   }
 
   /// 启动自检：报告上次运行中未完成的两阶段操作（设计 §3.4）
@@ -386,7 +383,12 @@ class SyncService {
     _closing = true;
     _autoSyncTimer?.cancel();
     _autoSyncFailureRetried = false; // P3-b：清理重试状态
-    await waitForSyncCompletion();
+    // 关窗加速：在途同步只给 500ms 收尾，不再死等（原默认 10s）。
+    // 被强断的同步由 journal 崩溃恢复兜底，重启后重放补同步，不损坏数据。
+    await waitForSyncCompletion(timeout: const Duration(milliseconds: 500));
+    if (_syncInProgress) {
+      Log.sync.w('dispose: 在途同步未在 500ms 内完成，已强制关闭（重启后自动补同步）');
+    }
     // 先关 journal（内部会 flush 未落盘的缓冲），再关后端
     await _closeJournal();
     await _backend?.close();

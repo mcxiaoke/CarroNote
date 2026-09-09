@@ -68,7 +68,10 @@ class _AppWindowListener with WindowListener {
       if (elapsed > const Duration(seconds: 1)) {
         Log.app.w('窗口关闭前清理耗时较长: ${elapsed.inMilliseconds}ms');
       }
-      await windowManager.destroy();
+      // 防止点X关闭窗口后鼠标显示沙漏繁忙
+      // await windowManager.destroy();
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
     }
   }
 }
