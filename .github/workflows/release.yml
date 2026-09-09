@@ -132,10 +132,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header --output CHANGELOG_LATEST.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -175,5 +186,5 @@ jobs:
           else
             gh release create "v${VERSION}" release-assets/* \
               --title "CarroNote v${VERSION}" \
-              --notes-file CHANGELOG.md
+              --notes-file "${{ steps.git-cliff.outputs.changelog }}"
           fi
