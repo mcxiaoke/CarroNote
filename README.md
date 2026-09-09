@@ -20,6 +20,7 @@ This project is a fork of the upstream [keshav-space/safenotes](https://github.c
 - Brute-force protection, inactivity auto-lock guard
 - Arctic Nord light/dark theme, list/grid views, colored notes
 - Encrypted backup export/import (seamless migration to a new device)
+- Multi-language UI (Simplified & Traditional Chinese included)
 
 **New capabilities (this fork)**
 - End-to-end encrypted sync: **MK + dataKey two-layer key hierarchy**, password change in O(1), atomic
@@ -27,6 +28,10 @@ This project is a fork of the upstream [keshav-space/safenotes](https://github.c
 - Content-addressable (content hash) storage with natural deduplication; soft-delete / tombstone sync
 - Multi-device sync + LWW conflict resolution + historical version retention
 - Sync diagnostics page, sync status visualization
+- Markdown editor with live preview
+- Note tags, pinning, and per-note lock
+- Customizable theme seed color
+- Cross-platform: Windows / Android / iOS / Web
 
 ---
 
