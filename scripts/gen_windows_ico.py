@@ -27,6 +27,11 @@ import os
 import struct
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 try:
     from PIL import Image
 except ImportError:
@@ -119,15 +124,28 @@ def main():
     img = Image.open(args.input).convert("RGBA")
     w, h = img.size
     if w != h:
-        sys.stderr.write("错误：输入必须是正方形，当前为 %dx%d\n" % (w, h))
-        sys.exit(1)
+        side = min(w, h)
+        left = (w - side) // 2
+        top = (h - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+        sys.stderr.write(f"提示：输入不是正方形 ({w}x{h})，已自动居中裁剪为 {side}x{side}。\n")
+
     if min(w, h) < MIN_RECOMMENDED:
         sys.stderr.write(
             "警告：输入较短边为 %dpx（建议 >= %d），输出 256 尺寸将被放大，可能发虚。\n"
             % (min(w, h), MIN_RECOMMENDED))
 
-    out_path = args.output or (os.path.splitext(args.input)[0] + ".ico")
-    out_path = os.path.abspath(out_path)
+    if args.output:
+        out_path = os.path.abspath(args.output)
+        if os.path.isdir(out_path) or args.output.endswith(("\\", "/")):
+            base_name = os.path.splitext(os.path.basename(args.input))[0] + ".ico"
+            out_path = os.path.join(out_path, base_name)
+        elif not out_path.lower().endswith(".ico"):
+            out_path += ".ico"
+    else:
+        out_path = os.path.abspath(os.path.splitext(args.input)[0] + ".ico")
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     data = build_ico(img, sizes)
     with open(out_path, "wb") as fp:
