@@ -132,27 +132,28 @@ def make_release():
     generate_build_info()
     run("flutter clean && flutter pub get")
 
-    # ① Android 分 ABI APK（体积最小，GitHub Release 首选）
+    # ① Android 分 ABI APK（默认仅保留 arm64-v8a，其余注释）
     run(
         "flutter build apk --release --split-per-abi "
-        "--target-platform android-arm,android-arm64,android-x64"
+        "--target-platform android-arm64"
+        # "--target-platform android-arm,android-arm64,android-x64"
     )
-    copy_apk("app-x86_64-release.apk", f"CarroNote-{version}-x86_64.apk", github)
+    # copy_apk("app-x86_64-release.apk", f"CarroNote-{version}-x86_64.apk", github)
     copy_apk("app-arm64-v8a-release.apk", f"CarroNote-{version}-arm64-v8a.apk", github)
-    copy_apk("app-armeabi-v7a-release.apk", f"CarroNote-{version}-armeabi-v7a.apk", github)
+    # copy_apk("app-armeabi-v7a-release.apk", f"CarroNote-{version}-armeabi-v7a.apk", github)
     copy_apk("output-metadata.json", f"metadata-{version}-split-per-abi.json", github)
 
-    # ② Android fat APK（单包兼容所有 ABI，方便侧载）
-    run("flutter build apk --release")
-    copy_apk("app-release.apk", f"CarroNote-{version}-all.apk", github)
-    copy_apk("output-metadata.json", f"metadata-{version}-all.json", github)
+    # ② Android fat APK（单包兼容所有 ABI，方便侧载）- 默认不构建
+    # run("flutter build apk --release")
+    # copy_apk("app-release.apk", f"CarroNote-{version}-all.apk", github)
+    # copy_apk("output-metadata.json", f"metadata-{version}-all.json", github)
 
     # ③ Windows desktop（整目录打包 zip，单 exe 缺 DLL 无法运行）
     run("flutter build windows --release")
     zip_windows(github, version)
 
     # ④ 汇总压缩包 + 校验清单
-    zip_android(github, version)
+    # zip_android(github, version)
     write_sha256(github)
 
     print(f"\n== Release 产物已就绪：{github} ==")
@@ -161,8 +162,8 @@ def make_release():
             print(f"  - {f.name}（{f.stat().st_size / 1024 / 1024:.1f} MB）")
     print(
         "\n发布命令示例：\n"
-        f"  gh release create v{version} {github}/*.zip {github}/SHA256SUMS.txt \\\n"
-        f"    --title 'CarroNote v{version}' --notes '...'"
+        f"  gh release create v{version} {github}/*.zip {github}/*.apk {github}/SHA256SUMS.txt \\\n"
+        f"    -R mcxiaoke/CarroNote --title 'CarroNote v{version}' --notes '...'"
     )
 
 
