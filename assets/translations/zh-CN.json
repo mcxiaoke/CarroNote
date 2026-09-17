@@ -533,5 +533,20 @@
   "Saved": "已保存",
   "No changes": "无改动",
   "Failed to save": "保存失败",
-  "Empty note": "空笔记"
+  "Empty note": "空笔记",
+  "Authentication": "身份验证",
+  "Backups include note contents and deleted status, but not tags, pinned status, colors, or version history.": "备份包含笔记正文与删除状态，不包含标签、置顶、颜色及历史版本快照。",
+  "Failed to clear deleted notes": "清空回收站失败",
+  "Failed to compute diff: {error}": "计算版本差异失败: {error}",
+  "Failed to delete note": "删除笔记失败",
+  "Failed to enable PIN lock": "启用 PIN 码锁失败",
+  "Failed to restore note": "恢复笔记失败",
+  "Keyring ledger corrupted: {error}": "密钥账本损坏: {error}",
+  "Login using your biometric credential": "使用生物识别凭据登录",
+  "Not supported; concurrent edits may overwrite each other": "不支持；并发编辑可能会相互覆盖",
+  "Privacy": "隐私",
+  "Supported": "已支持",
+  "Sync service is closing; cannot switch backend.": "同步服务正在关闭，无法切换后端。",
+  "Transfer": "备份迁移",
+  "WebDAV ETag": "WebDAV ETag"
 }

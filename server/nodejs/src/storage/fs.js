@@ -24,6 +24,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import {
   Vault, Storage, PutOptions, validateHash, validateVaultPath, computeETag,
   ErrNotFound, ErrInvalidHash, ErrPreconditionFailed, ErrInvalidPath, ErrExists, ErrConflict,
@@ -404,7 +405,8 @@ function resourceEntry(rel, fi, etag) {
 // 使用同步 API 避免 promise 链问题（fsync 在 Windows 上可能不稳定）。
 async function atomicWrite(filePath, data) {
   const dir = path.dirname(filePath);
-  const tmpPath = filePath + '.tmp';
+  // 修复 C-3：临时文件名加随机后缀，防止并发写入同名文件时互相覆盖/截断
+  const tmpPath = `${filePath}.${crypto.randomBytes(8).toString('hex')}.tmp`;
   await fs.promises.mkdir(dir, { recursive: true });
   try {
     // 写入 + fsync + 关闭（用同步 API 保证 fsync 执行）

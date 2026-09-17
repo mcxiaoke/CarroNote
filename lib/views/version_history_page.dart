@@ -167,7 +167,12 @@ class _VersionHistoryPageState extends State<VersionHistoryPage> {
         setState(() => _isLoading = false);
       }
       if (mounted) {
-        showErrorToast(context, 'Failed to compute diff: $e'.tr());
+        showErrorToast(
+          context,
+          'Failed to compute diff: {error}'.tr(
+            namedArgs: {'error': e.toString()},
+          ),
+        );
       }
     }
   }

@@ -73,6 +73,7 @@ Future<void> main() async {
     (error, stack) {
       // Zone 级未捕获异常：走到这里说明没有任何 try/catch 处理它
       Log.app.f('未捕获的异步异常', error: error, stackTrace: stack);
+      AppLogFile.flush();
       if (kDebugMode) throw error; // debug 重抛，让问题暴露
     },
   );
@@ -122,7 +123,7 @@ Future<void> _initLogging() async {
   Log.app.i('日志目录: ${AppLogFile.dirPath ?? "不可用（仅内存 + 控制台）"}');
 }
 
-/// 安装全局错误钩子，确保所有 Exception / Error 都进日志
+/// 安装全局错误钩子，确保所有 Exception / Error 都进日志并落盘
 void _installGlobalErrorHandlers() {
   // Flutter framework 内部错误（build / layout / paint 阶段等）
   final previousOnError = FlutterError.onError;
@@ -132,6 +133,7 @@ void _installGlobalErrorHandlers() {
       error: details.exception,
       stackTrace: details.stack,
     );
+    AppLogFile.flush();
     // 保留默认行为（debug 期红屏 / 控制台输出）
     previousOnError?.call(details);
   };
@@ -139,7 +141,77 @@ void _installGlobalErrorHandlers() {
   // 平台层 / engine 未捕获错误（返回 true 表示已处理，避免进程崩溃）
   PlatformDispatcher.instance.onError = (error, stack) {
     Log.app.f('平台层未捕获异常', error: error, stackTrace: stack);
+    AppLogFile.flush();
     return !kDebugMode; // debug 返回 false 让引擎继续默认处理;
+  };
+
+  // 自定义 UI 渲染崩溃兜底，避免 release 模式静默灰屏卡死
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    Log.app.e(
+      'UI 渲染异常（捕获于 ErrorWidget）',
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    AppLogFile.flush();
+    if (kDebugMode) {
+      return ErrorWidget(details.exception);
+    }
+    return Material(
+      color: const Color(0xFF1E1E2E),
+      child: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 54,
+                  color: Color(0xFFF38BA8),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '应用运行遇到异常',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    details.exceptionAsString(),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      color: Color(0xFFCDD6F4),
+                    ),
+                    maxLines: 8,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '详细日志已保存至：\n${AppLogFile.dirPath ?? "应用日志目录"}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFA6ADC8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   };
 }
 
@@ -400,6 +472,7 @@ class _SafeNotesAppState extends State<SafeNotesApp>
 
     return SessionTimeoutManager(
       sessionConfig: _cachedSessionConfig!,
+      sessionStateStream: sessionStateStream.stream,
       child: App(
         sessionStateStream: sessionStateStream,
         navigatorKey: navigatorKey,

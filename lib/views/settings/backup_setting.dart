@@ -172,9 +172,37 @@ class BackupSettingState extends State<BackupSetting> {
             await showImportDialog(context);
           },
         ),
+        _transferScopeNotice(),
       ]),
       const SizedBox(height: 12),
     ]);
+  }
+
+  Widget _transferScopeNotice() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            LucideIcons.info,
+            size: 15,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Backups include note contents and deleted status, but not tags, pinned status, colors, or version history.'
+                  .tr(),
+              style: TextStyle(
+                fontSize: AppTextSize.s12,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _encryptedBadge() {

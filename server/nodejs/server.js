@@ -98,22 +98,23 @@ async function handle(req, res) {
       return;
     }
 
-    // 4. 速率限制检查（认证失败超限的 IP 直接拒绝）
+    // 4. 速率限制与认证：
+    // 修复 C-2 ——「正确凭证即白名单」。先校验 token：
+    //   - token 正确：直接放行并清除失败计数，被限速的合法用户立即可恢复（无需等窗口过期）；
+    //   - token 错误：再判断是否已被限速（防暴力枚举），命中则 429，否则记录一次失败并返回 401。
     const clientIP = extractIP(req);
-    if (authFail.isRateLimited(clientIP, cfg.rateLimit)) {
-      res.writeHead(429, { 'Retry-After': '60' });
-      res.end('Too Many Requests (auth failure rate limit)');
-      return;
-    }
-
-    // 5. 认证
     if (!checkToken(req, cfg.token)) {
+      if (authFail.isRateLimited(clientIP, cfg.rateLimit)) {
+        res.writeHead(429, { 'Retry-After': '60' });
+        res.end('Too Many Requests (auth failure rate limit)');
+        return;
+      }
       authFail.recordFailure(clientIP);
       res.writeHead(401, { 'WWW-Authenticate': 'Bearer' });
       res.end('Unauthorized');
       return;
     }
-    // 认证成功：清除失败计数
+    // 认证成功：清除失败计数（限速自愈）
     authFail.resetFailures(clientIP);
 
     // 6. 路由分发

@@ -533,5 +533,20 @@
   "Saved": "Saved",
   "No changes": "No changes",
   "Failed to save": "Failed to save",
-  "Empty note": "Empty note"
+  "Empty note": "Empty note",
+  "Authentication": "Authentication",
+  "Backups include note contents and deleted status, but not tags, pinned status, colors, or version history.": "Backups include note contents and deleted status, but not tags, pinned status, colors, or version history.",
+  "Failed to clear deleted notes": "Failed to clear deleted notes",
+  "Failed to compute diff: {error}": "Failed to compute diff: {error}",
+  "Failed to delete note": "Failed to delete note",
+  "Failed to enable PIN lock": "Failed to enable PIN lock",
+  "Failed to restore note": "Failed to restore note",
+  "Keyring ledger corrupted: {error}": "Keyring ledger corrupted: {error}",
+  "Login using your biometric credential": "Login using your biometric credential",
+  "Not supported; concurrent edits may overwrite each other": "Not supported; concurrent edits may overwrite each other",
+  "Privacy": "Privacy",
+  "Supported": "Supported",
+  "Sync service is closing; cannot switch backend.": "Sync service is closing; cannot switch backend.",
+  "Transfer": "Transfer",
+  "WebDAV ETag": "WebDAV ETag"
 }

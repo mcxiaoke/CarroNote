@@ -98,8 +98,9 @@ function loadConfigFile(cfg, file) {
   try {
     data = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (err) {
-    process.stderr.write(`warning: load config file failed: ${err.message}\n`);
-    return;
+    // 修复 S-1：配置文件加载失败属致命错误，必须非零退出，严禁静默回退到弱默认 token 导致鉴权被绕过。
+    process.stderr.write(`fatal: load config file "${file}" failed: ${err.message}\n`);
+    process.exit(1);
   }
   if (data.port) cfg.port = data.port;
   if (data.dataDir) cfg.dataDir = data.dataDir;

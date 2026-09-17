@@ -259,9 +259,10 @@ class _HybridOutput extends LogOutput {
   void output(OutputEvent event) {
     final level = _mapLevel(event.level);
     final fullText = event.lines.join('\n');
+    final isUrgent = level == AppLogLevel.error || level == AppLogLevel.fatal;
 
-    // 1) 文件写入（整条含堆栈，便于 grep 上下文）
-    AppLogFile.writeLine(fullText);
+    // 1) 文件写入（整条含堆栈，便于 grep 上下文；错误与致命级别立即 flush）
+    AppLogFile.writeLine(fullText, urgent: isUrgent);
 
     // 2) 内存缓冲：拆出 message / error / stackTrace 三段
     //    格式由 _AppLogPrinter 保证：第一行是主消息，
@@ -450,12 +451,16 @@ class AppLogFile {
       name.startsWith(_filePrefix) && name.endsWith(_fileSuffix);
 
   /// 写入一行到当前日志文件（由 [_HybridOutput] 调用）
-  static void writeLine(String line) {
+  static void writeLine(String line, {bool urgent = false}) {
     if (_dirPath == null) return;
     try {
       _ensureSink();
       _currentSink?.writeln(line);
-      _maybeFlush();
+      if (urgent) {
+        _currentSink?.flush();
+      } else {
+        _maybeFlush();
+      }
     } on Object {
       // 文件写入失败静默忽略，不影响主流程（避免日志系统自身把 app 拖垮）
     }
@@ -602,7 +607,7 @@ class AppLog {
 
   /// 按构建模式与 dev 模式刷新日志输出级别，可随时调用（即时生效）：
   ///   - debug 构建或 dev 模式 → trace（全量输出，与 debug build 一致）
-  ///   - 非 debug 构建（release/profile）→ warning（默认只记录 warn 及以上）
+  ///   - 非 debug 构建（release/profile）→ info（记录 info/warn/error/fatal，保留关键生命周期与错误上下文）
   ///
   /// 启动早期（SharedPreferences 未就绪）dev 模式回调读到 false，保持默认级别；
   /// 偏好加载完成或 dev 模式被开启后由 App 层再次调用本方法。
@@ -610,7 +615,7 @@ class AppLog {
   /// 若已通过 [setLevel] 手动覆盖级别，则忽略自动策略（保持手动值）。
   static void refreshLevel() {
     if (_manualOverride != null) return;
-    _appLogFilter.level = isDevModeActive ? Level.trace : Level.warning;
+    _appLogFilter.level = isDevModeActive ? Level.trace : Level.info;
   }
 
   /// 手动设置日志输出级别（集成测试等场景用于压噪）。

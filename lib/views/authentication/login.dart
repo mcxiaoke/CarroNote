@@ -454,7 +454,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
       final database = NotesDatabase.instance;
       final isInitialized = await Keyring.isInitialized(database);
 
-      // 1. 本地 keyring 解锁(优先)
+      // 1. 本地 keyring 解锁（本地已初始化场景）
       if (isInitialized) {
         final result = await SyncService.instance.initKeyringFromPassword(
           password: passphrase,
@@ -464,11 +464,12 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           await _onLoginSuccess(passphrase);
           return true;
         }
-        // result.success == false:密码错误或 keyring 损坏,继续尝试远端
+        // 本地已有库且密码验证失败：直接提示密码错误，绝不发起网络请求
+        _onLoginFailure();
+        return false;
       }
 
-      // 2. 仅在启用同步时尝试远端验证
-      //    避免无条件触发远端(隐私泄露 + 离线暴力放大,评审 kk27c P1)
+      // 2. 本地尚未初始化（新设备冷安装接入远端 Vault 场景）：且配置了同步，尝试远端验证
       await SyncConfig.init();
       if (SyncConfig.isSyncReady) {
         final remoteResult = await _tryVerifyPassphraseViaRemote(passphrase);
