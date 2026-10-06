@@ -25,6 +25,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     // independent of the window title.
     HWND existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", nullptr);
     if (existing != nullptr) {
+      // R2: second instance wakes the existing window. When the window was
+      // hidden to tray (SW_HIDE), SetForegroundWindow alone has no effect,
+      // so show it first, then restore if minimized.
+      if (!::IsWindowVisible(existing)) {
+        ::ShowWindow(existing, SW_SHOW);
+      }
       if (::IsIconic(existing)) {
         ::ShowWindow(existing, SW_RESTORE);
       }

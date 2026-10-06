@@ -27,12 +27,16 @@ class GeneralSettingsPage extends StatefulWidget {
 
 class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
   late bool _isAutoRotate;
+  late bool _closeToTray;
+  late bool _minimizeToTray;
   late String _languageValue;
 
   @override
   void initState() {
     super.initState();
     _isAutoRotate = PreferencesStorage.isAutoRotate;
+    _closeToTray = PreferencesStorage.closeToTray;
+    _minimizeToTray = PreferencesStorage.minimizeToTray;
   }
 
   @override
@@ -81,6 +85,32 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 setState(() => _isAutoRotate = v);
               },
             ),
+          if (isDesktopPlatform) ...[
+            shadSwitchTile(
+              context,
+              icon: LucideIcons.minimize2,
+              title: 'Minimize to Tray'.tr(),
+              description: 'Hide window to system tray when minimized.'.tr(),
+              value: _minimizeToTray,
+              onChanged: (v) {
+                PreferencesStorage.setMinimizeToTray(v);
+                setState(() => _minimizeToTray = v);
+              },
+            ),
+            shadSwitchTile(
+              context,
+              icon: LucideIcons.panelBottomClose,
+              title: 'Close to Tray'.tr(),
+              description:
+                  'Hide window to system tray instead of exiting when closing.'
+                      .tr(),
+              value: _closeToTray,
+              onChanged: (v) {
+                PreferencesStorage.setCloseToTray(v);
+                setState(() => _closeToTray = v);
+              },
+            ),
+          ],
           if (DevMode.isActive)
             KeyedSubtree(
               key: const Key('ui-setting-switch-devmode'),

@@ -71,6 +71,8 @@ class PreferencesStorage {
   static const _keyDevMode = 'devModeEnabled';
   static const _keyIsSidebarCollapsed = 'isSidebarCollapsed';
   static const _keyManagedTags = 'managedTags';
+  static const _keyCloseToTray = 'closeToTray';
+  static const _keyMinimizeToTray = 'minimizeToTray';
 
   /// 抽屉「标签」组的默认标签。
   ///
@@ -643,6 +645,24 @@ class PreferencesStorage {
     final old = _preferences?.getBool(_keyIsAutoRotate);
     await _preferences?.setBool(_keyIsAutoRotate, flag);
     _logPrefChange('屏幕自动旋转', old, flag);
+  }
+
+  /// 关闭按钮（X）是否隐藏到托盘而不是退出（桌面端）。
+  static bool get closeToTray =>
+      _preferences?.getBool(_keyCloseToTray) ?? false;
+  static Future<void> setCloseToTray(bool flag) async {
+    final old = _preferences?.getBool(_keyCloseToTray);
+    await _preferences?.setBool(_keyCloseToTray, flag);
+    _logPrefChange('关闭按钮到托盘', old, flag);
+  }
+
+  /// 最小化窗口时是否隐藏到托盘（桌面端）。
+  static bool get minimizeToTray =>
+      _preferences?.getBool(_keyMinimizeToTray) ?? false;
+  static Future<void> setMinimizeToTray(bool flag) async {
+    final old = _preferences?.getBool(_keyMinimizeToTray);
+    await _preferences?.setBool(_keyMinimizeToTray, flag);
+    _logPrefChange('最小化到托盘', old, flag);
   }
 
   static int get noOfLoginsBeforeNextPassphraseRememberChallenge => 5;
