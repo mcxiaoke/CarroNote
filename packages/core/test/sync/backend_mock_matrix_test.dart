@@ -507,4 +507,184 @@ void main() {
       },
     );
   });
+
+  group('WebDavBackend 坚果云 If-Match 412 兼容 (MockClient)', () {
+    final manifestBytes = utf8.encode('{"schemaVersion":5,"items":[]}');
+
+    WebDavBackend makeBackend(
+      String baseUrl,
+      Future<http.Response> Function(http.Request) onMock,
+    ) {
+      return WebDavBackend(
+        baseUrl: baseUrl,
+        username: 'u',
+        password: 'p',
+        client: MockClient(onMock),
+      );
+    }
+
+    test('jianguoyun: 412 且远端未变化时降级为无条件 PUT', () async {
+      final putHeaders = <Map<String, String>>[];
+      var putManifestCalls = 0;
+      final backend = makeBackend('https://dav.jianguoyun.com/dav/', (
+        req,
+      ) async {
+        if (req.method == 'MKCOL') return http.Response('', 201);
+        if (req.method == 'GET' && req.url.path.endsWith('/manifest.json')) {
+          return http.Response.bytes(
+            manifestBytes,
+            200,
+            headers: {'etag': '"etag-A"'},
+          );
+        }
+        if (req.method == 'PUT' && req.url.path.endsWith('/manifest.json')) {
+          putManifestCalls++;
+          putHeaders.add(req.headers);
+          if (putManifestCalls == 1) {
+            return http.Response('Precondition failed', 412);
+          }
+          return http.Response('', 200, headers: {'etag': '"etag-B"'});
+        }
+        return http.Response('', 200);
+      });
+      await backend.init();
+      final remote = await backend.getManifest();
+      expect(remote.etag, 'etag-A');
+
+      final etag = await backend.putManifest(
+        Uint8List.fromList([9, 9, 9]),
+        remote.etag,
+      );
+
+      expect(etag, 'etag-B');
+      expect(putManifestCalls, 2, reason: '第一次 412 后应降级为第二次无条件 PUT');
+      expect(putHeaders[0]['If-Match'], '"etag-A"');
+      expect(
+        putHeaders[1].containsKey('If-Match'),
+        isFalse,
+        reason: '降级 PUT 不应再带 If-Match',
+      );
+    });
+
+    test('jianguoyun: 412 且远端已变化时按真冲突抛 ConflictException', () async {
+      var getManifestCalls = 0;
+      var putManifestCalls = 0;
+      final backend = makeBackend('https://dav.jianguoyun.com/dav/', (
+        req,
+      ) async {
+        if (req.method == 'MKCOL') return http.Response('', 201);
+        if (req.method == 'GET' && req.url.path.endsWith('/manifest.json')) {
+          getManifestCalls++;
+          return http.Response.bytes(
+            utf8.encode('{"round":$getManifestCalls}'),
+            200,
+            headers: {'etag': '"etag-$getManifestCalls"'},
+          );
+        }
+        if (req.method == 'PUT' && req.url.path.endsWith('/manifest.json')) {
+          putManifestCalls++;
+          return http.Response('Precondition failed', 412);
+        }
+        return http.Response('', 200);
+      });
+      await backend.init();
+      final remote = await backend.getManifest(); // 基线 round=1
+
+      await expectLater(
+        backend.putManifest(Uint8List.fromList([1]), remote.etag),
+        throwsA(isA<ConflictException>()),
+      );
+
+      expect(getManifestCalls, 3, reason: 'init 探测 1 次 + 基线 1 次 + 412 后验证 1 次');
+      expect(putManifestCalls, 1, reason: '真冲突不降级，不应有第二次 PUT');
+    });
+
+    test('jianguoyun: 409 不降级，直接抛 ConflictException', () async {
+      var getManifestCalls = 0;
+      final backend = makeBackend('https://dav.jianguoyun.com/dav/', (
+        req,
+      ) async {
+        if (req.method == 'MKCOL') return http.Response('', 201);
+        if (req.method == 'GET' && req.url.path.endsWith('/manifest.json')) {
+          getManifestCalls++;
+          return http.Response.bytes(
+            manifestBytes,
+            200,
+            headers: {'etag': '"etag-A"'},
+          );
+        }
+        if (req.method == 'PUT') return http.Response('Conflict', 409);
+        return http.Response('', 200);
+      });
+      await backend.init();
+      final remote = await backend.getManifest();
+
+      await expectLater(
+        backend.putManifest(Uint8List.fromList([1]), remote.etag),
+        throwsA(isA<ConflictException>()),
+      );
+      expect(getManifestCalls, 2, reason: 'init 探测 1 次 + 基线 1 次，409 无验证 GET');
+    });
+
+    test('nutstore.net 国际版同族域名：412 远端未变时同样降级', () async {
+      var putManifestCalls = 0;
+      final backend = makeBackend('https://dav.nutstore.net/dav', (req) async {
+        if (req.method == 'MKCOL') return http.Response('', 201);
+        if (req.method == 'GET' && req.url.path.endsWith('/manifest.json')) {
+          return http.Response.bytes(
+            manifestBytes,
+            200,
+            headers: {'etag': '"etag-A"'},
+          );
+        }
+        if (req.method == 'PUT') {
+          putManifestCalls++;
+          if (putManifestCalls == 1) {
+            return http.Response('Precondition failed', 412);
+          }
+          return http.Response('', 200);
+        }
+        return http.Response('', 200);
+      });
+      await backend.init();
+      final remote = await backend.getManifest();
+
+      final etag = await backend.putManifest(
+        Uint8List.fromList([1]),
+        remote.etag,
+      );
+      expect(etag.isNotEmpty, isTrue);
+      expect(putManifestCalls, 2);
+    });
+
+    test('非坚果云服务: 412 直接抛 ConflictException，不降级不变更行为', () async {
+      var getManifestCalls = 0;
+      var putManifestCalls = 0;
+      final backend = makeBackend('http://127.0.0.1:8080/dav', (req) async {
+        if (req.method == 'MKCOL') return http.Response('', 201);
+        if (req.method == 'GET' && req.url.path.endsWith('/manifest.json')) {
+          getManifestCalls++;
+          return http.Response.bytes(
+            manifestBytes,
+            200,
+            headers: {'etag': '"etag-A"'},
+          );
+        }
+        if (req.method == 'PUT') {
+          putManifestCalls++;
+          return http.Response('Precondition failed', 412);
+        }
+        return http.Response('', 200);
+      });
+      await backend.init();
+      final remote = await backend.getManifest();
+
+      await expectLater(
+        backend.putManifest(Uint8List.fromList([1]), remote.etag),
+        throwsA(isA<ConflictException>()),
+      );
+      expect(getManifestCalls, 2, reason: '标准服务不应有 412 后的验证 GET');
+      expect(putManifestCalls, 1, reason: '标准服务不应降级重试 PUT');
+    });
+  });
 }

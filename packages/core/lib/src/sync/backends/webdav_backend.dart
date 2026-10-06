@@ -28,9 +28,13 @@
  *   - ETag：服务器返回的版本标识，每次 PUT 后会变化
  *
  * 兼容性：
- *   - 坚果云：✅ 完整支持 If-Match + ETag
- *   - NextCloud / ownCloud：✅ 完整支持
+ *   - NextCloud / ownCloud：✅ 完整支持 If-Match + ETag
  *   - Apache mod_dav：✅ 完整支持
+ *   - 坚果云：⚠️ GET 返回 ETag，但 If-Match 校验与对外 ETag 不一致——
+ *     远端内容未变化时 PUT 仍返回 412（假冲突），乐观锁重试必然失败
+ *     （2026-10-06 实测 dav.jianguoyun.com）。If-None-Match: * 首次上传
+ *     实测可用。对坚果云域名族启用 412 假冲突验证 + 无条件 PUT 降级，
+ *     其他 WebDAV 服务行为不变（见 [_retryNutstorePut]）。
  *   - 如果服务器不返回 ETag，会退化为内容 hash 作为 etag（仍可用，但 If-Match 可能被服务器忽略）
  */
 
@@ -121,6 +125,19 @@ class WebDavBackend implements SyncBackend {
   /// 避免每次同步都打印警告，只在 init 时警告一次。
   bool _etagWarningLogged = false;
 
+  /// 坚果云（Nutstore）服务端判定
+  ///
+  /// 仅对坚果云域名族启用 If-Match 412 降级（见 [_retryNutstorePut]），
+  /// 其他 WebDAV 服务（Nextcloud / Apache 等）行为完全不变。
+  final bool _isNutstoreServer;
+
+  /// 最近一次 getManifest(200) 返回的远端 manifest 密文
+  ///
+  /// 坚果云 412 假冲突验证基线：putManifest 412 时重新 GET 与此基线比较，
+  /// 一致说明远端自本次同步 GET 后未被其他设备修改，412 是坚果云
+  /// If-Match 误报，可安全降级为无条件 PUT（见 [_retryNutstorePut]）。
+  Uint8List? _lastRemoteCiphertext;
+
   WebDavBackend({
     required String baseUrl,
     required this.username,
@@ -128,6 +145,7 @@ class WebDavBackend implements SyncBackend {
     http.Client? client,
   }) : _client = client ?? http.Client(),
        _userBaseUrl = baseUrl,
+       _isNutstoreServer = _isNutstoreHost(baseUrl),
        // 规范化：去掉末尾斜杠，附加固定子目录
        baseUrl = _normalizeAndAppendVault(baseUrl);
 
@@ -313,6 +331,7 @@ class WebDavBackend implements SyncBackend {
 
     if (res.statusCode == 404) {
       // 首次同步：远端无 manifest
+      _lastRemoteCiphertext = Uint8List(0);
       return (ciphertext: Uint8List(0), etag: '');
     }
     if (res.statusCode != 200) {
@@ -340,6 +359,9 @@ class WebDavBackend implements SyncBackend {
     final ciphertext = res.bodyBytes;
     // F-M04：远端 manifest 大小上限，防恶意服务端打爆内存
     checkRemoteReadSize(ciphertext, 'WebDAV manifest', kRemoteManifestMaxBytes);
+
+    // 记录坚果云假冲突验证基线（见 _retryNutstorePut）
+    _lastRemoteCiphertext = ciphertext;
 
     // 服务器未返回 ETag 时，退化为内容 hash 作为 etag
     // 注意：这种情况下 putManifest 的 If-Match 可能被服务器忽略，
@@ -382,6 +404,15 @@ class WebDavBackend implements SyncBackend {
     // 412 Precondition Failed = If-Match 不匹配
     // 409 Conflict = 某些 WebDAV 实现用于 If-None-Match 冲突
     if (res.statusCode == 412 || res.statusCode == 409) {
+      // 坚果云兼容：远端未变化时 If-Match 仍 412（假冲突），先验证远端
+      // 内容是否与本次同步基线一致，一致才降级为无条件 PUT；409 与
+      // If-None-Match 路径（实测可用）不做降级。仅坚果云域名启用。
+      if (res.statusCode == 412 &&
+          _isNutstoreServer &&
+          expectedEtag.isNotEmpty) {
+        final recovered = await _retryNutstorePut(ciphertext, expectedEtag);
+        if (recovered != null) return recovered;
+      }
       throw ConflictException(
         'WebDAV If-Match failed: ${res.statusCode} (expected etag=$expectedEtag)',
       );
@@ -395,6 +426,93 @@ class WebDavBackend implements SyncBackend {
     }
 
     // 服务器返回新 ETag 优先；否则用上传内容的 hash 作为 fallback
+    final newEtag = _normalizeEtag(res.headers['etag']);
+    return newEtag.isNotEmpty ? newEtag : _computeContentEtag(ciphertext);
+  }
+
+  /// 坚果云兼容：If-Match 412 后验证"假冲突"并降级为无条件 PUT
+  ///
+  /// 背景（2026-10-06 诊断快照）：坚果云 GET manifest 返回稳定 ETag，但
+  /// PUT 带 If-Match 一律 412——即使远端内容从未变化，乐观锁重试 3 次
+  /// 全部失败（同步报"乐观锁冲突超过 3 次"）。If-None-Match: * 首次上传
+  /// 实测可用，无需处理。
+  ///
+  /// 处理：重新 GET 与本次同步 GET 到的远端基线（[_lastRemoteCiphertext]）
+  /// 逐字节比较：
+  ///   - 一致 → 假冲突，远端自我方 GET 后无变化，无条件 PUT 覆盖不会
+  ///     丢失远端变更。若其他设备恰在此刻并发写入（窗口为一次 GET 往返），
+  ///     退化为"最后写入胜"，由引擎下一轮 GET-merge-PUT 兜底——与不返回
+  ///     ETag 的服务器同级风险，可接受；
+  ///   - 不一致（含重新 GET 404，manifest 被删除）→ 真冲突，返回 null，
+  ///     由调用方按原逻辑抛 ConflictException 交回引擎重拉合并。
+  ///
+  /// 返回 null 表示无法降级；成功返回新 etag（与 putManifest 约定一致）。
+  Future<String?> _retryNutstorePut(
+    Uint8List ciphertext,
+    String expectedEtag,
+  ) async {
+    final baseline = _lastRemoteCiphertext;
+    if (baseline == null) {
+      Log.sync.w('[WebDAV] 坚果云兼容: 无远端基线可验证，按真冲突处理');
+      return null;
+    }
+    http.Response res;
+    try {
+      res = await _sendHttp(
+        'GET',
+        Uri.parse(_manifestUrl),
+        headers: _authHeaders(),
+      );
+    } on Exception catch (e) {
+      throw BackendUnavailableException('GET manifest network error: $e');
+    }
+    // 远端 manifest 已消失：内容基线不再成立，按真冲突处理
+    if (res.statusCode == 404) {
+      Log.sync.w('[WebDAV] 坚果云兼容: 412 后远端 manifest 已消失，按真冲突处理');
+      return null;
+    }
+    if (res.statusCode != 200) {
+      throw BackendUnavailableException.http(
+        'GET manifest',
+        res.statusCode,
+        res.body,
+      );
+    }
+    final current = res.bodyBytes;
+    checkRemoteReadSize(current, 'WebDAV manifest', kRemoteManifestMaxBytes);
+    if (!_bytesEqual(current, baseline)) {
+      Log.sync.w(
+        '[WebDAV] 坚果云兼容: 412 后远端内容已变化，按真冲突处理 '
+        '(expected etag=$expectedEtag)',
+      );
+      return null;
+    }
+    Log.sync.w(
+      '[WebDAV] 坚果云兼容: If-Match 412 但远端未变化（假冲突），'
+      '降级为无条件 PUT (expected etag=$expectedEtag)',
+    );
+    final headers = {
+      ..._authHeaders(),
+      'Content-Type': 'application/octet-stream',
+    };
+    try {
+      res = await _sendHttp(
+        'PUT',
+        Uri.parse(_manifestUrl),
+        headers: headers,
+        bodyBytes: ciphertext,
+      );
+    } on Exception catch (e) {
+      throw BackendUnavailableException('PUT manifest network error: $e');
+    }
+    // 非 2xx 抛异常，禁止"假成功"（与主路径 F-H07 同理由）
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw BackendUnavailableException.http(
+        'PUT manifest',
+        res.statusCode,
+        res.body,
+      );
+    }
     final newEtag = _normalizeEtag(res.headers['etag']);
     return newEtag.isNotEmpty ? newEtag : _computeContentEtag(ciphertext);
   }
@@ -1102,6 +1220,32 @@ class WebDavBackend implements SyncBackend {
   // ──────────────────────────────────────────────
   // 内部工具
   // ──────────────────────────────────────────────
+
+  /// 坚果云（Nutstore）域名族判定
+  ///
+  /// 国内版 dav.jianguoyun.com 与国际版 dav.nutstore.net 为同一服务端，
+  /// 行为一致，一并覆盖。URL 解析失败时返回 false（走标准路径）。
+  static bool _isNutstoreHost(String userBaseUrl) {
+    try {
+      final host = Uri.parse(userBaseUrl).host.toLowerCase();
+      return host == 'jianguoyun.com' ||
+          host.endsWith('.jianguoyun.com') ||
+          host == 'nutstore.net' ||
+          host.endsWith('.nutstore.net');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// 逐字节比较（坚果云假冲突验证用）
+  static bool _bytesEqual(Uint8List a, Uint8List b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   /// 构造 HTTP Basic Auth 头
   Map<String, String> _authHeaders() {
