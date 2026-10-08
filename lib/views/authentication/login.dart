@@ -31,6 +31,7 @@ import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/scheduled_task.dart';
@@ -192,6 +193,14 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
+          actions: [
+            if (DevMode.isActive)
+              IconButton(
+                icon: const Icon(LucideIcons.bug),
+                tooltip: 'Debug Panel'.tr(),
+                onPressed: () => Navigator.pushNamed(context, '/diagnostics'),
+              ),
+          ],
         ),
         body: CustomScrollView(
           slivers: [
@@ -361,11 +370,11 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     setState(() => _isHidden = !_isHidden);
   }
 
-  /// 页内联错误提示:替代全局 Toast,生命周期绑定本页,
-  /// 路由切换(登录成功进 home)时随页面销毁,无残留。
+  /// 显示错误提示：顶部 SnackBar/Toast，并在本页输入框旁同步更新状态
   void _showError(String message) {
     if (!mounted) return;
     setState(() => _errorMessage = message);
+    showErrorToast(context, message);
   }
 
   /// 清除页内联错误提示(用户重新输入时调用)。
@@ -465,7 +474,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
           return true;
         }
         // 本地已有库且密码验证失败：直接提示密码错误，绝不发起网络请求
-        _onLoginFailure();
+        _onLoginFailure(result.error);
         return false;
       }
 
@@ -500,6 +509,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
       // 3. 密码错误
       _onLoginFailure();
+      return false;
+    } on Object catch (e, st) {
+      Log.auth.e('登录过程发生异常', error: e, stackTrace: st);
+      _showError('Login error: $e');
       return false;
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
@@ -566,10 +579,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     );
   }
 
-  /// 登录失败处理：显示页内联密码错误提示
-  void _onLoginFailure() {
-    Log.auth.w('登录失败：密码错误');
-    _showError('Wrong passphrase!'.tr());
+  /// 登录失败处理：显示错误提示
+  void _onLoginFailure([String? message]) {
+    Log.auth.w('登录失败：密码错误${message != null ? " ($message)" : ""}');
+    _showError(message ?? 'Wrong passphrase!'.tr());
   }
 
   /// 远端验证三态结果(评审 hy3 A7)

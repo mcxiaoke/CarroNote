@@ -1198,7 +1198,7 @@ class SyncService {
   Future<String> exportAllLogsAsText() async {
     final snapshot = getDiagnosticsSnapshot();
     final buffer = StringBuffer();
-    buffer.writeln('=== SafeNotes 同步诊断快照 ===');
+    buffer.writeln('=== CarroNote 同步诊断快照 ===');
     buffer.writeln('导出时间: ${snapshot.captureTime}');
     buffer.writeln('设备 ID: ${snapshot.deviceId ?? "N/A"}');
     buffer.writeln(
@@ -1397,7 +1397,8 @@ class SyncService {
           namedArgs: {'error': '$e'},
         ),
       );
-    } on Exception catch (e) {
+    } on Object catch (e) {
+      Log.sync.e('登录密钥环准备未知异常', error: e);
       return (
         success: false,
         error: 'Keyring initialization failed: {error}'.tr(

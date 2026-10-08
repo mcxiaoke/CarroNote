@@ -1,4 +1,4 @@
-# SafeNotes task runner (Task / go-task)
+# CarroNote task runner (Task / go-task)
 # Usage: task <task>
 #   task --list        # list all tasks
 #   task cli-build     # build the pure-Dart CLI executable

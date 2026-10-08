@@ -8,7 +8,7 @@
 */
 
 /*
-* Integration tests for SafeNotes.
+* Integration tests for CarroNote.
 *
 * Drives the *real* app (same bootstrap as a normal launch) end-to-end.
 * The app is launched once and stays resident across all tests; each test

@@ -85,6 +85,12 @@ android {
        }
    }
 
+   applicationVariants.all { variant ->
+       variant.outputs.all { output ->
+           def code = flutterVersionCode != null ? flutterVersionCode.toInteger() : 1
+           output.versionCodeOverride = code
+       }
+   }
 }
 
 flutter {

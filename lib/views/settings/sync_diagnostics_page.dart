@@ -34,6 +34,7 @@ import 'package:flutter/services.dart';
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'package:safenotes/authwall.dart' show AppBootState;
 import 'package:safenotes/data/preference_and_config.dart';
@@ -239,28 +240,13 @@ class _StatusTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        ShadButton.raw(
-          variant: ShadButtonVariant.outline,
-          leading: const Icon(LucideIcons.download),
-          child: Text('Export Diagnostics + Logs'.tr()),
-          onPressed: () async {
-            try {
-              final path = await SyncService.instance.exportAllLogsToFile();
-              if (context.mounted) {
-                showSnackBarMessage(
-                  context,
-                  'Exported to {path}'.tr(namedArgs: {'path': path}),
-                );
-              }
-            } on Object catch (e) {
-              if (context.mounted) {
-                showSnackBarMessage(
-                  context,
-                  'Export failed: {error}'.tr(namedArgs: {'error': '$e'}),
-                );
-              }
-            }
-          },
+        Builder(
+          builder: (btnCtx) => ShadButton.raw(
+            variant: ShadButtonVariant.outline,
+            leading: const Icon(LucideIcons.download),
+            child: Text('Export Diagnostics + Logs'.tr()),
+            onPressed: () => _exportAndShareLogs(btnCtx),
+          ),
         ),
       ],
     );
@@ -498,29 +484,13 @@ class _LogsTabState extends State<_LogsTab> {
                   );
                 },
               ),
-              // 导出（写入系统下载目录）
-              IconButton(
-                icon: const Icon(LucideIcons.download, size: 20),
-                tooltip: 'Export Diagnostics + Logs'.tr(),
-                onPressed: () async {
-                  try {
-                    final path = await SyncService.instance
-                        .exportAllLogsToFile();
-                    if (context.mounted) {
-                      showSnackBarMessage(
-                        context,
-                        'Exported to {path}'.tr(namedArgs: {'path': path}),
-                      );
-                    }
-                  } on Object catch (e) {
-                    if (context.mounted) {
-                      showSnackBarMessage(
-                        context,
-                        'Export failed: {error}'.tr(namedArgs: {'error': '$e'}),
-                      );
-                    }
-                  }
-                },
+              // 导出（调用系统分享）
+              Builder(
+                builder: (btnCtx) => IconButton(
+                  icon: const Icon(LucideIcons.download, size: 20),
+                  tooltip: 'Export Diagnostics + Logs'.tr(),
+                  onPressed: () => _exportAndShareLogs(btnCtx),
+                ),
               ),
               // 清空（仅清空内存缓冲，不影响文件）
               IconButton(
@@ -1027,4 +997,26 @@ Color _semNeutral(BuildContext context) =>
 void _copyToClipboard(BuildContext context, String text, String message) {
   Clipboard.setData(ClipboardData(text: text));
   showSnackBarMessage(context, message);
+}
+
+Future<void> _exportAndShareLogs(BuildContext context) async {
+  try {
+    final path = await SyncService.instance.exportAllLogsToFile();
+    if (path.isEmpty) return;
+    if (!context.mounted) return;
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(path)], sharePositionOrigin: origin),
+    );
+  } on Object catch (e) {
+    if (context.mounted) {
+      showSnackBarMessage(
+        context,
+        'Export failed: {error}'.tr(namedArgs: {'error': '$e'}),
+      );
+    }
+  }
 }

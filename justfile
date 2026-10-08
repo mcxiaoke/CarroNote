@@ -1,4 +1,4 @@
-# SafeNotes just command runner
+# CarroNote just command runner
 # Usage: just <recipe>
 #   just --list    # list all recipes
 #   just cli-build # build the pure-Dart CLI executable

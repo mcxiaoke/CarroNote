@@ -10,7 +10,7 @@
 #
 # See https://safenotes.dev for support or download.
 #
-# SafeNotes tasks, grouped into: deps / build / test.
+# CarroNote tasks, grouped into: deps / build / test.
 # Cross-platform: flutter, dart, python, pwsh must be on PATH.
 # On Windows prefer `task` (Taskfile.yml) or `just` (justfile) over make.
 

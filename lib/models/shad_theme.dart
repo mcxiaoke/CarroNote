@@ -7,7 +7,7 @@
 
 */
 
-// 将 shadcn_ui 的 ShadTheme 对接到 Safenotes 的动态品牌色（seed 色库）。
+// 将 shadcn_ui 的 ShadTheme 对接到 CarroNote 的动态品牌色（seed 色库）。
 //
 // 只作用于 ShadXxx 组件；旧 Material 页面仍由 M3 ColorScheme.fromSeed 生成的 ThemeData 主题化。
 // 两套设计系统通过 ShadApp 并存，互不干扰。

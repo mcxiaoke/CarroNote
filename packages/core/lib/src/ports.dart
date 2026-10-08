@@ -7,7 +7,7 @@
 
 */
 
-// SafeNotes 核心层端口（Ports）定义。
+// CarroNote 核心层端口（Ports）定义。
 //
 // 沿用 SyncBackend 的抽象风格，为核心层所需的「平台能力」定义最小接口。
 // App 侧用 path_provider / shared_preferences / flutter_secure_storage 实现；

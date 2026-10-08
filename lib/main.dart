@@ -37,6 +37,7 @@ import 'package:safenotes/src/platform/database_bootstrap.dart';
 import 'package:safenotes/sync/sync_config.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/desktop_window.dart';
+import 'package:safenotes/utils/dev_mode.dart';
 import 'package:safenotes/utils/lifecycle_handler.dart';
 import 'package:safenotes/utils/platform_ui.dart';
 
@@ -74,7 +75,9 @@ Future<void> main() async {
       // Zone 级未捕获异常：走到这里说明没有任何 try/catch 处理它
       Log.app.f('未捕获的异步异常', error: error, stackTrace: stack);
       AppLogFile.flush();
-      if (kDebugMode) throw error; // debug 重抛，让问题暴露
+      if (kDebugMode || DevMode.isActive) {
+        showGlobalErrorScreen(error, stack);
+      }
     },
   );
 }
@@ -95,7 +98,7 @@ Future<void> _initLogging() async {
   // 注入日志目录解析器（path_provider 实现），使核心日志逻辑保持纯 Dart 可编译
   logDirResolverOverride = () async => appData;
   await AppLogFile.init();
-  Log.app.i('════════ SafeNotes 启动 ════════');
+  Log.app.i('════════ CarroNote 启动 ════════');
   // 版本详细信息（含构建期注入的 Git 提交哈希与构建时间）
   Log.app.i('版本: ${BuildInfo.version} (build ${BuildInfo.buildNumber})');
   Log.app.i(
@@ -346,7 +349,7 @@ Future<void> _shutdown() async {
   } on Object catch (e, st) {
     Log.app.w('SyncService dispose 失败（忽略，继续退出）', error: e, stackTrace: st);
   }
-  Log.app.i('════════ SafeNotes 退出 ════════');
+  Log.app.i('════════ CarroNote 退出 ════════');
   // 最后关闭日志文件（flush 剩余缓冲）
   await AppLogFile.close();
 }
@@ -358,9 +361,12 @@ class SafeNotesApp extends StatefulWidget {
   State<SafeNotesApp> createState() => _SafeNotesAppState();
 }
 
+/// 全局根导航 Key，供未捕获异常全屏展示等全局操作使用
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 class _SafeNotesAppState extends State<SafeNotesApp>
     with WidgetsBindingObserver {
-  final navigatorKey = GlobalKey<NavigatorState>();
+  GlobalKey<NavigatorState> get navigatorKey => rootNavigatorKey;
   NavigatorState? get _navigator => navigatorKey.currentState;
   late final StreamController<SessionState> sessionStateStream;
   SessionConfig? _prevSessionConfig;
@@ -594,5 +600,136 @@ void onAppUpdate() async {
     // 仅更新版本号；不在这里做备份（备份改为「登录后自动备份」驱动，
     // 见 docs/backup-scheme-revamp-20260831.md）。
     PreferencesStorage.setAppVersionCodeToCurrent();
+  }
+}
+
+/// 全屏展示未捕获异常
+void showGlobalErrorScreen(Object error, StackTrace? stack) {
+  final context = rootNavigatorKey.currentContext;
+  if (context != null) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => GlobalErrorScreen(error: error, stackTrace: stack),
+      ),
+    );
+  } else {
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: GlobalErrorScreen(error: error, stackTrace: stack),
+      ),
+    );
+  }
+}
+
+/// 全局未捕获异常全屏错误屏幕（包含详情文本与一键复制）
+class GlobalErrorScreen extends StatelessWidget {
+  final Object error;
+  final StackTrace? stackTrace;
+
+  const GlobalErrorScreen({super.key, required this.error, this.stackTrace});
+
+  @override
+  Widget build(BuildContext context) {
+    final fullText = '$error\n\n${stackTrace ?? ""}';
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E1E2E),
+      appBar: AppBar(
+        title: const Text(
+          '应用运行异常',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.copy, size: 20),
+            tooltip: '复制错误与堆栈',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: fullText));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已复制错误详情与堆栈到剪贴板'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Color(0xFFF38BA8),
+                    size: 36,
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '未捕获的异步异常 (FATAL)',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      fullText,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: Color(0xFFCDD6F4),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.copy),
+                label: const Text('复制错误信息'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF38BA8),
+                  foregroundColor: const Color(0xFF11111B),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: fullText));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('已复制错误详情与堆栈到剪贴板'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

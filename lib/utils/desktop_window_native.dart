@@ -157,7 +157,7 @@ Future<void> initDesktopWindowManager() async {
     size: kAppWindowInitialSize,
     center: true,
     minimumSize: kAppWindowMinSize,
-    title: 'SafeNotes',
+    title: 'CarroNote',
   );
 
   // waitUntilReadyToShow：等原生窗口就绪后一次性写入尺寸/位置/最小尺寸，
@@ -180,7 +180,7 @@ Future<void> initDesktopTray() async {
     // tray_manager Windows 用 LoadImage(IMAGE_ICON) 加载图标，仅支持 .ico，
     // 传 .png 会静默失败（托盘图标为空）。必须用 .ico（放进 assets 才能打包）。
     await trayManager.setIcon('assets/images/app_icon.ico');
-    await trayManager.setToolTip('SafeNotes');
+    await trayManager.setToolTip('CarroNote');
     // 初始菜单标签此时是英文 key（翻译未加载），实际弹出的菜单
     // 会在每次右键时经 applyTrayContextMenu 重建为当前语言。
     await applyTrayContextMenu();

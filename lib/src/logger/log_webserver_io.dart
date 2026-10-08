@@ -166,10 +166,9 @@ class LogWebServer {
       throw Exception('无法绑定端口 $port~${port + 9}: $lastError');
     }
 
-    // 生成安全随机 128-bit（16 字节）hex token，每次启动都不同（T-3 修复）
+    // 生成安全随机 6 位数字 token (100000..999999)，便于在电脑浏览器手动输入
     final random = Random.secure();
-    final tokenBytes = List<int>.generate(16, (_) => random.nextInt(256));
-    _token = tokenBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    _token = (100000 + random.nextInt(900000)).toString();
 
     // 订阅日志流，实时推送给所有 WebSocket 客户端
     _logSub = AppLogBuffer.instance.stream.listen((entry) {
@@ -184,13 +183,10 @@ class LogWebServer {
     );
 
     final addrs = await localAddresses();
-    final maskedToken = _token != null && _token!.length >= 8
-        ? '${_token!.substring(0, 4)}...${_token!.substring(_token!.length - 4)}'
-        : '****';
     Log.web.i(
       '日志 Web 服务器已启动: '
-      '${addrs.map((a) => 'http://$a:$_port/?token=$maskedToken').join(', ')}'
-      '${addrs.isEmpty ? '端口 $_port (token=$maskedToken)' : ''}',
+      '${addrs.map((a) => 'http://$a:$_port/?token=$_token').join(', ')}'
+      '${addrs.isEmpty ? '端口 $_port (token=$_token)' : ''}',
     );
 
     return _port;

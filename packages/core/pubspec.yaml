@@ -1,5 +1,5 @@
 name: core
-description: SafeNotes 核心逻辑（加密 / 数据库 / 同步引擎），纯 Dart，不依赖 Flutter。
+description: CarroNote 核心逻辑（加密 / 数据库 / 同步引擎），纯 Dart，不依赖 Flutter。
 publish_to: none
 version: 0.1.0
 

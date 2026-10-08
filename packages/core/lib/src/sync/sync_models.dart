@@ -1273,7 +1273,7 @@ class SyncDiagnosticsSnapshot {
   /// 转为可读文本（调试面板"复制状态"按钮用）
   String toReadableText() {
     final b = StringBuffer();
-    b.writeln('=== SafeNotes 同步诊断快照 ===');
+    b.writeln('=== CarroNote 同步诊断快照 ===');
     b.writeln('捕获时间: $captureTime');
     b.writeln('');
     b.writeln('-- 同步状态 --');
