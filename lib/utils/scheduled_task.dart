@@ -93,7 +93,7 @@ class ScheduledTask {
   ///
   /// 优先返回用户自定义目录 [PreferencesStorage.backupDirectory]（已持久化记住）；
   /// 未设置时回退平台默认目录（[FileHandler.defaultBackupDirectory]，即
-  /// Android=Download/CarroNote，iOS/桌面=应用文档目录）。所有备份通道
+  /// Android=Download/CarroNote，桌面=Documents/CarroNote，iOS=应用文档目录）。所有备份通道
   /// （androidBackup/iosBackup/desktopBackup）与 UI 指示路径统一从此取，避免
   /// 「UI 显示的路径」与「真实落盘路径」再次错位。
   static Future<String> resolveBackupDirectory() async {

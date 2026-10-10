@@ -102,14 +102,15 @@
 
 - `Platform.isAndroid` → `androidBackup()`：首选 `Download/CarroNote`（分区存储下可能无权限，捕获 `FileSystemException` 后回退应用私有目录）；写完后 `MediaScanner.loadMedia` 让系统文件管理器可见。
 - `Platform.isIOS` → `iosBackup()`：落应用文档目录（iOS 无外部目录概念）。
-- 桌面（`windows/macOS/linux`）→ `desktopBackup()`：写应用文档目录（`path_provider` 桌面返回 Documents）。
+- 桌面（`windows/macOS/linux`）→ `desktopBackup()`：写应用文档目录下的 `CarroNote` 子目录（`Documents/CarroNote`）。
   - **历史坑**：桌面此前直接 `return true` 形成「假备份」，现已补全为真实加密落盘（评审 #2 修复）。
 
 ### 6.2 默认备份目录
 文件：`lib/models/file_handler.dart`（`defaultBackupDirectory`）
 
 - Android：优先 `Download/CarroNote`，不可用回退应用文档目录。
-- iOS / 桌面：统一 `getApplicationDocumentsDirectory()`。
+- 桌面（Windows/macOS/Linux）：优先应用文档目录下的 `CarroNote` 子目录（`Documents/CarroNote`），创建失败回退文档根目录。
+- iOS：统一 `getApplicationDocumentsDirectory()`。
 
 ### 6.3 写盘后媒体库收录
 文件：`lib/models/file_handler.dart`（`writeBackupFile`）

@@ -265,8 +265,9 @@ class FileHandler {
 
   /// 平台默认备份目录（导出面板未选路径时的回退落盘位置）
   ///
-  /// 桌面端此前无备份通道（scheduled_task 直接返回 false），补全为写入应用
-  /// 文档目录（Windows=Documents、Linux=~/Documents、macOS=Documents）。
+  /// - Android：首选 Download/CarroNote，不可用时回退应用私有文档目录。
+  /// - 桌面端（Windows/macOS/Linux）：写入应用文档目录下的 CarroNote 子目录（Documents/CarroNote）。
+  /// - iOS：应用专属沙盒文档目录。
   static Future<String> defaultBackupDirectory() async {
     if (isAndroid) {
       // 首选 Download/CarroNote（有权限时）；不可用回退应用私有目录
@@ -282,7 +283,22 @@ class FileHandler {
       }
       return (await getApplicationDocumentsDirectory()).path;
     }
-    // iOS / 桌面统一用应用文档目录
+    if (isDesktopPlatform) {
+      final docDir = await getApplicationDocumentsDirectory();
+      final backupDir = Directory(
+        p.join(docDir.path, SafeNotesConfig.desktopBackupSubdirectory),
+      );
+      try {
+        if (!await backupDir.exists()) {
+          await backupDir.create(recursive: true);
+        }
+        return backupDir.path;
+      } on FileSystemException {
+        // 创建失败时回退应用文档根目录
+        return docDir.path;
+      }
+    }
+    // iOS 统一用应用文档目录
     return (await getApplicationDocumentsDirectory()).path;
   }
 

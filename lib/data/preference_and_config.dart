@@ -678,7 +678,7 @@ class PreferencesStorage {
   /// 用户自定义备份目录（选择备份路径功能，移动+桌面通用，持久化记住）
   ///
   /// 空串表示「未设置」，此时备份落盘回退到平台默认目录
-  /// （Android=Download/CarroNote，iOS/桌面=应用文档目录）。
+  /// （Android=Download/CarroNote，桌面=Documents/CarroNote，iOS=应用文档目录）。
   static String get backupDirectory =>
       _preferences?.getString(_keyBackupDirectory) ?? '';
   static Future<void> setBackupDirectory(String path) async {
@@ -787,6 +787,7 @@ class SafeNotesConfig {
       '/storage/emulated/0/Download/';
   static const String _androidBackupDirectory =
       '/storage/emulated/0/Download/CarroNote/';
+  static const String _desktopBackupSubdirectory = 'CarroNote';
   static const String _sourceCodeUrl = 'https://github.com/mcxiaoke/CarroNote';
   static const String _bugReportUrl =
       'https://github.com/mcxiaoke/CarroNote/issues';
@@ -853,6 +854,7 @@ class SafeNotesConfig {
       _allowedFileExtensionsForImport;
   static String get androidDownloadDirectory => _androidDownloadDirectory;
   static String get androidBackupDirectory => _androidBackupDirectory;
+  static String get desktopBackupSubdirectory => _desktopBackupSubdirectory;
   static String get iosBackupDirectoryIndicativePath =>
       _iosBackupDirectoryIndicativePath;
   static Map<String, Locale> get allLocale => _locales;

@@ -131,6 +131,10 @@ void main() {
         reason: '实际明文导出名: $plaintextName',
       );
     });
+
+    test('SafeNotesConfig.desktopBackupSubdirectory 常量为 CarroNote', () {
+      expect(SafeNotesConfig.desktopBackupSubdirectory, 'CarroNote');
+    });
   });
 
   group('PreferencesStorage clearVaultRelatedKeys 逃生通道清理', () {
