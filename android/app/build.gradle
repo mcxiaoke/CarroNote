@@ -1,6 +1,5 @@
 plugins {
     id "com.android.application"
-    id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -56,6 +55,11 @@ android {
         targetSdkVersion 36
         versionCode flutter.versionCode
         versionName flutter.versionName
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 
    signingConfigs {

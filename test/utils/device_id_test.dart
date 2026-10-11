@@ -20,6 +20,7 @@ class MockDeviceInfoPlatform extends DeviceInfoPlatform {
       'id': 'mock-android-id-5678',
       'host': 'mock-host',
       'tags': 'mock-tags',
+      'time': 1700000000,
       'type': 'mock-type',
       'model': 'mock-model',
       'board': 'mock-board',

@@ -8,6 +8,7 @@
 */
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -145,12 +146,14 @@ class ExportBackupDialogState extends State<ExportBackupDialog> {
   Future<void> _pickLocation() async {
     if (isDesktopPlatform) {
       // 桌面端：原生「另存为」，用户决定文件名与位置
-      final path = await FilePicker.saveFile(
+      final uri = await FilePicker.saveFile(
         dialogTitle: 'Save backup'.tr(),
         fileName: _fileName,
         initialDirectory: _defaultDir,
+        bytes: Uint8List(0),
         type: FileType.any,
       );
+      final path = uri?.toFilePath();
       if (path != null && path.isNotEmpty && mounted) {
         setState(() => _desktopPath = path);
       }

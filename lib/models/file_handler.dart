@@ -350,26 +350,22 @@ class FileHandler {
         // emptyCache to prevent filepicker from picking old cached version
         // starting Android 11 all files are provided through cache mechanism and not directly
         await CacheManager.emptyCache();
-        FilePickerResult? result;
+        final PlatformFile? file;
 
         if (await isAndroidSdkVersionAbove(29)) {
-          result = await FilePicker.pickFiles(
+          file = await FilePicker.pickFile(
             type: FileType.custom,
             allowedExtensions: SafeNotesConfig.importFileExtensions,
-            allowMultiple: false,
           );
         } else {
-          result = await FilePicker.pickFiles(
-            type: FileType.any,
-            allowMultiple: false,
-          );
+          file = await FilePicker.pickFile(type: FileType.any);
         }
-        if (result != null) {
-          PlatformFile file = result.files.first;
-          if (file.size == 0) return null;
-          if (file.size > maxImportBytes) {
+        if (file != null) {
+          final size = file.lengthSync() ?? await file.length() ?? 0;
+          if (size == 0) return null;
+          if (size > maxImportBytes) {
             Log.backup.w(
-              '导入失败：备份文件过大 ${file.size} '
+              '导入失败：备份文件过大 $size '
               '>(上限 $maxImportBytes 字节)',
             );
             return "unrecognized";
@@ -379,16 +375,15 @@ class FileHandler {
           return null;
         }
       } else if (isIOS) {
-        FilePickerResult? result = await FilePicker.pickFiles(
+        final file = await FilePicker.pickFile(
           type: FileType.custom,
           allowedExtensions: SafeNotesConfig.importFileExtensions,
-          allowMultiple: false,
         );
-        if (result != null) {
-          final file = result.files.single;
-          if (file.size > maxImportBytes) {
+        if (file != null) {
+          final size = file.lengthSync() ?? await file.length() ?? 0;
+          if (size > maxImportBytes) {
             Log.backup.w(
-              '导入失败：备份文件过大 ${file.size} '
+              '导入失败：备份文件过大 $size '
               '>(上限 $maxImportBytes 字节)',
             );
             return "unrecognized";
@@ -400,17 +395,16 @@ class FileHandler {
       } else {
         // 桌面端补全：此前直接返回 null 导致「桌面端无导入通道」，现在与移动端
         // 一致用文件选择器（json/snbak 双扩展名）。
-        FilePickerResult? result = await FilePicker.pickFiles(
+        final file = await FilePicker.pickFile(
           type: FileType.custom,
           allowedExtensions: SafeNotesConfig.importFileExtensions,
-          allowMultiple: false,
         );
-        if (result != null) {
-          final file = result.files.single;
-          if (file.size == 0) return null;
-          if (file.size > maxImportBytes) {
+        if (file != null) {
+          final size = file.lengthSync() ?? await file.length() ?? 0;
+          if (size == 0) return null;
+          if (size > maxImportBytes) {
             Log.backup.w(
-              '导入失败：备份文件过大 ${file.size} '
+              '导入失败：备份文件过大 $size '
               '>(上限 $maxImportBytes 字节)',
             );
             return "unrecognized";
