@@ -85,6 +85,17 @@ class _GeneralSettingsPageState extends State<GeneralSettingsPage> {
                 setState(() => _isAutoRotate = v);
               },
             ),
+          if (isMobilePlatform)
+            shadNavigationTile(
+              context,
+              key: const Key('ui-setting-item-device-environment'),
+              icon: LucideIcons.shieldCheck,
+              title: 'Device Environment'.tr(),
+              subtitle: 'Security status and hardware checks'.tr(),
+              onTap: () async {
+                await Navigator.pushNamed(context, '/deviceEnvironment');
+              },
+            ),
           if (isDesktopPlatform) ...[
             shadSwitchTile(
               context,

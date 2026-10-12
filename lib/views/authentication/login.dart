@@ -15,6 +15,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
+
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:after_layout/after_layout.dart';
 import 'package:core/core.dart';
@@ -39,7 +42,10 @@ import 'package:safenotes/utils/spacing.dart';
 import 'package:safenotes/utils/styles.dart';
 import 'package:safenotes/utils/text_styles.dart';
 import 'package:safenotes/utils/vault_backup.dart';
+import 'package:safenotes/services/device_security_service.dart';
+import 'package:safenotes/utils/platform_ui.dart';
 import 'package:safenotes/views/authentication/pin_unlock_panel.dart';
+import 'package:safenotes/widgets/device_security_dialog.dart';
 import 'package:safenotes/widgets/footer.dart';
 import 'package:safenotes/widgets/shad_dialog.dart';
 
@@ -116,6 +122,10 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
 
   @override
   Future<void> afterFirstLayout(BuildContext context) async {
+    // 移动端正式版环境安全检测（未弹过则提醒，红/黄分级，知情同意）
+    await _checkDeviceSecurityEnvironment();
+    if (!mounted) return;
+
     if (PreferencesStorage.isBiometricAuthEnabled &&
         (widget.isKeyboardFocused ?? true)) {
       await _authenticate();
@@ -127,6 +137,31 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     // 注意:不能依赖 isKeyboardFocused(锁定导航传 false,见 main.dart logout)。
     if (PreferencesStorage.isPinAuthEnabled) {
       await _showPinLockOverlay();
+    }
+  }
+
+  /// 检查设备安全环境（仅 Release 正式版 & 移动端生效）
+  Future<void> _checkDeviceSecurityEnvironment() async {
+    if (!kReleaseMode || !isMobilePlatform) return;
+
+    final service = DeviceSecurityService.instance;
+    if (service.hasPromptedThisSession) return;
+
+    final status = await service.checkSecurity();
+    if (!mounted) return;
+
+    if (status.riskLevel != SecurityRiskLevel.normal) {
+      service.markPromptedThisSession();
+      final action = await showDeviceSecurityDialog(context, status: status);
+      if (!mounted) return;
+
+      if (action == DeviceSecurityDialogAction.exitApp) {
+        if (!kIsWeb) {
+          SystemNavigator.pop();
+        }
+      } else if (action == DeviceSecurityDialogAction.openSettings) {
+        await openAppSettings();
+      }
     }
   }
 

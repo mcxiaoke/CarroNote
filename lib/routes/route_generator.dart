@@ -31,6 +31,7 @@ import 'package:safenotes/views/settings/about_page.dart';
 import 'package:safenotes/views/settings/appearance_settings_page.dart';
 import 'package:safenotes/views/settings/backup_setting.dart';
 import 'package:safenotes/views/settings/biometric_setting.dart';
+import 'package:safenotes/views/settings/device_environment_page.dart';
 import 'package:safenotes/views/settings/display_page.dart';
 import 'package:safenotes/views/settings/general_settings_page.dart';
 import 'package:safenotes/views/settings/inactivity_setting.dart';
@@ -197,6 +198,9 @@ class RouteGenerator {
 
       case '/securitySettings':
         return _buildRoute(const SecuritySettingsPage(), settings);
+
+      case '/deviceEnvironment':
+        return _buildRoute(const DeviceEnvironmentPage(), settings);
 
       case '/generalSettings':
         return _buildRoute(const GeneralSettingsPage(), settings);

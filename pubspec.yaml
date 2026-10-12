@@ -4,7 +4,7 @@ homepage: https://github.com/mcxiaoke/CarroNote
 documentation: https://github.com/mcxiaoke/CarroNote
 publish_to: 'none'
 
-version: 3.0.2+300002
+version: 3.0.3+300003
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
@@ -79,6 +79,7 @@ dependencies:
   # 笔记历史版本 diff 计算（Myers 算法，纯 Dart 无原生依赖）
   diff_match_patch: ^0.4.1
   share_plus: ^13.3.1
+  safe_device: ^1.4.1
 
 
 dev_dependencies:

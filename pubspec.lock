@@ -1108,6 +1108,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.1.0"
+  safe_device:
+    dependency: "direct main"
+    description:
+      name: safe_device
+      sha256: ad1b32a564484c710f6d52b5a526838c8a7d999c8ab2e14890ff55c06a018248
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.4.1"
   screen_retriever:
     dependency: transitive
     description:
