@@ -554,5 +554,6 @@
   "Supported": "已支持",
   "Sync service is closing; cannot switch backend.": "同步服务正在关闭，无法切换后端。",
   "Transfer": "备份迁移",
-  "WebDAV ETag": "WebDAV ETag"
+  "WebDAV ETag": "WebDAV ETag",
+  "Passphrase changed. PIN lock has been disabled for security.": "密码已修改。出于安全考虑，PIN 锁已自动关闭，如需使用请重新设置。"
 }

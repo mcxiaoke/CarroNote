@@ -6,6 +6,8 @@
  * terms of the GPL-3.0+ license.
  */
 
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/pin_auth.dart';
+import 'package:safenotes/models/session.dart';
 import '../test_helpers.dart';
 
 void main() {
@@ -24,23 +27,44 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await PreferencesStorage.init();
     PhraseHandler.destroy();
+    PinAuth.testDevicePepperOverride = 'test-device-uuid-1';
   });
 
   tearDown(() async {
+    PinAuth.testDevicePepperOverride = null;
     PhraseHandler.destroy();
     await PinAuth.disable();
     await BiometricAuth.disable();
     await disposeVault();
   });
 
-  group('PinAuth 认证与两层信封加密机制', () {
-    test('设置并验证正确 PIN 能解封出原始会话密码，错误 PIN 返回空串', () async {
+  group('PinAuth 安全加固认证（单层信封、无明文wrapKey、设备绑定）', () {
+    test('设置并验证正确 PIN 能解封出原始会话密码，且不存储明文 wrapKey', () async {
       PhraseHandler.initPass('vault-secret-pwd-123');
 
       await PinAuth.setPin('123456');
       expect(PreferencesStorage.isPinAuthEnabled, isTrue);
       expect(PreferencesStorage.pinLength, 6);
       expect(PreferencesStorage.pinFailedCount, 0);
+
+      // 验证单层信封直接存储，且彻底不存在 _securePinWrapKey 和 _securePinEnvelopeKey
+      const storage = FlutterSecureStorage();
+      expect(await storage.read(key: '_securePinWrapKey'), isNull);
+      expect(await storage.read(key: '_securePinEnvelopeKey'), isNull);
+      final authKey = await storage.read(key: '_securePinAuthKey');
+      expect(authKey, isNotNull);
+      expect(authKey!.startsWith('v1:'), isTrue);
+
+      // 检查桌面端 KDF 参数提升为 128MB / t=4 / p=4
+      final kdfJson = await storage.read(key: '_securePinKdfKey');
+      expect(kdfJson, isNotNull);
+      final kdfMap = jsonDecode(kdfJson!) as Map<String, dynamic>;
+      expect(kdfMap['memoryKiB'], equals(PinAuth.kDesktopArgon2idMemoryKib));
+      expect(kdfMap['iterations'], equals(PinAuth.kDesktopArgon2idIterations));
+      expect(
+        kdfMap['parallelism'],
+        equals(PinAuth.kDesktopArgon2idParallelism),
+      );
 
       // 正确 PIN 验证
       final recovered = await PinAuth.verifyPin('123456');
@@ -50,6 +74,22 @@ void main() {
       // 错误 PIN 验证
       final failed = await PinAuth.verifyPin('999999');
       expect(failed, isEmpty);
+    });
+
+    test('设备绑定（Device Binding）：在设备 B 上即使 PIN 正确也解密失败', () async {
+      PhraseHandler.initPass('secret-pass-456');
+      PinAuth.testDevicePepperOverride = 'device-hardware-pc-A';
+      await PinAuth.setPin('888888');
+
+      // 模拟数据被拷贝到设备 B（设备指纹改变）
+      PinAuth.testDevicePepperOverride = 'device-hardware-pc-B';
+      final res = await PinAuth.verifyPin('888888');
+      expect(res, isEmpty, reason: '在不同硬件设备上离线解密必须失败');
+
+      // 换回原设备 A 可以正常解密
+      PinAuth.testDevicePepperOverride = 'device-hardware-pc-A';
+      final ok = await PinAuth.verifyPin('888888');
+      expect(ok, 'secret-pass-456');
     });
 
     test('凭据缺失时 verifyPin 返回空串且不崩溃', () async {
@@ -77,7 +117,7 @@ void main() {
       expect(PreferencesStorage.pinFailedCount, 0);
     });
 
-    test('disable 彻底清除全部 4 个安全存储键', () async {
+    test('disable 彻底清除全部安全存储键与计数', () async {
       PhraseHandler.initPass('pass-123');
       await PinAuth.setPin('1234');
       const storage = FlutterSecureStorage();
@@ -92,25 +132,20 @@ void main() {
       expect(await storage.read(key: '_securePinAuthKey'), isNull);
     });
 
-    test('refreshCredential 联动刷新密码信封（无需重新输入 PIN）', () async {
-      PhraseHandler.initPass('old-password');
-      await PinAuth.setPin('654321');
+    test('方案 B：修改主密码（Session.onPasswordSet）自动关闭 PIN 锁并销毁凭据', () async {
+      PhraseHandler.initPass('initial-pwd');
+      await PinAuth.setPin('123456');
+      expect(PreferencesStorage.isPinAuthEnabled, isTrue);
 
-      // 模拟修改密码后刷新
-      PhraseHandler.initPass('new-password-789');
-      await PinAuth.refreshCredential();
+      // 模拟修改主密码触发 onPasswordSet
+      await Session.onPasswordSet('brand-new-password');
 
-      // 使用原 PIN 应能解出新密码
-      final pass = await PinAuth.verifyPin('654321');
-      expect(pass, 'new-password-789');
-    });
-
-    test('wrapKey 缺失或会话密码为空时 refreshCredential 安全跳过', () async {
+      // 验证 PIN 锁已被自动关闭，凭据已被清除
+      expect(PreferencesStorage.isPinAuthEnabled, isFalse);
+      expect(PreferencesStorage.pinFailedCount, 0);
       const storage = FlutterSecureStorage();
-      await storage.delete(key: '_securePinWrapKey');
-
-      // 不应抛出任何异常
-      await PinAuth.refreshCredential();
+      expect(await storage.read(key: '_securePinAuthKey'), isNull);
+      expect(await storage.read(key: '_securePinKdfKey'), isNull);
     });
   });
 

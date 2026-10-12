@@ -362,7 +362,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
             Log.auth.w('设置密码中止：页面已卸载, 不再继续导航');
             return;
           }
-          Session.onPasswordSet(enteredPassphrase);
+          await Session.onPasswordSet(enteredPassphrase);
 
           // BUG 修复：keyring 已创建成功，必须同步刷新 AuthWall 的启动缓存。
           // 否则本进程内空闲锁定 logout 回 /authwall 时仍读到启动时的 false，
@@ -379,6 +379,7 @@ class SetEncryptionPhrasePageState extends State<SetEncryptionPhrasePage> {
           TextInput.finishAutofillContext();
           Log.auth.i('首次密码设置完成, 总耗时 ${sw.elapsedMilliseconds}ms');
           Log.ui.i('界面切换: 设置密码页 → 主界面(/home)');
+          if (!mounted) return;
           await Navigator.pushReplacementNamed(
             context,
             '/home',

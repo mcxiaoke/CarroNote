@@ -554,5 +554,6 @@
   "Supported": "Supported",
   "Sync service is closing; cannot switch backend.": "Sync service is closing; cannot switch backend.",
   "Transfer": "Transfer",
-  "WebDAV ETag": "WebDAV ETag"
+  "WebDAV ETag": "WebDAV ETag",
+  "Passphrase changed. PIN lock has been disabled for security.": "Passphrase changed. PIN lock has been disabled for security."
 }

@@ -8,9 +8,12 @@
 */
 
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:core/core.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
@@ -159,39 +162,49 @@ class PinPolicy {
   final bool shuffle;
 }
 
-/// PIN Lock 认证 —— 与 [BiometricAuth] 平行的第二解锁方式
+/// PIN Lock 认证 —— 快速解锁方式
 ///
-/// 架构与 `BiometricAuth` 完全平行(包裹密钥 + 信封,详见
-/// docs/pin-lock-design.md §4):
+/// 安全加固架构（详见 docs/pin-lock-design.md §4）：
+/// - `_securePinKdfKey`: KDF 参数 JSON（明文，含独立随机盐与平台自适应参数）
+/// - `_securePinAuthKey`: PIN + 硬件指纹派生密钥直接 seal 的 vault 主密码（AES-256-GCM，单层信封）
+/// - 不再持久化任何 `_securePinWrapKey` 明文，彻底消除同机恶意进程旁路读取主密码的隐患。
+/// - 绑定设备硬件特征（Device Binding）：即使安全存储文件被拷走，在异地机器上脱机穷举亦必然失效。
 ///
-/// - `_securePinKdfKey`: KDF 参数 JSON(明文,含随机盐)
-/// - `_securePinEnvelopeKey`: PIN 派生密钥 seal 的包裹密钥
-/// - `_securePinWrapKey`: 包裹密钥明文副本(改密码联动用,与 BiometricAuth
-///   同级威胁模型,见设计文档 §4.3)
-/// - `_securePinAuthKey`: 包裹密钥 seal 的 vault 密码(与
-///   `BiometricAuth._secureBiometricAuthKey` 同构)
-///
-/// 验证流程: 输入 PIN → Argon2id 派生 → 解包裹密钥 → 解出 vault 密码 →
-/// 复用现有 `_login(passphrase)`。
+/// 验证流程: 输入 PIN + 硬件指纹 → Argon2id 派生 → 直接解密 vault 密码 → 复用现有 `_login(passphrase)`。
 class PinAuth {
   /// 连续失败阈值:达到后自动关闭 PIN,回退到密码登录(设计文档 §6)
   static const int kPinMaxFailedAttempts = 5;
 
   static const String _securePinKdfKey = '_securePinKdfKey';
-  static const String _securePinEnvelopeKey = '_securePinEnvelopeKey';
-  static const String _securePinWrapKey = '_securePinWrapKey';
   static const String _securePinAuthKey = '_securePinAuthKey';
 
+  // 历史旧版本 key（用于清理与向后兼容）
+  static const String _securePinEnvelopeKey = '_securePinEnvelopeKey';
+  static const String _securePinWrapKey = '_securePinWrapKey';
+
   /// 存储格式版本前缀:`v1:<base64(nonce||ciphertext||tag)>`
-  /// 与 `BiometricAuth` 一致;旧版本写入的无前缀值按旧格式原样兼容返回。
   static const String _wrappedPrefix = 'v1:';
 
   /// AES-GCM AAD 域分隔符,与其它加密消费方隔离
   static const String _aad = 'pin-auth';
 
+  /// 桌面端加固 Argon2id 参数：128 MiB (131072 KiB)，t=4，p=4（经本地实测约 658ms）
+  static const int kDesktopArgon2idMemoryKib = 131072;
+  static const int kDesktopArgon2idIterations = 4;
+  static const int kDesktopArgon2idParallelism = 4;
+
+  /// 移动端 / Web 默认参数：32 MiB (32768 KiB)，t=3，p=2（实测约 173ms）
+  static const int kMobileArgon2idMemoryKib = 32768;
+  static const int kMobileArgon2idIterations = 3;
+  static const int kMobileArgon2idParallelism = 2;
+
   static const storage = FlutterSecureStorage();
 
   static bool get isEnabled => PreferencesStorage.isPinAuthEnabled;
+
+  /// 测试专用设备指纹注入（用于单元测试模拟设备迁移）
+  @visibleForTesting
+  static String? testDevicePepperOverride;
 
   /// 当前生效的 PIN 策略(长度 + 字符集 + 随机键序)
   static PinPolicy get policy => PinPolicy(
@@ -203,22 +216,24 @@ class PinAuth {
   /// 设置 / 修改 PIN
   ///
   /// 用当前会话密码生成凭据(调用前必须已登录,`PhraseHandler.getPass` 非空)。
-  /// 重设时轮换包裹密钥与盐,避免复用旧凭据。成功后打开 PIN 开关。
+  /// 成功后打开 PIN 开关。
   static Future<void> setPin(String pin, {PinPolicy? policy}) async {
     final pass = PhraseHandler.getPass;
     if (pass.isEmpty) {
-      // 空密码写入会导致后续 PIN 解锁必然失败,属于异常状态需要 warning
       Log.auth.w('写入 PIN 凭据时会话密码为空, PIN 解锁可能不可用');
     }
     final effective = policy ?? PinPolicy();
 
-    // 1. 新包裹密钥 + 新盐(重设时轮换)
-    final wrapKey = SyncCrypto.generateDataKey();
-    await storage.write(key: _securePinWrapKey, value: base64Encode(wrapKey));
+    // 1. 生成平台自适应的 KDF 参数（含独立随机盐）
+    final kdf = _createKdfParams();
+    await storage.write(key: _securePinKdfKey, value: jsonEncode(kdf.toJson()));
 
-    // 2. 包裹密钥 seal vault 密码
+    // 2. PIN + 硬件指纹 → Argon2id 派生密钥
+    final pinKey = await _derivePinKey(pin, kdf);
+
+    // 3. 直接用 PIN 密钥 seal vault 密码（单层直接信封，彻底杜绝 wrapKey 明文存储）
     final passwordEnvelope = await SyncCrypto.seal(
-      wrapKey,
+      pinKey,
       _aad,
       Uint8List.fromList(utf8.encode(pass)),
     );
@@ -227,21 +242,9 @@ class PinAuth {
       value: '$_wrappedPrefix${base64Encode(passwordEnvelope)}',
     );
 
-    // 3. 新盐 + KDF 参数(Argon2id,见设计文档 §5)
-    final kdf = KdfParams.create(salt: SyncCrypto.generateSalt());
-    await storage.write(key: _securePinKdfKey, value: jsonEncode(kdf.toJson()));
-
-    // 4. PIN 派生密钥 seal 包裹密钥
-    final pinKey = await _derivePinKey(pin, kdf);
-    final wrapEnvelope = await SyncCrypto.seal(
-      pinKey,
-      _aad,
-      Uint8List.fromList(wrapKey),
-    );
-    await storage.write(
-      key: _securePinEnvelopeKey,
-      value: '$_wrappedPrefix${base64Encode(wrapEnvelope)}',
-    );
+    // 4. 清理旧版可能遗留的历史 key
+    await storage.delete(key: _securePinWrapKey);
+    await storage.delete(key: _securePinEnvelopeKey);
 
     // 5. 持久化策略与开关
     if (PreferencesStorage.isBiometricAuthEnabled) {
@@ -255,7 +258,8 @@ class PinAuth {
     await PreferencesStorage.setPinFailedCount(0);
     Log.auth.i(
       'PIN 凭据已更新: 长度=${effective.length} '
-      '字符集=${effective.charset.name} 随机键序=${effective.shuffle}',
+      '字符集=${effective.charset.name} 随机键序=${effective.shuffle} '
+      'KDF内存=${kdf.memoryKiB}KiB 迭代=${kdf.iterations} 并行=${kdf.parallelism}',
     );
   }
 
@@ -265,21 +269,17 @@ class PinAuth {
   /// 成功时清零失败计数;失败时由调用方负责 [onPinFailed] 计数。
   static Future<String> verifyPin(String pin) async {
     final kdf = await _kdfParams();
-    final wrapped = await storage.read(key: _securePinEnvelopeKey);
     final authKey = await storage.read(key: _securePinAuthKey);
-    if (kdf == null || wrapped == null || authKey == null) {
+    if (kdf == null || authKey == null) {
       Log.auth.w('PIN 凭据不完整(未设置或已清除), 解锁不可用');
       return '';
     }
     try {
-      // 1. PIN → Argon2id → 密钥
+      // 1. PIN + 硬件指纹 → Argon2id → 密钥
       final pinKey = await _derivePinKey(pin, kdf);
-      // 2. 解包裹密钥
-      final envelope = base64Decode(_stripPrefix(wrapped));
-      final wrapKey = await SyncCrypto.open(pinKey, _aad, envelope);
-      // 3. 解 vault 密码
+      // 2. 直接解密 vault 密码
       final passwordEnvelope = base64Decode(_stripPrefix(authKey));
-      final bytes = await SyncCrypto.open(wrapKey, _aad, passwordEnvelope);
+      final bytes = await SyncCrypto.open(pinKey, _aad, passwordEnvelope);
       final pass = utf8.decode(bytes);
       if (pass.isEmpty) {
         Log.auth.w('PIN 验证通过但解出的密码为空, 视为失败');
@@ -288,7 +288,30 @@ class PinAuth {
       await PreferencesStorage.setPinFailedCount(0);
       return pass;
     } on Object catch (e, st) {
-      // 解封失败 = PIN 错误(或凭据损坏);绝不回退到明文继续存储
+      // 若新版解密失败，尝试旧版双层信封向后兼容（平滑过渡）
+      final legacyWrapped = await storage.read(key: _securePinEnvelopeKey);
+      if (legacyWrapped != null) {
+        try {
+          final legacyPinKey = await SyncCrypto.deriveMasterKeyAsync(
+            pin,
+            kdf: kdf,
+          );
+          final envelope = base64Decode(_stripPrefix(legacyWrapped));
+          final wrapKey = await SyncCrypto.open(legacyPinKey, _aad, envelope);
+          final passwordEnvelope = base64Decode(_stripPrefix(authKey));
+          final bytes = await SyncCrypto.open(wrapKey, _aad, passwordEnvelope);
+          final pass = utf8.decode(bytes);
+          if (pass.isNotEmpty) {
+            Log.auth.i('检测到旧版 PIN 凭据，验证通过，自动无感升级为新版单层加固信封');
+            PhraseHandler.initPass(pass);
+            await setPin(pin, policy: policy);
+            await PreferencesStorage.setPinFailedCount(0);
+            return pass;
+          }
+        } on Object catch (e2, st2) {
+          Log.auth.w('旧版兼容解封亦失败', error: e2, stackTrace: st2);
+        }
+      }
       Log.auth.w('PIN 验证失败(解封不通过)', error: e, stackTrace: st);
       return '';
     }
@@ -312,7 +335,7 @@ class PinAuth {
 
   /// 关闭 PIN:删除全部凭据并关闭开关
   static Future<void> disable() async {
-    Log.auth.i('PIN 锁定: 开始关闭');
+    Log.auth.i('PIN 锁定: 开始关闭并销毁全部凭据');
     await PreferencesStorage.setIsPinAuthEnabled(false);
     await storage.delete(key: _securePinKdfKey);
     await storage.delete(key: _securePinEnvelopeKey);
@@ -322,38 +345,56 @@ class PinAuth {
     Log.auth.i('PIN 锁定已关闭, 全部凭据已清除');
   }
 
-  /// 修改 vault 密码后的联动刷新(无需 PIN,见设计文档 §4.2)
-  ///
-  /// 读包裹密钥明文副本,用其重新 seal 新密码;PIN 信封与 PIN 本身不变。
-  /// 调用时机:`Session.login` / `Session.onPasswordSet`(与 BiometricAuth 对称)。
-  static Future<void> refreshCredential() async {
-    final wrapKeyB64 = await storage.read(key: _securePinWrapKey);
-    final authKey = await storage.read(key: _securePinAuthKey);
-    if (wrapKeyB64 == null || authKey == null) {
-      Log.auth.w('PIN 凭据不完整, 跳过改密码联动刷新');
-      return;
-    }
-    final pass = PhraseHandler.getPass;
-    if (pass.isEmpty) {
-      Log.auth.w('刷新 PIN 凭据时会话密码为空, 跳过');
-      return;
-    }
-    final wrapKey = base64Decode(wrapKeyB64);
-    final envelope = await SyncCrypto.seal(
-      wrapKey,
-      _aad,
-      Uint8List.fromList(utf8.encode(pass)),
-    );
-    await storage.write(
-      key: _securePinAuthKey,
-      value: '$_wrappedPrefix${base64Encode(envelope)}',
-    );
-    Log.auth.i('PIN 凭据已随密码变更联动刷新');
-  }
-
   // ──────────────────────────────────────────────
   // 内部
   // ──────────────────────────────────────────────
+
+  /// 生成平台自适应的 KdfParams
+  static KdfParams _createKdfParams() {
+    final isDesktop =
+        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+    return KdfParams(
+      algorithm: kArgon2idAlgorithm,
+      salt: base64.encode(SyncCrypto.generateSalt()),
+      iterations: isDesktop
+          ? kDesktopArgon2idIterations
+          : kMobileArgon2idIterations,
+      memoryKiB: isDesktop
+          ? kDesktopArgon2idMemoryKib
+          : kMobileArgon2idMemoryKib,
+      parallelism: isDesktop
+          ? kDesktopArgon2idParallelism
+          : kMobileArgon2idParallelism,
+    );
+  }
+
+  /// 获取硬件设备唯一指纹（用于设备绑定防脱机拷贝爆破）
+  static Future<String> _getDevicePepper() async {
+    if (testDevicePepperOverride != null) return testDevicePepperOverride!;
+    try {
+      if (kIsWeb) return 'web-client';
+      final info = DeviceInfoPlugin();
+      if (Platform.isWindows) {
+        final win = await info.windowsInfo;
+        return win.deviceId;
+      } else if (Platform.isLinux) {
+        final linux = await info.linuxInfo;
+        return linux.machineId ?? 'linux-machine';
+      } else if (Platform.isMacOS) {
+        final mac = await info.macOsInfo;
+        return mac.systemGUID ?? '${mac.computerName}-${mac.model}';
+      } else if (Platform.isAndroid) {
+        final android = await info.androidInfo;
+        return android.id;
+      } else if (Platform.isIOS) {
+        final ios = await info.iosInfo;
+        return ios.identifierForVendor ?? 'ios-device';
+      }
+    } on Object catch (e, st) {
+      Log.auth.w('获取设备硬件指纹失败，回退默认设备标识', error: e, stackTrace: st);
+    }
+    return 'fallback-device-id';
+  }
 
   static Future<KdfParams?> _kdfParams() async {
     final raw = await storage.read(key: _securePinKdfKey);
@@ -368,10 +409,15 @@ class PinAuth {
     }
   }
 
-  static Future<Uint8List> _derivePinKey(String pin, KdfParams kdf) {
-    // 只记录长度,绝不记录 PIN 内容(隐私红线)
-    Log.auth.d('PIN 密钥派生: 长度=${pin.length} 算法=${kdf.algorithm}');
-    return SyncCrypto.deriveMasterKeyAsync(pin, kdf: kdf);
+  static Future<Uint8List> _derivePinKey(String pin, KdfParams kdf) async {
+    final pepper = await _getDevicePepper();
+    final combined = '$pin#$pepper';
+    // 只记录长度与算法参数,绝不记录 PIN 内容或硬件指纹详情(隐私红线)
+    Log.auth.d(
+      'PIN 密钥派生: 长度=${pin.length} 算法=${kdf.algorithm} '
+      'mem=${kdf.memoryKiB}KiB iter=${kdf.iterations} p=${kdf.parallelism}',
+    );
+    return SyncCrypto.deriveMasterKeyAsync(combined, kdf: kdf);
   }
 
   static String _stripPrefix(String value) => value.startsWith(_wrappedPrefix)

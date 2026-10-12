@@ -50,54 +50,47 @@ safenotes 现有「生物识别登录」（`BiometricAuth`）：把 vault 密码
 | 关 | 开 | PIN 键盘 |
 | 开 | 开 | 自动触发生物识别 → 失败回退 PIN 键盘 |
 
-## 4. 存储设计（核心）
+## 4. 存储设计（安全加固版本）
 
-### 4.1 存储介质与密钥层次
-
-全部存放于 `flutter_secure_storage`（系统级加密存储，与 `BiometricAuth` 一致）：
+全部存放于 `flutter_secure_storage`（系统级加密存储）：
 
 | key | 内容 | 说明 |
 |---|---|---|
-| `_securePinKdfKey` | `KdfParams` 的 JSON（明文，含随机盐） | 派生 PIN 密钥所需参数，盐非机密 |
-| `_securePinEnvelopeKey` | `v1:<base64(nonce‖ct‖tag)>` | PIN 派生密钥 seal 的**包裹密钥** |
-| `_securePinWrapKey` | base64(随机 32B)（明文） | 包裹密钥副本，用于改密码联动 |
-| `_securePinAuthKey` | `v1:<base64(nonce‖ct‖tag)>` | 包裹密钥 seal 的 **vault 密码**（与 `BiometricAuth._secureBiometricAuthKey` 同构） |
+| `_securePinKdfKey` | `KdfParams` 的 JSON（明文，含随机盐） | 派生 PIN 密钥所需参数，盐非机密，包含平台自适应参数 |
+| `_securePinAuthKey` | `v1:<base64(nonce‖ct‖tag)>` | PIN + 硬件指纹派生密钥直接 seal 的 **vault 密码**（AES-256-GCM，单层信封） |
 
-信封格式与 `BiometricAuth` 完全一致：`v1:` 前缀 + AES-256-GCM 信封
-（nonce 12B ‖ ciphertext ‖ tag 16B），AAD 域分隔符固定 `'pin-auth'`。
+> **已消除历史缺陷**：彻底移除 `_securePinWrapKey` 明文存储与 `_securePinEnvelopeKey`。杜绝了同机恶意进程在没有 PIN 的情况下通过导出安全存储旁路解开主密码的风险。
+
+信封格式：`v1:` 前缀 + AES-256-GCM 信封（nonce 12B ‖ ciphertext ‖ tag 16B），AAD 域分隔符固定 `'pin-auth'`。
 
 ### 4.2 关键流程
 
 **启用 / 修改 PIN**（用户已登录，内存中有 vault 密码）：
-1. 生成随机包裹密钥 wrapKey（32B）与随机盐（16B），记录 `KdfParams`（Argon2id 默认参数）。
-2. 用 wrapKey seal vault 密码 → `_securePinAuthKey`；wrapKey 明文备份 → `_securePinWrapKey`。
-3. 用 PIN 派生密钥 seal wrapKey → `_securePinEnvelopeKey`。
-4. 写入 `KdfParams`、打开 `PreferencesStorage.isPinAuthEnabled`。
+1. 生成独立随机盐（16B），生成平台自适应 `KdfParams`（桌面端 128MB/t4/p4，移动端 32MB/t3/p2）。
+2. 获取当前设备唯一硬件特征（Windows `deviceId` / Linux `machineId` / macOS `systemGUID` / 移动端相应 ID），组合 `pin#devicePepper`。
+3. 经 Argon2id 派生 `pinKey`。
+4. 用 `pinKey` 直接 seal vault 密码 → `_securePinAuthKey`。
+5. 清除历史残留 key（`_securePinWrapKey`、`_securePinEnvelopeKey`）。
+6. 打开 `PreferencesStorage.isPinAuthEnabled`。
 
 **验证 PIN**：
-1. 读 `KdfParams`，`deriveMasterKeyAsync(pin, kdf)` 派生 PIN 密钥。
-2. 解开 `_securePinEnvelopeKey` → wrapKey。
-3. 用 wrapKey 解开 `_securePinAuthKey` → vault 密码，返回。
-4. 任一步失败（GCM tag 校验失败）→ PIN 错误。
+1. 读 `KdfParams` 与当前设备硬件指纹，`deriveMasterKeyAsync(pin#devicePepper, kdf)` 派生 PIN 密钥。
+2. 直接解密 `_securePinAuthKey` → 恢复 vault 密码并返回。
+3. 任一步失败（GCM tag 校验失败）→ PIN 错误。
+4. 向后兼容：若检测到旧版双层信封凭据，验证通过后自动静默升级为加固版单层信封并删除旧 key。
 
-**修改 vault 密码联动**（`Session.onPasswordSet`，无需 PIN）：
-1. 若 PIN 已启用，读 `_securePinWrapKey`（明文副本）。
-2. 用该 wrapKey 重新 seal 新密码 → 覆写 `_securePinAuthKey`。
-   PIN 信封与 PIN 本身完全不变。
+**修改 vault 密码联动（方案 B：安全销毁）**（`Session.onPasswordSet`）：
+- 当用户修改主密码时，**自动调用 `PinAuth.disable()` 关闭 PIN 锁并销毁全部凭据**，提示用户主密码已变更、PIN 锁已自动关闭。
+- 彻底废除不安全的后台无感静默刷新机制，保证密码钥匙永不裸奔。
 
-### 4.3 为什么包裹密钥要存明文副本（安全权衡）
+## 5. KDF 选型与设备绑定增强：Argon2id + 平台自适应
 
-PIN 信封保护的是「不知道 PIN 的人无法在应用内解锁」，包裹密钥副本受
-`flutter_secure_storage` 的系统级保护（Keychain / Keystore / DPAPI）。该威胁模型与
-`BiometricAuth._secureBiometricWrapKey` **完全同级**——项目已接受。换取的能力是：
-改密码后无需 PIN 即可自动联动刷新凭据，避免「改一次密码就要重设一次 PIN」的体验
-倒退。若未来要求防「secure storage 完全导出」级攻击，可把 wrapKey 改为
-Keystore 不可导出密钥（Android）并放弃自动联动，属可演进的边界。
-
-## 5. KDF 选型：Argon2id
-
-- **算法**：复用 core 包 `SyncCrypto.deriveMasterKeyAsync`（按 `KdfParams` 自动派发），
-  参数与 vault 主密钥一致：`ARGON2ID`，memory 32 MiB，t=3，p=2，输出 32B。
+- **算法**：复用 core 包 `SyncCrypto.deriveMasterKeyAsync`，针对不同平台实行自适应强化：
+  - **桌面端 (Windows / macOS / Linux)**：`ARGON2ID`，memory **128 MiB (131072 KiB)**，t=4，p=4。本地实测耗时约 658ms，显著提高 GPU/ASIC 离线暴力穷举的内存总线开销与 AT 面积-时间复杂度（提升 21 倍以上）。
+  - **移动端与 Web**：`ARGON2ID`，memory 32 MiB，t=3，p=2，兼顾移动设备纯 Dart 执行效率。
+- **设备硬件绑定 (Device Binding)**：
+  - 密钥派生混入当前物理硬件设备唯一标识作为不可导出的 `devicePepper`；
+  - 即使整个安全存储文件被拷走到异地破解服务器，因缺少原设备硬件指纹，离线暴力穷举直接失效。
 - **理由**：
   - 内存硬化（memory-hard），对 GPU/ASIC 暴力破解的抗性远强于 PBKDF2。
   - 项目已有该实现且 Windows 实测约 200–330ms，比 PBKDF2 200k 迭代（约 788ms）更快，

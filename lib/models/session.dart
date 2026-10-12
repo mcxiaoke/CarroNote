@@ -40,11 +40,6 @@ class Session {
     if (PreferencesStorage.isBiometricAuthEnabled) {
       BiometricAuth.setAuthKey();
     }
-    // PIN Lock 联动(与生物识别平行):用本次已验证的密码刷新 PIN 密码信封,
-    // 保证 PIN 解锁取回的密码始终等于当前有效密码(无需用户输入 PIN)。
-    if (PreferencesStorage.isPinAuthEnabled) {
-      PinAuth.refreshCredential();
-    }
   }
 
   static Future<void> logout() async {
@@ -74,25 +69,26 @@ class Session {
   /// 保留 PhraseHandler 和 biometric 更新：
   ///   - PhraseHandler.getPass:biometric 登录需要原始 password 来解锁 keyring
   ///   - BiometricAuth.setAuthKey:secure storage 存新密码
+  ///   - PinAuth: 方案 B 安全加固，主密码变更时自动关闭 PIN 并销毁凭据
   ///
   /// 调用时机：
   ///   - set_passphrase 首次设置密码成功后
   ///   - change_passphrase 改密码成功后
-  static void onPasswordSet(String passphrase) {
+  static Future<void> onPasswordSet(String passphrase) async {
     // 密码变更是高重要性事件，用 info 级别；只记录长度不记录明文
     Log.auth.i('密码已设置/变更: 更新会话密码短语 (长度=${passphrase.length})');
     PhraseHandler.initPass(passphrase);
     if (PreferencesStorage.isBiometricAuthEnabled) {
       Log.auth.i('生物识别已启用: 同步刷新安全存储中的认证凭据');
-      BiometricAuth.setAuthKey();
+      await BiometricAuth.setAuthKey();
     } else {
       Log.auth.d('生物识别未启用: 跳过认证凭据刷新');
     }
     if (PreferencesStorage.isPinAuthEnabled) {
-      Log.auth.i('PIN 锁定已启用: 同步刷新 PIN 密码信封');
-      PinAuth.refreshCredential();
+      Log.auth.i('PIN 锁定已启用: 主密码变更，遵循方案 B 自动关闭 PIN 锁并销毁凭据');
+      await PinAuth.disable();
     } else {
-      Log.auth.d('PIN 锁定未启用: 跳过 PIN 凭据刷新');
+      Log.auth.d('PIN 锁定未启用: 跳过 PIN 凭据处理');
     }
   }
 }

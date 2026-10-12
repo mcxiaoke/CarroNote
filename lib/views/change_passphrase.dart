@@ -427,6 +427,9 @@ class ChangePassphraseState extends State<ChangePassphrase> {
         return;
       }
 
+      // 记录改密码前的 PIN 开启状态（方案 B 会在 Session.onPasswordSet 中自动销毁 PIN 凭据）
+      final wasPinEnabled = PreferencesStorage.isPinAuthEnabled;
+
       // 更新 SyncService 中的 Keyring(重建 SyncEngine 使用新 encryptedDataKey)
       Log.auth.d('改密码步骤 4/5：刷新 SyncService 的 keyring 与同步引擎');
       await SyncService.instance.updateKeyring(
@@ -436,7 +439,8 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 简化方案(评审 hy3/mmm3 A2):改密码成功后必须更新 PhraseHandler + biometric
       // 否则 biometric secure storage 保留旧密码 → 指纹登录用旧密码解 keyring 失败
-      Session.onPasswordSet(newPassword);
+      // PIN 凭据遵循方案 B 在此处自动关闭销毁
+      await Session.onPasswordSet(newPassword);
 
       // 改密码后立即同步:把新 encryptedDataKey 推送到远端
       // 避免他端在本地推送前拉到旧 encryptedDataKey,触发不必要的 dataKey 迁移逻辑
@@ -455,7 +459,12 @@ class ChangePassphraseState extends State<ChangePassphrase> {
 
       // 使用 if (!mounted) return; 模式,让 analyzer 识别 mounted 守卫
       if (!mounted) return;
-      // showSnackBarMessage(context, passChangedSnackMsg);
+      if (wasPinEnabled) {
+        showSnackBarMessage(
+          context,
+          'Passphrase changed. PIN lock has been disabled for security.'.tr(),
+        );
+      }
       navigator.pop();
     } finally {
       // 复位防重入（成功路径 pop 后页面已销毁，跳过 setState）
