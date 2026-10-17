@@ -25,8 +25,6 @@
 import 'dart:async';
 import 'dart:ui' show AppExitType;
 
-import 'package:safenotes/src/platform/platform_io.dart';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +39,7 @@ import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/pin_auth.dart';
 import 'package:safenotes/src/logger/log_webserver.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/sync/sync_service.dart';
 import 'package:safenotes/utils/snack_message.dart';
 import 'package:safenotes/utils/styles.dart';

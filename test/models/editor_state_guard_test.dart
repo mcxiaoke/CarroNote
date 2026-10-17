@@ -6,9 +6,9 @@
  * terms of the GPL-3.0+ license.
  */
 
+import 'package:core/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:core/core.dart';
 import 'package:safenotes/models/editor_state.dart';
 import '../test_helpers.dart';
 

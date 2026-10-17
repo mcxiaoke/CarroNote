@@ -8,7 +8,9 @@
 */
 
 import 'package:flutter/foundation.dart';
+
 import 'package:safe_device/safe_device.dart';
+
 import 'package:safenotes/utils/platform_ui.dart';
 
 /// 安全风险等级

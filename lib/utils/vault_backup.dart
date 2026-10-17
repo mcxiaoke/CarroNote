@@ -19,13 +19,12 @@
 
 import 'dart:convert';
 
-import 'package:safenotes/src/platform/platform_io.dart';
-
 import 'package:core/core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/src/platform/data_dir_override.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 
 /// 保留的重置前快照份数（超出删除最旧）
 const int maxKeptBackups = 5;

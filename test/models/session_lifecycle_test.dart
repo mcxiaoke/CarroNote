@@ -6,10 +6,10 @@
  * terms of the GPL-3.0+ license.
  */
 
+import 'package:core/core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:core/core.dart';
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/biometric_auth.dart';
 import 'package:safenotes/models/pin_auth.dart';

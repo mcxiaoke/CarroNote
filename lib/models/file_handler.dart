@@ -13,12 +13,10 @@
 
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 
-import 'package:safenotes/src/platform/platform_io.dart';
-
 import 'package:core/core.dart';
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:media_scanner/media_scanner.dart';
@@ -27,6 +25,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/dialogs/confirm_import.dart';
+import 'package:safenotes/src/platform/platform_io.dart';
 import 'package:safenotes/utils/cache_manager.dart';
 import 'package:safenotes/utils/device_info.dart';
 import 'package:safenotes/utils/platform_ui.dart';

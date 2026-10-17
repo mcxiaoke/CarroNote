@@ -7,11 +7,13 @@
  */
 
 import 'package:device_info_plus/device_info_plus.dart';
-// ignore: depend_on_referenced_packages
 import 'package:device_info_plus_platform_interface/device_info_plus_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:safenotes/utils/device_id.dart';
+
+// ignore: depend_on_referenced_packages
+
 
 class MockDeviceInfoPlatform extends DeviceInfoPlatform {
   @override

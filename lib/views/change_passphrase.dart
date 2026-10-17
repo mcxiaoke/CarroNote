@@ -19,9 +19,9 @@ import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/models/session.dart';
 import 'package:safenotes/sync/sync_service.dart';
-import 'package:safenotes/data/preference_and_config.dart';
 import 'package:safenotes/utils/motion.dart';
 import 'package:safenotes/utils/passphrase_util.dart';
 import 'package:safenotes/utils/scheduled_task.dart';

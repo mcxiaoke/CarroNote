@@ -22,9 +22,9 @@
 
 import 'dart:convert';
 
-import 'package:safenotes/src/platform/platform_io.dart';
-
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+
+import 'package:safenotes/src/platform/platform_io.dart';
 
 /// 把 prefs 持久化到指定目录的 JSON 文件（`preferences.json`）的文件版 store。
 ///
