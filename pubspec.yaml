@@ -4,7 +4,7 @@ homepage: https://github.com/mcxiaoke/CarroNote
 documentation: https://github.com/mcxiaoke/CarroNote
 publish_to: 'none'
 
-version: 3.0.3+300003
+version: 3.0.4+300004
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
@@ -30,7 +30,9 @@ dependencies:
   device_info_plus: ^13.3.0
   easy_localization: ^3.0.8
   file_picker: ^13.1.0
-  flutter_secure_storage: ^10.3.1
+  # v11 起引入 storageNamespace；配合 AndroidOptions.biometric()/IOSOptions
+  # accessControlFlags 可把密钥真正绑定到 Keystore/Keychain 的认证门控
+  flutter_secure_storage: ^11.2.0
   flutter_staggered_grid_view: ^0.7.0
   intl: ^0.20.2
   local_auth: ^3.0.2

@@ -863,8 +863,34 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
     }
   }
 
+  /// 桌面端（Windows/Linux）的便捷性门控。
+  ///
+  /// 这两个平台没有把密钥绑定到生物特征的系统能力，`local_auth` 只能确认
+  /// "有人通过了 Windows Hello / 系统认证"，并不保护存储介质本身——同机同用户
+  /// 进程仍可直接读出凭据。因此它只是防随手翻看的 UI 门控，不作为安全边界，
+  /// 相关文案必须如实标注（见设置页）。
+  Future<bool> _desktopBiometricGate(String reason) async {
+    try {
+      final passed = await auth.authenticate(
+        localizedReason: reason,
+        persistAcrossBackgrounding: true,
+      );
+      if (!passed) {
+        // false 返回多为用户取消（系统弹窗“取消”/“使用密码”），不计次
+        Log.auth.i('生物识别门控未通过(用户取消)');
+      }
+      return passed;
+    } on Object catch (e, st) {
+      // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
+      Log.auth.w('生物识别门控异常', error: e, stackTrace: st);
+      return false;
+    }
+  }
+
   Future<bool> _authenticate() async {
     bool authenticated = false;
+    bool didCancel = false;
+    bool didFail = false;
 
     if (_supportState == _BiometricState.unsupported) {
       showGenericDialog(
@@ -881,31 +907,43 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
                 .tr(),
       );
     } else {
-      bool didCancel = false;
-      try {
-        authenticated = await auth.authenticate(
-          localizedReason: 'Login using your biometric credential'.tr(),
-          persistAcrossBackgrounding: true,
-        );
-        // false 返回多为用户取消（系统弹窗“取消”/“使用密码”），不计次
-        if (!authenticated) didCancel = true;
-      } catch (e, st) {
-        // F-M16：生物识别失败原因必须留痕，否则静默失败后只能靠"指纹不灵"猜
-        Log.auth.w('生物识别认证失败', error: e, stackTrace: st);
-        final msg = e.toString().toLowerCase();
-        if (msg.contains('cancel') ||
-            msg.contains('user_cancel') ||
-            msg.contains('dismiss') ||
-            msg.contains('auth_in_progress')) {
-          didCancel = true;
-        }
-        authenticated = false;
+      final promptTitle = 'Login using your biometric credential'.tr();
+
+      // 桌面端（Windows/Linux）没有任何密钥级生物门控，只能由 local_auth 做
+      // 便捷性门控；Android/iOS/macOS 走硬件绑定存储，"读取即认证"，
+      // 再叠加一层 local_auth 只会把硬件门控退化成 UI 判断（见 BiometricAuth 注释）。
+      if (!BiometricAuth.isHardwareBound) {
+        final passed = await _desktopBiometricGate(promptTitle);
+        // 桌面端拿不到结构化的取消原因，统一按"未完成"处理，不计失败次数
+        if (!passed) didCancel = true;
       }
-      if (authenticated) {
-        final success = await _login(await BiometricAuth.authKey);
-        if (success) await _pushHome();
-      } else if (!didCancel) {
-        // 真失败才计次，取消不计（修复：取消弹窗不消耗 PIN 额度）
+
+      if (!didCancel) {
+        final result = await BiometricAuth.unlock(promptTitle: promptTitle);
+        switch (result.status) {
+          case BiometricUnlockStatus.success:
+            authenticated = await _login(result.passphrase);
+            if (authenticated) await _pushHome();
+          case BiometricUnlockStatus.cancelled:
+            didCancel = true;
+          case BiometricUnlockStatus.notConfigured:
+            // 凭据已失效（换机、录入新生物特征使 Keychain 条目作废、
+            // 或从旧版本升级后硬件条目为空）：直接关闭开关并退回密码登录。
+            await BiometricAuth.disable();
+            if (mounted) {
+              showSnackBarMessage(
+                context,
+                'Biometric login is no longer available. Re-enable it in settings or use your passphrase.'
+                    .tr(),
+              );
+            }
+          case BiometricUnlockStatus.failed:
+            didFail = true;
+        }
+      }
+
+      if (didFail && !didCancel) {
+        // 真失败才计次，取消不计（取消弹窗不消耗额度）
         PreferencesStorage.incrementBiometricAttemptAllTimeCount();
       }
       if (authenticated) {
@@ -914,6 +952,7 @@ class EncryptionPhraseLoginPageState extends State<EncryptionPhraseLoginPage>
         Log.auth.i('生物识别取消，未计次');
       }
     }
+
     // 上面的 [_login] + [_pushHome] 成功后会跳转主界面并销毁本页，await 返回后
     // 可能已 unmounted；不判空直接 setState 会触发 "setState() called after dispose"
     // 的 FATAL。Argon2id 为纯 Dart 派生（无原生加速），移动端耗时更长，该竞态

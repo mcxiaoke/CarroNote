@@ -196,8 +196,14 @@
 文件：`lib/views/authentication/login.dart`、`lib/models/biometric_auth.dart`
 
 - `login.dart` 用 `isDesktopPlatform` 调 UI 细节：指纹图标尺寸桌面 `22` vs 移动 `28`；「忘记密码」字号桌面 `14` vs 移动 `12`。
-- `biometric_auth.dart` 用 `local_auth` + `flutter_secure_storage` 存凭据（v1 包裹态，非明文）。
-  - 逻辑本身不分平台，但 `local_auth` 在桌面（如 Windows Hello）是否可用取决于平台实现。
+- `biometric_auth.dart` 按平台分两条路径（`BiometricAuth.isHardwareBound`，见 `docs/crypto-overview.md` §5.5）：
+  - **Android / iOS / macOS**：`flutter_secure_storage` 11.x 的硬件绑定条目
+    （Android `AndroidOptions.biometric()` → `setUserAuthenticationRequired`；darwin
+    `accessControlFlags: [biometryCurrentSet]` → `SecAccessControlCreateWithFlags`），
+    **读取即认证**，解锁路径不调用 `local_auth`。
+  - **Windows / Linux / Web**：无系统级生物密钥门控，保留 `local_auth` 便捷门控 +
+    v1 包裹态凭据；设置页明确标注「非硬件保护」。Windows 只有 DPAPI（绑当前用户，
+    不绑指纹），`WindowsOptions` 也无任何认证相关参数。
 
 ---
 

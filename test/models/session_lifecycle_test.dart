@@ -47,17 +47,19 @@ void main() {
       expect(await BiometricAuth.authKey, 'new-login-pass-2');
     });
 
-    test('Session.onPasswordSet 密码变更后同步刷新会话与 PIN/生物识别凭据', () async {
+    test('Session.onPasswordSet 密码变更后刷新会话并销毁 PIN 凭据（方案 B）', () async {
       PhraseHandler.initPass('old-p');
       await PinAuth.setPin('1234');
+      expect(PreferencesStorage.isPinAuthEnabled, isTrue);
 
-      Session.onPasswordSet('changed-password-3');
+      await Session.onPasswordSet('changed-password-3');
       expect(PhraseHandler.getPass, 'changed-password-3');
 
-      // 等待 Session.onPasswordSet 内部触发的异步凭据刷新完成
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      final pinResult = await PinAuth.verifyPin('1234');
-      expect(pinResult, 'changed-password-3');
+      // 方案 B（docs/pin-lock-design.md §4）：主密码变更即销毁 PIN 凭据，
+      // 旧 PIN 不得再能解出任何密码。此前本用例断言的是"PIN 跟随新密码刷新"，
+      // 与实现和设计文档相反，属于 2026-10-12 加固后遗留的过期断言。
+      expect(PreferencesStorage.isPinAuthEnabled, isFalse);
+      expect(await PinAuth.verifyPin('1234'), isEmpty);
     });
 
     test('Session.logout 清空内存 dataKey、PhraseHandler 并登出同步服务', () async {

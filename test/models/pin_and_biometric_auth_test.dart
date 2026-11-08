@@ -152,7 +152,6 @@ void main() {
   group('BiometricAuth 凭据安全与旧版兼容', () {
     test('setAuthKey 使用随机包裹密钥加密存储，authKey 成功解包', () async {
       PhraseHandler.initPass('my-bio-password');
-
       await BiometricAuth.enable();
       expect(PreferencesStorage.isBiometricAuthEnabled, isTrue);
 
@@ -199,6 +198,32 @@ void main() {
       expect(PreferencesStorage.isBiometricAuthEnabled, isFalse);
       expect(await storage.read(key: '_secureBiometricAuthKey'), isNull);
       expect(await storage.read(key: '_secureBiometricWrapKey'), isNull);
+    });
+
+    // 以下用例断言"读取结果分类"，该分类是登录页区分
+    // 取消（不计次）/ 凭据失效（自动关闭开关）/ 真失败（计次）的唯一依据。
+    test('桌面测试宿主不具备硬件生物门控能力', () {
+      // 若哪天在 Android/iOS 真机上跑这组用例，此断言会失败并提示改用硬件绑定路径
+      expect(BiometricAuth.isHardwareBound, isFalse);
+    });
+
+    test('unlock 取回密码并返回 success', () async {
+      PhraseHandler.initPass('bio-pass-abc');
+      await BiometricAuth.enable();
+
+      final result = await BiometricAuth.unlock();
+      expect(result.status, BiometricUnlockStatus.success);
+      expect(result.passphrase, 'bio-pass-abc');
+    });
+
+    test('凭据不存在时 unlock 返回 notConfigured 而非 failed', () async {
+      const storage = FlutterSecureStorage();
+      await storage.delete(key: '_secureBiometricAuthKey');
+      await storage.delete(key: '_secureBiometricWrapKey');
+
+      final result = await BiometricAuth.unlock();
+      expect(result.status, BiometricUnlockStatus.notConfigured);
+      expect(result.passphrase, isEmpty);
     });
   });
 }

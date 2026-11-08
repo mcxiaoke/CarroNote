@@ -51,7 +51,10 @@ android {
     // You can update the following values to match your application needs.
     // For more information, see: https://flutter.dev/to/review-gradle-config.
         applicationId "com.mcxiaoke.snotes"
-        minSdkVersion 25
+        // 28 起才是 biometric 密钥门控（setUserAuthenticationParameters）的最低要求，
+        // flutter_secure_storage 的 AndroidOptions.biometric(enforceBiometrics: true)
+        // 在更低版本会直接抛 BIOMETRIC_UNAVAILABLE。
+        minSdkVersion 28
         targetSdkVersion 36
         versionCode flutter.versionCode
         versionName flutter.versionName

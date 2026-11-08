@@ -189,7 +189,7 @@ AAD 决定「这个信封只能用在这个位置」，是防止密文搬移/替
 | 本地 DB 字段（title/description） | 笔记 `uuid` | dataKey | database_handler.dart:276, 290 |
 | manifest items 段 | 固定串 `"manifest-items"` | dataKey | sync_models.dart:856, 937, 985 |
 | journal 远端副本 | 固定串 `"journal-archive"`（`kJournalAad`） | dataKey | journal.dart:81, 913, 923, 970 |
-| 生物识别凭据 | 固定串 `"biometric-auth"` | 独立随机 32B 包裹密钥 | biometric_auth.dart:71, 122 |
+| 生物识别凭据（仅桌面回退路径） | 固定串 `"biometric-auth"` | 独立随机 32B 包裹密钥 | biometric_auth.dart:208, 311 |
 
 **blob AAD 纯化（v4 epoch 消除）**：blob 的 AAD 恒为裸 `id`（内容哈希），
 **不再是 `'<epoch>|<hash>'`**。解密只回答「dataKey 对不对」；把 epoch 塞进 AAD 会让
@@ -349,9 +349,40 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
   （可能属于别的 vault 或旧 dataKey 纪元）。
 - 整个远端副本流程「绝不抛异常」，失败降级为本地-only。
 
-### 5.5 生物识别凭据包裹（F-C01）
+### 5.5 生物识别凭据（硬件绑定 / 桌面回退两条路径）
 
 代码：`lib/models/biometric_auth.dart`
+
+两条路径的差别是「认证约束由谁保证」：A 由系统密钥库保证，B 由 UI 层保证。
+
+#### A. 硬件绑定路径（Android / iOS / macOS，`BiometricAuth.isHardwareBound == true`）
+
+```
+namespace  = "biometric_credential"（Android storageNamespace，与默认 store 隔离）
+凭据       = utf8(password)，写入受认证保护的 key 条目
+```
+
+- **Android**：`AndroidOptions.biometric(enforceBiometrics: true)` → KeyStore AES 密钥
+  `setUserAuthenticationRequired(true)` + `setUserAuthenticationParameters(0, …)`
+  + `setInvalidatedByBiometricEnrollment(true)`。读取时由系统 BiometricPrompt 认证后
+  才解密；取消 / 失败直接抛异常，**不会返回任何明文**。
+- **iOS / macOS**：`accessControlFlags: [biometryCurrentSet]` →
+  `SecAccessControlCreateWithFlags(.biometryCurrentSet)`；macOS 还需
+  `usesDataProtectionKeychain: true` 才会真正生效。
+- **解密动作即认证**：不存在「先 `authenticate()` 拿到 true，再去读存储」的时间窗。
+  因此解锁路径**不调用** `local_auth`——再叠加一层只会把硬件门控退化成 UI 判断。
+- **录入新生物特征即失效**（`biometryCurrentSet` 语义）：条目被系统作废，读取失败或返回空，
+  登录页自动 `disable()` 并提示重新启用或用密码登录
+  （iOS/macOS 表现为条目不存在；Android 表现为 KeyStore 密钥失效异常）。
+- **写入即验证**：打开开关时 `write()` 本身触发一次系统认证，等价于「启用前先验证一次」，
+  无需额外的 `local_auth` 前置验证。
+- **升级迁移**：首次写入会主动删除旧版（10.x 及更早）落在默认 store 的
+  `_secureBiometricAuthKey` / `_secureBiometricWrapKey`，避免残留一份可解封的副本。
+
+#### B. 桌面回退路径（Windows / Linux / Web）
+
+这些平台没有把密钥绑定到生物特征的系统能力（`WindowsOptions` 只有
+`useBackwardCompatibility`；Linux 走 libsecret 同样无认证约束），因此沿用 F-C01 方案：
 
 ```
 包裹密钥 KEY = 随机 32B（SyncCrypto.generateDataKey），存 secure storage 键
@@ -360,22 +391,23 @@ pubHash = SHA-256( 容器 [0, pubHash 起始) 的全部字节 )      ← 无密�
                存 secure storage 键 "_secureBiometricAuthKey"
 ```
 
-- 目的：把 vault 密码从「明文长期驻留 secure storage」降级为「包裹态」，
-  secure storage 被部分导出时泄漏的是密文。
-- ⚠️ **注意这不是真正的密钥隔离**：KEY 与密文存在同一个 secure storage 里，
-  同时拿到两者即可还原明文密码。它降低的是「部分泄漏」风险，不是「完全泄漏」风险。
+- ⚠️ **B 路径不是密钥隔离**：KEY 与密文同处一个 secure storage，同时拿到两者即可还原
+  明文密码；解锁前的 `local_auth`（Windows Hello 等）只是**便捷性门控**，不是安全边界。
+  UI 文案必须如实标注，不得宣称硬件保护。
 - 兼容：无 `v1:` 前缀的旧值按明文密码原样返回，下次写入自动升级为 v1。
 - 关闭生物识别时两个键都删除；重新开启时**先删 KEY 再生成新的**，防止开关周期内密钥复用。
 - 解包失败一律返回空串（指纹登录走失败分支），**绝不回退明文**。
-- **凭据刷新时机（2026-08-11 修正）**：生物识别包裹凭据须与当前有效密码保持一致，
-  刷新点有两处：
+- **凭据刷新时机（2026-08-11 修正 / 2026-10-28 按平台分化）**：生物识别凭据须与当前
+  有效密码保持一致，刷新点有两处：
   1. `Session.login(passphrase)` —— **所有密码登录成功的唯一汇聚点**（本地解锁 /
      远端 fingerprint 比对通过），在 `isBiometricAuthEnabled` 时调用
      `BiometricAuth.setAuthKey()`。覆盖「他端改密码后本端用新密码重新登录」「普通
-     密码登录」「生物识别登录自身（用解出的当前密码重新包裹，幂等）」；
+     密码登录」「生物识别登录自身（用解出的当前密码重新写入，幂等）」；
+     ⚠️ **仅 B 路径执行**：A 路径写入会强制系统认证，刚输完密码再弹一次生物识别属于
+     体验倒退，故 A 路径跳过，改由 `unlock()` 的 `notConfigured` 分支自动关闭开关兜底；
   2. `Session.onPasswordSet(newPassword)` —— 本地改密码页 `change_passphrase.dart:408`
-     调用，覆盖本地显式改密码。
-  二者幂等：写入的密码必为已验证正确的当前密码，secure storage 写入为包裹态不存明文。
+     调用，覆盖本地显式改密码（两条路径都刷新，A 路径这一次认证是用户预期内的）。
+  二者幂等：写入的密码必为已验证正确的当前密码。
   **历史坑**：此前仅 `onPasswordSet` 刷新，导致他端改密后本端用旧密码指纹登录失败、
   改用新密码重登却未刷新 biometric，下次指纹登录即报密码错误。
 
@@ -573,7 +605,7 @@ keyVersion、encryptedDataKey、kdf 参数、dataKeyFingerprint、lastModifiedBy
 | # | 问题 | 位置 | 建议 |
 |---|---|---|---|
 | 1 | 备份导出/导入完全明文，无密码校验 | `file_handler.dart:39-49` | 用 MK 或独立口令封装为 AES-GCM 容器；至少 UI 强提示 |
-| 2 | 生物识别包裹密钥与密文同处 secure storage | `biometric_auth.dart:103-113` | 移到平台 Keystore/Keychain 的硬件绑定密钥（`setUserAuthenticationRequired`） |
+| 2 | ~~生物识别包裹密钥与密文同处 secure storage~~ | `biometric_auth.dart` | **已解决（2026-10-28）**：Android/iOS/macOS 改用 `flutter_secure_storage` 11.x 的硬件绑定存储（Android `AndroidOptions.biometric()` → `setUserAuthenticationRequired`；darwin `accessControlFlags: [biometryCurrentSet]` → `SecAccessControlCreateWithFlags`），读取即认证、不再叠加 `local_auth`；Windows/Linux 无此能力，保留 UI 便捷门控并在设置页明示"非硬件保护"（见 §5.5） |
 | 3 | ~~PBKDF2 200k 低于 OWASP 2023 的 600k~~ | `crypto.dart:63` | **已解决（2026-08-11）**：新 vault / 新备份默认 Argon2id（`m=32MiB, t=3, p=2`），存量 PBKDF2 按 header 算法字段回退并在改密码时自动升级；Argon2id 为纯 Dart 派生（无原生加速），移动端耗时较长（见 §2.2 / §2.6） |
 | 4 | 会话明文密码常驻内存 `PhraseHandler._passphrase` | `preference_and_config.dart:409-429` | Dart 无法安全擦除 String；可改存派生的 MK 字节并在用后置零 |
 | 5 | blob 文件名泄露内容哈希 | 设计固有 | 若要消除，需改用 `HMAC(dataKey, blobId)` 作对象名（牺牲跨 vault 去重） |

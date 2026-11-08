@@ -37,7 +37,13 @@ class Session {
     // 远端 fingerprint 比对成功），重新包裹安全存储凭据是安全的。
     // （本地改密码路径另有 Session.onPasswordSet 兜底，这里收口所有密码登录入口，
     //   含他端改密后的重新登录。）
-    if (PreferencesStorage.isBiometricAuthEnabled) {
+    //
+    // 硬件绑定路径（Android/iOS/macOS）例外：那里的凭据写在受认证保护的 key 条目里，
+    // **写入本身会触发一次系统认证**，在用户刚输完密码后再弹一次生物识别是明显的体验
+    // 倒退。改由 `BiometricAuth.unlock()` 的 notConfigured 分支兜底：他端改密导致
+    // 本地凭据过期时，首次指纹登录会自动关闭开关并提示重新启用（安全，且不误报）。
+    if (PreferencesStorage.isBiometricAuthEnabled &&
+        !BiometricAuth.isHardwareBound) {
       BiometricAuth.setAuthKey();
     }
   }
