@@ -618,5 +618,19 @@
   "Installed on External Storage": "Installed on External Storage",
   "App is installed on an external SD card, which can be physically accessed or modified.": "App is installed on an external SD card, which can be physically accessed or modified.",
   "Mock Location Detected": "Mock Location Detected",
-  "Mock location provider is active or available on this device.": "Mock location provider is active or available on this device."
+  "Mock location provider is active or available on this device.": "Mock location provider is active or available on this device.",
+  "Network": "Network",
+  "Network Proxy": "Network Proxy",
+  "Enable Proxy": "Enable Proxy",
+  "Route sync network traffic through proxy": "Route sync network traffic through proxy",
+  "Proxy Server": "Proxy Server",
+  "Supports formats: host:port, http://host:port, socks5://host:port": "Supports formats: host:port, http://host:port, socks5://host:port",
+  "Proxy server is reachable": "Proxy server is reachable",
+  "Proxy connection failed: {error}": "Proxy connection failed: {error}",
+  "Please enter a proxy server address": "Please enter a proxy server address",
+  "Proxy settings saved": "Proxy settings saved",
+  "Web proxy managed by browser": "Web platform proxy is managed by your browser",
+  "Managed by browser": "Managed by browser",
+  "Connected": "Connected",
+  "Web Platform": "Web Platform"
 }

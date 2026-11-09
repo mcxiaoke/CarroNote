@@ -75,13 +75,14 @@ const Map<String, Size?> _viewports = {
   'compact-land-890x400': Size(890, 400), // 窄屏手机，横屏
 };
 
-/// 设置 Hub 8 个顶级 tile 的 key（主题、显示与笔记样式已提升为一级入口）。
+/// 设置 Hub 顶级 tile 的 key（主题、显示与笔记样式已提升为一级入口）。
 const List<String> _hubTileKeys = <String>[
   'ui-setting-hub-theme',
   'ui-setting-hub-display',
   'ui-setting-hub-notestyle',
   'ui-setting-hub-sync',
   'ui-setting-hub-backup',
+  'ui-setting-hub-proxy',
   'ui-setting-hub-security',
   'ui-setting-hub-general',
   'ui-setting-hub-about',

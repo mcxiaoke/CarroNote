@@ -4,7 +4,7 @@ homepage: https://github.com/mcxiaoke/CarroNote
 documentation: https://github.com/mcxiaoke/CarroNote
 publish_to: 'none'
 
-version: 3.0.4+300004
+version: 3.0.5+300005
 
 environment:
   sdk: ">=3.12.0 <4.0.0"

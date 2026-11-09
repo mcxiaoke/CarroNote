@@ -28,6 +28,7 @@ import 'package:sqflite_common/sqflite.dart';
 import 'package:safenotes/app.dart';
 import 'package:safenotes/authwall.dart';
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/proxy_config.dart';
 import 'package:safenotes/generated/build_info.g.dart';
 import 'package:safenotes/models/editor_state.dart';
 import 'package:safenotes/models/session.dart';
@@ -148,74 +149,74 @@ void _installGlobalErrorHandlers() {
     return !kDebugMode; // debug 返回 false 让引擎继续默认处理;
   };
 
-  // 自定义 UI 渲染崩溃兜底，避免 release 模式静默灰屏卡死
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    Log.app.e(
-      'UI 渲染异常（捕获于 ErrorWidget）',
-      error: details.exception,
-      stackTrace: details.stack,
-    );
-    AppLogFile.flush();
-    if (kDebugMode) {
-      return ErrorWidget(details.exception);
-    }
-    return Material(
-      color: const Color(0xFF1E1E2E),
-      child: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 54,
-                  color: Color(0xFFF38BA8),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '应用运行遇到异常',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+  // 自定义 UI 渲染崩溃兜底，仅在 release 模式接管，避免静默灰屏卡死；
+  // debug 与 test 环境保持 Flutter 默认构建器，以便精准暴露红屏与通过测试框架断言。
+  if (kReleaseMode) {
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      Log.app.e(
+        'UI 渲染异常（捕获于 ErrorWidget）',
+        error: details.exception,
+        stackTrace: details.stack,
+      );
+      AppLogFile.flush();
+      return Material(
+        color: const Color(0xFF1E1E2E),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 54,
+                    color: Color(0xFFF38BA8),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    details.exceptionAsString(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      color: Color(0xFFCDD6F4),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '应用运行遇到异常',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                    maxLines: 8,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  '详细日志已保存至：\n${AppLogFile.dirPath ?? "应用日志目录"}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFA6ADC8),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      details.exceptionAsString(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: Color(0xFFCDD6F4),
+                      ),
+                      maxLines: 8,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    '详细日志已保存至：\n${AppLogFile.dirPath ?? "应用日志目录"}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFA6ADC8),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-  };
+      );
+    };
+  }
 }
 
 /// 应用主初始化流程
@@ -295,6 +296,7 @@ Future<void> _bootstrap() async {
   // 原先只在登录页/设置页里 init，启动早期读到的是「未配置」默认值，
   // 表现为同步按钮短暂消失、状态显示错误。
   await SyncConfig.init();
+  await ProxyConfig.init();
 
   // 简化方案:预初始化 db + 一次性查询 Keyring.isInitialized
   // 避免 AuthWall 改 StatefulWidget + FutureBuilder 的 UI 闪烁

@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:safenotes/data/preference_and_config.dart';
+import 'package:safenotes/data/proxy_config.dart';
 import 'package:safenotes/models/app_theme.dart';
 import 'package:safenotes/models/theme_seeds.g.dart';
 import 'package:safenotes/sync/sync_config.dart';
@@ -44,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _noteStyleValue;
   late String _syncStatusValue;
   late String _backupValue;
+  late String _proxyValue;
   late String _securityValue;
   late String _generalValue;
 
@@ -59,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _noteStyleValue = _currentNoteStyleValue();
     _syncStatusValue = _syncStatusValueString();
     _backupValue = PreferencesStorage.isBackupOn ? 'On'.tr() : 'Off'.tr();
+    _proxyValue = _proxySummary();
     _securityValue = _securitySummary();
     _generalValue =
         SafeNotesConfig.mapLocaleName[context.locale.toString()] ??
@@ -145,6 +148,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _refresh();
             },
           ),
+      ]),
+      shadSectionTitle(context, 'Network'.tr()),
+      shadSettingsCard([
+        shadNavigationTile(
+          context,
+          key: const Key('ui-setting-hub-proxy'),
+          icon: LucideIcons.network,
+          title: 'Network Proxy'.tr(),
+          value: _proxyValue,
+          onTap: () async {
+            await Navigator.pushNamed(context, '/proxySettings');
+            _refresh();
+          },
+        ),
       ]),
       shadSectionTitle(context, 'Security'.tr()),
       shadSettingsCard([
@@ -238,5 +255,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!SyncConfig.isSyncEnabled) return 'Disabled'.tr();
     if (!SyncConfig.hasBackendConfig) return 'Not configured'.tr();
     return SyncConfig.backendDisplayName;
+  }
+
+  String _proxySummary() {
+    if (kIsWeb) return 'Managed by browser'.tr();
+    if (!ProxyConfig.isProxyEnabled) return 'Off'.tr();
+    final addr = ProxyConfig.proxyAddress;
+    return addr.isEmpty ? 'On'.tr() : addr;
   }
 }

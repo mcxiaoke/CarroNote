@@ -36,7 +36,10 @@
 import 'package:core/core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:safenotes/data/proxy_config.dart';
 
 /// 同步后端类型
 enum SyncBackendType {
@@ -433,9 +436,11 @@ class SyncBackendDraft {
 
   /// 按当前类型构造后端实例；字段不全返回 null
   ///
-  /// 调用方负责 init() / close()。
-  SyncBackend? buildBackend() {
+  /// 调用方负责 init() / close()。若未传入 [client]，默认使用 [ProxyConfig.createHttpClient()]
+  /// 自动应用全局代理设置。
+  SyncBackend? buildBackend({http.Client? client}) {
     final n = normalized();
+    final httpClient = client ?? ProxyConfig.createHttpClient();
     switch (type) {
       case SyncBackendType.none:
         return null;
@@ -448,12 +453,14 @@ class SyncBackendDraft {
           baseUrl: n.webdavUrl,
           username: n.webdavUsername,
           password: n.webdavPassword,
+          client: httpClient,
         );
       case SyncBackendType.safeServer:
         if (n.safeServerUrl.isEmpty || n.safeServerToken.isEmpty) return null;
         return SafeServerBackend(
           baseUrl: n.safeServerUrl,
           token: n.safeServerToken,
+          client: httpClient,
         );
     }
   }

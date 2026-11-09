@@ -618,5 +618,19 @@
   "Installed on External Storage": "安装在外置存储介质",
   "App is installed on an external SD card, which can be physically accessed or modified.": "应用安装在外置 SD 卡，易被物理拆卸读取或修改。",
   "Mock Location Detected": "检测到模拟位置",
-  "Mock location provider is active or available on this device.": "当前设备已启用或存在模拟位置提供程序。"
+  "Mock location provider is active or available on this device.": "当前设备已启用或存在模拟位置提供程序。",
+  "Network": "网络",
+  "Network Proxy": "网络代理",
+  "Enable Proxy": "启用网络代理",
+  "Route sync network traffic through proxy": "通过自定义代理服务器转发同步网络请求",
+  "Proxy Server": "代理服务器",
+  "Supports formats: host:port, http://host:port, socks5://host:port": "支持格式：host:port、http://host:port、socks5://host:port",
+  "Proxy server is reachable": "代理服务器连接成功",
+  "Proxy connection failed: {error}": "代理连接失败: {error}",
+  "Please enter a proxy server address": "请输入代理服务器地址",
+  "Proxy settings saved": "代理设置已保存",
+  "Web proxy managed by browser": "Web 端的网络代理受浏览器系统设置管理",
+  "Managed by browser": "由浏览器接管",
+  "Connected": "已连接",
+  "Web Platform": "Web 平台"
 }
